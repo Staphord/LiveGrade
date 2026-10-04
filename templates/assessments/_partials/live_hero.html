@@ -1,0 +1,90 @@
+<div class="presenting-hero {% if not active_turn %}is-idle{% endif %} mb-3" id="live-hero">
+  {% if active_turn %}
+    {% if not active_turn.is_voting_open %}
+    <div class="hero-kicker"><i class="bi bi-mic-fill"></i>Presentation in progress</div>
+    {% endif %}
+  <div class="d-flex align-items-center gap-3 flex-wrap">
+    {% if active_turn.voting_ends_at %}
+    <div class="turn-ring-wrap" id="turn-ring-wrap">
+      <div class="turn-ring" id="turn-ring" data-ends-at="{{ active_turn.voting_ends_at|date:'c' }}"
+           data-started-at="{{ active_turn.opened_at|date:'c' }}"></div>
+      <div class="turn-ring-label"><i class="bi bi-hourglass-split"></i></div>
+    </div>
+    {% endif %}
+    <div class="flex-grow-1">
+      <div class="eyebrow"><span class="pulse-dot" style="background:currentColor"></span>Presenting now</div>
+      <div class="group-name">{{ active_turn.group.name }}</div>
+      <div class="meta-row">
+        {% if active_turn.presentation_ends_at and not active_turn.voting_opened_at %}<span class="phase-chip" id="presentation-opens-countdown" data-started-at="{{ active_turn.opened_at|date:'c' }}" data-presentation-ends-at="{{ active_turn.presentation_ends_at|date:'c' }}"><i class="bi bi-mic-fill me-1"></i><span id="presentation-opens-text">Voting opens soon</span></span>{% elif active_turn.presentation_ends_at and active_turn.is_voting_open %}<span class="phase-chip is-voting"><i class="bi bi-pencil-fill me-1"></i>Voting open</span>{% endif %}
+        <span><i class="bi bi-clock me-1"></i>Started {{ active_turn.opened_at|time:'H:i' }}</span>
+        <span><i class="bi bi-person-check me-1"></i>{{ voted_count }} of {{ joined_count }} eligible voted</span>
+        {% if active_turn.voting_ends_at and active_turn.is_voting_open %}
+        <span id="turn-countdown" data-ends-at="{{ active_turn.voting_ends_at|date:'c' }}">
+          <i class="bi bi-hourglass-split me-1"></i><span id="turn-countdown-text">--:--</span>
+          <!-- {% if active_turn.presentation_ends_at and next_group %}<span class="opacity-75"> · then auto-starts "{{ next_group.name }}"</span>{% endif %} -->
+        </span>
+        {% endif %}
+        {% if session.voting_paused %}
+        <span class="badge bg-warning text-dark">
+          <i class="bi bi-pause-fill me-1"></i>Voting paused
+          {% if active_turn.paused_remaining_seconds %}· {{ active_turn.paused_remaining_seconds }}s left when resumed{% endif %}
+        </span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="actions">
+    {% if active_turn.voting_ends_at and active_turn.is_voting_open and not session.voting_paused and not active_turn.presentation_ends_at %}
+    {# The +/-30s nudge only applies to plain voting-only turns: a
+       presentation-timed turn is on a fixed, auto-controlled schedule
+       (voting opens/closes/finishes at set percentages of
+       presentation_ends_at), and nudging voting_ends_at here would pull it
+       out of sync with that schedule without actually moving the real
+       finish time. #}
+    <form method="post" action="{% url 'assessment_adjust_timer' session.pk %}" class="live-ajax-form">
+      {% csrf_token %}<input type="hidden" name="delta_seconds" value="-30">
+      <button type="submit" class="btn btn-light group-chip"><i class="bi bi-dash-circle me-1"></i>30s</button>
+    </form>
+    <form method="post" action="{% url 'assessment_adjust_timer' session.pk %}" class="live-ajax-form">
+      {% csrf_token %}<input type="hidden" name="delta_seconds" value="30">
+      <button type="submit" class="btn btn-light group-chip"><i class="bi bi-plus-circle me-1"></i>30s</button>
+    </form>
+    {% endif %}
+    {% if active_turn.voting_opened_at and not active_turn.is_voting_open and active_turn.presentation_ends_at %}
+    <span class="phase-chip" id="presentation-ends-countdown" data-presentation-ends-at="{{ active_turn.presentation_ends_at|date:'c' }}">
+      <i class="bi bi-check-circle me-1"></i><span id="presentation-ends-text">Presentation ends soon</span>
+    </span>
+    {% endif %}
+    <form method="post" action="{% url 'assessment_close_turn' session.pk %}" class="live-ajax-form">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-light group-chip">
+        <i class="bi bi-stop-circle me-1"></i>End now
+      </button>
+    </form>
+  </div>
+  {% elif group_count and groups_remaining == 0 %}
+  <div class="eyebrow"><span class="pulse-dot" style="background:var(--success);animation:none"></span>Session presentation complete</div>
+  <div class="group-name is-idle">All groups have presented</div>
+  <div class="meta-row"><span><i class="bi bi-check-circle me-1"></i>{{ presented_count }} of {{ group_count }} groups completed · review the results below</span></div>
+  {% elif session.pending_next_group %}
+  <div class="eyebrow"><span class="pulse-dot" style="background:currentColor"></span>Next group starting soon</div>
+  <div class="group-name is-idle">"{{ session.pending_next_group.name }}" starts in a moment</div>
+  <div class="meta-row">
+    <span id="transition-countdown" data-resumes-at="{{ session.pending_transition_at|date:'c' }}">
+      <i class="bi bi-hourglass-split me-1"></i><span id="transition-countdown-text">--:--</span>
+    </span>
+  </div>
+  <div class="actions">
+    <form method="post" action="{% url 'assessment_activate_group' session.pk session.pending_next_group_id %}" class="live-ajax-form">
+      {% csrf_token %}
+      <input type="hidden" name="duration_seconds" value="{{ session.default_turn_seconds|default:'' }}">
+      <input type="hidden" name="gap_seconds" value="{{ session.transition_gap_seconds|default:'0' }}">
+      <button type="submit" class="btn btn-light group-chip"><i class="bi bi-skip-forward me-1"></i>Start now</button>
+    </form>
+  </div>
+  {% else %}
+  <div class="eyebrow">No group presenting</div>
+  <div class="group-name is-idle">Select a group below to start the next round</div>
+  <div class="meta-row"><span><i class="bi bi-people me-1"></i>{{ joined_count }} of {{ student_count }} students already in the room</span></div>
+  {% endif %}
+</div>

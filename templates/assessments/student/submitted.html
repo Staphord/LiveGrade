@@ -1,0 +1,39 @@
+{% extends 'assessments/student/_student_base.html' %}
+{% block title %}Submitted - {{ session.name }}{% endblock %}
+{% block hero_sub %}Evaluation received{% endblock %}
+{% block content %}
+<div class="s-center-viewport">
+  <div class="s-card fade-in text-center py-5">
+    <svg class="success-check" viewBox="0 0 52 52">
+      <circle cx="26" cy="26" r="24"></circle>
+      <path d="M15 27l7 7 15-15"></path>
+    </svg>
+    <h2 class="fw-800 mt-3 s-h2">Thanks - evaluation submitted!</h2>
+    <p class="text-muted s-text">
+      Your grading is recorded anonymously. This page returns to the waiting
+      room automatically when the next group starts presenting.
+    </p>
+    <div class="eval-progress-track mt-3 mb-1" aria-hidden="true">
+      <div class="eval-progress-fill is-complete" id="countdown-fill" style="width:100%"></div>
+    </div>
+    <a href="{% url 'student_evaluate' session.uuid %}" class="btn btn-outline-primary big-btn w-100 mt-3">
+      <i class="bi bi-arrow-clockwise me-1"></i>Back to waiting room now
+    </a>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const fill = document.getElementById('countdown-fill');
+  const seconds = 8;
+  if (fill) {
+    fill.style.transition = `width ${seconds}s linear`;
+    requestAnimationFrame(function () { fill.style.width = '0%'; });
+  }
+  setTimeout(function () {
+    window.location.href = "{% url 'student_evaluate' session.uuid %}";
+  }, seconds * 1000);
+})();
+</script>
+{% endblock %}

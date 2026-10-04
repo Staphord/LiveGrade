@@ -1,0 +1,6 @@
+<form method="post" action="{% url 'assessment_toggle_pause' session.pk %}" class="live-ajax-form" id="live-pause-btn">
+  {% csrf_token %}
+  <button type="submit" class="btn w-100 invite-cta {% if session.voting_paused %}btn-success{% else %}btn-warning{% endif %}">
+    {% if session.voting_paused %}<i class="bi bi-play-fill me-1"></i>Resume voting{% else %}<i class="bi bi-pause-fill me-1"></i>Pause voting{% endif %}
+  </button>
+</form>

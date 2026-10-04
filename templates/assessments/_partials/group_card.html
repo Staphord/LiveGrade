@@ -1,0 +1,75 @@
+<div class="col-md-6" id="group-card-{{ group.pk }}">
+  <div class="card h-100 group-card">
+    <div class="card-body group-card-body" data-group-id="{{ group.pk }}"
+         data-add-url="{% url 'assessment_group_members' session.pk group.pk %}">
+      <div class="card-icon-head mb-1">
+        <div class="head-left">
+          <span class="icon-badge"><i class="bi bi-diagram-3"></i></span>
+          <div>
+            <div class="title group-name">{{ group.name }}</div>
+            <div class="sub">{{ group.member_count }} member{{ group.member_count|pluralize }}{% if group.max_size %} of {{ group.max_size }}{% endif %}</div>
+          </div>
+        </div>
+        <div class="d-flex align-items-center gap-1">
+          <span class="count-chip {% if group.is_full %}is-full{% else %}is-open{% endif %}">
+            {{ group.member_count }}{% if group.max_size %}/{{ group.max_size }}{% endif %}
+          </span>
+          <button type="button" class="btn btn-sm btn-outline-secondary py-0 group-edit-btn" title="Edit group"
+                  data-id="{{ group.pk }}" data-name="{{ group.name }}" data-max-size="{{ group.max_size|default:'' }}"
+                  data-edit-url="{% url 'assessment_group_edit' session.pk group.pk %}">
+            <i class="bi bi-pencil"></i>
+          </button>
+          <form method="post" action="{% url 'assessment_group_delete' session.pk group.pk %}"
+                data-confirm="Delete &quot;{{ group.name }}&quot;? Its members become unassigned again."
+                data-confirm-label="Delete group">
+            {% csrf_token %}<button class="btn btn-sm btn-outline-danger py-0" title="Delete group"><i class="bi bi-trash"></i></button>
+          </form>
+        </div>
+      </div>
+      {% if group.max_size %}
+      <div class="group-fill-bar {% if group.is_full %}is-full{% endif %}">
+        <div class="fill" style="width:{% widthratio group.member_count group.max_size 100 %}%"></div>
+      </div>
+      {% endif %}
+      <div class="mt-2">
+      {% for membership in group.memberships.all %}
+      <div class="d-flex justify-content-between align-items-center member-row" draggable="true"
+           data-student-id="{{ membership.student.pk }}" data-source-group="{{ group.pk }}"
+           data-remove-url="{% url 'assessment_group_members' session.pk group.pk %}">
+        <span class="t-sm d-flex align-items-center gap-2">
+          <span class="member-avatar {% cycle 'bg-primary-subtle text-primary-emphasis' 'bg-success-subtle text-success-emphasis' 'bg-warning-subtle text-warning-emphasis' 'bg-info-subtle text-info-emphasis' 'bg-danger-subtle text-danger-emphasis' 'bg-secondary-subtle text-secondary-emphasis' %}">
+            {{ membership.student.full_name|default:membership.student.student_id|slice:":2"|upper }}
+          </span>
+          {{ membership.student.full_name|default:membership.student.student_id }}
+        </span>
+        <form method="post" action="{% url 'assessment_group_members' session.pk group.pk %}">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="remove">
+          <input type="hidden" name="student_id" value="{{ membership.student.pk }}">
+          <button class="btn btn-sm btn-link text-danger p-0" title="Remove from group"><i class="bi bi-x-lg"></i></button>
+        </form>
+      </div>
+      {% empty %}
+      <div class="empty-state py-3"><i class="bi bi-people"></i>No members yet - drag a student here.</div>
+      {% endfor %}
+      </div>
+      {% if group.is_full %}
+      <div class="text-tone-success t-micro mt-2"><i class="bi bi-check-circle-fill me-1"></i>Group is full.</div>
+      {% elif ungrouped_students %}
+      <form method="post" action="{% url 'assessment_group_members' session.pk group.pk %}" class="d-flex gap-1 mt-2 add-member-form">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="add">
+        <select name="student_id" class="form-select form-select-sm" required>
+          <option value="">Add student…</option>
+          {% for student in ungrouped_students %}
+          <option value="{{ student.pk }}">{{ student.full_name|default:student.student_id }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn btn-sm btn-outline-primary" title="Add"><i class="bi bi-plus-lg"></i></button>
+      </form>
+      {% else %}
+      <div class="text-muted t-micro mt-2">No unassigned students left to add.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>

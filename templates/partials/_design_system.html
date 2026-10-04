@@ -1,0 +1,503 @@
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+--font-ui:'Inter','Segoe UI',system-ui,sans-serif;
+--font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+/* Type */
+--fs-micro:.6875rem;--fs-sm:.75rem;--fs-body:.8125rem;--fs-strong:.875rem;
+--fs-heading:1rem;--fs-title:1.25rem;--fs-display:1.75rem;--fs-hero:2.5rem;
+/* Spacing */
+--sp-1:4px;--sp-2:8px;--sp-3:12px;--sp-4:16px;--sp-5:24px;--sp-6:32px;--sp-7:48px;
+/* Radius */
+--radius-pill:9999px;--radius-card-lg:20px;--radius-image:16px;
+--radius-card:12px;--radius-control:9px;--radius-xs:4px;
+/* Elevation */
+--elev-0:none;
+--elev-1:0 1px 2px rgba(16,24,40,.06);
+--elev-2:0 4px 12px rgba(16,24,40,.10);
+--elev-3:0 12px 28px rgba(16,24,40,.14);
+--elev-4:0 20px 60px rgba(16,24,40,.20);
+/* Motion */
+--motion-fast:120ms;--motion:200ms;--motion-slow:400ms;
+--ease:cubic-bezier(.33,1,.68,1);
+/* Focus */
+--focus-ring:0 0 0 3px color-mix(in srgb,var(--accent) 35%,transparent);
+/* States */
+--disabled-opacity:.55;
+/* Icons */
+--icon-sm:1rem;--icon-md:1.25rem;--icon-lg:1.75rem;
+/* Colour */
+--canvas:#f4f6f9;--surface:#fff;--surface-sunken:#e8edf3;--surface-hover:#f8f9fa;
+--border:#e9ecef;--border-strong:#dee2e6;
+--ink:#1a1a2e;--text:#212529;--text-soft:#495057;--text-muted:#6c757d;--text-subtle:#adb5bd;
+--accent:#0d6efd;--accent-soft:#e7f1ff;
+--success:#198754;--warn:#ffc107;--danger:#dc3545;--high:#fd7e14;
+/* AI — a suggestion surface, deliberately not the app's own accent.
+   --accent already means "interactive, primary"; an AI suggestion is the one
+   thing in this product that must not read as the system's own voice. */
+--ai:#6f42c1;--ai-soft:#f1ebfb;--ai-border:#d9c9f5;--ai-ink:#4c2f8f;
+--ai-shine:#e9dffb;
+/* Grounded output is sourced; ungrounded output carries no number.
+   .ai-item-grounded / .ai-item-ungrounded set --ai-mark, the same
+   per-instance pattern as --status below. */
+--ai-grounded:var(--success);--ai-ungrounded:var(--warn);--ai-mark:var(--ai-border);
+/* Brand — login and signup gradient */
+--brand-deep:#1B4F8A;--brand-bright:#2E86DE;
+/* Status tones */
+--tone-success-bg:#d1e7dd;--tone-success-fg:#0a3622;
+--tone-info-bg:#cfe2ff;--tone-info-fg:#084298;
+--tone-warn-bg:#fff3cd;--tone-warn-fg:#664d03;
+--tone-danger-bg:#f8d7da;--tone-danger-fg:#842029;
+--tone-neutral-bg:#f8f9fa;--tone-neutral-fg:#6c757d;
+/* Identity colours — initials avatars, picked by Profile.avatar_color().
+   Ordered so neighbouring slots contrast: sequential user ids must not walk
+   a rainbow down a list sorted by join date. */
+--av-1-bg:#f1c950;--av-1-fg:#634b03;  /* golden */
+--av-2-bg:#a0d5e3;--av-2-fg:#0c556a;  /* cyan */
+--av-3-bg:#c1d78e;--av-3-fg:#42580e;  /* lime */
+--av-4-bg:#afb7e9;--av-4-fg:#0e1e8b;  /* periwinkle */
+--av-5-bg:#efbdcf;--av-5-fg:#8f0a3b;  /* blush */
+--av-6-bg:#aacfe9;--av-6-fg:#0c5183;  /* powder */
+--av-7-bg:#f1ada7;--av-7-fg:#8b0f04;  /* coral */
+--av-8-bg:#a1d9ab;--av-8-fg:#12591f;  /* green */
+--av-9-bg:#e7bbe3;--av-9-fg:#84157b;  /* orchid */
+--av-10-bg:#9ad6ca;--av-10-fg:#12594b;  /* teal */
+--av-11-bg:#f2bf92;--av-11-fg:#7c3c03;  /* peach */
+--av-12-bg:#d3bbe7;--av-12-fg:#501584;  /* violet */
+/* Kanban column chevrons — one colour per state, so the row of headers
+   reads as a progression. White clears AA on every one (5.0:1 at worst). */
+--chev-ink:#fff;
+--chev:var(--text-subtle);
+--chev-todo:#4f46e5;
+--chev-in-progress:#2563eb;
+--chev-in-review:#0e7490;
+--chev-on-hold:#b45309;
+--chev-done:#15803d;
+/* Z-index */
+--z-base:1;--z-sticky:100;--z-backdrop:190;--z-sidebar:200;
+--z-dropdown:1000;--z-modal:1055;
+/* Layout — breakpoint is a constant, 768px: custom properties are invalid in @media */
+--sidebar:220px;--sidebar-collapsed:72px;--page-gutter:var(--sp-4);--topbar-h:54px;
+/* Set at runtime (base.html) to the measured height of a page's
+   `.tabs-sticky-header`, if it has one — 0px here is just the fallback
+   for pages without one, so anything referencing it never needs its own
+   `var(--sticky-header-h, 0px)` default. */
+--sticky-header-h:0px;
+/* Density — comfortable by default; html[data-density="compact"] tightens these */
+--row-pad-y:var(--sp-2);--row-pad-x:var(--sp-3);--card-pad:var(--sp-4);--nav-pad:var(--sp-2);
+/* Overlays */
+--scrim:rgba(16,24,40,.45);--drawer-w:520px;--drawer-w-lg:720px;--palette-w:640px;
+/* Skeleton */
+--skeleton-base:var(--border);--skeleton-shine:var(--surface-hover);
+/* Toast countdown (set per toast by feedback.js), chart legend swatch (set
+   per item), and a generic 0-100 percent fill (set per element, e.g. a
+   conic-gradient progress ring) */
+--toast-life:5s;--swatch:var(--accent);--pct:0;
+}
+html[data-density="compact"]{
+--row-pad-y:var(--sp-1);--row-pad-x:var(--sp-2);--card-pad:var(--sp-3);--nav-pad:6px;--page-gutter:var(--sp-3);
+}
+/* Bootstrap bridge */
+:root{
+--bs-body-bg:var(--canvas);
+--bs-body-color:var(--text);
+--bs-body-font-size:var(--fs-body);
+--bs-secondary-color:var(--text-muted);
+--bs-table-hover-bg:var(--surface-hover);
+--bs-border-color:var(--border);
+--bs-border-radius:var(--radius-control);
+--bs-border-radius-sm:var(--radius-xs);
+--bs-border-radius-lg:var(--radius-card);
+--bs-border-radius-xl:var(--radius-card);
+--bs-border-radius-pill:var(--radius-pill);
+--bs-primary:var(--accent);
+}
+
+*{box-sizing:border-box}
+body{font-family:var(--font-ui);color:var(--text);font-size:var(--fs-body)}
+
+@media (prefers-reduced-motion:reduce){
+*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+}
+
+/* Focus — :focus-visible only, so a mouse click never shows the ring */
+:focus-visible{outline:none;box-shadow:var(--focus-ring)}
+.btn:focus-visible,.form-control:focus-visible,.form-select:focus-visible,
+.nav-link:focus-visible,.update-chip:focus-visible,.kanban-card:focus-visible,
+.score-btn:focus-visible,a:focus-visible{outline:none;box-shadow:var(--focus-ring)}
+
+/* Disabled and busy */
+[disabled],.disabled{opacity:var(--disabled-opacity);cursor:not-allowed}
+@keyframes spin{to{transform:rotate(360deg)}}
+.is-busy{pointer-events:none;opacity:var(--disabled-opacity)}
+.is-busy::before{content:"";display:inline-block;width:.85em;height:.85em;margin-right:var(--sp-1);vertical-align:-.1em;border:2px solid currentColor;border-right-color:transparent;border-radius:var(--radius-pill);animation:spin .6s linear infinite}
+
+/* Navigation progress — the gap between a click and the next page painting */
+.nav-progress{position:fixed;top:0;left:0;height:2px;width:0;background:var(--accent);z-index:var(--z-modal);opacity:0}
+.nav-progress.active{opacity:1;width:85%;transition:width 6s cubic-bezier(.05,.8,.2,1),opacity var(--motion-fast)}
+
+/* Toasts — the live region the JS writes into */
+.flash-region{position:fixed;top:calc(var(--topbar-h) + var(--sp-3));right:var(--sp-4);z-index:var(--z-modal);display:flex;flex-direction:column;align-items:flex-end;gap:var(--sp-2);pointer-events:none;max-width:min(360px,calc(100vw - var(--sp-6)))}
+.flash-region .alert{margin:0;width:auto;max-width:100%;box-shadow:var(--elev-3);pointer-events:auto;animation:toast-in var(--motion) var(--ease)}
+.flash-region .alert.leaving{animation:toast-out var(--motion-fast) var(--ease) forwards}
+@keyframes toast-in{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
+@keyframes toast-out{to{opacity:0;transform:translateX(16px)}}
+
+/* Icon motion */
+@keyframes icon-pop{0%{transform:scale(.8)}55%{transform:scale(1.18)}100%{transform:scale(1)}}
+@keyframes bell-ring{
+0%,100%{transform:rotate(0)}
+15%{transform:rotate(14deg)}30%{transform:rotate(-12deg)}
+45%{transform:rotate(9deg)}60%{transform:rotate(-6deg)}75%{transform:rotate(3deg)}
+}
+.bell-ringing{animation:bell-ring .8s var(--ease);transform-origin:50% 10%}
+
+/* Bootstrap component sizing */
+.btn{font-size:var(--fs-body);border-radius:var(--radius-control)}
+.btn-sm{font-size:var(--fs-sm)}
+.form-control,.form-select{font-size:var(--fs-body);border-radius:var(--radius-control);border-color:var(--border-strong)}
+.form-control-sm,.form-select-sm{font-size:var(--fs-sm)}
+.form-label{font-size:var(--fs-sm);font-weight:600;color:var(--text-soft);margin-bottom:var(--sp-1)}
+.field-error{display:block;font-size:var(--fs-sm);color:var(--danger);margin-top:var(--sp-1)}
+.alert{font-size:var(--fs-body);border-radius:var(--radius-control);padding:var(--sp-2) var(--sp-3)}
+/* Bootstrap reserves room for the close button via padding-right; the rule
+   above would otherwise take it back and the button would sit on the text. */
+.alert-dismissible{padding-right:var(--sp-7)}
+.alert-dismissible .btn-close{padding:var(--sp-3)}
+.modal-content{border:1px solid var(--border);border-radius:var(--radius-card);box-shadow:var(--elev-3)}
+.modal-title{font-size:var(--fs-heading);font-weight:600;color:var(--ink)}
+.dropdown-menu{border:1px solid var(--border);border-radius:var(--radius-card);box-shadow:var(--elev-3);font-size:var(--fs-body)}
+/* A section label inside a menu, not a heading over it: Bootstrap's default
+   is 14px, which came out larger than the 13px items it was labelling. Same
+   treatment as .u-label everywhere else in the app. */
+.dropdown-header{font-size:var(--fs-micro);text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);font-weight:600;padding:var(--sp-2) var(--sp-3) var(--sp-1)}
+.dropdown-divider{border-top-color:var(--border);margin:var(--sp-2) 0}
+/* Every popup in the app opens with a small overshoot, so a menu appearing
+   reads as something arriving rather than something that was always there.
+   `scale` and `translate` rather than `transform`: Bootstrap positions each
+   menu with an inline `transform` from Popper, and a CSS animation outranks
+   inline styles - animating the shorthand would throw the menu to the wrong
+   place for the length of the animation. These longhands compose with it
+   instead of replacing it. */
+@keyframes dd-pop{
+  0%{opacity:0;scale:.94;translate:0 -6px}
+  55%{opacity:1;scale:1.02;translate:0 2px}
+  100%{opacity:1;scale:1;translate:0 0}
+}
+.dropdown-menu.show{transform-origin:top center;animation:dd-pop var(--motion) var(--ease)}
+.dropdown-menu-end.show{transform-origin:top right}
+.dropdown-submenu>.dropdown-menu{animation:none}
+
+/* Surfaces */
+.card{--bs-card-spacer-y:var(--card-pad);--bs-card-spacer-x:var(--card-pad);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);box-shadow:var(--elev-0)}
+.card-header{background:var(--surface);border-bottom:1px solid var(--border);padding:var(--sp-3) var(--sp-4);font-weight:600;font-size:var(--fs-heading);border-radius:var(--radius-card) var(--radius-card) 0 0}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);padding:var(--sp-4)}
+.stat-card .lbl{font-size:var(--fs-micro);color:var(--text-muted);margin-bottom:var(--sp-1);text-transform:uppercase;letter-spacing:.04em}
+.stat-card .val{font-size:var(--fs-display);font-weight:700;line-height:1.1;letter-spacing:-.01em}
+.stat-card .sub{font-size:var(--fs-micro);margin-top:var(--sp-1)}
+
+/* Lists follow density too (Bootstrap defines these on .list-group, not :root) */
+.list-group{--bs-list-group-item-padding-y:var(--row-pad-y);--bs-list-group-item-padding-x:var(--row-pad-x)}
+
+/* Tables */
+.table{font-size:var(--fs-sm);margin-bottom:0}
+.table > thead th{font-size:var(--fs-micro);text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);font-weight:600;background:var(--surface-hover);border-bottom:1px solid var(--border);padding:var(--row-pad-y) var(--row-pad-x)}
+.table > tbody td{padding:var(--row-pad-y) var(--row-pad-x);border-bottom:1px solid var(--border);vertical-align:middle}
+.table > tbody tr:last-child td{border-bottom:none}
+
+/* Utilities */
+.u-label{font-size:var(--fs-micro);text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);font-weight:600}
+.u-meta{font-size:var(--fs-sm);color:var(--text-muted)}
+.text-ink{color:var(--ink)}
+.table-sticky-head{position:sticky;top:0;z-index:var(--z-base)}
+.row-hover{color:inherit;transition:background var(--motion-fast) var(--ease)}
+.row-hover:hover{background:var(--surface-hover)}
+/* Empty states */
+.empty-state{text-align:center;color:var(--text-muted);font-size:var(--fs-body);padding:var(--sp-6) var(--sp-4)}
+.empty-state i{display:block;font-size:var(--icon-lg);color:var(--text-subtle);margin-bottom:var(--sp-3)}
+/* Icons — sizing is glyph size, deliberately outside the text scale */
+.icon-sm{font-size:var(--icon-sm)}
+.icon-md{font-size:var(--icon-md)}
+.icon-lg{font-size:var(--icon-lg)}
+
+/* Type scale utilities */
+.t-micro{font-size:var(--fs-micro)}
+.t-sm{font-size:var(--fs-sm)}
+.t-body{font-size:var(--fs-body)}
+.t-strong{font-size:var(--fs-strong)}
+.t-heading{font-size:var(--fs-heading)}
+.t-title{font-size:var(--fs-title)}
+.t-display{font-size:var(--fs-display)}
+
+/* Score hero — the big number on performance pages */
+.score-hero{font-size:var(--fs-hero);font-weight:700;line-height:1}
+.text-tone-success{color:var(--success)}
+.text-tone-info{color:var(--accent)}
+.text-tone-warn{color:var(--warn)}
+.text-tone-danger{color:var(--danger)}
+.text-tone-high{color:var(--high)}
+.text-tone-neutral{color:var(--text-muted)}
+.bar-success{background:var(--success)}
+.bar-info{background:var(--accent)}
+.bar-warn{background:var(--warn)}
+.bar-danger{background:var(--danger)}
+.bar-neutral{background:var(--text-subtle)}
+
+/* Status tones */
+.tone-success{background:var(--tone-success-bg);color:var(--tone-success-fg)}
+.tone-info{background:var(--tone-info-bg);color:var(--tone-info-fg)}
+.tone-warn{background:var(--tone-warn-bg);color:var(--tone-warn-fg)}
+.tone-danger{background:var(--tone-danger-bg);color:var(--tone-danger-fg)}
+.tone-neutral{background:var(--tone-neutral-bg);color:var(--tone-neutral-fg)}
+.badge-pill{display:inline-block;padding:2px var(--sp-2);border-radius:var(--radius-pill);font-size:var(--fs-micro);font-weight:600}
+.tag-pill{background:var(--border);color:var(--text-soft);padding:1px var(--sp-1);border-radius:var(--radius-xs);font-size:var(--fs-micro)}
+
+/* Avatars */
+.avatar{border-radius:var(--radius-pill);display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;border:1px solid var(--border)}
+.av-xs{width:24px;height:24px;font-size:.6rem}
+.av-sm{width:32px;height:32px;font-size:var(--fs-micro)}
+.av-md{width:40px;height:40px;font-size:var(--fs-strong)}
+.av-lg{width:56px;height:56px;font-size:var(--fs-title)}
+.avatar-img{padding:0;overflow:hidden}
+.avatar-img img{width:100%;height:100%;object-fit:cover;display:block}
+.av-c1{background:var(--av-1-bg);color:var(--av-1-fg)}
+.av-c2{background:var(--av-2-bg);color:var(--av-2-fg)}
+.av-c3{background:var(--av-3-bg);color:var(--av-3-fg)}
+.av-c4{background:var(--av-4-bg);color:var(--av-4-fg)}
+.av-c5{background:var(--av-5-bg);color:var(--av-5-fg)}
+.av-c6{background:var(--av-6-bg);color:var(--av-6-fg)}
+.av-c7{background:var(--av-7-bg);color:var(--av-7-fg)}
+.av-c8{background:var(--av-8-bg);color:var(--av-8-fg)}
+.av-c9{background:var(--av-9-bg);color:var(--av-9-fg)}
+.av-c10{background:var(--av-10-bg);color:var(--av-10-fg)}
+.av-c11{background:var(--av-11-bg);color:var(--av-11-fg)}
+.av-c12{background:var(--av-12-bg);color:var(--av-12-fg)}
+.av-c1,.av-c2,.av-c3,.av-c4,.av-c5,.av-c6,.av-c7,.av-c8,.av-c9,.av-c10,.av-c11,.av-c12{border-color:transparent}
+/* Facepile — overlapping assignees. The ring is the card behind it, not a
+   border: it separates touching circles without changing their size. */
+.facepile{display:inline-flex;align-items:center;isolation:isolate}
+.facepile-av-xs{--pile:8px}
+.facepile-av-sm{--pile:11px}
+.facepile-av-md{--pile:13px}
+.facepile-av-lg{--pile:18px}
+.facepile>*+*{margin-left:calc(var(--pile) * -1)}
+.facepile-item{border-color:transparent;box-shadow:0 0 0 2px var(--surface)}
+.facepile>*:nth-child(1){z-index:5}
+.facepile>*:nth-child(2){z-index:4}
+.facepile>*:nth-child(3){z-index:3}
+.facepile>*:nth-child(4){z-index:2}
+.facepile>*:nth-child(5){z-index:1}
+.facepile-more{background:var(--surface-sunken);color:var(--text-soft);font-weight:600}
+.facepile-none{background:var(--surface-sunken);color:var(--text-muted)}
+
+/* Task list rows — even height, quiet dividers, and an unset cell that
+   invites a value instead of stating its absence. */
+.task-list>tbody>tr>td{height:2.75rem;vertical-align:middle;border-color:var(--border)}
+.task-list>thead>tr>th{border-color:var(--border-strong);white-space:nowrap}
+.task-list tbody tr[data-href]{cursor:pointer}
+.task-list .cell-unset{color:var(--text-subtle)}
+.task-list tr:hover .cell-unset{color:var(--text-muted)}
+.task-list .status-pill{border-radius:var(--radius-pill);padding-top:1px;padding-bottom:1px}
+
+/* ── Task detail ──────────────────────────────────────────────
+   A reading measure, because 800px at 13px runs past 100 characters a line -
+   the wide column was making long descriptions harder to read, not easier. */
+.measure{max-width:68ch}
+.desc-clamp{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
+.desc-more{font-size:var(--fs-sm);color:var(--accent);background:none;border:0;padding:0;cursor:pointer}
+
+/* The commit line: one command, already typed for this task. */
+.commit-strip{display:flex;align-items:center;gap:var(--sp-3);overflow-x:auto}
+.commit-strip code{font-family:var(--font-mono);font-size:var(--fs-sm);color:var(--ink);white-space:nowrap;background:none;padding:0}
+.commit-strip .ct{color:var(--accent);font-weight:600}
+
+/* Activity as one thread. Comments carry the weight; commits, pull requests
+   and status changes are thin lines on the same rail, so the conversation
+   reads first and the machine facts stay context. */
+/* Geometry, so the rail, the avatars and the text line up: content starts at
+   52px, a 32px avatar sits at 8-40px, and the rail runs through its centre. */
+.thread{position:relative;padding:var(--sp-3) var(--sp-3) var(--sp-3) 52px}
+/* No single rail down the card: a connector belongs to a run, and it is drawn
+   only while the next entry is the same person still talking, so two separate
+   people never look joined. */
+/* The connector joins one avatar to the same person's next avatar, so it is
+   drawn at -28px - both avatar sizes are centred on that line, 24px in from
+   the card. It runs from under this entry's avatar to the top of the next
+   one, and the avatar's own surface ring covers the join. */
+.te-continues::after{content:'';position:absolute;left:-28px;top:34px;bottom:calc(var(--sp-3) * -1);width:1px;background:var(--border-strong)}
+.te-joined.te-continues::after{top:0}
+.te-mine.te-continues::after{left:auto;right:-28px}
+.te-sys.te-continues::after{top:22px}
+.te{position:relative;margin-bottom:var(--sp-3)}
+.te-joined{margin-top:calc(var(--sp-2) * -1)}
+.thread .comment-empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--sp-1);height:100%;min-height:8rem;color:var(--text-muted)}
+.thread .comment-empty-state .es-lead{color:var(--text-soft);font-weight:600}
+.te:last-child{margin-bottom:0}
+.te-mark{position:absolute;left:-44px;top:0;box-shadow:0 0 0 3px var(--surface)}
+/* A machine event follows its author to that author's side, like anything
+   else they did. Pinned to the left rail it put the reader's own commit
+   opposite the comment they wrote about it, so one person read as two.
+   It carries their face too, one size down - an anonymous dot was the other
+   half of that split. 24px centred on the same rail as the 32px avatar, and
+   pulled up 3px so it sits on the middle of its single 18px line rather than
+   hanging below it. */
+.te-sys .te-mark{left:-40px;top:-3px}
+.te-mine.te-sys .te-mark{left:auto;right:-40px}
+.te-mine.te-sys .te-line{margin-left:auto;text-align:right}
+.te-head{display:flex;flex-wrap:wrap;gap:var(--sp-1);align-items:baseline}
+.te-who{font-weight:600;color:var(--ink)}
+.te-when{color:var(--text-subtle)}
+.te-line{color:var(--text-muted);max-width:52ch}
+.te-line strong{color:var(--ink);font-weight:600}
+.te-bubble{margin-top:2px;background:var(--surface-sunken);border-radius:var(--radius-xs) var(--radius-card) var(--radius-card) var(--radius-card);padding:var(--sp-2) var(--sp-3);color:var(--text);max-width:52ch;white-space:pre-line}
+
+/* Properties: grouped and two-up. Nine stacked rows for one-word facts was
+   672px of a 972px column. */
+.prop-grp{padding:var(--sp-3);border-bottom:1px solid var(--border)}
+.prop-grp:last-child{border-bottom:0}
+.prop-pair{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-2) var(--sp-3)}
+.prop-k{font-size:var(--fs-micro);text-transform:uppercase;letter-spacing:.04em;color:var(--text-subtle);font-weight:600}
+.prop-v{color:var(--ink);font-weight:550}
+
+/* Assignees wrap into a second column once one would run long, and cap at
+   about five rows so a task with a dozen people does not push everything
+   below it off the panel. */
+.assignee-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(8.5rem,1fr));gap:var(--sp-2) var(--sp-3);max-height:9.5rem;overflow-y:auto;text-align:left}
+.assignee-grid>*{min-width:0}
+
+/* One strip across the five integration pages. Before it they barely linked
+   to each other: the account page was a dead end and the delivery log was
+   reachable only from a small link on the health page. */
+.int-tabs{border-bottom:1px solid var(--border);gap:var(--sp-1);flex-wrap:nowrap;overflow-x:auto}
+.int-tabs .nav-link{border:0;border-bottom:2px solid transparent;border-radius:0;padding:var(--sp-2) var(--sp-3);color:var(--text-muted);font-size:var(--fs-body);font-weight:600;white-space:nowrap}
+.int-tabs .nav-link:hover{color:var(--text);border-bottom-color:var(--border-strong)}
+.int-tabs .nav-link.active{color:var(--accent);background:none;border-bottom-color:var(--accent)}
+
+/* The task page is one screen: the thread scrolls inside its own card rather
+   than the page growing without bound as a discussion runs on. Scoped to the
+   two-column breakpoint - once the columns stack there is nothing to line up,
+   and capping the height there would trap a phone inside a short box. */
+@media (min-width:768px){
+  .main-wrap:has(.fills-viewport){height:100vh;overflow:hidden}
+  .page-body:has(.fills-viewport){display:flex;flex-direction:column;min-height:0}
+  .page-body:has(.fills-viewport)>:not(.fills-viewport){flex-shrink:0}
+  /* nowrap is load-bearing: Bootstrap's .row wraps, and a wrapping flex line
+     sizes to its tallest item rather than to the container, so the column
+     grew past the cap and got clipped instead of scrolling. */
+  .fills-viewport{flex:1 1 auto;min-height:0;flex-wrap:nowrap}
+  /* Direct children only: the two columns, not every nested block. */
+  .fills-viewport>*{display:flex;flex-direction:column;min-height:0}
+  .fills-viewport>*>.card{flex:0 0 auto}
+  .fills-viewport>*>.card.grows{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+  .card.grows>.thread{flex:1 1 auto;min-height:0;overflow-y:auto}
+  /* Bootstrap's .card-body is flex:1 1 auto, so the composer was growing
+     alongside the thread and splitting the card's spare height with it - a
+     109px control stretched to 290px on a task with no comments. A composer
+     is a fixed control; the thread is the region that absorbs slack. */
+  .card.grows>.card-body{flex:0 0 auto}
+  /* The side column scrolls as a whole, so properties and linked docs share
+     one scrollbar instead of an empty card stretching to fill. */
+  .fills-viewport>.col-md-4{overflow-y:auto}
+}
+
+/* A conversation has two sides: your own comments sit right, everyone
+   else's left, so authorship reads from position before you read a name. */
+.thread{padding-right:52px}
+.te-mine .te-mark{left:auto;right:-44px}
+.te-mine .te-head{justify-content:flex-end}
+.te-mine .te-bubble{margin-left:auto;background:var(--accent-soft);
+  border-radius:var(--radius-card) var(--radius-xs) var(--radius-card) var(--radius-card)}
+
+/* A listing that reaches the bottom of the viewport instead of stopping at a
+   fixed height and leaving dead space under it.
+
+   .page-body is already the flex child of a 100vh column, so the chain only
+   has to be continued down to the scroll box. Any wrapper in between (the
+   board's #board-content) carries .fill-host so the chain is explicit rather
+   than inferred - a listing nested one level deeper than a selector guessed
+   is how this silently collapsed the first time.
+
+   Every basis is `auto`, never 0: where the chain does not reach, an `auto`
+   basis still sizes the card to its content; a 0 basis collapses it to
+   nothing and the table vanishes. Siblings hold their size so a long table
+   squashes the scroll box, not the filter bar above it. */
+.main-wrap:has(.fill-height){height:100vh;overflow:hidden}
+.page-body:has(.fill-height){display:flex;flex-direction:column;min-height:0}
+.page-body:has(.fill-height)>:not(.fill-host):not(.fill-height),
+.fill-host>:not(.fill-height){flex-shrink:0}
+.fill-host,.fill-height{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+/* A header and a pager footer are fixed chrome around the scroll region,
+   not things that give up height to it. */
+.fill-height>.card-header,.fill-height>.card-footer{flex-shrink:0}
+.fill-height>.card-body{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+/* The scrolling region of a filling card. .table-responsive covers the
+   tables; .notif-list is the notification feed, which is rows of markup
+   rather than a <table> but wants the same treatment. */
+.fill-height .table-responsive,
+.fill-height .notif-list{flex:1 1 auto;min-height:0;max-height:none;overflow-y:auto}
+
+/* The same chain, held back until the screen has room for it. A listing that
+   is the whole page can fill the viewport at any size; one sitting under a
+   tall panel cannot - locked to 100vh on a short screen it squeezes toward
+   nothing, and `overflow:hidden` leaves no way to scroll the panel out of
+   the way. Below these bounds the page scrolls normally and the table keeps
+   whatever height its own box gives it. */
+@media (min-width:768px) and (min-height:700px){
+  .main-wrap:has(.fill-height-wide){height:100vh;overflow:hidden}
+  .page-body:has(.fill-height-wide){display:flex;flex-direction:column;min-height:0}
+  .page-body:has(.fill-height-wide)>:not(.fill-host):not(.fill-height-wide),
+  .fill-host>:not(.fill-height-wide){flex-shrink:0}
+  .fill-height-wide{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+  /* This card has no .card-body: the scroll box is a direct child, and the
+     header and footers must hold their size around it. */
+  .fill-height-wide>.card-header,.fill-height-wide>.card-footer{flex-shrink:0}
+  .fill-height-wide>.card-body{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+  .fill-height-wide .table-responsive{flex:1 1 auto;min-height:0;max-height:none;overflow-y:auto}
+}
+
+/* Task status — .status-<key> sets --status, the rules below consume it */
+.status-todo{--status:var(--text-subtle)}
+.status-in_progress{--status:var(--accent)}
+.status-in_review{--status:var(--warn)}
+.status-on_hold{--status:var(--text-muted)}
+.status-done{--status:var(--success)}
+.kanban-col-header.status-todo{--chev:var(--chev-todo)}
+.kanban-col-header.status-in_progress{--chev:var(--chev-in-progress)}
+.kanban-col-header.status-in_review{--chev:var(--chev-in-review)}
+.kanban-col-header.status-on_hold{--chev:var(--chev-on-hold)}
+.kanban-col-header.status-done{--chev:var(--chev-done)}
+.status-dot{width:8px;height:8px;border-radius:var(--radius-pill);display:inline-block;background:var(--status,var(--text-subtle));flex-shrink:0}
+
+/* Auth shell — every unauthenticated page */
+.auth-shell{background:radial-gradient(circle at 15% 10%,color-mix(in srgb,var(--brand-bright) 38%,transparent),transparent 34%),linear-gradient(135deg,var(--brand-deep) 0%,var(--brand-bright) 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:var(--sp-5);position:relative;overflow:auto}
+.auth-shell::before{content:"";position:fixed;width:420px;height:420px;border:1px solid color-mix(in srgb,var(--surface) 22%,transparent);border-radius:50%;right:-180px;top:-180px;opacity:.5;pointer-events:none}
+.auth-shell-plain{background:var(--canvas);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:var(--sp-6);position:relative;overflow:auto}
+.auth-card{background:var(--surface);border-radius:var(--radius-card-lg);padding:var(--sp-6);width:100%;max-width:380px;box-shadow:var(--elev-4);animation:auth-card-in var(--motion) var(--ease) both}
+.auth-card-wide{max-width:420px}
+.auth-card-form{max-width:620px;border:1px solid var(--border);box-shadow:var(--elev-3);padding:0}
+.auth-card .brand-icon{box-shadow:var(--elev-1)}
+.auth-card .form-control,.auth-card .form-select{min-height:42px;background:var(--surface-hover);transition:border-color var(--motion-fast) var(--ease),background var(--motion-fast) var(--ease),box-shadow var(--motion-fast) var(--ease)}
+.auth-card .form-control:focus,.auth-card .form-select:focus{background:var(--surface);border-color:var(--accent)}
+.auth-card .btn-primary{min-height:42px;box-shadow:var(--elev-1);transition:transform var(--motion-fast) var(--ease),box-shadow var(--motion-fast) var(--ease)}
+.auth-card .btn-primary:hover{transform:translateY(-1px);box-shadow:var(--elev-2)}
+.auth-card .alert{border-left:3px solid currentColor}
+.auth-context-card{padding:var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface-hover)}
+@keyframes auth-card-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media(max-width:480px){.auth-shell,.auth-shell-plain{padding:var(--sp-3);align-items:flex-start}.auth-card{margin-block:var(--sp-3);padding:var(--sp-4);border-radius:var(--radius-card)}.auth-card-form{padding:0}.auth-card-form > .p-4{padding:var(--sp-4)!important}}
+@media(prefers-reduced-motion:reduce){.auth-card{animation:none}}
+.brand-icon{width:52px;height:52px;border-radius:var(--radius-card);background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:1.5rem;margin:0 auto var(--sp-4)}
+
+/* Live update chip */
+.topbar-live{display:flex;align-items:center}
+.update-chip{display:inline-flex;align-items:center;gap:var(--sp-1);border:0;background:var(--accent-soft);color:var(--accent);font-size:var(--fs-micro);font-weight:600;border-radius:var(--radius-pill);padding:var(--sp-1) var(--sp-2);cursor:pointer;animation:chip-in var(--motion) var(--ease);transition:background var(--motion-fast) var(--ease),color var(--motion-fast) var(--ease)}
+.update-chip:hover{background:var(--accent);color:var(--surface)}
+@keyframes chip-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+
+/* Page header */
+.page-header{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--sp-3);margin-bottom:var(--sp-5)}
+.page-header .page-title{font-size:var(--fs-title);font-weight:700;color:var(--ink);margin:0;line-height:1.2}
+.page-header .page-subtitle{font-size:var(--fs-sm);color:var(--text-muted);margin-top:2px}
+.page-header-actions{display:flex;gap:var(--sp-2);flex-shrink:0}
+</style>

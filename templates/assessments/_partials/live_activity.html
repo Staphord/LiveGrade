@@ -1,0 +1,31 @@
+<div id="live-activity">
+  {% if recent_activity %}
+  <ul class="activity-feed">
+    {% for item in recent_activity %}
+    <li data-turn-id="{{ item.turn_id }}">
+      <span class="activity-dot"></span>
+      <div class="activity-body">
+        {% if item.rank %}
+        <div class="activity-title">
+          #{{ item.rank }} {{ item.group.name }}
+          {% if item.percent is not None %}<span class="text-muted">- {{ item.percent }}%</span>{% endif %}
+        </div>
+        <div class="activity-meta">
+          {{ item.votes }} vote{{ item.votes|pluralize }} in
+          {% if item.duration_label %}· {{ item.duration_label }} on stage{% endif %}
+        </div>
+        {% else %}
+        <div class="activity-title">{{ item.group.name }} finished presenting</div>
+        <div class="activity-meta">
+          {{ item.votes }} vote{{ item.votes|pluralize }} in ·
+          {{ item.closed_at|time:'H:i' }}
+        </div>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="text-muted t-sm">Nothing to show yet - this fills in as groups finish presenting.</div>
+  {% endif %}
+</div>

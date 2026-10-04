@@ -1,0 +1,1353 @@
+{% extends 'base.html' %}
+{% block title %}{{ session.name }} - DevPerf{% endblock %}
+{% block page_title %}{{ session.name }}{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'assessment_session_list' %}" class="btn btn-outline-secondary btn-sm">
+  <i class="bi bi-arrow-left me-1"></i>All sessions
+</a>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+/* Small entrance choreography + a liveness badge for the control panel —
+   scoped here rather than added to base.html's global CSS. */
+@keyframes assess-fade-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.assess-stagger{opacity:0;animation:assess-fade-in var(--motion,.35s) var(--ease,ease) forwards}
+.assess-stagger:nth-child(1){animation-delay:.02s}
+.assess-stagger:nth-child(2){animation-delay:.07s}
+.assess-stagger:nth-child(3){animation-delay:.12s}
+.assess-stagger:nth-child(4){animation-delay:.17s}
+.assess-stagger:nth-child(5){animation-delay:.22s}
+.assess-stagger:nth-child(6){animation-delay:.27s}
+.live-badge{display:inline-flex;align-items:center;gap:5px;font-size:var(--fs-micro);font-weight:700;
+     padding:.2rem .55rem;border-radius:999px;background:var(--tone-success-bg);color:var(--tone-success-fg)}
+.live-badge.is-offline{background:var(--tone-warn-bg);color:var(--tone-warn-fg)}
+.live-badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+.qr-wrap{position:relative;width:220px;height:220px;margin:0 auto}
+.qr-skeleton{position:absolute;inset:0;border-radius:var(--radius-card);
+     background:linear-gradient(90deg,var(--surface-sunken) 25%,var(--surface-hover) 50%,var(--surface-sunken) 75%);
+     background-size:200% 100%;animation:skeleton-shine 1.2s ease-in-out infinite}
+@keyframes skeleton-shine{0%{background-position:-120% 0}100%{background-position:120% 0}}
+.qr-wrap img{position:relative;z-index:1;opacity:0;transition:opacity .25s ease}
+.qr-wrap img.is-loaded{opacity:1}
+.qr-wrap img.is-loaded ~ .qr-skeleton{display:none}
+.group-btn{transition:transform .12s ease,box-shadow .12s ease}
+.group-btn:active{transform:scale(.96)}
+.group-btn:disabled{cursor:default}
+.presenting-panel{transition:background .2s ease}
+/* Small, out-of-the-way confirmation that a silent update just landed —
+   bottom corner, low-key, never on top of anything the lecturer is reading
+   or about to click, unlike a page-reload's unmistakable full flash. */
+
+/* Presenting hero — a single, unmistakable "what's happening right now"
+   band, the way Kahoot/Slido keep one console screen as the source of
+   truth instead of splitting live state across equal-weight cards. */
+.presenting-hero{border-radius:var(--radius-card-lg);padding:var(--sp-5);position:relative;overflow:hidden;
+     background:linear-gradient(120deg,var(--brand-deep),var(--brand-bright));color:#fff;
+     box-shadow:var(--elev-3)}
+.presenting-hero.is-idle{background:var(--surface-sunken);color:var(--text)}
+.presenting-hero .eyebrow{font-size:var(--fs-micro);font-weight:700;text-transform:uppercase;letter-spacing:.08em;opacity:.85}
+.presenting-hero .group-name{font-size:var(--fs-display);font-weight:800;margin:.15rem 0 .35rem;line-height:1.05}
+.presenting-hero .group-name.is-idle{font-size:var(--fs-title)}
+.presenting-hero .meta-row{display:flex;align-items:center;gap:var(--sp-4);flex-wrap:wrap;opacity:.92;font-size:var(--fs-sm)}
+.presenting-hero .actions{margin-top:var(--sp-4);display:flex;gap:var(--sp-2);flex-wrap:wrap}
+.hero-kicker{display:inline-flex;align-items:center;gap:.45rem;padding:.35rem .7rem;border-radius:999px;background:rgba(255,255,255,.16);font-size:var(--fs-micro);font-weight:800;text-transform:uppercase;letter-spacing:.07em;margin-bottom:.7rem}
+.phase-chip{display:inline-flex;align-items:center;padding:.3rem .6rem;border-radius:999px;background:rgba(255,255,255,.16);font-weight:800}.phase-chip.is-voting{background:rgba(255,255,255,.28)}
+
+/* Dominant "joined" metric — top-left priority per standard dashboard
+   hierarchy: the number a lecturer glances at most goes largest. */
+.metric-hero{display:flex;align-items:center;gap:var(--sp-4)}
+.metric-ring{width:104px;height:104px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;
+     background:conic-gradient(var(--accent) calc(var(--pct,0) * 1%),var(--surface-sunken) 0);
+     transition:background .6s var(--ease,ease)}
+.metric-ring::before{content:"";width:80px;height:80px;border-radius:50%;background:var(--surface)}
+.metric-ring-label{position:absolute;text-align:center}
+.metric-ring-wrap{position:relative;width:104px;height:104px;flex-shrink:0}
+.metric-ring-wrap .metric-ring-label{inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column}
+.metric-ring-label strong{font-size:var(--fs-title);color:var(--ink);line-height:1}
+.metric-ring-label span{font-size:var(--fs-micro);color:var(--text-muted);margin-top:.1rem}
+
+/* Shared header used by every card in the participation/invite/controls
+   row — an icon badge + title, the same "labeled section" language the
+   Live rankings and Live activity cards already use below this row, so
+   the whole panel reads as one system instead of this row alone using
+   a plain, icon-less ".lbl" text style. */
+.card-icon-head{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:var(--sp-3)}
+.card-icon-head .head-left{display:flex;align-items:center;gap:.55rem;min-width:0}
+.card-icon-head .icon-badge{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;
+     justify-content:center;background:var(--accent-soft);color:var(--accent);font-size:1rem;flex-shrink:0}
+.card-icon-head .title{font-weight:700;font-size:var(--fs-sm);color:var(--ink)}
+
+/* Participation card — the ring carries the headline number, a compact
+   meta row underneath gives it context without competing for attention,
+   and "View grid" becomes a real affordance (pill button) instead of a
+   plain text link floating under the numbers. */
+.participation-meta{display:flex;flex-direction:column;gap:.15rem}
+.participation-meta .count{font-size:var(--fs-title);font-weight:800;color:var(--ink);line-height:1.05}
+.participation-meta .count .of{font-size:var(--fs-body);font-weight:600;color:var(--text-muted)}
+.pill-link{display:inline-flex;align-items:center;gap:4px;font-size:var(--fs-micro);font-weight:600;
+     color:var(--accent);background:var(--accent-soft);border-radius:999px;padding:.2rem .6rem;margin-top:.4rem;
+     text-decoration:none;transition:background .15s ease,transform .15s ease}
+.pill-link:hover{background:color-mix(in srgb,var(--accent) 20%,var(--accent-soft));transform:translateX(1px);color:var(--accent)}
+
+/* Invite card — the CTA gets real button weight (it's the one action this
+   card exists for), and the two meta facts collapse into a single tidy
+   stat row with a divider instead of stacking as disconnected text lines. */
+.invite-cta{font-weight:600}
+/* A medium-emphasis button (tinted, not outline, not fully solid) for the
+   one action each of these cards exists to offer — "Show QR / link" and
+   "copy" — so it reads as the thing to click rather than blending into
+   the plain outline-secondary buttons used for lower-stakes utility. */
+.btn-accent-soft{background:var(--accent-soft);color:var(--accent);border:1px solid transparent}
+.btn-accent-soft:hover{background:color-mix(in srgb,var(--accent) 22%,var(--accent-soft));color:var(--accent)}
+
+/* Three distinct invite actions (show / copy link / copy image) sit as an
+   equal-width row rather than stacked full-width buttons — Show QR carries
+   the medium-emphasis tint since it's the one most people reach for, the
+   two copy actions stay as plain outline utility buttons beside it. */
+.invite-btn-row{display:flex;gap:.4rem}
+.invite-btn-row .btn{flex:1;white-space:nowrap;padding-left:.4rem;padding-right:.4rem}
+.invite-btn-row .btn.is-copied{background:var(--tone-success-bg);color:var(--tone-success-fg);border-color:transparent}
+.invite-meta-row{display:flex;align-items:center;justify-content:center;gap:.6rem;margin-top:.65rem;
+     font-size:var(--fs-micro);color:var(--text-muted)}
+.invite-meta-row .sep{width:3px;height:3px;border-radius:50%;background:var(--text-subtle)}
+.invite-meta-row strong{color:var(--ink);font-weight:700}
+
+/* Session controls — pause is the button someone reaches for constantly
+   through a session, so it gets real (solid) button weight; closing the
+   session is irreversible, so per destructive-action guidance it's set
+   apart in its own "danger zone" — a divider, a muted label, and enough
+   spacing that a Tab-through or a fast click can't land on it by accident. */
+.control-primary{margin-bottom:var(--sp-3)}
+.live-roster-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.5rem;max-height:13rem;overflow:auto;padding-right:.15rem}
+.live-roster-row{display:flex;align-items:center;gap:.6rem;border:1px solid var(--border);border-radius:12px;padding:.55rem .7rem;background:var(--surface);min-width:0}
+.roster-avatar{display:inline-flex;align-items:center;justify-content:center;width:2rem;height:2rem;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-weight:800;flex:0 0 auto}
+.roster-name{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.roster-status{font-size:.7rem;font-weight:700;color:var(--text-muted);text-align:right;white-space:nowrap}.roster-status small{display:block;font-weight:600;color:var(--text-soft)}
+.roster-status-full{color:var(--success)}.roster-status-partial{color:var(--warn)}
+.danger-zone{border-top:1px dashed var(--border);margin-top:auto;padding-top:var(--sp-3)}
+.danger-zone .danger-zone-label{font-size:var(--fs-micro);color:var(--text-subtle);font-weight:700;
+     text-transform:uppercase;letter-spacing:.05em;margin-bottom:.4rem;display:flex;align-items:center;gap:4px}
+
+.group-chip{border-radius:999px!important;padding:.4rem 1rem!important;font-weight:600}
+
+/* Countdown as a shrinking ring, not just digits — same conic-gradient
+   language as the participation ring (metric-ring), so "time left" and
+   "how full is this" read as the same visual system. Readable at a
+   glance from the back of a projected room, which plain text isn't. */
+.turn-ring-wrap{position:relative;width:56px;height:56px;flex-shrink:0}
+.turn-ring{width:56px;height:56px;border-radius:50%;
+     background:conic-gradient(#fff calc(var(--pct,100) * 1%),rgba(255,255,255,.28) 0);
+     transition:background 1s linear}
+.turn-ring::before{content:"";position:absolute;inset:5px;border-radius:50%;background:var(--brand-deep)}
+.turn-ring-label{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1rem;color:#fff}
+.turn-ring.is-urgent{background:conic-gradient(var(--danger) calc(var(--pct,100) * 1%),rgba(255,255,255,.28) 0)}
+
+
+/* A newly-inserted activity row gets a brief highlight glow so the feed
+   visibly registers "this just happened" instead of only the generic
+   corner toast doing that work. */
+@keyframes activity-glow{0%{background:var(--accent-soft)}100%{background:transparent}}
+.activity-feed li.is-new{animation:activity-glow 1.6s ease-out}
+
+/* Live rankings — a Kahoot-style "who's winning so far" leaderboard, built
+   from whatever's been voted on so far rather than only appearing once
+   results are final. Rank badge gets medal treatment for the top 3; every
+   other position is just a number, matching Kahoot's own choice to keep
+   the mass of the list simple and let the top handful carry the drama. */
+/* Column labels above the rank list — same column widths as .rank-row
+   below (30px badge, flexible name/score body, votes column) so the
+   header lines up with the rows it's labeling instead of just floating
+   above them. */
+.rank-head{display:flex;align-items:center;gap:.75rem;padding:0 .25rem .35rem;
+     font-size:var(--fs-micro);font-weight:700;color:var(--text-subtle);white-space:nowrap}
+.rank-head-badge{flex-shrink:0;width:30px;text-align:center}
+.rank-head-body{flex:1;display:flex;justify-content:space-between;gap:.5rem;min-width:0}
+.rank-head-votes{flex-shrink:0;min-width:4.5rem;text-align:right}
+.rank-list{list-style:none;margin:0;padding:0}
+.rank-row{display:flex;align-items:center;gap:.75rem;padding:.55rem .25rem;border-radius:var(--radius-card);
+     transition:background .2s ease}
+.rank-row+.rank-row{border-top:1px solid var(--border)}
+.rank-row.is-active{background:var(--accent-soft)}
+.rank-row.is-pending{opacity:.6}
+.rank-badge{flex-shrink:0;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+     font-weight:700;font-size:var(--fs-sm);background:var(--surface-sunken);color:var(--text-muted)}
+.rank-badge.rank-1{background:linear-gradient(135deg,color-mix(in srgb,var(--warn) 55%,white),var(--warn));color:color-mix(in srgb,var(--warn) 55%,black)}
+.rank-badge.rank-2{background:linear-gradient(135deg,var(--border-strong),var(--text-subtle));color:var(--surface)}
+.rank-badge.rank-3{background:linear-gradient(135deg,var(--high),color-mix(in srgb,var(--high) 70%,black));color:color-mix(in srgb,var(--high) 40%,black)}
+.rank-body{flex:1;min-width:0}
+.rank-top{display:flex;justify-content:space-between;align-items:baseline;gap:.5rem}
+.rank-name{font-weight:600;font-size:var(--fs-sm);display:flex;align-items:center;gap:.4rem;min-width:0}
+.rank-score{font-weight:700;font-size:var(--fs-sm);color:var(--ink);flex-shrink:0}
+.rank-live-tag{display:inline-flex;align-items:center;gap:4px;font-size:var(--fs-micro);font-weight:700;
+     color:var(--tone-success-fg);background:var(--tone-success-bg);border-radius:999px;padding:.05rem .5rem}
+.rank-live-tag .pulse-dot{width:5px;height:5px}
+.rank-bar{height:5px;border-radius:3px;background:var(--surface-sunken);overflow:hidden;margin-top:.3rem}
+.rank-bar-fill{height:100%;border-radius:3px;background:var(--accent);transition:width .5s var(--ease,ease)}
+.rank-row.is-active .rank-bar-fill{background:var(--brand-bright)}
+.rank-votes{flex-shrink:0;min-width:4.5rem;text-align:right}
+
+/* A rank that just moved since the last patch gets a brief highlight —
+   the same "just happened" glow language used elsewhere, applied to the
+   one place on this panel where movement is the whole point. */
+@keyframes rank-glow{0%{background:var(--accent-soft)}100%{background:transparent}}
+.rank-row.rank-moved:not(.is-active){animation:rank-glow 1.8s ease-out}
+.rank-move-icon{font-size:.65rem;margin-left:3px}
+.rank-move-icon.up{color:var(--success)}
+.rank-move-icon.down{color:var(--danger)}
+.duration-choice.is-selected,.gap-choice.is-selected{background:var(--accent);color:#fff;border-color:var(--accent)}
+#turn-countdown{font-weight:600;transition:color .2s ease}
+#turn-countdown.is-urgent{color:var(--danger)}
+.pulse-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px;animation:pulse 1.4s ease-in-out infinite}
+.custom-duration{display:flex;align-items:center;gap:.35rem}
+.custom-duration input{width:4.5rem}
+
+/* Select-next-group card — the two timer settings collapse into one
+   bordered panel (icon-labeled, divided, each with its own helper line
+   and a "Saved" confirmation) instead of floating text+buttons with no
+   description of what they actually do. The explanatory paragraph below
+   is a proper callout, not a barely-visible caption, so it stays legible
+   at a glance while the groups grid still carries the primary weight. */
+.turn-settings-strip{display:flex;flex-wrap:wrap;gap:var(--sp-4) var(--sp-5);align-items:flex-start;
+     background:var(--surface-sunken);border-radius:var(--radius-card);padding:.9rem 1rem;margin-bottom:.65rem}
+.turn-setting-field{display:flex;flex-direction:column;gap:.5rem;flex:1 1 260px;min-width:240px}
+.turn-setting-head{display:flex;flex-direction:column;gap:.15rem}
+.turn-setting-label{display:flex;align-items:center;gap:.4rem;font-size:var(--fs-sm);font-weight:700;
+     color:var(--ink)}
+.turn-setting-sub{font-size:var(--fs-micro);color:var(--text-muted);line-height:1.3}
+.turn-setting-controls{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+.turn-setting-divider{align-self:stretch;width:1px;background:var(--border);min-height:2px}
+.turn-setting-note{display:inline-flex;align-items:center;gap:.3rem;font-size:var(--fs-micro);
+     font-weight:600;color:var(--text-muted);width:fit-content;transition:color .3s ease}
+.turn-setting-note.is-confirmed{color:var(--tone-success-fg);animation:turn-note-pop .5s ease}
+@keyframes turn-note-pop{0%{opacity:.4;transform:translateY(2px)}100%{opacity:1;transform:translateY(0)}}
+.turn-settings-hint{display:flex;align-items:flex-start;gap:.5rem;font-size:var(--fs-micro);font-weight:500;
+     color:var(--text-soft);background:var(--accent-soft);border-radius:var(--radius-card);
+     padding:.55rem .75rem;margin-bottom:.85rem;line-height:1.4}
+.turn-settings-hint i{margin-top:.1rem;flex-shrink:0;color:var(--accent)}
+@media (max-width:700px){
+  .turn-setting-divider{display:none}
+  .turn-settings-strip{gap:var(--sp-4)}
+}
+.group-picker-head{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.55rem}
+.group-picker-label{font-size:var(--fs-micro);font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+     color:var(--text-subtle)}
+.group-picker-legend{display:flex;align-items:center;gap:.7rem;font-size:var(--fs-micro);color:var(--text-muted)}
+.group-picker-legend .legend-item{display:flex;align-items:center;gap:.3rem}
+.group-picker-legend .legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.group-picker-legend .legend-dot.done{background:var(--text-subtle)}
+.group-picker-legend .legend-dot.next{background:var(--accent)}
+
+/* Card header carries a collapsible settings toggle instead of always-on
+   controls — the one thing this card exists for (picking who presents
+   next) gets full visual priority; timer/gap configuration is occasional
+   and now reads as a one-line summary until someone opens it. */
+.turn-card-head{display:flex;align-items:center;justify-content:space-between;gap:.6rem;flex-wrap:wrap;margin-bottom:var(--sp-3)}
+.turn-settings-toggle{display:inline-flex;align-items:center;gap:.4rem;font-weight:600;font-size:var(--fs-micro)}
+.turn-settings-toggle .toggle-caret{font-size:.65rem;transition:transform .2s ease}
+.turn-settings-toggle[aria-expanded="true"] .toggle-caret{transform:rotate(180deg)}
+.turn-settings-strip.is-collapsed{display:none}
+
+/* Progress toward "everyone has presented" — the single number a
+   lecturer actually tracks across a session, given its own slim bar
+   instead of being left implicit in a legend dot count. */
+.group-progress{display:flex;align-items:center;gap:.65rem;margin-bottom:.75rem}
+.group-progress-bar{flex:1;height:6px;border-radius:3px;background:var(--surface-sunken);overflow:hidden}
+.group-progress-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--brand-deep),var(--brand-bright));
+     transition:width .5s var(--ease,ease)}
+.group-progress-label{font-size:var(--fs-micro);font-weight:700;color:var(--text-muted);white-space:nowrap}
+
+/* Groups as a real tile grid — Kahoot's own "pick a team" screen gives
+   each state (already went / up next / presenting now) a genuinely
+   different tile treatment rather than one pill shape with a small icon
+   swap, so the room's status reads at a glance from across a projector. */
+.group-grid{display:flex;flex-wrap:wrap;align-items:flex-start;gap:.75rem}
+.group-tile-wrapper{width:clamp(118px,14vw,150px);flex:0 1 clamp(118px,14vw,150px)}
+.group-tile{border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);
+     width:100%;padding:.65rem .5rem;min-height:80px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+     gap:.3rem;text-align:center;transition:transform .12s ease,box-shadow .12s ease,border-color .12s ease,background .2s ease}
+.group-tile:hover:not(:disabled){transform:translateY(-2px);box-shadow:var(--elev-2);border-color:var(--accent)}
+.group-tile .tile-num{font-size:var(--fs-micro);font-weight:700;color:var(--text-subtle);letter-spacing:.03em}
+.group-tile .tile-name{font-size:var(--fs-sm);font-weight:700;color:var(--ink);line-height:1.15;
+     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.group-tile .tile-status{font-size:1.05rem;line-height:1;color:var(--text-subtle)}
+.group-tile.is-presented{background:var(--surface-sunken);border-color:transparent}
+.group-tile.is-presented .tile-name{color:var(--text-muted)}
+.group-tile.is-next{border-color:var(--accent);background:var(--accent-soft)}
+.group-tile.is-next .tile-num,.group-tile.is-next .tile-status{color:var(--accent)}
+.group-tile.is-active{background:linear-gradient(135deg,var(--brand-deep),var(--brand-bright));border-color:transparent;
+     box-shadow:var(--elev-2)}
+.group-tile.is-active .tile-num,.group-tile.is-active .tile-name,.group-tile.is-active .tile-status{color:#fff}
+@keyframes tile-next-pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 35%,transparent)}50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 0%,transparent)}}
+.group-tile.is-next{animation:tile-next-pulse 1.8s ease-in-out infinite}
+#setNextFirstModal{z-index:1090}#setNextFirstModal + .modal-backdrop{z-index:1080}
+
+/* Live activity feed — a compact timeline of what's actually happened in
+   this room so far, the same "recent events" pattern used elsewhere in the
+   app (integrations/health.html), scaled down for a sidebar card. */
+.activity-feed{list-style:none;margin:0;padding:0}
+.activity-feed li{display:flex;align-items:flex-start;gap:.6rem;padding:.5rem 0}
+.activity-feed li+li{border-top:1px solid var(--border)}
+.activity-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);margin-top:.35rem;flex-shrink:0}
+.activity-feed .activity-body{flex:1;min-width:0}
+.activity-feed .activity-title{font-weight:600;font-size:var(--fs-sm)}
+.activity-feed .activity-meta{font-size:var(--fs-micro);color:var(--text-muted)}
+.stat-strip{display:flex;flex-wrap:wrap;gap:var(--sp-3)}
+.stat-strip .stat-pill{flex:1 1 120px;background:var(--surface-sunken);border-radius:var(--radius-card);
+     padding:.6rem .8rem}
+.stat-strip .stat-pill .lbl{font-size:var(--fs-micro);color:var(--text-muted);margin-bottom:.15rem}
+.stat-strip .stat-pill .val{font-size:var(--fs-heading);font-weight:800;color:var(--ink);line-height:1.1}
+
+/* Same empty/zero-state hero treatment as the sessions list, reused here
+   for the draft "go live" and closed "view results" prompts. */
+.assess-hero{background:linear-gradient(120deg,var(--surface) 0%,var(--accent-soft) 100%);
+     border:1px solid color-mix(in srgb,var(--accent) 16%,var(--border));border-radius:var(--radius-card-lg);
+     padding:var(--sp-7) var(--sp-5);text-align:center}
+.assess-hero .hero-icon{width:64px;height:64px;border-radius:50%;background:var(--surface);
+     display:flex;align-items:center;justify-content:center;margin:0 auto var(--sp-3);
+     box-shadow:var(--elev-2);font-size:1.6rem;color:var(--accent)}
+.assess-hero h2{font-size:var(--fs-title);font-weight:800;color:var(--ink);margin-bottom:var(--sp-1)}
+.assess-hero p{color:var(--text-muted);max-width:440px;margin:0 auto var(--sp-4)}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="tabs-sticky-header">
+{% include 'assessments/_session_tabs.html' with active='overview' %}
+</div>
+
+{% if session.status == 'draft' %}
+<div class="assess-hero assess-stagger" style="margin-bottom:var(--sp-3)">
+  <div class="hero-icon"><i class="bi bi-rocket-takeoff"></i></div>
+  <h2>Ready to go live?</h2>
+  <p>Add students, groups and a rubric first - weights must sum to 100% per scope before you can start.</p>
+  <form method="post" action="{% url 'assessment_go_live' session.pk %}">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-primary btn-lg" {% if not session.can_go_live %}disabled{% endif %}>
+      <i class="bi bi-broadcast me-1"></i>Go live
+    </button>
+  </form>
+  {% if not session.can_go_live %}
+  <div class="text-danger t-sm mt-2">Needs at least one group and a rubric whose weights sum to 100% per scope.</div>
+  {% endif %}
+</div>
+<div class="row g-3">
+  <div class="col-6 col-md-3"><div class="stat-card assess-stagger"><div class="lbl">Students</div><div class="val">{{ student_count }}</div></div></div>
+  <div class="col-6 col-md-3"><div class="stat-card assess-stagger"><div class="lbl">Groups</div><div class="val">{{ group_count }}</div></div></div>
+  <div class="col-6 col-md-3"><div class="stat-card assess-stagger"><div class="lbl">Rubric categories</div><div class="val">{{ rubric_count }}</div></div></div>
+  <div class="col-6 col-md-3"><div class="stat-card assess-stagger"><div class="lbl">Status</div><div class="val text-warning t-title">Draft</div></div></div>
+</div>
+{% endif %}
+
+{% if session.status == 'live' %}
+<!-- The one console: what's happening right now, always the first thing seen.
+     Each numbered block below is also its own partial template, fetched as
+     JSON and patched in place after a websocket event — see the scripts
+     block. Nothing here reloads the page for a routine update any more. -->
+{% include 'assessments/_partials/live_hero.html' %}
+{% include 'assessments/_partials/live_stats.html' %}
+
+<div class="row g-3 mb-3">
+  <div class="col-md-4">
+    <div class="card assess-stagger h-100">
+      <div class="card-body">
+        <div class="card-icon-head">
+          <div class="head-left">
+            <span class="icon-badge"><i class="bi bi-people-fill"></i></span>
+            <span class="title">Participation</span>
+          </div>
+        </div>
+        {% include 'assessments/_partials/live_participation.html' %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <div class="card text-center assess-stagger h-100" id="qr-card">
+      <div class="card-body">
+        <div class="card-icon-head">
+          <div class="head-left">
+            <span class="icon-badge"><i class="bi bi-qr-code"></i></span>
+            <span class="title" id="qr-card-label">Invite students</span>
+          </div>
+          <span class="live-badge is-offline" id="live-badge"><span class="dot"></span><span id="live-badge-text">Connecting…</span></span>
+        </div>
+        {% include 'assessments/_partials/live_qr.html' %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <div class="card assess-stagger h-100">
+      <div class="card-body d-flex flex-column h-100">
+        <div class="card-icon-head">
+          <div class="head-left">
+            <span class="icon-badge"><i class="bi bi-sliders"></i></span>
+            <span class="title">Session controls</span>
+          </div>
+        </div>
+        <div class="control-primary">
+          {% include 'assessments/_partials/live_pause_button.html' %}
+        </div>
+        <div id="joining-control">
+        <form method="post" action="{% url 'assessment_toggle_joining' session.pk %}" class="mt-2 joining-toggle-form">
+          {% csrf_token %}<button type="button" class="btn btn-outline-secondary w-100 joining-toggle-button" data-locked="{% if session.joining_locked %}true{% else %}false{% endif %}">
+            <i class="bi {% if session.joining_locked %}bi-unlock{% else %}bi-lock{% endif %} me-1"></i>
+            <span class="joining-toggle-label">{% if session.joining_locked %}Reopen joining{% else %}Lock new joining{% endif %}</span>
+          </button>
+        </form>
+        <div class="text-muted t-sm mt-2">{% if session.joining_locked %}New students cannot enter.{% else %}Students can still scan and join.{% endif %}</div>
+        </div>
+        <div class="danger-zone">
+          <div class="danger-zone-label"><i class="bi bi-exclamation-triangle-fill"></i>Danger zone</div>
+          <form method="post" action="{% url 'assessment_close_session' session.pk %}"
+                data-confirm="Close this session? Students will no longer be able to vote, and this can't be undone."
+                data-confirm-label="Close session">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger w-100">
+              <i class="bi bi-flag-fill me-1"></i>Close session
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card assess-stagger mb-3"><div class="card-body">
+  {% include 'assessments/_partials/live_roster.html' %}
+</div></div>
+
+<div class="card assess-stagger mb-3">
+  <div class="card-body">
+    <div class="turn-card-head">
+      <div class="head-left">
+        <span class="icon-badge"><i class="bi bi-collection-play"></i></span>
+        <span class="title">Select next group</span>
+      </div>
+      <button type="button" class="btn btn-outline-secondary btn-sm turn-settings-toggle" id="turn-settings-toggle" aria-expanded="false" aria-controls="turn-settings-panel" onclick="(function(button){var panel=document.getElementById('turn-settings-panel');if(!panel)return;var open=panel.classList.toggle('is-collapsed')===false;button.setAttribute('aria-expanded',open?'true':'false');})(this)">
+        <i class="bi bi-sliders"></i>
+        <span id="turn-settings-summary">{% if session.default_presentation_seconds %}{{ session.default_presentation_seconds }}s pres.{% else %}No pres. timer{% endif %} · {% if session.default_turn_seconds %}{{ session.default_turn_seconds }}s vote{% else %}no vote timer{% endif %} · {% if session.transition_gap_seconds %}{{ session.transition_gap_seconds }}s gap{% else %}no gap{% endif %}</span>
+        <i class="bi bi-chevron-down toggle-caret"></i>
+      </button>
+    </div>
+
+    <div class="turn-settings-strip is-collapsed" id="turn-settings-panel">
+
+      {# --- Presentation time: informational countdown for the group presenting --- #}
+      <div class="turn-setting-field">
+        <div class="turn-setting-head">
+          <span class="turn-setting-label"><i class="bi bi-camera-video"></i>Presentation time</span>
+          <span class="turn-setting-sub">Target duration for the group's actual presentation — shown as an on-screen countdown. Does not auto-close anything.</span>
+        </div>
+        <div class="turn-setting-controls">
+          <div class="btn-group btn-group-sm" role="group" id="pres-picker">
+            <button type="button" class="btn btn-outline-secondary pres-choice" data-seconds="">None</button>
+            <button type="button" class="btn btn-outline-secondary pres-choice" data-seconds="300">5m</button>
+            <button type="button" class="btn btn-outline-secondary pres-choice" data-seconds="600">10m</button>
+            <button type="button" class="btn btn-outline-secondary pres-choice" data-seconds="900">15m</button>
+            <button type="button" class="btn btn-outline-secondary pres-choice" data-seconds="1200">20m</button>
+          </div>
+          <div class="custom-duration">
+            <input type="number" min="1" max="120" step="1" class="form-control form-control-sm" id="custom-pres-minutes"
+                   value="{% if session.default_presentation_seconds %}{% widthratio session.default_presentation_seconds 60 1 %}{% else %}15{% endif %}"
+                   placeholder="Mins" aria-label="Custom presentation time in minutes">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="custom-pres-apply">Set</button>
+          </div>
+        </div>
+        <span class="turn-setting-note" id="pres-saved-note">
+          <i class="bi bi-check2"></i><span class="note-text">Saved: {% if session.default_presentation_seconds %}{% widthratio session.default_presentation_seconds 60 1 %}m{% else %}none{% endif %}</span>
+        </span>
+      </div>
+
+      <div class="turn-setting-divider"></div>
+
+      <div class="turn-setting-field">
+        <div class="turn-setting-head">
+          <span class="turn-setting-label"><i class="bi bi-stopwatch"></i>Voting timer</span>
+          <span class="turn-setting-sub">With a presentation timer, voting opens and closes automatically during the presentation. Without one, voting opens immediately and this timer closes voting only.</span>
+        </div>
+        <div class="turn-setting-controls">
+          <div class="btn-group btn-group-sm" role="group" id="duration-picker">
+            <button type="button" class="btn btn-outline-secondary duration-choice" data-seconds="">No timer</button>
+            <button type="button" class="btn btn-outline-secondary duration-choice" data-seconds="60">60s</button>
+            <button type="button" class="btn btn-outline-secondary duration-choice" data-seconds="90">90s</button>
+            <button type="button" class="btn btn-outline-secondary duration-choice" data-seconds="120">2m</button>
+            <button type="button" class="btn btn-outline-secondary duration-choice" data-seconds="180">3m</button>
+          </div>
+          <div class="custom-duration">
+            <input type="number" min="1" max="180" step="1" class="form-control form-control-sm" id="custom-duration-minutes"
+                   value="{% if session.default_turn_seconds %}{% widthratio session.default_turn_seconds 60 1 %}{% else %}10{% endif %}"
+                   placeholder="Mins" aria-label="Custom voting time in minutes - use the arrows or type to override">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="custom-duration-apply">Set</button>
+          </div>
+        </div>
+        <span class="turn-setting-note" id="duration-saved-note">
+          <i class="bi bi-check2"></i><span class="note-text">Saved: {% if session.default_turn_seconds %}{% widthratio session.default_turn_seconds 60 1 %}m{% else %}no timer{% endif %}</span>
+        </span>
+      </div>
+
+      <div class="turn-setting-divider"></div>
+
+      <div class="turn-setting-field">
+        <div class="turn-setting-head">
+          <span class="turn-setting-label"><i class="bi bi-pause-circle"></i>Gap between groups</span>
+          <span class="turn-setting-sub">Breather after an automatic presentation ends, before the next group starts</span>
+        </div>
+        <div class="turn-setting-controls">
+          <div class="btn-group btn-group-sm" role="group" id="gap-picker">
+            <button type="button" class="btn btn-outline-secondary gap-choice" data-seconds="0">None</button>
+            <button type="button" class="btn btn-outline-secondary gap-choice" data-seconds="5">5s</button>
+            <button type="button" class="btn btn-outline-secondary gap-choice" data-seconds="10">10s</button>
+            <button type="button" class="btn btn-outline-secondary gap-choice" data-seconds="20">20s</button>
+            <button type="button" class="btn btn-outline-secondary gap-choice" data-seconds="30">30s</button>
+          </div>
+          <div class="custom-duration">
+            <input type="number" min="0" max="60" step="1" class="form-control form-control-sm" id="custom-gap-minutes"
+                   value="{% if session.transition_gap_seconds %}{% widthratio session.transition_gap_seconds 60 1 %}{% else %}5{% endif %}"
+                   placeholder="Mins" aria-label="Custom gap between groups in minutes - use the arrows or type to override">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="custom-gap-apply">Set</button>
+          </div>
+        </div>
+        <span class="turn-setting-note" id="gap-saved-note">
+          <i class="bi bi-check2"></i><span class="note-text">Saved: {% if session.transition_gap_seconds %}{{ session.transition_gap_seconds }}s{% else %}no gap{% endif %}</span>
+        </span>
+      </div>
+    </div>
+
+    <div class="turn-settings-hint">
+      <i class="bi bi-info-circle-fill"></i>
+      <span>With a <strong>presentation timer</strong>, voting opens and closes automatically during the presentation, then the next group starts after the <strong>gap</strong>. With only a <strong>voting timer</strong>, voting closes on expiry but the lecturer remains in control. With no timers, the turn is fully manual.</span>
+    </div>
+
+    {% include 'assessments/_partials/live_groups_summary.html' %}
+    {% include 'assessments/_partials/live_groups.html' %}
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-7">
+    <!-- Provisional standings, computed off whatever votes are in right
+         now — the "who's winning so far" a Kahoot-style leaderboard gives
+         between rounds, kept live via the same silent patch as everything
+         else on this panel rather than only ever appearing in Results. -->
+    <div class="card assess-stagger h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div class="fw-700"><i class="bi bi-bar-chart-steps me-1"></i>Live rankings</div>
+          {% if has_any_scores %}<span class="live-badge"><span class="dot"></span>Live</span>{% endif %}
+        </div>
+        {% include 'assessments/_partials/live_rankings.html' %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <!-- Live activity — real history from this room, not a placeholder
+         widget: each row is an actual closed turn, so the panel earns its
+         "live" label instead of just echoing the setup counters above. -->
+    <div class="card assess-stagger h-100">
+      <div class="card-body">
+        <div class="fw-700 mb-2"><i class="bi bi-activity me-1"></i>Live activity</div>
+        {% include 'assessments/_partials/live_activity.html' %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if session.status == 'closed' %}
+<div class="assess-hero assess-stagger" style="margin-bottom:var(--sp-3)">
+  <div class="hero-icon"><i class="bi bi-flag-fill"></i></div>
+  <h2>This session is closed</h2>
+  <p>Grading has ended. The final scores are ready to review and export.</p>
+  <a href="{% url 'assessment_results' session.pk %}" class="btn btn-primary btn-lg">
+    <i class="bi bi-bar-chart-line me-1"></i>View results
+  </a>
+</div>
+
+<!-- Session summary — the same stat strip, leaderboard and activity feed
+     already built for the live control panel above, just handed the
+     session's final numbers instead of a mid-session snapshot, so closing
+     a session doesn't drop a lecturer onto a screen with nothing on it but
+     a single button. -->
+<div class="groups-stat-strip assess-stagger">
+  <div class="groups-stat-pill">
+    <span class="stat-icon"><i class="bi bi-people-fill"></i></span>
+    <div><div class="stat-val">{{ joined_count }}<span class="stat-of">/{{ student_count }}</span></div><div class="stat-lbl">Joined</div></div>
+  </div>
+  <div class="groups-stat-pill is-ok">
+    <span class="stat-icon"><i class="bi bi-diagram-3-fill"></i></span>
+    <div><div class="stat-val">{{ presented_count }}<span class="stat-of">/{{ group_count }}</span></div><div class="stat-lbl">Groups presented</div></div>
+  </div>
+  <div class="groups-stat-pill">
+    <span class="stat-icon"><i class="bi bi-stopwatch-fill"></i></span>
+    <div><div class="stat-val">{% if avg_turn_seconds %}{{ avg_turn_seconds|floatformat:0 }}s{% else %}-{% endif %}</div><div class="stat-lbl">Avg. turn length</div></div>
+  </div>
+  <div class="groups-stat-pill">
+    <span class="stat-icon"><i class="bi bi-hourglass-split"></i></span>
+    <div><div class="stat-val">{% if elapsed_seconds %}{{ elapsed_seconds|floatformat:0 }}s{% else %}-{% endif %}</div><div class="stat-lbl">Total duration</div></div>
+  </div>
+</div>
+
+{% if participation_counts %}
+<div class="groups-stat-strip assess-stagger">
+  <a href="{% url 'assessment_participation' session.pk %}?status=full" class="groups-stat-pill filter-pill is-ok">
+    <span class="stat-icon"><i class="bi bi-check2-all"></i></span>
+    <div><div class="stat-val">{{ participation_counts.full_count }}</div><div class="stat-lbl">Fully graded</div></div>
+  </a>
+  <a href="{% url 'assessment_participation' session.pk %}?status=partial" class="groups-stat-pill filter-pill is-warn">
+    <span class="stat-icon"><i class="bi bi-hourglass-split"></i></span>
+    <div><div class="stat-val">{{ participation_counts.partial_count }}</div><div class="stat-lbl">Partially graded</div></div>
+  </a>
+  <a href="{% url 'assessment_participation' session.pk %}?status=none" class="groups-stat-pill filter-pill is-bad">
+    <span class="stat-icon"><i class="bi bi-x-octagon"></i></span>
+    <div><div class="stat-val">{{ participation_counts.none_count }}</div><div class="stat-lbl">Did not participate</div></div>
+  </a>
+</div>
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="card assess-stagger h-100">
+      <div class="card-body">
+        <div class="fw-700 mb-2"><i class="bi bi-trophy-fill me-1"></i>Final rankings</div>
+        {% include 'assessments/_partials/live_rankings.html' %}
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card assess-stagger h-100">
+      <div class="card-body">
+        <div class="fw-700 mb-2"><i class="bi bi-list-ol me-1"></i>Presentation order</div>
+        {% include 'assessments/_partials/live_activity.html' with recent_activity=presentation_timeline %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+{% if session.status == 'live' %}
+<script>
+// The live control panel updates itself in place — a websocket push (or a
+// lecturer's own click) triggers a small JSON fetch, and only the specific
+// fragments that changed get swapped in. No full-page reload for anything
+// short of the session actually closing, so scroll position, the duration
+// picker's selection and any in-progress typing survive every update.
+(function () {
+  const LIVE_STATE_URL = '{% url "assessment_live_state" session.pk %}';
+  const FRAGMENTS = {
+    'live-hero': 'hero_html', 'live-stats': 'stats_html',
+    'live-groups-summary': 'groups_summary_html', 'live-groups': 'groups_html',
+    'live-activity': 'activity_html', 'live-participation': 'participation_html', 'live-roster': 'roster_html',
+    'live-pause-btn': 'pause_html', 'live-qr': 'qr_html', 'live-rankings': 'rankings_html',
+  };
+
+  const liveGradingState = new Map();
+  function applyLiveGradingProgress(payload) {
+    if (!payload || !payload.student_id) return;
+    liveGradingState.set(String(payload.student_id), payload);
+    const row = document.querySelector('#live-roster [data-student-id="' + payload.student_id + '"]');
+    if (!row) return;
+    const status = row.querySelector('[data-roster-status]');
+    if (status) { status.className = 'roster-status roster-status-partial'; status.innerHTML = 'Grading<small>' + payload.answered + '/' + payload.total + '</small>'; }
+  }
+  function reapplyLiveGradingState() {
+    liveGradingState.forEach(applyLiveGradingProgress);
+  }
+
+  const badge = document.getElementById('live-badge');
+  const badgeText = document.getElementById('live-badge-text');
+  let refreshing = false;
+
+  function setStatus(live) {
+    if (!badge) return;
+    badge.classList.toggle('is-offline', !live);
+    if (badgeText) badgeText.textContent = live ? 'Live' : 'Reconnecting…';
+  }
+
+  // Re-attach the pieces of behaviour that live inside a fragment every
+  // time that fragment's DOM is replaced — event listeners on the old
+  // nodes are gone the moment outerHTML swaps them out.
+  function initCountdown() {
+    const countdown = document.getElementById('turn-countdown');
+    const countdownText = document.getElementById('turn-countdown-text');
+    if (!countdown || !countdownText) return;
+    const endsAt = new Date(countdown.dataset.endsAt).getTime();
+    let notifiedExpiry = false;
+    function tick() {
+      if (!document.body.contains(countdown)) return; // fragment was replaced again
+      const remaining = Math.max(0, Math.round((endsAt - Date.now()) / 1000));
+      const mins = Math.floor(remaining / 60);
+      const secs = remaining % 60;
+      countdownText.textContent = remaining > 0
+        ? `Voting closes in ${mins}:${String(secs).padStart(2, '0')}`
+        : 'Closing…';
+      // Under 15 seconds left, the countdown turns urgent-red — a clear
+      // signal on the control panel too, not just for students.
+      countdown.classList.toggle('is-urgent', remaining > 0 && remaining <= 15);
+      if (remaining > 0) {
+        setTimeout(tick, 1000);
+      } else if (!notifiedExpiry) {
+        // Nudge the transition to happen right now instead of waiting on a
+        // Celery worker that might not be running — harmless if one beats
+        // us to it, this is just a defensive, idempotent check.
+        notifiedExpiry = true;
+        fetch('{% url "student_check_expiry" session.uuid %}', { method: 'POST', headers: csrfHeaders() })
+          .then(refreshLiveState);
+      }
+    }
+    tick();
+  }
+
+  function initPresentationOpensCountdown() {
+    const badge = document.getElementById('presentation-opens-countdown');
+    const text = document.getElementById('presentation-opens-text');
+    if (!badge || !text) return;
+    const started = new Date(badge.dataset.startedAt).getTime();
+    const ends = new Date(badge.dataset.presentationEndsAt).getTime();
+    const opensAt = started + (ends - started) * .4;
+    let notified = false;
+    function tick() {
+      if (!document.body.contains(badge)) return;
+      const remaining = Math.max(0, Math.ceil((opensAt - Date.now()) / 1000));
+      text.textContent = remaining
+        ? `Voting opens in ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}`
+        : 'Opening voting…';
+      if (remaining > 0) {
+        setTimeout(tick, 1000);
+      } else if (!notified) {
+        // Same self-heal nudge as `initCountdown`/`initTransitionCountdown`
+        // below — without it this phase change only ever happens via the
+        // `open_scheduled_voting` Celery task (if a worker is up) or the
+        // next full page load, and the badge just sits on "Opening
+        // voting…" forever in between.
+        notified = true;
+        fetch('{% url "student_check_expiry" session.uuid %}', { method: 'POST', headers: csrfHeaders() })
+          .then(refreshLiveState);
+      }
+    }
+    tick();
+  }
+
+  function initPresentationEndsCountdown() {
+    const badge = document.getElementById('presentation-ends-countdown');
+    const text = document.getElementById('presentation-ends-text');
+    if (!badge || !text) return;
+    const endsAt = new Date(badge.dataset.presentationEndsAt).getTime();
+    let notified = false;
+    function tick() {
+      if (!document.body.contains(badge)) return;
+      const remaining = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+      text.textContent = remaining
+        ? `Presentation ends in ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}`
+        : 'Finishing…';
+      if (remaining > 0) {
+        setTimeout(tick, 1000);
+      } else if (!notified) {
+        // Voting closes at the 80% mark but the presentation itself runs
+        // to 100% — nothing else on the page was watching that final
+        // stretch, so without this ping the turn just sat there "finished"
+        // until someone reloaded (`finish_presentation` only fires if a
+        // Celery worker is up).
+        notified = true;
+        fetch('{% url "student_check_expiry" session.uuid %}', { method: 'POST', headers: csrfHeaders() })
+          .then(refreshLiveState);
+      }
+    }
+    tick();
+  }
+
+  // Drives the shrinking conic-gradient ring next to the presenting hero —
+  // the same countdown `initCountdown` renders as text, read as a shape
+  // instead, which is legible from across a projected room where digits
+  // at this size are not.
+  function initTurnRing() {
+    const ring = document.getElementById('turn-ring');
+    if (!ring) return;
+    const endsAt = new Date(ring.dataset.endsAt).getTime();
+    const startedAt = new Date(ring.dataset.startedAt).getTime();
+    const total = Math.max(1, (endsAt - startedAt) / 1000);
+    function tick() {
+      if (!document.body.contains(ring)) return;
+      const remaining = Math.max(0, Math.round((endsAt - Date.now()) / 1000));
+      const pct = Math.max(0, Math.min(100, (remaining / total) * 100));
+      ring.style.setProperty('--pct', pct);
+      ring.classList.toggle('is-urgent', remaining > 0 && remaining <= 15);
+      if (remaining > 0) setTimeout(tick, 1000);
+    }
+    tick();
+  }
+
+  // Same idea as `initCountdown`, for the "next group starts in…" gap
+  // shown while a `transition_gap_seconds` pause is counting down between
+  // one group closing and the next opening on its own.
+  function initTransitionCountdown() {
+    const countdown = document.getElementById('transition-countdown');
+    const countdownText = document.getElementById('transition-countdown-text');
+    if (!countdown || !countdownText) return;
+    const resumesAt = new Date(countdown.dataset.resumesAt).getTime();
+    let notified = false;
+    function tick() {
+      if (!document.body.contains(countdown)) return;
+      const remaining = Math.max(0, Math.round((resumesAt - Date.now()) / 1000));
+      countdownText.textContent = remaining > 0 ? `Starts in ${remaining}s` : 'Starting…';
+      if (remaining > 0) {
+        setTimeout(tick, 1000);
+      } else if (!notified) {
+        notified = true;
+        fetch('{% url "student_check_expiry" session.uuid %}', { method: 'POST', headers: csrfHeaders() })
+          .then(refreshLiveState);
+      }
+    }
+    tick();
+  }
+
+  function reapplyDurationSelection() {
+    // Both the voting timer and the gap are saved to the server the
+    // instant they're picked, so after a silent patch the highlighted
+    // choice should reflect whatever the server just confirmed is
+    // actually saved — not a locally-remembered value that might now be
+    // stale (e.g. another tab, or the lecturer's own save, changed it).
+    const freshDurationInput = document.querySelector('.duration-input');
+    if (freshDurationInput && window.DevPerfSyncDurationPicker) {
+      window.DevPerfSyncDurationPicker(freshDurationInput.value);
+    }
+    const freshGapInput = document.querySelector('.gap-input');
+    if (freshGapInput && window.DevPerfSyncGapPicker) {
+      window.DevPerfSyncGapPicker(freshGapInput.value);
+    }
+  }
+
+  // Remembers the most-recent activity row's id across a patch, so the
+  // refresh handler can tell an actually-new row apart from the same feed
+  // just being re-rendered, and glow only the former.
+  let lastActivityTurnId = null;
+
+  function markNewActivity() {
+    const feed = document.querySelector('#live-activity .activity-feed');
+    if (!feed) return;
+    const first = feed.querySelector('li');
+    if (!first) return;
+    const id = first.dataset.turnId;
+    if (id && lastActivityTurnId !== null && id !== lastActivityTurnId) {
+      first.classList.add('is-new');
+    }
+    lastActivityTurnId = id || lastActivityTurnId;
+  }
+
+  // Remembers each group's rank from the previous patch, so a swap can
+  // tell "this group moved" apart from "the list just re-rendered the
+  // same order" and only flash + arrow the rows that actually changed —
+  // the leaderboard-movement cue Kahoot uses to make a live ranking read
+  // as alive rather than a static, if-frequently-refreshed, report.
+  let lastRanks = null;
+
+  function markRankChanges() {
+    const list = document.querySelector('#live-rankings .rank-list');
+    if (!list) { lastRanks = null; return; }
+    const rows = Array.from(list.querySelectorAll('.rank-row'));
+    const currentRanks = {};
+    rows.forEach(function (row) {
+      const id = row.dataset.groupId;
+      const rank = parseInt(row.dataset.rank, 10);
+      currentRanks[id] = rank;
+      if (lastRanks && lastRanks[id] !== undefined && lastRanks[id] !== rank) {
+        row.classList.add('rank-moved');
+        const scoreEl = row.querySelector('.rank-score');
+        if (scoreEl) {
+          const arrow = document.createElement('i');
+          arrow.className = 'bi rank-move-icon ' + (rank < lastRanks[id] ? 'up bi-caret-up-fill' : 'down bi-caret-down-fill');
+          scoreEl.appendChild(arrow);
+        }
+      }
+    });
+    lastRanks = currentRanks;
+  }
+
+  function initPopovers() {
+    if (!window.bootstrap || !window.bootstrap.Popover) return;
+    document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function (el) {
+      const existing = window.bootstrap.Popover.getInstance(el);
+      if (existing) existing.dispose();
+      new window.bootstrap.Popover(el, { trigger: 'click', container: 'body' });
+    });
+  }
+
+  function refreshLiveState() {
+    if (refreshing) return;
+    refreshing = true;
+    fetch(LIVE_STATE_URL, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (data.status !== 'live') {
+          // A structural change (session closed) — the only case still
+          // worth a full reload, since the whole layout changes.
+          window.location.reload();
+          return;
+        }
+        Object.keys(FRAGMENTS).forEach(function (id) {
+          const el = document.getElementById(id);
+          const html = data[FRAGMENTS[id]];
+          if (el && html !== undefined) el.outerHTML = html;
+        });
+        reapplyLiveGradingState();
+        reapplyDurationSelection();
+        initCountdown();
+        initPresentationOpensCountdown();
+        initPresentationEndsCountdown();
+        initTurnRing();
+        initTransitionCountdown();
+        markNewActivity();
+        markRankChanges();
+        initPopovers();
+        document.body.dispatchEvent(new Event('assess:patched'));
+      })
+      .catch(function () { /* transient network hiccup — next event retries */ })
+      .finally(function () { refreshing = false; });
+  }
+
+  function csrfHeaders() {
+    const el = document.querySelector('[name=csrfmiddlewaretoken]');
+    return el ? { 'X-CSRFToken': el.value } : {};
+  }
+
+  // Any control inside a live fragment (±30s, End now, Pause/Resume,
+  // Activate group) posts via fetch instead of a normal form submission,
+  // so clicking it updates this panel the same silent way a websocket
+  // event does, rather than triggering the browser's own full navigation.
+  document.addEventListener('submit', function (e) {
+    const form = e.target;
+    if (!form.matches('.live-ajax-form, .activate-group-form')) return;
+    // A form carrying `data-confirm` (e.g. switching the presenting group)
+    // needs overlay.js's confirm dialog to run and resolve first — without
+    // this check, this listener fired the AJAX switch immediately on the
+    // very first 'submit' event, before Cancel/Switch was ever answered,
+    // since preventDefault() in the *other* listener only blocks the
+    // browser's native navigation, not sibling 'submit' listeners like this
+    // one. Once confirmed, overlay.js re-submits via requestSubmit(), which
+    // re-fires 'submit' with `confirmed` already set, so this passes then.
+    if (form.hasAttribute('data-confirm') && !form.dataset.confirmed) return;
+    e.preventDefault();
+    fetch(form.action, { method: 'POST', body: new FormData(form) })
+      .then(refreshLiveState);
+  });
+
+  // Briefly swaps a button's icon+label for a checkmark confirmation, then
+  // restores it — the same feedback shape regardless of which clipboard
+  // write actually happened underneath.
+  function flashCopied(btn) {
+    const original = btn.innerHTML;
+    btn.classList.add('is-copied');
+    btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Copied';
+    setTimeout(function () {
+      btn.classList.remove('is-copied');
+      btn.innerHTML = original;
+    }, 1400);
+  }
+
+  // A short, on-brand instruction for whoever the link/QR gets forwarded
+  // QR's own baked-in caption below) tells them what to do with it without
+  // needing the lecturer to explain, and without turning into a paragraph.
+
+  const INVITE_QR_CAPTION = 'Scan to grade live';
+
+  // Draws the fetched QR PNG onto a canvas with the caption baked in
+  // underneath, so a QR pasted into a chat still tells whoever receives it
+  // what to do — a bare QR image alone doesn't carry that context once it's
+  // out of this page. Colors are read from the live design tokens rather
+  // than hard-coded, so the composited caption follows the same palette
+  // as everything else instead of drifting from it in light vs dark mode.
+  function composeQrWithCaption(blob) {
+    return new Promise(function (resolve, reject) {
+      const img = new Image();
+      img.onload = function () {
+        const padding = 14;
+        const captionHeight = 34;
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight + captionHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = (window.token && token('--surface')) || 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+        ctx.fillStyle = (window.token && token('--ink')) || 'black';
+        ctx.font = '600 15px ' + ((window.token && token('--font-ui')) || 'sans-serif');
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(INVITE_QR_CAPTION, canvas.width / 2, img.naturalHeight + captionHeight / 2 + 1, canvas.width - padding * 2);
+        canvas.toBlob(function (composed) {
+          if (composed) resolve(composed); else reject(new Error('canvas export failed'));
+        }, 'image/png');
+      };
+      img.onerror = reject;
+      img.src = URL.createObjectURL(blob);
+    });
+  }
+
+  // Delegated (not re-bound after every silent patch) since the invite
+  // card's buttons live inside the #live-qr fragment and get replaced
+  // outerHTML-style on every refresh.
+  document.addEventListener('click', function (e) {
+    const linkBtn = e.target.closest('.copy-link-btn');
+    if (linkBtn) {
+      navigator.clipboard.writeText(linkBtn.dataset.joinUrl)
+        .then(function () { flashCopied(linkBtn); });
+      return;
+    }
+    const qrBtn = e.target.closest('.copy-qr-btn');
+    if (qrBtn) {
+      // Copying the QR as an actual image (not just its URL) needs the
+      // async Clipboard API with a real image blob — fall back to opening
+      // it in a new tab for browsers/contexts that don't support that
+      // (e.g. no ClipboardItem, or a non-secure context).
+      fetch(qrBtn.dataset.qrUrl)
+        .then(function (res) { return res.blob(); })
+        .then(composeQrWithCaption)
+        .then(function (composedBlob) {
+          if (!window.ClipboardItem) throw new Error('ClipboardItem unsupported');
+          return navigator.clipboard.write([new ClipboardItem({ [composedBlob.type]: composedBlob })]);
+        })
+        .then(function () { flashCopied(qrBtn); })
+        .catch(function () { window.open(qrBtn.dataset.qrUrl, '_blank'); });
+    }
+  });
+
+  document.addEventListener('click', function (e) {
+    const button = e.target.closest('.joining-toggle-button');
+    if (!button) return;
+    const form = button.closest('.joining-toggle-form');
+    if (!form) return;
+    if (button.dataset.busy === 'true') return;
+    button.dataset.busy = 'true';
+    const wasLocked = button.dataset.locked === 'true';
+    const nextLocked = !wasLocked;
+    const label = button.querySelector('.joining-toggle-label');
+    const icon = button.querySelector('i');
+    const note = form.parentElement.querySelector('.text-muted');
+    function paint(locked) {
+      button.dataset.locked = locked ? 'true' : 'false';
+      if (icon) icon.className = 'bi ' + (locked ? 'bi-unlock' : 'bi-lock') + ' me-1';
+      if (label) label.textContent = locked ? 'Reopen joining' : 'Lock new joining';
+      if (note) note.textContent = locked ? 'New students cannot enter.' : 'Students can still scan and join.';
+    }
+    // Update immediately. The server action is idempotent and the UI must
+    // never remain blocked while waiting for a redirected HTML response.
+    paint(nextLocked);
+    button.disabled = false;
+    button.classList.remove('btn-loading');
+    button.dataset.busy = 'false';
+    const controller = new AbortController();
+    const timeout = setTimeout(function () { controller.abort(); }, 8000);
+    fetch(form.action, {method: 'POST', signal: controller.signal, headers: Object.assign({'X-Requested-With': 'XMLHttpRequest'}, csrfHeaders())})
+      .then(function (res) { if (!res.ok) throw new Error('join lock failed'); })
+      .catch(function () { paint(wasLocked); })
+      .finally(function () { clearTimeout(timeout); });
+  });
+
+  if (window.WebSocket) {
+    const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const url = `${scheme}://${window.location.host}/ws/assessments/{{ session.uuid }}/`;
+    let retryTimer = null;
+    function connect() {
+      const socket = new WebSocket(url);
+      socket.onopen = function () { setStatus(true); };
+      socket.onmessage = function (event) {
+        let data;
+        try { data = JSON.parse(event.data); } catch (e) { return; }
+        if (data.type === 'session.closed') { window.location.reload(); return; }
+        if (data.type === 'grading.progress') applyLiveGradingProgress(data.data);
+        if (data.type === 'evaluation.submitted' && data.data && data.data.student_id) liveGradingState.delete(String(data.data.student_id));
+        refreshLiveState();
+      };
+      socket.onclose = function () {
+        setStatus(false);
+        window.clearTimeout(retryTimer);
+        retryTimer = setTimeout(connect, 4000);
+      };
+      socket.onerror = function () { socket.close(); };
+    }
+    connect();
+  }
+
+  markNewActivity(); // establishes the baseline so the very first patch doesn't glow
+  markRankChanges(); // same idea, for the rankings list
+  initCountdown();
+  initPresentationOpensCountdown();
+  initPresentationEndsCountdown();
+  initTurnRing();
+  initTransitionCountdown();
+  initPopovers();
+
+  // Spacebar as a presenter-clicker shortcut — Kahoot/Slido host views
+  // support exactly this so a lecturer running the session from the front
+  // of the room doesn't have to walk back to the laptop and aim a cursor.
+  // Ends the current turn if one is active, otherwise starts whichever
+  // group the picker has highlighted as "next up".
+  document.addEventListener('keydown', function (e) {
+    if (e.code !== 'Space' && e.key !== ' ') return;
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) return;
+    e.preventDefault();
+    const endForm = document.querySelector('#live-hero form[action="{% url "assessment_close_turn" session.pk %}"]');
+    if (endForm) { endForm.requestSubmit(); return; }
+    // Idle between rounds: the pending-transition "Start now" form takes
+    // priority if it's showing, otherwise fall back to whichever group
+    // the picker has highlighted as next up.
+    const pendingForm = document.querySelector('#live-hero form.activate-group-form');
+    if (pendingForm) { pendingForm.requestSubmit(); return; }
+    const nextBtn = document.querySelector('#live-groups .group-btn.is-next');
+    const nextForm = nextBtn ? nextBtn.closest('form') : null;
+    if (nextForm) nextForm.requestSubmit();
+  });
+})();
+</script>
+
+<script>
+// Voting-timer duration picker: one shared control that feeds whichever
+// group's "activate" form actually gets submitted.
+(function () {
+  const picker = document.getElementById('duration-picker');
+
+  // Settings panel starts collapsed so the card opens on the groups —
+  // the thing actually being decided — with the timer/gap config summed
+  // up in one line until someone taps it open to change something.
+  const settingsToggle = document.getElementById('turn-settings-toggle');
+  const settingsPanel = document.getElementById('turn-settings-panel');
+  const settingsSummary = document.getElementById('turn-settings-summary');
+  function updateSettingsSummary() {
+    if (!settingsSummary) return;
+    const presSelected = document.querySelector('.pres-choice.is-selected');
+    const presSeconds = presSelected ? presSelected.dataset.seconds : '';
+    const presText = presSeconds ? `${Math.round(parseInt(presSeconds) / 60)}m pres.` : 'No pres. timer';
+    const durationSelected = picker ? picker.querySelector('.duration-choice.is-selected') : null;
+    const durationSeconds = durationSelected ? durationSelected.dataset.seconds : '';
+    const durationText = durationSeconds ? `${durationSeconds}s vote` : 'no vote timer';
+    const gapInput = document.querySelector('.gap-input');
+    const gapSeconds = gapInput ? parseInt(gapInput.value, 10) || 0 : 0;
+    const gapText = gapSeconds > 0 ? `${gapSeconds}s gap` : 'no gap';
+    settingsSummary.textContent = `${presText} · ${durationText} · ${gapText}`;
+  }
+
+  const durationSavedNote = document.getElementById('duration-saved-note');
+
+  function durationCsrfHeaders() {
+    const el = document.querySelector('[name=csrfmiddlewaretoken]');
+    if (el) return { 'X-CSRFToken': el.value };
+    const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    return match ? { 'X-CSRFToken': decodeURIComponent(match[1]) } : {};
+  }
+
+  // The voting timer isn't just a value bundled into the next "activate
+  // group" submit — it's the session default, saved the instant it's
+  // chosen (same pattern as the gap picker below), so it sticks for
+  // every group activated from here on, not just whichever one happens
+  // to be next.
+  function selectSeconds(seconds, persist) {
+    if (!picker) return;
+    picker.querySelectorAll('.duration-choice').forEach(function (btn) {
+      btn.classList.toggle('is-selected', btn.dataset.seconds === seconds);
+    });
+    document.querySelectorAll('.duration-input').forEach(function (input) { input.value = seconds; });
+    updateSettingsSummary();
+    if (!persist) return;
+    fetch('{% url "assessment_set_default_turn_seconds" session.pk %}', {
+      method: 'POST', headers: durationCsrfHeaders(),
+      body: new URLSearchParams({ duration_seconds: seconds }),
+    }).then(function (res) { if (!res.ok) throw new Error('Could not save voting timer'); return res.json(); }).then(function () {
+      if (!durationSavedNote) return;
+      const noteText = durationSavedNote.querySelector('.note-text');
+      if (noteText) noteText.textContent = seconds ? `Saved: ${Math.round(seconds / 60 * 10) / 10}m` : 'Saved: no timer';
+      durationSavedNote.classList.add('is-confirmed');
+      setTimeout(function () { durationSavedNote.classList.remove('is-confirmed'); }, 1200);
+    }).catch(function () { /* the next click retries; nothing to recover mid-flight */ });
+  }
+
+  if (picker) {
+    const firstInput = document.querySelector('.duration-input');
+    selectSeconds(firstInput ? firstInput.value : '', false);
+    picker.querySelectorAll('.duration-choice').forEach(function (btn) {
+      btn.addEventListener('click', function () { selectSeconds(btn.dataset.seconds, true); });
+    });
+    // Called after a silent patch to reflect whatever the server confirms
+    // is actually saved — never re-saves, just updates the highlighted
+    // choice, so it can't loop back into another fetch.
+    window.DevPerfSyncDurationPicker = function (seconds) { selectSeconds(seconds ? String(seconds) : '', false); };
+  }
+
+  // Custom minutes — any whole number, not just the five presets. "Set"
+  // applies it the same way a preset button does, including deselecting
+  // the presets so the picker never shows two conflicting selections.
+  const customInput = document.getElementById('custom-duration-minutes');
+  const customApply = document.getElementById('custom-duration-apply');
+  if (customInput && customApply) {
+    function applyCustom() {
+      const minutes = parseFloat(customInput.value);
+      if (!minutes || minutes <= 0) return;
+      selectSeconds(String(Math.round(minutes * 60)), true);
+    }
+    customApply.addEventListener('click', applyCustom);
+    customInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); applyCustom(); }
+    });
+    customInput.addEventListener('input', function () {
+      picker.querySelectorAll('.duration-choice').forEach(function (btn) { btn.classList.remove('is-selected'); });
+    });
+  }
+
+  // Gap-between-groups picker — same shared-control pattern as the voting
+  // timer, but unlike the timer (which only matters for the *next* group
+  // someone activates), the gap governs a transition that might already be
+  // in flight. So a click here isn't just a local UI preview waiting to be
+  // bundled into the next "activate group" submit — it's saved to the
+  // server immediately, via its own small endpoint, so it takes effect on
+  // the very next automatic transition even if one is already running.
+  const gapPicker = document.getElementById('gap-picker');
+  const gapSavedNote = document.getElementById('gap-saved-note');
+
+  function gapCsrfHeaders() {
+    const el = document.querySelector('[name=csrfmiddlewaretoken]');
+    if (el) return { 'X-CSRFToken': el.value };
+    const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    return match ? { 'X-CSRFToken': decodeURIComponent(match[1]) } : {};
+  }
+
+  function selectGapSeconds(seconds, persist) {
+    if (!gapPicker) return;
+    gapPicker.querySelectorAll('.gap-choice').forEach(function (btn) {
+      btn.classList.toggle('is-selected', btn.dataset.seconds === seconds);
+    });
+    document.querySelectorAll('.gap-input').forEach(function (input) { input.value = seconds; });
+    updateSettingsSummary();
+    if (!persist) return;
+    fetch('{% url "assessment_set_transition_gap" session.pk %}', {
+      method: 'POST', headers: gapCsrfHeaders(),
+      body: new URLSearchParams({ gap_seconds: seconds }),
+    }).then(function (res) { if (!res.ok) throw new Error('Could not save presentation timer'); return res.json(); }).then(function (data) {
+      if (!gapSavedNote) return;
+      const noteText = gapSavedNote.querySelector('.note-text');
+      if (noteText) noteText.textContent = data.gap_seconds > 0 ? `Saved: ${data.gap_seconds}s` : 'Saved: no gap';
+      gapSavedNote.classList.add('is-confirmed');
+      setTimeout(function () { gapSavedNote.classList.remove('is-confirmed'); }, 1200);
+    }).catch(function () { /* the next click retries; nothing to recover mid-flight */ });
+  }
+
+  if (gapPicker) {
+    const firstGapInput = document.querySelector('.gap-input');
+    selectGapSeconds(firstGapInput ? firstGapInput.value : '0', false);
+    gapPicker.querySelectorAll('.gap-choice').forEach(function (btn) {
+      btn.addEventListener('click', function () { selectGapSeconds(btn.dataset.seconds, true); });
+    });
+    // Called after a silent patch to reflect whatever the server confirms
+    // is actually saved — never re-saves, just updates the highlighted
+    // choice, so it can't loop back into another fetch.
+    window.DevPerfSyncGapPicker = function (seconds) { selectGapSeconds(String(seconds), false); };
+  }
+
+  const customGapInput = document.getElementById('custom-gap-minutes');
+  const customGapApply = document.getElementById('custom-gap-apply');
+  if (customGapInput && customGapApply) {
+    function applyCustomGap() {
+      const minutes = parseFloat(customGapInput.value);
+      if (isNaN(minutes) || minutes < 0) return;
+      selectGapSeconds(String(Math.round(minutes * 60)), true);
+    }
+    customGapApply.addEventListener('click', applyCustomGap);
+    customGapInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); applyCustomGap(); }
+    });
+    customGapInput.addEventListener('input', function () {
+      gapPicker.querySelectorAll('.gap-choice').forEach(function (btn) { btn.classList.remove('is-selected'); });
+    });
+  }
+
+  // Presentation timer picker — informational countdown the group sees on
+  // the control panel and the public screen. Same instant-save pattern as
+  // the voting timer and gap, so a mid-session change takes effect for the
+  // group currently presenting without needing a page reload.
+  const presPicker = document.getElementById('pres-picker');
+  const presSavedNote = document.getElementById('pres-saved-note');
+
+  function presCsrfHeaders() {
+    const el = document.querySelector('[name=csrfmiddlewaretoken]');
+    if (el) return { 'X-CSRFToken': el.value };
+    const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+    return match ? { 'X-CSRFToken': decodeURIComponent(match[1]) } : {};
+  }
+
+  function selectPresSeconds(seconds, persist) {
+    if (!presPicker) return;
+    presPicker.querySelectorAll('.pres-choice').forEach(function (btn) {
+      btn.classList.toggle('is-selected', btn.dataset.seconds === seconds);
+    });
+    updateSettingsSummary();
+    if (!persist) return;
+    fetch('{% url "assessment_set_presentation_timer" session.pk %}', {
+      method: 'POST', headers: presCsrfHeaders(),
+      body: new URLSearchParams({ presentation_seconds: seconds }),
+    }).then(function (res) { return res.json(); }).then(function (data) {
+      if (!presSavedNote) return;
+      const noteText = presSavedNote.querySelector('.note-text');
+      const secs = data.presentation_seconds;
+      if (noteText) noteText.textContent = secs ? `Saved: ${Math.round(secs / 60)}m` : 'Saved: none';
+      presSavedNote.classList.add('is-confirmed');
+      setTimeout(function () { presSavedNote.classList.remove('is-confirmed'); }, 1200);
+    }).catch(function () {});
+  }
+
+  if (presPicker) {
+    const initialPres = {{ session.default_presentation_seconds|default:'0' }};
+    if (initialPres) selectPresSeconds(String(initialPres), false);
+    presPicker.querySelectorAll('.pres-choice').forEach(function (btn) {
+      btn.addEventListener('click', function () { selectPresSeconds(btn.dataset.seconds, true); });
+    });
+  }
+
+  const customPresInput = document.getElementById('custom-pres-minutes');
+  const customPresApply = document.getElementById('custom-pres-apply');
+  if (customPresInput && customPresApply) {
+    function applyCustomPres() {
+      const minutes = parseFloat(customPresInput.value);
+      if (isNaN(minutes) || minutes <= 0) { selectPresSeconds('', true); return; }
+      selectPresSeconds(String(Math.round(minutes * 60)), true);
+    }
+    customPresApply.addEventListener('click', applyCustomPres);
+    customPresInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); applyCustomPres(); }
+    });
+    customPresInput.addEventListener('input', function () {
+      if (presPicker) presPicker.querySelectorAll('.pres-choice').forEach(function (btn) { btn.classList.remove('is-selected'); });
+    });
+  }
+
+  // "Session running for Xm Ys" — a real live clock, not a static number
+  // frozen at page load, so the control panel feels alive between updates
+  // too. Re-reads the live-stats fragment's data attribute if it was ever
+  // replaced, so it never resets to 0 after a silent patch.
+  function initElapsed() {
+    const elapsedEl = document.getElementById('session-elapsed');
+    if (!elapsedEl || !elapsedEl.dataset.startedSecondsAgo) return;
+    let seconds = parseInt(elapsedEl.dataset.startedSecondsAgo, 10) || 0;
+    function tickElapsed() {
+      if (!document.body.contains(elapsedEl)) return;
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      elapsedEl.textContent = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+      seconds += 1;
+      setTimeout(tickElapsed, 1000);
+    }
+    tickElapsed();
+  }
+  initElapsed();
+  // A silent patch replaces #session-elapsed with a fresh element carrying
+  // an up-to-date starting offset from the server — restart the tick for it.
+  document.body.addEventListener('assess:patched', initElapsed);
+})();
+</script>
+{% endif %}
+{% endblock %}

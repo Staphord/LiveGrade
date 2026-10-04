@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{{ session.name }} - Join &amp; grade live</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+  {% include 'partials/_design_system.html' %}
+  <style>
+    /* Deliberately not extending base.html or the student mobile shell:
+       this page has no login and is meant to be projected full-screen on
+       a room's screen for a crowd to scan at once, not held in a hand.
+       Pulls the same brand gradient the auth screen and student hero
+       already use (_design_system.html tokens), so "lively" here still
+       reads as one visual system rather than a one-off look. */
+    body{font-family:'Inter',system-ui,sans-serif;min-height:100vh;margin:0;color:var(--ink);
+         background:radial-gradient(circle at 15% 10%,color-mix(in srgb,var(--brand-bright) 40%,transparent),transparent 40%),
+                    radial-gradient(circle at 85% 90%,color-mix(in srgb,var(--brand-bright) 30%,transparent),transparent 45%),
+                    linear-gradient(135deg,var(--brand-deep) 0%,var(--brand-bright) 100%);
+         display:flex;align-items:center;justify-content:center;padding:2rem 1rem}
+    .join-shell{width:100%;max-width:30rem}
+    .join-eyebrow{color:rgba(255,255,255,.85);font-size:.78rem;font-weight:700;letter-spacing:.08em;
+         text-transform:uppercase;text-align:center;margin-bottom:.4rem;display:flex;align-items:center;
+         justify-content:center;gap:.4rem}
+    .join-eyebrow .pulse-dot{width:8px;height:8px;border-radius:50%;background:var(--success);display:inline-block;
+         animation:pulse 1.4s ease-in-out infinite;box-shadow:0 0 0 3px color-mix(in srgb,var(--success) 25%,transparent)}
+    @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.55;transform:scale(.75)}}
+    .join-session-name{color:#fff;font-weight:800;font-size:1.5rem;text-align:center;margin-bottom:1.5rem;
+         text-shadow:0 2px 12px rgba(0,0,0,.15)}
+    .join-card{background:#fff;border-radius:1.5rem;box-shadow:0 24px 60px rgba(15,23,42,.28);
+         padding:2.25rem 2rem;text-align:center;position:relative;overflow:hidden}
+    .join-card::before{display:none}
+    .join-qr-frame{width:220px;height:220px;margin:0 auto;border-radius:1.1rem;
+         background:linear-gradient(135deg,var(--accent-soft),#fff);border:1px solid var(--border);
+         display:flex;align-items:center;justify-content:center;padding:.85rem}
+    .join-qr-frame img{width:100%;height:100%;border-radius:.6rem}
+    .join-headline{font-weight:800;font-size:1.35rem;margin:1.25rem 0 .35rem}
+    .join-sub{color:var(--text-muted);font-size:.95rem;max-width:24rem;margin:0 auto}
+    .join-steps{display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap;margin-top:1.5rem;
+         padding-top:1.5rem;border-top:1px dashed var(--border)}
+    .join-step{flex:1 1 140px;max-width:150px;text-align:center}
+    .join-step .step-icon{width:38px;height:38px;border-radius:50%;background:var(--accent-soft);
+         color:var(--accent);display:flex;align-items:center;justify-content:center;margin:0 auto .5rem;font-size:1.05rem}
+    .join-step .step-txt{font-size:.78rem;color:var(--text-muted);font-weight:600;line-height:1.3}
+    .join-footer{text-align:center;color:rgba(255,255,255,.75);font-size:.8rem;font-weight:600;margin-top:1.5rem}
+
+    .status-pill{display:inline-flex;align-items:center;gap:.4rem;font-weight:700;font-size:.85rem;
+         padding:.4rem .9rem;border-radius:999px;background:var(--accent-soft);color:var(--accent);margin-top:.5rem}
+    .status-pill.is-closed{background:var(--surface-sunken);color:var(--text-soft)}
+    .room-progress{margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border);text-align:left}
+    .room-stage{font-weight:800;font-size:1.05rem;color:var(--ink);display:flex;align-items:center;gap:.5rem}
+    .room-stage .stage-dot{width:9px;height:9px;border-radius:50%;background:var(--success);animation:pulse 1.4s ease-in-out infinite}
+    .room-group{font-size:clamp(1.2rem,2vw,1.65rem);font-weight:800;color:var(--accent);margin:.3rem 0 .65rem}
+    .room-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem;margin-top:.65rem}
+    .room-metric{background:var(--surface-hover);border-radius:.7rem;padding:.55rem .6rem;min-width:0}
+    .room-metric strong{display:block;font-size:1.05rem;color:var(--ink)}.room-metric span{font-size:.68rem;color:var(--text-muted);font-weight:600;line-height:1.15}
+    .room-timer{font-variant-numeric:tabular-nums;color:var(--accent);font-weight:800}
+    .room-progress.is-complete{background:linear-gradient(145deg,var(--surface),var(--accent-soft));border:1px solid color-mix(in srgb,var(--success) 28%,var(--border));border-radius:16px;padding:1.25rem}
+    .room-progress.is-complete .room-stage{color:var(--tone-success-fg)}
+    .join-card.is-complete .join-qr-frame{grid-row:auto!important;width:86px!important;height:86px!important;aspect-ratio:auto!important;padding:0;margin:1.25rem auto .4rem;border-radius:24px;background:var(--accent-soft)!important;border:0;color:var(--accent)!important}
+    .join-card.is-complete .join-qr-frame i{font-size:2rem!important;color:var(--accent)!important}
+    .join-card.is-complete .join-headline{margin:.7rem 0 .35rem;font-size:clamp(1.35rem,3vw,2rem)}
+    .join-card.is-complete .join-sub{max-width:34rem}
+    @media (min-width:800px){.join-card.is-complete:has(#room-progress){display:block;text-align:center;max-width:52rem;margin-inline:auto;padding:1.5rem 2.5rem 2rem}.join-card.is-complete:has(#room-progress) .room-progress{max-width:38rem;margin:1rem auto 0;text-align:left}}
+    @media (max-width:799px){body{padding:1rem .75rem}.join-shell{max-width:40rem}.join-session-name{font-size:1.35rem;margin-bottom:1rem}.join-card{padding:1.25rem 1rem;border-radius:1.1rem}.join-card.is-complete .join-qr-frame{margin-top:.5rem}.join-card.is-complete .room-progress{margin-top:1rem}.room-progress{padding-top:1rem}.room-group{font-size:1.1rem}.room-metrics{grid-template-columns:repeat(2,1fr)}}
+    @media (min-width:800px){
+      body{padding:3rem 4vw}
+      .join-shell{max-width:76rem}
+      .join-session-name{font-size:2.5rem;margin-bottom:2rem}
+      .join-card:has(#room-progress){display:grid;grid-template-columns:minmax(300px,1fr) minmax(320px,1.15fr);gap:2.5rem;text-align:left;padding:2.75rem 3rem;align-items:center}
+      .join-card:has(#room-progress)::before{height:7px}
+      .join-card:has(#room-progress) .join-qr-frame{grid-row:1 / span 4;width:100%;height:auto;aspect-ratio:1;margin:0;padding:1.2rem}
+      .join-card:has(#room-progress) .join-headline,.join-card:has(#room-progress) .join-sub,.join-card:has(#room-progress) .join-steps,.join-card:has(#room-progress) .room-progress{grid-column:2}
+      .join-card:has(#room-progress) .join-headline{font-size:1.8rem;margin:.25rem 0 0}
+      .join-card:has(#room-progress) .join-sub{max-width:none;margin:0}
+      .join-card:has(#room-progress) .join-steps{justify-content:flex-start;margin-top:.7rem;padding-top:1rem}
+      .join-card:has(#room-progress) .join-step{max-width:none;display:flex;align-items:center;gap:.55rem;text-align:left}
+      .join-card:has(#room-progress) .join-step .step-icon{margin:0;width:32px;height:32px;flex:0 0 auto}
+      .join-card:has(#room-progress) .room-progress{margin-top:.5rem;padding-top:1.5rem}
+      .join-card:has(#room-progress) .room-group{font-size:1.6rem}
+    }
+  </style>
+</head>
+<body>
+  <div class="join-shell">
+    <div class="join-eyebrow">
+      {% if session.status == 'live' %}<span class="pulse-dot"></span>Grading is live right now{% else %}<i class="bi bi-clipboard2-data"></i>DevPerf LiveGrade{% endif %}
+    </div>
+    <div class="join-session-name">{{ session.name }}</div>
+
+    <div class="join-card {% if session.status == 'closed' %}is-complete{% endif %}">
+      {% if session.status == 'live' and not session.joining_locked %}
+      <div class="join-qr-frame" id="join-live-content">
+        <img src="{% url 'assessment_join_screen_qr' session.uuid %}" alt="QR code to join {{ session.name }}">
+      </div>
+      <h1 class="join-headline">Grab your phone and scan in!</h1>
+      <p class="join-sub">
+        Point your camera at the code above to hop in and start scoring
+        groups as they present - no app to install.
+      </p>
+      <div class="join-steps">
+        <div class="join-step">
+          <span class="step-icon"><i class="bi bi-qr-code-scan"></i></span>
+          <div class="step-txt">Scan the code</div>
+        </div>
+        <div class="join-step">
+          <span class="step-icon"><i class="bi bi-person-badge"></i></span>
+          <div class="step-txt">
+            Enter your {% if session.identify_by == 'student_id' %}student ID{% else %}full name{% endif %}
+          </div>
+        </div>
+        <div class="join-step">
+          <span class="step-icon"><i class="bi bi-check-circle"></i></span>
+          <div class="step-txt">Grade live as groups present</div>
+        </div>
+      </div>
+      <div id="join-locked-state" hidden>
+        <div class="join-qr-frame" style="background:var(--surface-hover)"><i class="bi bi-lock-fill" style="font-size:3rem;color:var(--text-muted)"></i></div>
+        <h1 class="join-headline">Joining is closed</h1>
+        <p class="join-sub">The lecturer has locked the room. If you should be participating, please contact them directly.</p>
+        <span class="status-pill is-closed"><i class="bi bi-lock-fill"></i>Room locked</span>
+      </div>
+      {% elif session.status == 'live' and session.joining_locked %}
+      <div class="join-qr-frame" style="background:var(--surface-hover)"><i class="bi bi-lock-fill" style="font-size:3rem;color:var(--text-muted)"></i></div>
+      <h1 class="join-headline">Joining is closed</h1>
+      <p class="join-sub">The lecturer has locked the room. If you should be participating, please contact them directly.</p>
+      <span class="status-pill is-closed"><i class="bi bi-lock-fill"></i>Room locked</span>
+      {% elif session.status == 'draft' %}
+      <div class="join-qr-frame" style="background:var(--surface-hover)">
+        <i class="bi bi-hourglass-split" style="font-size:3rem;color:var(--text-muted)"></i>
+      </div>
+      <h1 class="join-headline">Hang tight - not live yet!</h1>
+      <p class="join-sub">The lecturer is still setting things up. This screen will light up with a scan code the moment grading goes live.</p>
+      <span class="status-pill"><i class="bi bi-clock-history"></i>Waiting to start</span>
+      {% else %}
+      <h1 class="join-headline">That's a wrap!</h1>
+      <p class="join-sub">Grading for this session has ended.</p>
+      <span class="status-pill is-closed"><i class="bi bi-check-circle"></i>Session closed</span>
+      {% endif %}
+      {% if session.status == 'live' %}
+      <div class="room-progress" id="room-progress"
+           data-ends-at="{{ public_ends_at }}"
+           data-started-at="{{ public_started_at }}"
+           data-presentation-ends-at="{{ public_presentation_ends_at }}"
+           data-transition-ends-at="{{ public_transition_ends_at }}">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <div class="room-stage"><span class="stage-dot"></span><span id="public-stage">{% if public_group_name %}{{ public_stage }}{% else %}Awaiting first presentation{% endif %}</span></div>
+          <span class="badge bg-light text-dark fw-bold text-nowrap" id="public-groups-progress">{% if public_group_name %}Group {{ public_current_index }} of {{ public_total_groups }} · {{ public_completed_groups }} completed{% else %}0 of {{ public_total_groups }} completed{% endif %}</span>
+        </div>
+        <div class="text-muted small text-uppercase fw-bold mt-2" id="public-group-label">{% if public_group_name %}Now presenting{% else %}Session status{% endif %}</div>
+        <div class="room-group" id="public-group">{% if public_group_name %}{{ public_group_name }}{% else %}Ready to begin{% endif %}</div>
+        <div class="room-next-up mb-2 p-2 rounded" style="background:var(--surface-hover);font-size:0.9rem;border-left:3px solid var(--accent)">
+          <div class="text-muted small text-uppercase fw-bold"><i class="bi bi-arrow-right-circle me-1"></i>Up Next</div>
+          <strong id="public-next-group">{% if public_next_group_name %}{{ public_next_group_name }}{% else %}To be determined{% endif %}</strong>
+        </div>
+        <div class="room-metrics">
+          <div class="room-metric"><strong id="public-joined">{{ public_joined_count }}/{{ public_student_count }}</strong><span>students joined</span></div>
+          <div class="room-metric"><strong id="public-submitted">{{ public_submitted_count }}/{{ public_joined_count }}</strong><span>submitted this round</span></div>
+          <div class="room-metric room-metric-live"><strong id="public-grading-now">{{ public_grading_now_count }}</strong><span><i class="bi bi-broadcast-pin me-1"></i>grading now</span></div>
+        </div>
+        <div class="text-muted t-sm mt-2"><i class="bi bi-hourglass-split me-1"></i><span id="public-countdown" class="room-timer">Waiting for timer</span></div>
+      </div>
+      {% elif session.status == 'closed' %}
+      <div class="room-progress is-complete" id="room-progress">
+        <div class="room-stage"><span class="stage-dot" style="background:var(--success);animation:none"></span><span>Session complete</span><span class="badge bg-light text-dark fw-bold ms-auto">{{ public_completed_groups }} / {{ public_total_groups }} groups</span></div>
+        <div class="room-group" style="color:var(--tone-success-fg)">All presentations are complete</div>
+        <div class="text-muted t-sm mt-2"><i class="bi bi-check-circle me-1 text-success"></i>Thank you for participating.</div>
+      </div>
+      {% endif %}
+    </div>
+
+  <div class="join-footer">Powered by DevPerf LiveGrade</div>
+  </div>
+  <script>
+  (function () {
+    if (!window.WebSocket) return;
+    const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+    const url = scheme + '://' + location.host + '/ws/assessments/{{ session.uuid }}/';
+    const liveContent = document.getElementById('join-live-content');
+    const lockedState = document.getElementById('join-locked-state');
+    function applyLocked(locked) {
+      if (!liveContent || !lockedState) return;
+      liveContent.parentElement.querySelector('.join-headline').hidden = locked;
+      liveContent.parentElement.querySelector('.join-sub').hidden = locked;
+      liveContent.parentElement.querySelector('.join-steps').hidden = locked;
+      liveContent.hidden = locked;
+      lockedState.hidden = !locked;
+    }
+    function connect() {
+      const socket = new WebSocket(url);
+      socket.onmessage = function (event) {
+        try { const data = JSON.parse(event.data); if (data.type === 'joining.locked') applyLocked(!!data.data.locked); refreshState(); } catch (e) {}
+      };
+      socket.onclose = function () { setTimeout(connect, 3000); };
+    }
+    function refreshState() {
+      fetch('{% url "assessment_join_screen_state" session.uuid %}')
+        .then(function (response) { return response.json(); })
+        .then(function (state) {
+          const stage = document.getElementById('public-stage');
+          const group = document.getElementById('public-group');
+          const nextGroup = document.getElementById('public-next-group');
+          const groupsProgress = document.getElementById('public-groups-progress');
+          const joined = document.getElementById('public-joined');
+          const submitted = document.getElementById('public-submitted');
+          const gradingNow = document.getElementById('public-grading-now');
+          if (stage) stage.textContent = state.public_group_name ? state.public_stage : 'Awaiting first presentation';
+          const groupLabel = document.getElementById('public-group-label');
+          if (groupLabel) groupLabel.textContent = state.public_group_name ? 'Now presenting' : 'Session status';
+          if (group) group.textContent = state.public_group_name || 'Ready to begin';
+          if (nextGroup) nextGroup.textContent = state.public_next_group_name || 'To be determined';
+          if (groupsProgress) groupsProgress.textContent = state.public_group_name
+            ? 'Group ' + state.public_current_index + ' of ' + state.public_total_groups + ' · ' + state.public_completed_groups + ' completed'
+            : state.public_completed_groups + ' of ' + state.public_total_groups + ' completed';
+          if (joined) joined.textContent = state.public_joined_count + '/' + state.public_student_count;
+          if (submitted) submitted.textContent = state.public_submitted_count + '/' + state.public_joined_count;
+          if (gradingNow) gradingNow.textContent = state.public_grading_now_count;
+          const progress = document.getElementById('room-progress');
+          if (progress) {
+            progress.dataset.endsAt = state.public_ends_at || '';
+            progress.dataset.startedAt = state.public_started_at || '';
+            progress.dataset.presentationEndsAt = state.public_presentation_ends_at || '';
+            progress.dataset.transitionEndsAt = state.public_transition_ends_at || '';
+          }
+          applyLocked(state.public_joining_locked);
+        }).catch(function () {});
+    }
+    refreshState();
+    setInterval(refreshState, 5000);
+    setInterval(function () {
+      const progress = document.getElementById('room-progress');
+      const timer = document.getElementById('public-countdown');
+      if (!progress || !timer) return;
+      const transEnds = progress.dataset.transitionEndsAt;
+      const endsAt = progress.dataset.endsAt;
+      const startedAt = progress.dataset.startedAt;
+      const presentationEndsAt = progress.dataset.presentationEndsAt;
+
+      if (startedAt && presentationEndsAt && !endsAt) {
+        const openAt = new Date(startedAt).getTime() + (new Date(presentationEndsAt).getTime() - new Date(startedAt).getTime()) * .4;
+        const remaining = Math.max(0, Math.ceil((openAt - Date.now()) / 1000));
+        timer.textContent = remaining ? 'Voting opens in ' + Math.floor(remaining / 60) + ':' + String(remaining % 60).padStart(2, '0') : 'Opening voting...';
+        return;
+      }
+
+      if (transEnds) {
+        const remaining = Math.max(0, Math.round((new Date(transEnds).getTime() - Date.now()) / 1000));
+        timer.textContent = remaining ? 'Next group starts in ' + Math.floor(remaining / 60) + ':' + String(remaining % 60).padStart(2, '0') : 'Starting next presentation...';
+        return;
+      }
+
+      if (endsAt) {
+        const remaining = Math.max(0, Math.round((new Date(endsAt).getTime() - Date.now()) / 1000));
+        timer.textContent = remaining ? 'Voting closes in ' + Math.floor(remaining / 60) + ':' + String(remaining % 60).padStart(2, '0') : 'Voting window closing...';
+        return;
+      }
+
+      if (startedAt) {
+        const elapsed = Math.max(0, Math.round((Date.now() - new Date(startedAt).getTime()) / 1000));
+        timer.textContent = 'Presentation elapsed: ' + Math.floor(elapsed / 60) + ':' + String(elapsed % 60).padStart(2, '0');
+        return;
+      }
+
+      timer.textContent = 'Waiting for the session to start';
+    }, 1000);
+    connect();
+  })();
+  </script>
+</body>
+</html>

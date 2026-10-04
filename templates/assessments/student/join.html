@@ -1,0 +1,49 @@
+{% extends 'assessments/student/_student_base.html' %}
+{% block title %}Join - {{ session.name }}{% endblock %}
+{% block hero_sub %}<span class="pulse-dot"></span>Scan complete - join to grade{% endblock %}
+
+{% block content %}
+<div class="s-center-viewport">
+  <div>
+    <div class="s-card fade-in text-center">
+      <i class="bi bi-qr-code-scan text-primary s-icon-xxl"></i>
+      <h2 class="fw-800 mt-2 s-h2">You're in!</h2>
+      <p class="text-muted mb-4 s-text">
+        Type {{ field_label }} exactly as it appears on the class roster so we can
+        match you and track your participation.
+      </p>
+
+      {% if error %}
+      <div class="alert alert-danger py-2 px-3 text-start s-text">
+        <i class="bi bi-exclamation-circle me-1"></i>{{ error }}
+      </div>
+      {% endif %}
+
+      <form method="post" class="text-start" id="join-form">
+        {% csrf_token %}
+        <label class="form-label fw-600 s-label">{{ field_label|capfirst }}</label>
+        {{ form.identifier }}
+        {% if form.identifier.errors %}
+        <div class="text-danger mt-1 s-text-sm">{{ form.identifier.errors|join:", " }}</div>
+        {% endif %}
+        <button type="submit" class="btn btn-primary big-btn w-100 mt-3" id="join-btn" {% if session.joining_locked %}disabled{% endif %}>
+          <i class="bi bi-box-arrow-in-right me-1"></i>Join session
+        </button>
+      </form>
+    </div>
+
+    <div class="text-center text-muted s-text-xs stagger-in mt-2">
+      <i class="bi bi-shield-check me-1"></i>Your identity is used only to track
+      participation. Your grading stays anonymous to the lecturer.
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('join-form').addEventListener('submit', function () {
+  document.getElementById('join-btn').classList.add('btn-loading');
+});
+</script>
+{% endblock %}

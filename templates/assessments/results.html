@@ -1,0 +1,281 @@
+{% extends 'base.html' %}
+{% block title %}Results - {{ session.name }}{% endblock %}
+{% block page_title %}{{ session.name }}{% endblock %}
+{% block topbar_actions %}
+<a href="{% url 'assessment_results_export' session.pk %}" class="btn btn-outline-primary btn-sm">
+  <i class="bi bi-download me-1"></i>Export Excel
+</a>
+<a href="{% url 'assessment_session_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>All sessions</a>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.sort-th a{color:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.sort-th a:hover{color:var(--accent)}
+.sort-th .sort-icon{font-size:.7rem;opacity:.4}
+.sort-th.is-active .sort-icon{opacity:1;color:var(--accent)}
+
+.live-refresh-badge{display:inline-flex;align-items:center;gap:5px;font-size:var(--fs-micro);font-weight:700;
+     padding:.2rem .55rem;border-radius:999px;background:var(--tone-success-bg);color:var(--tone-success-fg)}
+.live-refresh-badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:results-pulse 1.4s ease-in-out infinite}
+@keyframes results-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+
+/* A row whose score just changed on a silent refresh gets a brief glow —
+   same "just happened" language used on Participation/Live control. */
+@keyframes row-glow{0%{background:var(--accent-soft)}100%{background:transparent}}
+#results-rows tr.is-new td{animation:row-glow 1.8s ease-out}
+
+/* The shared .chart-wrap.is-empty rule (design-kit) hides the canvas via
+   opacity when every value it sees is 0 — meant for a genuinely empty
+   chart with a "no data yet" message. These two charts always have real
+   values once any evaluation exists, so this only ever misfired as a
+   full-blank box with nothing to explain it; force the canvas visible
+   here regardless of that toggle. */
+#group-chart, #distribution-chart{opacity:1 !important}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="tabs-sticky-header">
+{% include 'assessments/_session_tabs.html' with active='results' %}
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-8">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="fw-700 mb-2"><i class="bi bi-bar-chart-line me-1"></i>Group scores</div>
+        <div class="chart-wrap" style="height:260px">
+          <canvas id="group-chart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="fw-700 mb-2"><i class="bi bi-distribute-vertical me-1"></i>Final score distribution</div>
+        <div class="chart-wrap" style="height:260px">
+          <canvas id="distribution-chart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="px-3 py-2 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <span class="text-muted t-body">
+        <strong>{{ total }}</strong> student{{ total|pluralize }} · final = group%×{{ session.group_weight_percent }}% + individual%×{{ session.individual_weight_percent }}% − 1% per other group not graded
+      </span>
+      {% if session.status == 'live' %}
+      <span class="live-refresh-badge" id="results-live-badge"><span class="dot"></span>Live</span>
+      {% endif %}
+    </div>
+    <div class="table-responsive" style="max-height:32rem;overflow-y:auto">
+      <table class="table table-sm table-hover mb-0 t-body">
+        <thead class="table-light" style="position:sticky;top:0;z-index:1">
+          <tr>
+            <th class="ps-3 sort-th {% if sort == 'student' %}is-active{% endif %}">
+              <a href="?sort=student&dir={% if sort == 'student' and dir == 'asc' %}desc{% else %}asc{% endif %}">Student
+                <span class="sort-icon">{% if sort == 'student' %}<i class="bi bi-caret-{% if dir == 'asc' %}up{% else %}down{% endif %}-fill"></i>{% else %}<i class="bi bi-arrow-down-up"></i>{% endif %}</span>
+              </a>
+            </th>
+            <th class="sort-th {% if sort == 'group' %}is-active{% endif %}">
+              <a href="?sort=group&dir={% if sort == 'group' and dir == 'asc' %}desc{% else %}asc{% endif %}">Group
+                <span class="sort-icon">{% if sort == 'group' %}<i class="bi bi-caret-{% if dir == 'asc' %}up{% else %}down{% endif %}-fill"></i>{% else %}<i class="bi bi-arrow-down-up"></i>{% endif %}</span>
+              </a>
+            </th>
+            <th class="sort-th {% if sort == 'group_percent' %}is-active{% endif %}">
+              <a href="?sort=group_percent&dir={% if sort == 'group_percent' and dir == 'asc' %}desc{% else %}asc{% endif %}">Group %
+                <span class="sort-icon">{% if sort == 'group_percent' %}<i class="bi bi-caret-{% if dir == 'asc' %}up{% else %}down{% endif %}-fill"></i>{% else %}<i class="bi bi-arrow-down-up"></i>{% endif %}</span>
+              </a>
+            </th>
+            <th class="sort-th {% if sort == 'individual_percent' %}is-active{% endif %}">
+              <a href="?sort=individual_percent&dir={% if sort == 'individual_percent' and dir == 'asc' %}desc{% else %}asc{% endif %}">Individual %
+                <span class="sort-icon">{% if sort == 'individual_percent' %}<i class="bi bi-caret-{% if dir == 'asc' %}up{% else %}down{% endif %}-fill"></i>{% else %}<i class="bi bi-arrow-down-up"></i>{% endif %}</span>
+              </a>
+            </th>
+            <th class="sort-th {% if sort == 'penalty' %}is-active{% endif %}" title="1% deducted per other group this student never graded">
+              <a href="?sort=penalty&dir={% if sort == 'penalty' and dir == 'asc' %}desc{% else %}asc{% endif %}">Penalty
+                <span class="sort-icon">{% if sort == 'penalty' %}<i class="bi bi-caret-{% if dir == 'asc' %}up{% else %}down{% endif %}-fill"></i>{% else %}<i class="bi bi-arrow-down-up"></i>{% endif %}</span>
+              </a>
+            </th>
+            <th class="pe-3 sort-th {% if sort == 'final_percent' %}is-active{% endif %}">
+              <a href="?sort=final_percent&dir={% if sort == 'final_percent' and dir == 'asc' %}desc{% else %}asc{% endif %}">Final %
+                <span class="sort-icon">{% if sort == 'final_percent' %}<i class="bi bi-caret-{% if dir == 'asc' %}up{% else %}down{% endif %}-fill"></i>{% else %}<i class="bi bi-arrow-down-up"></i>{% endif %}</span>
+              </a>
+            </th>
+          </tr>
+        </thead>
+        {% include 'assessments/_partials/results_rows.html' %}
+      </table>
+    </div>
+    {% if page_obj.has_other_pages %}
+    <div class="card-footer d-flex justify-content-between align-items-center">
+      <div class="text-muted small">Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ total }}</div>
+      <nav aria-label="Results pagination">
+        <ul class="pagination pagination-sm mb-0">
+          <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+            <a class="page-link" href="{% if page_obj.has_previous %}?page={{ page_obj.previous_page_number }}&sort={{ sort }}&dir={{ dir }}{% else %}#{% endif %}">Previous</a>
+          </li>
+          {% for num in paginator.page_range %}
+            {% if num >= page_obj.number|add:'-2' and num <= page_obj.number|add:'2' %}
+            <li class="page-item {% if page_obj.number == num %}active{% endif %}">
+              <a class="page-link" href="?page={{ num }}&sort={{ sort }}&dir={{ dir }}">{{ num }}</a>
+            </li>
+            {% endif %}
+          {% endfor %}
+          <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+            <a class="page-link" href="{% if page_obj.has_next %}?page={{ page_obj.next_page_number }}&sort={{ sort }}&dir={{ dir }}{% else %}#{% endif %}">Next</a>
+          </li>
+        </ul>
+      </nav>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let groupChart = null;
+let distributionChart = null;
+const bucketLabels = ['0–9', '10–19', '20–29', '30–39', '40–49', '50–59', '60–69', '70–79', '80–89', '90–100'];
+
+// Mutate the existing chart's data + `.update()` rather than destroy and
+// recreate on every refresh — recreating repeatedly on the same <canvas>
+// hit Chart.js's "canvas already in use" reuse guard once the session had
+// been live a while (many refreshes in), which threw inside `new Chart()`
+// right after the old one had already been destroyed — leaving a cleared,
+// permanently blank canvas with nothing left to redraw it. Update-in-place
+// never destroys anything, so there's no window where it can end up blank.
+function renderGroupChart(labels, values) {
+  const ctx = document.getElementById('group-chart');
+  if (!ctx || !window.Chart) return;
+  if (groupChart) {
+    groupChart.data.labels = labels;
+    groupChart.data.datasets[0].data = values;
+    groupChart.update();
+    return;
+  }
+  const color = window.DevPerfCharts ? window.DevPerfCharts.tone('info') : undefined;
+  groupChart = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: labels, datasets: [{ label: 'Group score', data: values,
+      backgroundColor: color, borderRadius: 6, maxBarThickness: 48 }] },
+    options: { responsive: true, maintainAspectRatio: false,
+      // 'index' + intersect:false — the tooltip shows as soon as the cursor
+      // is anywhere over a bar's column, not only the exact pixels of the
+      // bar itself, which is what made it feel like hovering "did nothing".
+      interaction: { mode: 'index', intersect: false },
+      // Capped at the session's group weight, not a flat 100 - a
+      // category's weight is now its real share of the final score, so a
+      // group's score can never exceed the session's group_weight_percent.
+      scales: { y: { beginAtZero: true, max: {{ session.group_weight_percent }}, ticks: { callback: function (v) { return v + '%'; } } } },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: function (item) { return item.parsed.y + '%'; } } },
+      } }
+  });
+}
+
+function renderDistributionChart(buckets) {
+  const ctx = document.getElementById('distribution-chart');
+  if (!ctx || !window.Chart) return;
+  if (distributionChart) {
+    distributionChart.data.datasets[0].data = buckets;
+    distributionChart.update();
+    return;
+  }
+  const color = window.DevPerfCharts ? window.DevPerfCharts.tone('high') : undefined;
+  distributionChart = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: bucketLabels, datasets: [{ label: 'Students', data: buckets,
+      backgroundColor: color, borderRadius: 4, maxBarThickness: 28 }] },
+    options: { responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { ticks: { font: { size: 9 } } } },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: function (item) { return item.parsed.y + ' student' + (item.parsed.y === 1 ? '' : 's'); } } },
+      } }
+  });
+}
+
+renderGroupChart(
+  [{% for row in group_rows %}"{{ row.group.name|escapejs }}"{% if not forloop.last %},{% endif %}{% endfor %}],
+  [{% for row in group_rows %}{{ row.percent|default:0 }}{% if not forloop.last %},{% endif %}{% endfor %}]
+);
+renderDistributionChart([{% for n in distribution_buckets %}{{ n }}{% if not forloop.last %},{% endif %}{% endfor %}]);
+</script>
+{% if session.status == 'live' %}
+<script>
+// Silent-patch refresh of the table rows + both charts — same idea as
+// Participation. Driven primarily by the websocket (near-instant); the
+// interval is only a safety net for a dropped/slow socket.
+(function () {
+  const REFRESH_URL = '{% url "assessment_results_refresh" session.pk %}' + window.location.search;
+  let refreshing = false;
+
+  function rowSignature(row) {
+    return Array.from(row.children).map(function (td) { return td.textContent.trim(); }).join('|');
+  }
+
+  function refresh() {
+    if (refreshing) return;
+    refreshing = true;
+    fetch(REFRESH_URL, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (data.status !== 'live') return; // session ended mid-poll — stop pretending it's live
+
+        const oldBody = document.getElementById('results-rows');
+        if (oldBody) {
+          const oldSignatures = Array.from(oldBody.querySelectorAll('tr')).map(rowSignature);
+          const wrapper = document.createElement('tbody');
+          wrapper.innerHTML = data.rows_html.replace(/^\s*<tbody[^>]*>|<\/tbody>\s*$/g, '');
+          const newRows = Array.from(wrapper.querySelectorAll('tr'));
+          newRows.forEach(function (row, i) {
+            if (rowSignature(row) !== oldSignatures[i]) {
+              row.classList.add('is-new');
+            }
+          });
+          oldBody.replaceWith(wrapper);
+          wrapper.id = 'results-rows';
+        }
+
+        if (data.group_chart) renderGroupChart(data.group_chart.labels, data.group_chart.values);
+        if (data.distribution_buckets) renderDistributionChart(data.distribution_buckets);
+      })
+      .catch(function () { /* transient hiccup — next tick retries */ })
+      .finally(function () { refreshing = false; });
+  }
+
+  setInterval(refresh, 20000); // safety net only — the socket below drives real-time updates
+
+  if (window.WebSocket) {
+    const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const url = `${scheme}://${window.location.host}/ws/assessments/{{ session.uuid }}/`;
+    let retryTimer = null;
+    function connect() {
+      const socket = new WebSocket(url);
+      socket.onmessage = function (event) {
+        let data;
+        try { data = JSON.parse(event.data); } catch (e) { return; }
+        if (data.type === 'session.closed') { window.location.reload(); return; }
+        if (['evaluation.submitted', 'turn.activated', 'turn.closed'].includes(data.type)) refresh();
+      };
+      socket.onclose = function () {
+        window.clearTimeout(retryTimer);
+        retryTimer = setTimeout(connect, 4000);
+      };
+      socket.onerror = function () { socket.close(); };
+    }
+    connect();
+  }
+})();
+</script>
+{% endif %}
+{% endblock %}

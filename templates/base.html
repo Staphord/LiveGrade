@@ -1,0 +1,382 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}LiveGrade{% endblock %}</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+{% include 'partials/_design_system.html' %}
+{% include 'partials/_design_kit.html' %}
+<style>
+body{background:var(--canvas)}
+
+/* Sidebar */
+.sidebar{width:var(--sidebar);min-height:100vh;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;display:flex;flex-direction:column;z-index:var(--z-sidebar);transition:width var(--motion) var(--ease)}
+.sidebar.collapsed{width:var(--sidebar-collapsed)}
+.sidebar.collapsed ~ .main-wrap{margin-left:var(--sidebar-collapsed)}
+.sidebar-brand{padding:var(--sp-4) var(--sp-4) var(--sp-3);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);min-height:64px}
+.sidebar-brand .brand-main{display:flex;align-items:center;gap:var(--sp-2)}
+.sidebar-brand h5{font-weight:700;font-size:var(--fs-heading);margin:0;color:var(--ink);line-height:1.1}
+.sidebar-brand .brand-text{display:block}
+.sidebar-brand small{display:block;color:var(--text-muted);font-size:var(--fs-micro);margin-top:2px}
+.sidebar-toggle-btn{border:0;background:transparent;color:var(--text-soft);font-size:var(--fs-heading);display:inline-flex;align-items:center;justify-content:center;padding:2px;cursor:pointer}
+.sidebar-toggle-btn:hover{color:var(--accent)}
+.sidebar.collapsed .sidebar-toggle-btn i.bi-chevron-right{padding-right:var(--sp-1)}
+.sidebar.collapsed .brand-text,
+.sidebar.collapsed .sidebar-brand h5,
+.sidebar.collapsed .sidebar-brand small,
+.sidebar.collapsed .nav-section,
+.sidebar.collapsed .sidebar-footer-text,
+.sidebar.collapsed .sidebar-footer .avatar{
+display:none!important;
+}
+.sidebar-footer{display:flex;padding:var(--sp-3) var(--sp-4);border-top:1px solid var(--border);align-items:center;gap:var(--sp-2)}
+.sidebar-signout{color:var(--danger);display:inline-flex;align-items:center;justify-content:center;font-size:var(--fs-heading);padding:2px;flex-shrink:0}
+.sidebar-signout:hover{color:var(--tone-danger-fg)}
+.sidebar.collapsed .sidebar-footer{justify-content:center}
+
+.nav-link{display:flex;align-items:center;gap:var(--sp-2);margin:1px var(--sp-2);padding:var(--nav-pad) var(--sp-2);color:var(--text-soft);font-size:var(--fs-body);border-radius:var(--radius-control);transition:background var(--motion-fast) var(--ease),color var(--motion-fast) var(--ease)}
+.nav-link:hover{background:var(--surface-hover);color:var(--text)}
+.nav-link.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.nav-link.active i{background:var(--accent);color:var(--surface);animation:icon-pop var(--motion) var(--ease)}
+.nav-link:active{background:var(--border)}
+.nav-link:active i{transform:scale(.9)}
+.sidebar-signout:active i{transform:scale(.85)}
+.sidebar-signout i{transition:transform var(--motion-fast) var(--ease)}
+.nav-link i{font-size:var(--fs-heading);width:26px;height:26px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;border-radius:var(--radius-control);transition:background var(--motion-fast) var(--ease),color var(--motion-fast) var(--ease),transform var(--motion-fast) var(--ease)}
+.sidebar.collapsed .nav-link{justify-content:center;padding:var(--sp-2)}
+.sidebar.collapsed .nav-link .nav-text{display:none}
+.nav-section{padding:var(--sp-1) var(--sp-4);font-size:var(--fs-micro);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-subtle);margin-top:var(--sp-4)}
+.nav-section:first-child{margin-top:0}
+.main-wrap{margin-left:var(--sidebar);min-height:100vh;display:flex;flex-direction:column;background:var(--canvas)}
+.topbar{height:var(--topbar-h);background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--border);padding:var(--sp-2) var(--sp-5);display:flex;align-items:center;gap:var(--sp-4);position:sticky;top:0;z-index:var(--z-sticky)}
+.topbar-title{font-weight:600;font-size:var(--fs-strong);color:var(--ink)}
+.page-body{padding:var(--sp-5) var(--page-gutter) var(--sp-7);flex:1;max-width:1440px;width:100%;margin:0 auto}
+.topbar-title{flex:0 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar-live{flex:1;min-width:0}
+.nav-shell{flex:1;padding:var(--sp-1) 0;overflow-y:auto;scrollbar-width:thin}
+.score-bar{height:7px;border-radius:var(--radius-xs);background:var(--border);overflow:hidden}
+.score-bar-fill{height:100%;border-radius:var(--radius-xs);transition:width var(--motion-slow) var(--ease)}
+.criteria-row{display:flex;align-items:center;justify-content:space-between;padding:var(--sp-2) 0;border-bottom:1px solid var(--border)}
+.criteria-row:last-child{border-bottom:none}
+/* Performance page */
+.period-tag{background:var(--surface-sunken);color:var(--text-soft);border-radius:var(--radius-pill);padding:0 var(--sp-2);font-size:var(--fs-micro);font-weight:700}
+.verdict{display:flex;gap:var(--sp-4);align-items:stretch;flex-wrap:wrap}
+.verdict>*{display:flex;flex-direction:column;justify-content:center;min-width:0}
+.verdict>*+*{padding-left:var(--sp-4);border-left:1px dashed var(--border-strong)}
+.verdict-score{flex:0 0 auto;width:104px;text-align:center;align-items:center}
+.verdict-mix{flex:1 1 230px}
+.verdict-trend{flex:0 0 auto;width:252px}
+.mix-bar{display:flex;height:10px;border-radius:var(--radius-pill);overflow:hidden;background:var(--border)}
+.mix-bar span{display:block}
+.mix-key{display:grid;gap:2px}
+.mix-key>span{display:flex;align-items:center;gap:var(--sp-2)}
+.mix-key i{width:9px;height:9px;border-radius:var(--radius-xs);display:inline-block;flex-shrink:0}
+.cat-tile{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);padding:var(--sp-3) var(--sp-4);height:100%;position:relative}
+.cat-tile .bar{position:relative;height:7px;border-radius:var(--radius-xs);background:var(--border);margin:var(--sp-2) 0}
+.cat-tile .bar .fill{position:absolute;inset:0 auto 0 0;border-radius:var(--radius-xs)}
+.cat-tile .bar .team{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink);opacity:.55}
+.cat-tile.is-clickable{cursor:pointer;transition:box-shadow var(--motion-fast) var(--ease),border-color var(--motion-fast) var(--ease),transform var(--motion-fast) var(--ease)}
+.cat-tile.is-clickable:hover,.cat-tile.is-clickable:focus-visible{border-color:var(--accent);box-shadow:var(--elev-2);transform:translateY(-2px);outline:none}
+.cat-tile .peek{position:absolute;top:var(--sp-3);right:var(--sp-3);color:var(--accent);opacity:0;transition:opacity var(--motion-fast) var(--ease)}
+.cat-tile.is-clickable:hover .peek,.cat-tile.is-clickable:focus-visible .peek{opacity:1}
+.delta-up{color:var(--success)}
+.delta-down{color:var(--danger)}
+.delta-flat{color:var(--text-muted)}
+.crit{display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-2) 0;border-bottom:1px solid var(--border)}
+.crit:last-child{border-bottom:none}
+.crit .name{flex:1}
+.pips{display:flex;gap:3px}
+.pips span{width:14px;height:6px;border-radius:2px;background:var(--border)}
+.pips.pips-accent span.on{background:var(--accent)}
+.pips.pips-warn span.on{background:var(--warn)}
+.note-block{background:var(--surface-hover);border-left:3px solid var(--border-strong);border-radius:var(--radius-xs);padding:var(--sp-2) var(--sp-3)}
+.quote{background:var(--surface-hover);border-radius:var(--radius-xs);padding:var(--sp-2) var(--sp-3);font-style:italic;color:var(--text-soft)}
+.scroll-box{max-height:30rem;overflow-y:auto}
+.ev-tile{border:1px solid var(--border);border-radius:var(--radius-card);padding:var(--sp-2) var(--sp-3);height:100%}
+.row-click{cursor:pointer;transition:background var(--motion-fast) var(--ease)}
+.row-click:hover,.row-click:focus-visible{background:var(--surface-hover);outline:none}
+.row-click .peek{color:var(--accent);opacity:0;transition:opacity var(--motion-fast) var(--ease)}
+.row-click:hover .peek,.row-click:focus-visible .peek{opacity:1}
+.pager-compact .page-link{min-width:30px;display:flex;align-items:center;justify-content:center;gap:var(--sp-1)}
+.pager-compact .page-at{background:var(--surface-hover);color:var(--ink);font-weight:700;cursor:default}
+.band-success{fill:var(--tone-success-bg)}
+.band-info{fill:var(--tone-info-bg)}
+.band-warn{fill:var(--tone-warn-bg)}
+.band-danger{fill:var(--tone-danger-bg)}
+@media (max-width:991px){
+.verdict>*+*{border-left:0;padding-left:0;border-top:1px dashed var(--border-strong);padding-top:var(--sp-3);margin-top:var(--sp-1)}
+.verdict-score{width:auto}
+.verdict-trend{width:100%}
+}
+/* Kanban */
+.kanban-wrap{display:flex;gap:var(--sp-3);overflow-x:auto;padding-bottom:var(--sp-4);min-height:70vh}
+.kanban-col{flex:0 0 260px;display:flex;flex-direction:column}
+.kanban-col-header{position:relative;z-index:var(--z-base);padding:var(--sp-2) var(--sp-3);padding-right:calc(var(--sp-3) + 14px);margin-bottom:var(--sp-2);display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2);font-weight:600;font-size:var(--fs-body);color:var(--chev-ink)}
+/* The colour and the arrow live on a backdrop, not on the header itself: a
+   clip-path clips every descendant, and the sort menu is a descendant.
+   The header carries an explicit z-index rather than plain `isolation`: it
+   forms the same stacking context either way, but `auto` left the whole
+   subtree - the open sort menu included - painting below card content that
+   makes its own context (the facepile isolates; badges are positioned), so
+   avatars and priority chips showed through an open menu. */
+.kanban-col-header::before{content:'';position:absolute;inset:0;z-index:0;background:var(--chev,var(--text-subtle));border-radius:var(--radius-card) 0 0 var(--radius-card);clip-path:polygon(0 0,calc(100% - 14px) 0,100% 50%,calc(100% - 14px) 100%,0 100%)}
+.kanban-col-header>*{position:relative;z-index:1}
+.kanban-col-header .kc-sep{opacity:.55;margin:0 2px}
+.kanban-col-header .kc-sort{color:var(--chev-ink);opacity:.75;padding:0;border:0;background:none;line-height:1}
+.kanban-col-header .kc-sort:hover,.kanban-col-header .kc-sort:focus{opacity:1;color:var(--chev-ink)}
+.kanban-col-body{background:var(--surface-sunken);border-radius:var(--radius-card)}
+.kanban-col-body{padding:var(--sp-2);flex:1;min-height:120px}
+.kanban-card{background:var(--surface);border-radius:var(--radius-card);padding:var(--sp-3);margin-bottom:var(--sp-2);box-shadow:var(--elev-1);cursor:pointer;transition:box-shadow var(--motion-fast) var(--ease)}
+.kanban-card:hover{box-shadow:var(--elev-2)}
+.kanban-card.dragging{opacity:.9;cursor:grabbing;box-shadow:var(--elev-3);transform:rotate(1.5deg) scale(1.02)}
+.kanban-card .task-title{display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-2);font-weight:600;font-size:var(--fs-body);color:var(--ink);margin-bottom:var(--sp-1);line-height:1.3}
+.kanban-card .task-id{flex-shrink:0;font-weight:400}
+.kanban-card .task-meta{display:flex;align-items:center;gap:var(--sp-1);flex-wrap:wrap}
+.priority-dot{width:8px;height:8px;border-radius:var(--radius-pill);flex-shrink:0}
+.drop-zone.drag-over{background:var(--accent-soft);border:2px dashed var(--accent)}
+/* Quick-edit affordance: priority badge + assignee avatars are clickable
+   (board cards and the task detail sidebar) — nothing about a plain badge
+   or an avatar stack otherwise signals that, so a hover ring + pointer
+   cursor stands in for the missing visual cue. */
+.priority-picker-toggle,.assignee-picker-toggle{cursor:pointer;transition:box-shadow var(--motion-fast) var(--ease)}
+.priority-picker-toggle:hover,.priority-picker-toggle:focus{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+.assignee-picker-toggle:hover,.assignee-picker-toggle:focus{box-shadow:0 0 0 2px var(--surface),0 0 0 4px color-mix(in srgb,var(--accent) 35%,transparent);border-radius:var(--radius-pill)}
+.notif-btn{position:relative;border:0;background:transparent;color:var(--text-soft);display:inline-flex;align-items:center;justify-content:center;padding:var(--sp-1)}
+.notif-btn:hover,.notif-btn:focus{background:transparent;color:var(--accent);box-shadow:none}
+.notif-badge{position:absolute;top:-3px;right:-3px;font-size:.58rem;min-width:16px;height:16px;line-height:16px;padding:0}
+.notif-menu{width:290px;font-size:var(--fs-body)}
+.notif-item{display:flex;gap:var(--sp-2);align-items:flex-start;padding:var(--sp-3);text-decoration:none;color:var(--text)}
+.notif-item:hover{background:var(--surface-hover);color:var(--text)}
+.notif-icon{width:28px;height:28px;border-radius:var(--radius-pill);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+/* Review interactive widget */
+.score-cell{display:flex;gap:3px}
+.score-btn{width:26px;height:26px;border-radius:var(--radius-xs);border:1px solid var(--border-strong);background:var(--surface-hover);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:var(--fs-micro);font-weight:700;color:var(--text-muted);transition:background var(--motion-fast) var(--ease),border-color var(--motion-fast) var(--ease),color var(--motion-fast) var(--ease)}
+.score-btn:hover{background:var(--border)}
+.score-btn.sel-1{background:var(--tone-danger-bg);color:var(--tone-danger-fg);border-color:color-mix(in srgb,var(--tone-danger-fg) 30%,transparent)}
+.score-btn.sel-2{background:var(--tone-warn-bg);color:var(--tone-warn-fg);border-color:color-mix(in srgb,var(--tone-warn-fg) 30%,transparent)}
+.score-btn.sel-3{background:var(--tone-info-bg);color:var(--tone-info-fg);border-color:color-mix(in srgb,var(--tone-info-fg) 30%,transparent)}
+.score-btn.sel-4{background:var(--tone-success-bg);color:var(--tone-success-fg);border-color:color-mix(in srgb,var(--tone-success-fg) 30%,transparent)}
+
+.mobile-sidebar-toggle-btn{display:none}
+
+/* Offline / queued-update indicator (see board.html, task_detail.html) */
+.offline-banner{display:none;background:var(--tone-warn-bg);color:var(--tone-warn-fg);font-size:var(--fs-body);padding:var(--sp-2) var(--sp-5);text-align:center}
+.offline-banner.show{display:block}
+.queued-badge{display:inline-flex;align-items:center;gap:var(--sp-1);background:var(--tone-warn-bg);color:var(--tone-warn-fg);font-size:var(--fs-micro);padding:1px var(--sp-2);border-radius:var(--radius-pill);font-weight:600}
+
+/* Responsive: below this width the fixed sidebar becomes an off-canvas
+   panel (hidden by default, toggled by the same button that collapses
+   it on desktop) so the task board/detail views get full-width room. */
+@media (max-width: 768px){
+  /* The in-sidebar toggle button goes off-screen with the rest of the
+     sidebar, so a second, always-on-screen hamburger button in the
+     topbar is what actually opens it on mobile. */
+  .mobile-sidebar-toggle-btn{display:inline-flex;font-size:var(--fs-title);margin-right:var(--sp-2)}
+  .sidebar{transform:translateX(-100%);box-shadow:0 0 0 rgba(0,0,0,0);transition:transform var(--motion) var(--ease)}
+  .sidebar.mobile-open{transform:translateX(0);box-shadow:var(--elev-3)}
+  .sidebar.collapsed{width:var(--sidebar)}
+  .sidebar.collapsed .brand-text,
+  .sidebar.collapsed .sidebar-brand h5,
+  .sidebar.collapsed .sidebar-brand small,
+  .sidebar.collapsed .nav-section,
+  .sidebar.collapsed .sidebar-footer-text,
+  .sidebar.collapsed .nav-link .nav-text{display:revert!important}
+  .sidebar.collapsed .nav-link{justify-content:flex-start;padding:var(--sp-2)}
+  .main-wrap, .sidebar.collapsed ~ .main-wrap{margin-left:0}
+  .sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:var(--z-backdrop)}
+  .sidebar-backdrop.show{display:block}
+  .topbar{flex-wrap:wrap;gap:var(--sp-2);padding:var(--sp-3)}
+  .topbar-actions-wrap{width:100%;overflow-x:auto}
+  .page-body{padding:var(--sp-3)}
+  .kanban-col{flex:0 0 82vw}
+}
+</style>
+{% block extra_css %}{% endblock %}
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-main">
+      <i class="bi bi-clipboard2-data text-primary icon-sm"></i>
+      <div>
+        <h5>LiveGrade</h5>
+      </div>
+    </div>
+    <button id="sidebar-toggle" class="sidebar-toggle-btn" type="button" aria-label="Toggle sidebar">
+      <i class="bi bi-list"></i>
+    </button>
+  </div>
+
+  {% if my_orgs|length > 1 %}
+  <div class="brand-text px-3 py-2 border-bottom">
+    <label class="text-muted d-block mb-1 u-label">Organization</label>
+    <form method="post" action="{% url 'switch_organization' %}">
+      {% csrf_token %}
+      <select name="organization" class="form-select form-select-sm t-body" onchange="this.form.submit()">
+        {% for org in my_orgs %}
+        <option value="{{ org.id }}"{% if active_org and org.id == active_org.id %} selected{% endif %}>{{ org.name }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+  {% elif active_org %}
+  <div class="brand-text px-3 py-2 border-bottom">
+    <div class="text-muted u-label">Organization</div>
+    <div class="fw-semibold t-body">{{ active_org.name }}</div>
+  </div>
+  {% endif %}
+
+  <nav class="nav-shell">
+    {% if request.user.is_authenticated %}
+    <div class="nav-section">Main</div>
+    <a href="{% url 'assessment_session_list' %}" class="nav-link {% if 'assessment' in request.resolver_match.url_name %}active{% endif %}">
+      <i class="bi bi-clipboard2-data"></i><span class="nav-text">Sessions</span>
+    </a>
+    {% endif %}
+  </nav>
+  <div class="sidebar-footer">
+    <div class="d-flex align-items-center gap-2 flex-grow-1">
+      <div class="sidebar-footer-text">
+        <div class="t-body fw-600 text-ink">{{ request.user.display_name }}</div>
+        <div class="u-meta">Signed in with DevPerf</div>
+      </div>
+    </div>
+    <button type="button" class="btn btn-sm btn-light density-toggle" data-density-toggle aria-label="Toggle density" title="Density: comfortable">
+      <i class="bi bi-arrows-expand" aria-hidden="true"></i>
+    </button>
+    <form method="post" action="{% url 'oidc_logout' %}" class="m-0">
+      {% csrf_token %}
+      <button type="submit" id="sidebar-logout-link" class="sidebar-signout border-0 bg-transparent" aria-label="Sign out" title="Sign out">
+        <i class="bi bi-box-arrow-right"></i>
+      </button>
+    </form>
+  </div>
+</div>
+
+<div class="nav-progress" id="nav-progress"></div>
+<div class="flash-region" id="flash-region" aria-live="polite">
+  {% for msg in messages %}
+  <div class="alert alert-{% if msg.tags == 'error' %}danger{% else %}{{ msg.tags }}{% endif %} alert-dismissible fade show"
+       role="{% if msg.tags == 'error' %}alert{% else %}status{% endif %}">
+    {{ msg }}<button type="button" class="btn-close btn-close-sm" aria-label="Dismiss"></button>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+<div class="main-wrap">
+  <div class="topbar">
+    <button id="mobile-sidebar-toggle" class="sidebar-toggle-btn mobile-sidebar-toggle-btn" type="button" aria-label="Open menu">
+      <i class="bi bi-list"></i>
+    </button>
+    <span class="topbar-title">{% block page_title %}{% endblock %}</span>
+    <div class="topbar-live" aria-live="polite"></div>
+    <div class="d-flex gap-2 align-items-center topbar-actions-wrap">
+      {% block topbar_actions %}{% endblock %}
+    </div>
+  </div>
+  <div class="page-body">
+    {% block content %}{% endblock %}
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="{% static 'js/design-tokens.js' %}"></script>
+<script src="{% static 'js/feedback.js' %}"></script>
+<script src="{% static 'js/density.js' %}"></script>
+<script src="{% static 'js/overlay.js' %}"></script>
+<script src="{% static 'js/chart-theme.js' %}"></script>
+
+<script>
+(function () {
+  const sidebar = document.querySelector('.sidebar');
+  const toggle = document.getElementById('sidebar-toggle');
+  const mobileToggle = document.getElementById('mobile-sidebar-toggle');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  if (!sidebar || !toggle) return;
+
+  const STORAGE_KEY = 'livegrade-sidebar-collapsed';
+  const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
+
+  const toggleIcon = toggle.querySelector('i');
+
+  function updateToggleIcon(collapsed) {
+    if (!toggleIcon) return;
+    toggleIcon.classList.toggle('bi-list', !collapsed);
+    toggleIcon.classList.toggle('bi-chevron-right', collapsed);
+  }
+
+  function setCollapsed(collapsed) {
+    if (collapsed) {
+      sidebar.classList.add('collapsed');
+    } else {
+      sidebar.classList.remove('collapsed');
+    }
+    updateToggleIcon(collapsed);
+    localStorage.setItem(STORAGE_KEY, collapsed ? '1' : '0');
+  }
+
+  function setMobileOpen(open) {
+    sidebar.classList.toggle('mobile-open', open);
+    if (backdrop) backdrop.classList.toggle('show', open);
+  }
+
+  toggle.addEventListener('click', function () {
+    if (isMobile()) {
+      // On a small screen the same button opens/closes the off-canvas
+      // panel instead of the desktop collapse/expand behavior.
+      setMobileOpen(!sidebar.classList.contains('mobile-open'));
+      return;
+    }
+    const collapsed = sidebar.classList.toggle('collapsed');
+    setCollapsed(collapsed);
+  });
+
+  if (mobileToggle) {
+    mobileToggle.addEventListener('click', function () {
+      setMobileOpen(!sidebar.classList.contains('mobile-open'));
+    });
+  }
+
+  if (backdrop) {
+    backdrop.addEventListener('click', function () { setMobileOpen(false); });
+  }
+  sidebar.querySelectorAll('.nav-link').forEach(function (link) {
+    link.addEventListener('click', function () {
+      if (isMobile()) setMobileOpen(false);
+    });
+  });
+
+  if (!isMobile()) {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    setCollapsed(saved === '1');
+  }
+})();
+</script>
+
+<script>
+// Any page with a sticky tabs/KPI header (`.tabs-sticky-header`) needs
+// other sticky elements further down the same page — a sidebar form
+// card, say — to sit *below* it, not under it. Its height varies per
+// page and can change at runtime (a validation banner appearing, a
+// stat updating), so it's measured rather than hard-coded, and exposed
+// as `--sticky-header-h` for any element's `top: calc(var(--topbar-h) +
+// var(--sticky-header-h, 0px) + ...)` to use.
+(function () {
+  var header = document.querySelector('.tabs-sticky-header');
+  if (!header || !window.ResizeObserver) return;
+  var root = document.documentElement;
+  function apply() { root.style.setProperty('--sticky-header-h', header.offsetHeight + 'px'); }
+  apply();
+  new ResizeObserver(apply).observe(header);
+})();
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

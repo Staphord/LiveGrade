@@ -1,0 +1,401 @@
+{% extends 'base.html' %}
+{% block title %}Participation - {{ session.name }}{% endblock %}
+{% block page_title %}{{ session.name }}{% endblock %}
+{% block topbar_actions %}
+<a href="{% url 'assessment_session_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>All sessions</a>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.live-refresh-badge{display:inline-flex;align-items:center;gap:5px;font-size:var(--fs-micro);font-weight:700;
+     padding:.2rem .55rem;border-radius:999px;background:var(--tone-success-bg);color:var(--tone-success-fg)}
+.live-refresh-badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:participation-pulse 1.4s ease-in-out infinite}
+@keyframes participation-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+
+/* A card whose contents just changed on a silent refresh gets a brief
+   glow — same "just happened" language the Live control tab uses. */
+@keyframes card-glow{0%{box-shadow:0 0 0 2px var(--accent) inset}100%{box-shadow:0 0 0 0 transparent inset}}
+.participant-card.is-new{animation:card-glow 1.8s ease-out}
+
+/* Now-presenting strip — the "lively" element: who's on, and who among the
+   eligible graders has started (even before they submit). A status-dot
+   rollup per the same severity language as the card badges (grey = not
+   started, amber = mid-grade, green = submitted), debounced client-side
+   so a brief network hiccup doesn't flicker someone back to grey. */
+.live-presenter-strip{display:flex;align-items:center;gap:.9rem;padding:.85rem 1rem;border-radius:var(--radius-card);
+     background:var(--accent-soft);border:1px solid var(--border);margin-bottom:1rem;flex-wrap:wrap}
+.live-presenter-strip .presenter-icon{width:40px;height:40px;border-radius:10px;flex-shrink:0;display:flex;
+     align-items:center;justify-content:center;background:var(--accent);color:#fff;font-size:1.1rem}
+.live-presenter-strip .presenter-name{font-weight:800;font-size:var(--fs-heading)}
+.live-presenter-strip .presenter-sub{font-size:var(--fs-micro);color:var(--text-muted)}
+.grader-chip-row{display:flex;flex-wrap:wrap;gap:.4rem;margin-left:auto}
+.grader-chip{display:inline-flex;align-items:center;gap:.35rem;padding:.25rem .55rem .25rem .35rem;border-radius:999px;
+     background:var(--surface);border:1px solid var(--border);font-size:var(--fs-micro);font-weight:600;color:var(--ink)}
+.grader-chip .grader-dot{width:8px;height:8px;border-radius:50%;background:var(--text-muted);flex-shrink:0}
+.grader-chip.is-grading .grader-dot{background:var(--tone-warn-fg);animation:participation-pulse 1.2s ease-in-out infinite}
+.grader-chip.is-done .grader-dot{background:var(--tone-success-fg)}
+.grader-chip .grader-pct{color:var(--text-muted);font-weight:500}
+
+/* -------------------------------------------------------------------- *
+ * Card grid — replaces the old one-column-per-group matrix. A student's
+ * full grading footprint (joined, overall status, progress bar, and a
+ * per-group breakdown) fits in one glanceable card instead of a wide,
+ * mostly-empty table scrolling off-screen once a session has more than a
+ * handful of groups.
+ * -------------------------------------------------------------------- */
+.participation-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:.85rem;padding:1rem}
+.participant-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);
+     padding:1rem;display:flex;flex-direction:column;gap:.65rem;
+     transition:transform var(--motion-fast) var(--ease),box-shadow var(--motion-fast) var(--ease),border-color var(--motion-fast) var(--ease)}
+.participant-card:hover{transform:translateY(-2px);box-shadow:var(--elev-2);border-color:var(--accent-soft)}
+
+.participant-card-head{display:flex;align-items:center;gap:.7rem}
+
+/* Ring-wrapped avatar — the same conic-gradient "live percentage" language
+   already used for the turn timer and the big participation hero ring
+   elsewhere in this app, scaled down so each card carries its own vivid,
+   at-a-glance completion read instead of a flat bar underneath. */
+.avatar-ring{position:relative;width:46px;height:46px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;
+     background:conic-gradient(var(--accent) calc(var(--pct,0) * 1%),var(--surface-sunken) 0);
+     transition:background 1.2s var(--ease,ease)}
+.status-full .avatar-ring{background:conic-gradient(var(--success) calc(var(--pct,0) * 1%),var(--surface-sunken) 0)}
+.status-none .avatar-ring{background:conic-gradient(var(--danger) calc(var(--pct,0) * 1%),var(--surface-sunken) 0)}
+.avatar-ring .member-avatar{width:38px;height:38px;border-radius:50%;display:inline-flex;
+     align-items:center;justify-content:center;font-size:.66rem;font-weight:800;flex-shrink:0;
+     border:2px solid var(--surface)}
+.joined-badge{position:absolute;bottom:-2px;right:-2px;width:17px;height:17px;border-radius:50%;
+     background:var(--success);color:#fff;display:flex;align-items:center;justify-content:center;
+     font-size:.55rem;border:2px solid var(--surface)}
+
+.participant-name-wrap{min-width:0;flex:1}
+.participant-name{font-weight:700;font-size:var(--fs-sm);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.participant-progress-label{font-size:var(--fs-micro);color:var(--text-muted);margin-top:.1rem}
+.status-pill{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+     font-size:.75rem;flex-shrink:0}
+.status-pill.is-full{background:linear-gradient(135deg,var(--tone-success-bg),var(--tone-success-fg) 220%);color:var(--tone-success-fg)}
+.status-pill.is-partial{background:var(--tone-warn-bg);color:var(--tone-warn-fg)}
+.status-pill.is-none{background:var(--tone-danger-bg);color:var(--tone-danger-fg)}
+
+/* The banner naming who this student presents with — visible up front,
+   no need to open "Group breakdown" just to see it. */
+.participant-team{display:flex;align-items:center;gap:.4rem;font-size:var(--fs-micro);font-weight:600;
+     color:var(--text-muted);background:var(--surface-sunken);border-radius:var(--radius-control);
+     padding:.3rem .55rem;width:fit-content}
+
+/* Shared "something is happening right now" pill — amber while grading,
+   accent-blue while presenting — both with a pulsing dot so the card reads
+   as live rather than a static snapshot. */
+.live-status-note{display:flex;align-items:center;gap:.4rem;font-size:var(--fs-micro);font-weight:700;
+     border-radius:var(--radius-pill);padding:.25rem .6rem;width:fit-content}
+.live-status-note .live-dot{width:7px;height:7px;border-radius:50%;background:currentColor;animation:participation-pulse 1.2s ease-in-out infinite}
+.live-status-note.is-grading{color:var(--tone-warn-fg);background:var(--tone-warn-bg)}
+.live-status-note.is-presenting{color:#fff;background:linear-gradient(120deg,var(--brand-deep),var(--brand-bright))}
+.live-status-note.is-submitted{color:var(--tone-success-fg);background:var(--tone-success-bg);
+     transition:opacity .6s var(--ease,ease)}
+.live-status-note.is-submitted.is-fading{opacity:0}
+
+/* The whole card gets a soft, breathing accent ring while this student's
+   own group is the one currently presenting — the strongest "this is
+   happening right now" signal on the page, visible without expanding
+   anything or scrolling to the strip above. */
+@keyframes presenting-breathe{0%,100%{box-shadow:0 0 0 2px var(--accent) inset,0 0 0 0 var(--accent-soft)}50%{box-shadow:0 0 0 2px var(--accent) inset,0 0 10px 2px var(--accent-soft)}}
+.participant-card.is-presenting-now{border-color:var(--accent);animation:presenting-breathe 2.4s ease-in-out infinite}
+
+.details-toggle{background:none;border:none;padding:0;display:flex;align-items:center;gap:.3rem;
+     font-size:var(--fs-micro);font-weight:700;color:var(--accent);cursor:pointer;width:fit-content}
+.details-toggle i{transition:transform var(--motion-fast) var(--ease);font-size:.65rem}
+.details-toggle[aria-expanded="true"] i{transform:rotate(180deg)}
+.participant-details{display:flex;flex-wrap:wrap;gap:.35rem;padding-top:.15rem}
+.group-chip{display:inline-flex;align-items:center;gap:.3rem;padding:.2rem .5rem;border-radius:999px;
+     font-size:var(--fs-micro);font-weight:600;background:var(--surface-sunken);color:var(--text-muted);border:1px solid var(--border)}
+.group-chip.is-graded{background:var(--tone-success-bg);color:var(--tone-success-fg);border-color:transparent}
+.group-chip.is-own{background:var(--tone-info-bg);color:var(--tone-info-fg);border-color:transparent}
+.group-chip.is-pending.is-grading-now{background:var(--tone-warn-bg);color:var(--tone-warn-fg);border-color:transparent;font-weight:700}
+.group-chip .chip-dot{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.5}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="tabs-sticky-header">
+{% include 'assessments/_session_tabs.html' with active='participation' %}
+{% include 'assessments/_partials/participation_stats.html' %}
+</div>
+
+{% if session.status == 'live' and active_group_id %}
+<div class="live-presenter-strip" id="live-presenter-strip" data-group-id="{{ active_group_id }}">
+  <span class="presenter-icon"><i class="bi bi-broadcast"></i></span>
+  <div>
+    <div class="presenter-name">{{ active_group_name }} is presenting</div>
+    <div class="presenter-sub">Live as students grade - updates before they even submit</div>
+  </div>
+  <div class="grader-chip-row" id="grader-chip-row"><span class="text-muted t-micro">Waiting for graders to start…</span></div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="px-3 py-2 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <span class="text-muted t-body"><strong>{{ total }}</strong> student{{ total|pluralize }}{% if status_filter %} matching filter{% else %} on the roster{% endif %}</span>
+      {% if session.status == 'live' %}
+      <span class="live-refresh-badge" id="participation-live-badge"><span class="dot"></span>Live</span>
+      {% endif %}
+    </div>
+    {% include 'assessments/_partials/participation_cards.html' %}
+    {% if page_obj.has_other_pages %}
+    <div class="card-footer d-flex justify-content-between align-items-center">
+      <div class="text-muted small">Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ total }}</div>
+      <nav aria-label="Participation pagination">
+        <ul class="pagination pagination-sm mb-0">
+          <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+            <a class="page-link" href="{% if page_obj.has_previous %}?page={{ page_obj.previous_page_number }}{% else %}#{% endif %}">Previous</a>
+          </li>
+          {% for num in paginator.page_range %}
+            {% if num >= page_obj.number|add:'-2' and num <= page_obj.number|add:'2' %}
+            <li class="page-item {% if page_obj.number == num %}active{% endif %}">
+              <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+            </li>
+            {% endif %}
+          {% endfor %}
+          <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+            <a class="page-link" href="{% if page_obj.has_next %}?page={{ page_obj.next_page_number }}{% else %}#{% endif %}">Next</a>
+          </li>
+        </ul>
+      </nav>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Delegated (survives the card grid being swapped outerHTML-style on every
+// silent refresh) — toggles one card's group breakdown open/closed.
+document.addEventListener('click', function (e) {
+  const btn = e.target.closest('[data-details-toggle]');
+  if (!btn) return;
+  const card = btn.closest('.participant-card');
+  const details = card ? card.querySelector('.participant-details') : null;
+  if (!details) return;
+  const expanded = btn.getAttribute('aria-expanded') === 'true';
+  btn.setAttribute('aria-expanded', String(!expanded));
+  details.hidden = expanded;
+});
+</script>
+{% if session.status == 'live' %}
+<script>
+// Silent-patch refresh of the card grid + stat strip — same idea as the
+// Live control tab. Driven primarily by the websocket below (near-instant);
+// the interval here is only a safety net for a dropped/slow socket, so
+// it's deliberately much longer than a pure-polling version would need.
+(function () {
+  const REFRESH_URL = '{% url "assessment_participation_refresh" session.pk %}' + window.location.search;
+  let refreshing = false;
+
+  function cardSignature(card) {
+    return card.textContent.replace(/\s+/g, ' ').trim();
+  }
+
+  function refresh() {
+    if (refreshing) return;
+    refreshing = true;
+    fetch(REFRESH_URL, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (data.status !== 'live') { window.location.reload(); return; } // session ended — the strip/tabs need a real reload
+        const oldGrid = document.getElementById('participation-cards');
+        if (oldGrid && data.cards_html) {
+          const oldSignatures = {};
+          oldGrid.querySelectorAll('.participant-card').forEach(function (card) {
+            oldSignatures[card.dataset.studentId] = cardSignature(card);
+          });
+          const wrapper = document.createElement('div');
+          wrapper.innerHTML = data.cards_html;
+          const newGrid = wrapper.firstElementChild;
+          newGrid.querySelectorAll('.participant-card').forEach(function (card) {
+            if (oldSignatures[card.dataset.studentId] !== undefined
+                && oldSignatures[card.dataset.studentId] !== cardSignature(card)) {
+              card.classList.add('is-new');
+            }
+          });
+          oldGrid.replaceWith(newGrid);
+          // Freshly-rendered cards always start with the "grading now" note
+          // hidden (the server has no idea about ephemeral heartbeat state)
+          // — reapply whatever this tab already knows from `gradingState`.
+          if (window.DevPerfReapplyGradingState) window.DevPerfReapplyGradingState();
+        }
+        const oldStats = document.getElementById('participation-stat-strip');
+        if (oldStats && data.stats_html) oldStats.outerHTML = data.stats_html;
+      })
+      .catch(function () { /* transient hiccup — next tick retries */ })
+      .finally(function () { refreshing = false; });
+  }
+  window.DevPerfParticipationRefresh = refresh; // markSubmitted (defined below, outside this IIFE) needs it too
+
+  setInterval(refresh, 20000); // safety net only — the socket below drives real-time updates
+
+  if (window.WebSocket) {
+    const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const url = `${scheme}://${window.location.host}/ws/assessments/{{ session.uuid }}/`;
+    let retryTimer = null;
+    function connect() {
+      const socket = new WebSocket(url);
+      socket.onmessage = function (event) {
+        let data;
+        try { data = JSON.parse(event.data); } catch (e) { return; }
+        if (data.type === 'session.closed') { window.location.reload(); return; }
+        if (data.type === 'grading.progress') { applyGradingProgress(data.data); return; }
+        if (data.type === 'evaluation.submitted') { markSubmitted(data.data); return; }
+        if (['turn.activated', 'turn.closed', 'transition.scheduled'].includes(data.type)) {
+          // Who's presenting changed — the strip above the grid is stale
+          // either way, and this is rare enough mid-session that a reload
+          // is simpler and safer than patching the strip in place.
+          window.location.reload();
+          return;
+        }
+        // evaluation.submitted, participation.updated, etc. — just the
+        // grid/stat contents changed, so a silent patch is enough.
+        refresh();
+      };
+      socket.onclose = function () {
+        window.clearTimeout(retryTimer);
+        retryTimer = setTimeout(connect, 4000);
+      };
+      socket.onerror = function () { socket.close(); };
+    }
+    connect();
+  }
+})();
+
+// The "currently grading" strip + per-card live note — purely client-side,
+// ephemeral state from `grading.progress` heartbeats (see evaluate.html).
+// A status-dot severity rollup (grey = not started, amber = in progress,
+// green = submitted) with a short debounce before dropping someone, so a
+// single missed heartbeat doesn't flicker their indicator away.
+const gradingState = new Map(); // student_id -> {answered, total, groupId, name, lastSeen}
+const GRADING_STALE_MS = 15000;
+// student_id -> {groupId, expiresAt} — a brief "Submitted" flash right where
+// "Grading now" was, so the transition reads as one continuous state change
+// instead of the note just vanishing the instant the vote lands.
+const submittedState = new Map();
+const SUBMITTED_FLASH_MS = 4000;
+
+function applyGradingProgress(payload) {
+  if (!payload || !payload.student_id) return;
+  gradingState.set(payload.student_id, {
+    answered: payload.answered || 0, total: payload.total || 0,
+    groupId: payload.group_id, name: payload.student_name || 'Student',
+    lastSeen: Date.now(),
+  });
+  renderGradingState();
+
+  const card = document.querySelector('.participant-card[data-student-id="' + payload.student_id + '"]');
+  if (card) {
+    const note = card.querySelector('.live-status-note.is-grading');
+    if (note) {
+      note.hidden = false;
+      note.innerHTML = '<span class="live-dot"></span>Grading now' +
+        (payload.total ? ' - ' + payload.answered + '/' + payload.total : '');
+    }
+    const chip = card.querySelector('.group-chip[data-group-id="' + payload.group_id + '"]');
+    if (chip) chip.classList.add('is-grading-now');
+  }
+}
+
+function renderGradingState() {
+  const row = document.getElementById('grader-chip-row');
+  const now = Date.now();
+  const active = [];
+  gradingState.forEach(function (state, studentId) {
+    if (now - state.lastSeen > GRADING_STALE_MS) {
+      gradingState.delete(studentId);
+      const card = document.querySelector('.participant-card[data-student-id="' + studentId + '"]');
+      if (card) {
+        const note = card.querySelector('.live-status-note.is-grading');
+        if (note) note.hidden = true;
+      }
+      return;
+    }
+    active.push(state);
+  });
+  if (!row) return;
+  if (!active.length) {
+    row.innerHTML = '<span class="text-muted t-micro">Waiting for graders to start…</span>';
+    return;
+  }
+  row.innerHTML = active.map(function (state) {
+    const pct = state.total ? Math.round((state.answered / state.total) * 100) : 0;
+    const done = state.total && state.answered >= state.total;
+    return '<span class="grader-chip' + (done ? ' is-done' : ' is-grading') + '">' +
+      '<span class="grader-dot"></span>' + escapeHtml(state.name) +
+      (state.total ? ' <span class="grader-pct">' + pct + '%</span>' : '') + '</span>';
+  }).join('');
+}
+
+function markSubmitted(payload) {
+  if (!payload || !payload.student_id) { window.DevPerfParticipationRefresh(); return; }
+  // The vote landed — this student is no longer "grading", they're done.
+  gradingState.delete(payload.student_id);
+  submittedState.set(payload.student_id, { groupId: payload.group_id, expiresAt: Date.now() + SUBMITTED_FLASH_MS });
+  renderGradingState();
+  showSubmittedNote(payload.student_id, payload.group_id);
+  // Everything else — the progress ring, status pill, group chip, stat
+  // strip counts — genuinely changed too, so still patch those in.
+  window.DevPerfParticipationRefresh();
+  window.setTimeout(function () {
+    submittedState.delete(payload.student_id);
+    const card = document.querySelector('.participant-card[data-student-id="' + payload.student_id + '"]');
+    const note = card ? card.querySelector('.live-status-note.is-submitted') : null;
+    if (note) {
+      note.classList.add('is-fading');
+      window.setTimeout(function () { note.hidden = true; note.classList.remove('is-fading'); }, 600);
+    }
+  }, SUBMITTED_FLASH_MS);
+}
+
+function showSubmittedNote(studentId, groupId) {
+  const card = document.querySelector('.participant-card[data-student-id="' + studentId + '"]');
+  if (!card) return;
+  const gradingNote = card.querySelector('.live-status-note.is-grading');
+  if (gradingNote) gradingNote.hidden = true;
+  const submittedNote = card.querySelector('.live-status-note.is-submitted');
+  if (submittedNote) { submittedNote.hidden = false; submittedNote.classList.remove('is-fading'); }
+  const chip = card.querySelector('.group-chip[data-group-id="' + groupId + '"]');
+  if (chip) chip.classList.remove('is-grading-now');
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// Sweep stale "grading" entries even with no new pings arriving, so a tab
+// a student just closed ages out of the strip within ~15-20s on its own.
+setInterval(renderGradingState, 5000);
+
+// Re-paint every still-active grading note onto the current DOM — called
+// right after a silent refresh swaps in fresh (unaware) server markup.
+window.DevPerfReapplyGradingState = function () {
+  const now = Date.now();
+  gradingState.forEach(function (state, studentId) {
+    if (now - state.lastSeen > GRADING_STALE_MS) return;
+    const card = document.querySelector('.participant-card[data-student-id="' + studentId + '"]');
+    if (!card) return;
+    const note = card.querySelector('.live-status-note.is-grading');
+    if (note) {
+      note.hidden = false;
+      note.innerHTML = '<span class="live-dot"></span>Grading now' +
+        (state.total ? ' - ' + state.answered + '/' + state.total : '');
+    }
+    const chip = card.querySelector('.group-chip[data-group-id="' + state.groupId + '"]');
+    if (chip) chip.classList.add('is-grading-now');
+  });
+  submittedState.forEach(function (state, studentId) {
+    if (now > state.expiresAt) return;
+    showSubmittedNote(studentId, state.groupId);
+  });
+};
+</script>
+{% endif %}
+{% endblock %}

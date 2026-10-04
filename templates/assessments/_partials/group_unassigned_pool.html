@@ -1,0 +1,24 @@
+<div class="card-body unassigned-drop-zone" id="unassigned-pool">
+  <div class="card-icon-head mb-2">
+    <div class="head-left">
+      <span class="icon-badge" style="background:var(--tone-warn-bg);color:var(--tone-warn-fg)"><i class="bi bi-person-dash-fill"></i></span>
+      <div>
+        <div class="title">Unassigned students</div>
+        <div class="sub">{{ ungrouped_students|length }} waiting for a group</div>
+      </div>
+    </div>
+  </div>
+  {% if ungrouped_students %}
+  <div class="d-flex flex-wrap gap-1 unassigned-list">
+    {% for student in ungrouped_students %}
+    <span class="badge bg-secondary-subtle text-secondary-emphasis unassigned-badge" draggable="true"
+          data-student-id="{{ student.pk }}" data-source-group="">
+      <span class="member-avatar bg-secondary text-white">{{ student.full_name|default:student.student_id|slice:":2"|upper }}</span>
+      {{ student.full_name|default:student.student_id }}
+    </span>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-muted t-sm py-2"><i class="bi bi-check2-circle me-1"></i>Everyone's assigned - drop a member here to unassign them.</div>
+  {% endif %}
+</div>

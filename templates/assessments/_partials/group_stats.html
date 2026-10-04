@@ -1,0 +1,14 @@
+<div class="groups-stat-strip assess-stagger" id="groups-stat-strip">
+  <div class="groups-stat-pill">
+    <span class="stat-icon"><i class="bi bi-diagram-3-fill"></i></span>
+    <div><div class="stat-val">{{ groups|length }}</div><div class="stat-lbl">Groups</div></div>
+  </div>
+  <div class="groups-stat-pill {% if ungrouped_students %}is-warn{% else %}is-ok{% endif %}">
+    <span class="stat-icon"><i class="bi bi-person-dash-fill"></i></span>
+    <div><div class="stat-val">{{ ungrouped_students|length }}</div><div class="stat-lbl">Unassigned students</div></div>
+  </div>
+  <div class="groups-stat-pill is-ok">
+    <span class="stat-icon"><i class="bi bi-check2-circle"></i></span>
+    <div><div class="stat-val">{{ full_group_count }}</div><div class="stat-lbl">Groups full</div></div>
+  </div>
+</div>

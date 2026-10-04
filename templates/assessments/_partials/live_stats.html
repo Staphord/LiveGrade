@@ -1,0 +1,22 @@
+<div class="stat-strip mb-3" id="live-stats">
+  <div class="stat-pill">
+    <div class="lbl">Presented</div>
+    <div class="val">{{ presented_count }}<span class="t-body text-muted">/{{ group_count }}</span></div>
+  </div>
+  <div class="stat-pill">
+    <div class="lbl">Groups left</div>
+    <div class="val">{{ groups_remaining }}</div>
+  </div>
+  <div class="stat-pill">
+    <div class="lbl">Avg. turn length</div>
+    <div class="val">
+      {% if avg_turn_seconds %}{{ avg_turn_seconds|floatformat:0 }}s{% else %}-{% endif %}
+    </div>
+  </div>
+  <div class="stat-pill">
+    <div class="lbl">Session running</div>
+    <div class="val" id="session-elapsed" data-started-seconds-ago="{{ elapsed_seconds|default:'' }}">
+      {% if elapsed_seconds %}{{ elapsed_seconds|floatformat:0 }}s{% else %}Not started{% endif %}
+    </div>
+  </div>
+</div>

@@ -1,0 +1,11 @@
+<div class="page-tabs mb-3">
+  <a href="{% url 'assessment_session_detail' session.pk %}" class="page-tab {% if active == 'overview' %}active{% endif %}">
+    <i class="bi bi-broadcast me-1"></i>Live control
+  </a>
+  <a href="{% url 'assessment_participation' session.pk %}" class="page-tab {% if active == 'participation' %}active{% endif %}">
+    <i class="bi bi-person-check me-1"></i>Participation
+  </a>
+  <a href="{% url 'assessment_results' session.pk %}" class="page-tab {% if active == 'results' %}active{% endif %}">
+    <i class="bi bi-bar-chart-line me-1"></i>Results
+  </a>
+</div>

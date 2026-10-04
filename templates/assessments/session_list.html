@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+{% block title %}LiveGrade - DevPerf{% endblock %}
+{% block page_title %}LiveGrade{% endblock %}
+
+{% block extra_css %}
+<style>
+@keyframes assess-fade-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.assess-stagger{opacity:0;animation:assess-fade-in var(--motion,.35s) var(--ease,ease) forwards}
+.assess-stagger:nth-child(1){animation-delay:.03s}
+.assess-stagger:nth-child(2){animation-delay:.08s}
+.assess-stagger:nth-child(3){animation-delay:.13s}
+.assess-stagger:nth-child(4){animation-delay:.18s}
+.assess-stagger:nth-child(5){animation-delay:.23s}
+.assess-stagger:nth-child(6){animation-delay:.28s}
+
+/* Centered in the page's own content area, not pinned under the header —
+   the empty state IS the page when there's nothing yet, so it gets the
+   same visual weight a populated grid would have, vertically balanced
+   rather than stacked flush against the top. */
+.assess-empty{min-height:60vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+     text-align:center;padding:var(--sp-5)}
+.assess-empty .empty-icon{width:72px;height:72px;border-radius:50%;background:var(--accent-soft);
+     display:flex;align-items:center;justify-content:center;margin-bottom:var(--sp-4);
+     font-size:1.9rem;color:var(--accent)}
+.assess-empty h2{font-size:var(--fs-title);font-weight:800;color:var(--ink);margin-bottom:var(--sp-2)}
+.assess-empty p{color:var(--text-muted);max-width:420px;margin:0 auto var(--sp-4)}
+
+.session-card{transition:transform .15s var(--ease,ease),box-shadow .15s var(--ease,ease);height:100%}
+.session-card:hover{transform:translateY(-3px);box-shadow:var(--elev-3)}
+.session-card .status-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px}
+.status-dot.live{background:var(--success);animation:pulse 1.4s ease-in-out infinite}
+.status-dot.draft{background:var(--warn)}
+.status-dot.closed{background:var(--text-subtle)}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+.session-mini-stat{display:flex;align-items:center;gap:4px;font-size:var(--fs-sm);color:var(--text-muted)}
+
+/* A session actually running in a room right now outranks everything
+   else on this page — permanent elevation and a live accent border, not
+   just a hover state, so it visually leads the grid at a glance instead
+   of blending in until the cursor happens to land on it. */
+.session-card.is-live{box-shadow:var(--elev-3);border-color:color-mix(in srgb,var(--success) 35%,var(--border))}
+.session-card.is-live:hover{transform:translateY(-4px);box-shadow:var(--elev-4,var(--elev-3))}
+.session-live-glance{display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);font-weight:600;
+     color:var(--tone-success-fg);background:var(--tone-success-bg);border-radius:var(--radius-card);
+     padding:.35rem .6rem;margin-top:.6rem}
+.session-live-glance i{flex-shrink:0}
+.session-card-actions{position:absolute;top:.75rem;right:.75rem;z-index:2}
+.session-card-actions .dropdown-toggle{width:2rem;height:2rem;padding:0;border:0;border-radius:50%;background:var(--surface-hover);color:var(--text-muted);display:grid;place-items:center}
+.session-card-actions .dropdown-toggle::after{display:none}
+.session-card-actions .dropdown-menu{min-width:11rem;padding:.35rem;border:1px solid var(--border);box-shadow:var(--elev-3);border-radius:10px}
+.session-card-actions .dropdown-item{border-radius:7px;padding:.5rem .6rem;font-size:var(--fs-sm)}
+.session-card-wrap{position:relative;z-index:1}
+.session-card-wrap:has(.dropdown.show){z-index:20}
+</style>
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'assessment_session_create' %}" class="btn btn-primary btn-sm">
+  <i class="bi bi-plus-lg me-1"></i>New session
+</a>
+{% endblock %}
+
+{% block content %}
+{% include 'partials/_page_header.html' with title='LiveGrade' subtitle='Run live, QR-joined peer assessment for presentations, demos, or any session worth grading in the room.' %}
+
+{% if not sessions %}
+<div class="assess-empty assess-stagger">
+  <div class="empty-icon"><i class="bi bi-clipboard2-data"></i></div>
+  <h2>No assessment sessions yet</h2>
+  <p>
+    Import a class roster, build a rubric, and let students grade each
+    other's presentations from their phones - live, anonymous, and scored
+    automatically.
+  </p>
+  <a href="{% url 'assessment_session_create' %}" class="btn btn-primary btn-lg">
+    <i class="bi bi-plus-lg me-1"></i>Create your first session
+  </a>
+</div>
+{% else %}
+<div class="row g-3">
+  {% for session in sessions %}
+  <div class="col-md-6 col-lg-4 assess-stagger">
+    <div class="session-card-wrap">
+    <a href="{% url 'assessment_session_detail' session.pk %}" class="text-decoration-none text-reset">
+      <div class="card session-card {% if session.status == 'live' %}is-live{% endif %}">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <h5 class="fw-700 mb-0">{{ session.name }}</h5>
+            {% if session.status == 'live' %}
+            <span class="badge bg-success-subtle text-success-emphasis me-4"><span class="status-dot live"></span>Live</span>
+            {% elif session.status == 'closed' %}
+            <span class="badge bg-secondary-subtle text-secondary-emphasis me-4"><span class="status-dot closed"></span>Closed</span>
+            {% else %}
+            <span class="badge bg-warning-subtle text-warning-emphasis me-4"><span class="status-dot draft"></span>Draft</span>
+            {% endif %}
+          </div>
+          <div class="d-flex gap-3 mb-2">
+            <span class="session-mini-stat"><i class="bi bi-people"></i>{{ session.students.count }} students</span>
+            <span class="session-mini-stat"><i class="bi bi-diagram-3"></i>{{ session.groups.count }} groups</span>
+          </div>
+          <div class="text-muted t-sm"><i class="bi bi-clock me-1"></i>Created {{ session.created_at|date:'d M Y' }}</div>
+          {% if session.status == 'live' %}
+          <div class="session-live-glance">
+            <i class="bi bi-people-fill"></i>{{ session.live_joined_count }}/{{ session.students.count }} joined
+            {% if session.live_active_group %}<span class="opacity-50">·</span><i class="bi bi-broadcast"></i>"{{ session.live_active_group.name }}" presenting{% endif %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </a>
+    <div class="dropdown session-card-actions">
+      <button class="dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Actions for {{ session.name }}">
+        <i class="bi bi-three-dots-vertical"></i>
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        {% if session.status == 'draft' %}
+        <li><a class="dropdown-item" href="{% url 'assessment_session_edit' session.pk %}"><i class="bi bi-pencil me-2"></i>Edit session</a></li>
+        {% elif session.status == 'live' %}
+        <li><a class="dropdown-item" href="{% url 'assessment_session_detail' session.pk %}"><i class="bi bi-broadcast me-2"></i>Open live panel</a></li>
+        <li><a class="dropdown-item" href="{% url 'assessment_participation' session.pk %}"><i class="bi bi-people me-2"></i>View participation</a></li>
+        {% else %}
+        <li><a class="dropdown-item" href="{% url 'assessment_results' session.pk %}"><i class="bi bi-bar-chart me-2"></i>View results</a></li>
+        {% endif %}
+        <li><hr class="dropdown-divider"></li>
+        <li><form method="post" action="{% url 'assessment_session_delete' session.pk %}" data-confirm="Delete &quot;{{ session.name }}&quot;? This permanently removes all roster, rubric, and grade data." data-confirm-label="Delete session" data-confirm-tone="danger">
+          {% csrf_token %}<button type="submit" class="dropdown-item text-danger"><i class="bi bi-trash me-2"></i>Delete session</button>
+        </form></li>
+      </ul>
+    </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

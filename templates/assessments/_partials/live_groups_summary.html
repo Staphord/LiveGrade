@@ -1,0 +1,14 @@
+<div id="live-groups-summary">
+  <div class="group-progress">
+    <div class="group-progress-bar"><div class="group-progress-fill" style="width:{% widthratio presented_group_ids|length groups|length 100 %}%"></div></div>
+    <span class="group-progress-label">{{ presented_group_ids|length }} of {{ groups|length }} presented</span>
+  </div>
+
+  <div class="group-picker-head">
+    <span class="group-picker-label">Groups <span class="text-muted fw-normal">({{ groups|length }})</span></span>
+    <div class="group-picker-legend">
+      <span class="legend-item"><span class="legend-dot done"></span>Presented</span>
+      <span class="legend-item"><span class="legend-dot next"></span>Up next</span>
+    </div>
+  </div>
+</div>

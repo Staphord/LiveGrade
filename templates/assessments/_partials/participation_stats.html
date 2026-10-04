@@ -1,0 +1,18 @@
+<div class="groups-stat-strip" id="participation-stat-strip">
+  <a href="?" data-status-filter="" class="groups-stat-pill filter-pill {% if not status_filter %}is-active{% endif %}">
+    <span class="stat-icon"><i class="bi bi-people-fill"></i></span>
+    <div><div class="stat-val">{{ joined_count }}<span class="stat-of">/{{ roster_count }}</span></div><div class="stat-lbl">Joined</div></div>
+  </a>
+  <a href="?status=full" data-status-filter="full" class="groups-stat-pill filter-pill is-ok {% if status_filter == 'full' %}is-active{% endif %}">
+    <span class="stat-icon"><i class="bi bi-check2-all"></i></span>
+    <div><div class="stat-val">{{ full_count }}</div><div class="stat-lbl">Fully graded</div></div>
+  </a>
+  <a href="?status=partial" data-status-filter="partial" class="groups-stat-pill filter-pill is-warn {% if status_filter == 'partial' %}is-active{% endif %}">
+    <span class="stat-icon"><i class="bi bi-hourglass-split"></i></span>
+    <div><div class="stat-val">{{ partial_count }}</div><div class="stat-lbl">Partially graded</div></div>
+  </a>
+  <a href="?status=none" data-status-filter="none" class="groups-stat-pill filter-pill is-bad {% if status_filter == 'none' %}is-active{% endif %}">
+    <span class="stat-icon"><i class="bi bi-x-octagon"></i></span>
+    <div><div class="stat-val">{{ none_count }}</div><div class="stat-lbl">Did not participate</div></div>
+  </a>
+</div>

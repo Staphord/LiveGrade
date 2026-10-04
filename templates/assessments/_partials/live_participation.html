@@ -1,0 +1,11 @@
+<div class="metric-hero" id="live-participation">
+  <div class="metric-ring-wrap">
+    <div class="metric-ring" style="--pct:{% widthratio joined_count student_count 100 %}"></div>
+    <div class="metric-ring-label"><strong>{% widthratio joined_count student_count 100 %}%</strong><span>joined</span></div>
+  </div>
+  <div class="participation-meta">
+    <div class="count">{{ joined_count }}<span class="of"> / {{ student_count }}</span></div>
+    <div class="text-muted t-sm">students in the room</div>
+    <a href="{% url 'assessment_participation' session.pk %}" class="pill-link">Open Participation</a>
+  </div>
+</div>

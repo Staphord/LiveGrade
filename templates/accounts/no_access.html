@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block title %}No access - LiveGrade{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-body p-4">
+    <h1 class="h4">LiveGrade is not available for this account</h1>
+    <p class="text-muted">
+      Your DevPerf account is not set up to run LiveGrade for any organization.
+      Ask the organization that invited you to send a lecturer invitation, then sign in again.
+    </p>
+    <a class="btn btn-primary" href="{% url 'oidc_authentication_init' %}">Sign in again</a>
+  </div>
+</div>
+{% endblock %}

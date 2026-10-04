@@ -1,0 +1,27 @@
+# Measures the whole project, line and branch, across the parallel test runner.
+#
+#   pip install -r requirements-dev.txt
+#   coverage run manage.py test --parallel
+#   coverage combine && coverage report
+#
+# `concurrency = multiprocessing,thread` is what makes --parallel measurable:
+# without it only the parent process is recorded and the figure reads far too low.
+[run]
+branch = True
+parallel = True
+concurrency = multiprocessing,thread
+sigterm = True
+source =
+    accounts
+    config
+omit =
+    */migrations/*
+    */tests/*
+    */test_*.py
+    manage.py
+    */testing.py
+
+[report]
+fail_under = 100
+show_missing = True
+skip_covered = True

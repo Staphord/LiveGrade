@@ -1,0 +1,60 @@
+<div class="participation-grid" id="participation-cards">
+  {% for row in rows %}
+  <div class="participant-card status-{{ row.status }}{% if row.is_presenting_now %} is-presenting-now{% endif %}" data-student-id="{{ row.student.pk }}" data-own-group-id="{{ row.own_group.pk|default:'' }}">
+    <div class="participant-card-head">
+      <div class="avatar-ring" style="--pct:{{ row.progress_pct }}">
+        <span class="member-avatar {% cycle 'bg-primary-subtle text-primary-emphasis' 'bg-success-subtle text-success-emphasis' 'bg-warning-subtle text-warning-emphasis' 'bg-info-subtle text-info-emphasis' 'bg-danger-subtle text-danger-emphasis' 'bg-secondary-subtle text-secondary-emphasis' %}">
+          {{ row.student.full_name|default:row.student.student_id|slice:":2"|upper }}
+        </span>
+        {% if row.joined %}<span class="joined-badge" title="Joined the room"><i class="bi bi-check-lg"></i></span>{% endif %}
+      </div>
+      <div class="participant-name-wrap">
+        <div class="participant-name">{{ row.student.full_name|default:row.student.student_id }}</div>
+        <div class="participant-progress-label">
+          {% if row.eligible_count %}{{ row.graded_count }} of {{ row.eligible_count }} groups graded
+          {% else %}No other groups to grade{% endif %}
+        </div>
+      </div>
+      {% if row.status == 'full' %}
+      <span class="status-pill is-full" title="Graded every group"><i class="bi bi-stars"></i></span>
+      {% elif row.status == 'partial' %}
+      <span class="status-pill is-partial" title="{{ row.graded_count }} of {{ row.eligible_count }} groups graded"><i class="bi bi-hourglass-split"></i></span>
+      {% else %}
+      <span class="status-pill is-none" title="No groups graded yet"><i class="bi bi-x-octagon"></i></span>
+      {% endif %}
+    </div>
+
+    <!-- Team banner — visible up front, no need to open "Group breakdown"
+         to see who this student presents with. -->
+    <div class="participant-team">
+      <i class="bi bi-people-fill"></i>
+      {% if row.own_group %}{{ row.own_group.name }}{% else %}No group yet{% endif %}
+    </div>
+
+    {% if row.is_presenting_now %}
+    <div class="live-status-note is-presenting"><span class="live-dot"></span>Presenting now</div>
+    {% endif %}
+    <div class="live-status-note is-grading" hidden><span class="live-dot"></span></div>
+    <div class="live-status-note is-submitted" hidden><i class="bi bi-check-circle-fill"></i>Submitted</div>
+
+    {% if groups %}
+    <button type="button" class="details-toggle" data-details-toggle aria-expanded="false">
+      <span>Group breakdown</span><i class="bi bi-chevron-down"></i>
+    </button>
+    <div class="participant-details" hidden>
+      {% for group in groups %}
+      <span class="group-chip {% if group.pk in row.voted_groups %}is-graded{% elif group.member_ids and row.student.pk in group.member_ids %}is-own{% else %}is-pending{% endif %}"
+            data-group-id="{{ group.pk }}">
+        {% if group.pk in row.voted_groups %}<i class="bi bi-check-lg"></i>
+        {% elif group.member_ids and row.student.pk in group.member_ids %}<i class="bi bi-house-fill"></i>
+        {% else %}<span class="chip-dot"></span>{% endif %}
+        {{ group.name }}
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% empty %}
+  <div class="text-center text-muted py-5 w-100"><i class="bi bi-people d-block s-icon-xl mb-2"></i>No students on the roster yet.</div>
+  {% endfor %}
+</div>

@@ -1,0 +1,1343 @@
+{% extends 'base.html' %}
+{% block title %}{% if session %}{{ session.name }} - Setup{% else %}New assessment session{% endif %} - DevPerf{% endblock %}
+{% block page_title %}{% if session %}{{ session.name }}{% else %}New assessment session{% endif %}{% endblock %}
+{% block topbar_actions %}
+<a href="{% url 'assessment_session_list' %}" class="btn btn-outline-secondary btn-sm">All sessions</a>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ---------------------------------------------------------- Stepper nav --
+   Left-column vertical progress tracker for the draft setup journey
+   (basics → roster → rubric → groups → go live). Evolves the old static
+   "what happens next" dot-and-connector list (session_create.html) into a
+   real nav: each item is an anchor to its section below, ticks reflect
+   actual completion instead of just being a numbered list. */
+.setup-stepper-sticky{position:sticky;top:calc(var(--topbar-h) + var(--sp-3));margin-top:var(--sp-6)}
+.setup-stepper-nav{position:relative;padding-left:0}
+.stepper-item{position:relative;display:flex;align-items:flex-start;gap:.75rem;padding:0 0 1.5rem 0;
+     text-decoration:none;color:inherit}
+.stepper-item:last-child{padding-bottom:0}
+.stepper-item:not(:last-child)::before{content:"";position:absolute;left:15px;top:32px;bottom:-.2rem;
+     width:2px;background:var(--border)}
+.stepper-dot{width:32px;height:32px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;
+     justify-content:center;background:var(--surface-hover);border:2px solid var(--border);
+     color:var(--text-muted);font-weight:700;font-size:var(--fs-sm);transition:background .15s ease,border-color .15s ease,color .15s ease}
+.stepper-label{padding-top:3px;min-width:0}
+.stepper-title{display:block;font-weight:700;font-size:var(--fs-body);color:var(--ink)}
+.stepper-desc{display:block;font-size:var(--fs-micro);color:var(--text-muted)}
+.stepper-item.is-current .stepper-dot{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.stepper-item.is-current .stepper-title{color:var(--accent)}
+.stepper-item.is-done .stepper-dot{background:var(--tone-success-bg);border-color:var(--success);color:var(--tone-success-fg)}
+.stepper-item.is-locked{opacity:.5;cursor:default}
+.stepper-item.is-locked .stepper-dot{background:var(--surface-hover);border-color:var(--border);color:var(--text-muted)}
+a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
+.stepper-item.is-final .stepper-dot{background:var(--tone-success-bg);color:var(--tone-success-fg);border-color:var(--success)}
+.stepper-item.is-final.is-locked .stepper-dot{background:var(--surface-hover);color:var(--text-muted);border-color:var(--border)}
+
+/* Only the section matching the current stepper item is shown at a time -
+   JS toggles `.is-active-panel` on click (data-step on the stepper items
+   matches data-step on the sections) so moving between steps never
+   re-scrolls the page or reloads, in either direction. */
+.setup-section{scroll-margin-top:calc(var(--topbar-h) + var(--sp-3));display:none}
+.setup-section.is-active-panel{display:block}
+.setup-section-head{display:flex;align-items:center;gap:.6rem;margin-bottom:var(--sp-3)}
+.setup-section-head .step-num{width:28px;height:28px;border-radius:50%;background:var(--accent-soft);
+     color:var(--accent);font-weight:800;font-size:var(--fs-sm);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.setup-section-head .step-num.is-done{background:var(--tone-success-bg);color:var(--tone-success-fg)}
+.setup-section-head h3{font-size:var(--fs-strong);font-weight:800;color:var(--ink);margin:0}
+
+.back-link{display:inline-flex;align-items:center;gap:4px;font-size:var(--fs-sm);font-weight:600;
+     color:var(--text-muted);text-decoration:none;margin-bottom:var(--sp-2)}
+.back-link:hover{color:var(--accent)}
+.back-link i{font-size:var(--fs-strong)}
+
+.basics-summary{display:flex;flex-wrap:wrap;gap:.6rem}
+.basics-summary .stat-pill{display:flex;align-items:center;gap:.6rem;background:var(--surface);border:1px solid var(--border);
+     border-radius:var(--radius-card);padding:.55rem .9rem;flex:1 1 160px}
+.basics-summary .stat-pill .stat-icon{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;
+     justify-content:center;background:var(--accent-soft);color:var(--accent);font-size:1rem;flex-shrink:0}
+.basics-summary .stat-pill .stat-val{font-size:var(--fs-sm);font-weight:800;color:var(--ink);line-height:1.2}
+.basics-summary .stat-pill .stat-lbl{font-size:var(--fs-micro);color:var(--text-muted)}
+
+/* ------------------------------------------------------ Shared card-head --
+   Same "labeled section" language reused across all three steps and the
+   Live control panel. */
+.card-icon-head{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:var(--sp-3)}
+.card-icon-head .head-left{display:flex;align-items:center;gap:.55rem;min-width:0}
+.card-icon-head .icon-badge{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;
+     justify-content:center;background:var(--accent-soft);color:var(--accent);font-size:1rem;flex-shrink:0}
+.card-icon-head .title{font-weight:700;font-size:var(--fs-sm);color:var(--ink)}
+.card-icon-head .sub{font-size:var(--fs-micro);color:var(--text-muted)}
+
+/* Import dropzone - reused by the Roster and Groups import cards. */
+.import-dropzone{border:1.5px dashed var(--border-strong);border-radius:var(--radius-card);
+     padding:1.1rem .9rem;text-align:center;transition:border-color .15s ease,background .15s ease;
+     background:var(--surface-sunken);position:relative}
+.import-dropzone.is-dragover{border-color:var(--accent);background:var(--accent-soft)}
+.import-dropzone i.bi-cloud-arrow-up{font-size:1.6rem;color:var(--accent);display:block;margin-bottom:.3rem}
+.import-dropzone .dz-text{font-size:var(--fs-sm);font-weight:600;color:var(--ink)}
+.import-dropzone .dz-filename{font-size:var(--fs-micro);color:var(--text-muted);margin-top:.25rem;min-height:1.1em}
+.import-dropzone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+
+/* --------------------------------------------------------------- Roster --
+   .roster-avatar/.roster-name-cell live in the shared _design_kit.html. */
+.roster-search{min-width:220px}
+.roster-per-page{display:flex;align-items:center;gap:.4rem}
+.roster-per-page select{width:auto}
+.roster-stat-strip{display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1rem}
+.roster-stat-pill{display:flex;align-items:center;gap:.6rem;background:var(--surface);border:1px solid var(--border);
+     border-radius:var(--radius-card);padding:.55rem .9rem;flex:1 1 160px}
+.roster-stat-pill .stat-icon{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;
+     justify-content:center;background:var(--accent-soft);color:var(--accent);font-size:1rem;flex-shrink:0}
+.roster-stat-pill .stat-val{font-size:var(--fs-heading);font-weight:800;color:var(--ink);line-height:1.1}
+.roster-stat-pill .stat-val-text{font-size:var(--fs-sm)}
+.roster-stat-pill .stat-lbl{font-size:var(--fs-micro);color:var(--text-muted)}
+.roster-row-actions{display:flex;gap:.3rem;justify-content:flex-end}
+.roster-form-mode-banner{display:none;align-items:center;gap:.4rem;font-size:var(--fs-micro);font-weight:700;
+     color:var(--accent);background:var(--accent-soft);border-radius:var(--radius-card);padding:.4rem .65rem;margin-bottom:.65rem}
+.roster-form-mode-banner.is-active{display:flex}
+
+/* --------------------------------------------------------------- Rubric --
+   The single most consequential state on this step (a session cannot go
+   live until both weight totals hit 100%) gets a large, legible readout. */
+.weight-meter-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:.75rem;margin-bottom:var(--sp-3)}
+.weight-meter{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);
+     padding:var(--sp-4);display:flex;align-items:center;gap:var(--sp-4)}
+.weight-meter .ring{width:72px;height:72px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;
+     justify-content:center;background:var(--surface-hover);border:2px solid var(--border)}
+.weight-meter.is-ready .ring{background:var(--tone-success-bg);border-color:var(--success)}
+.weight-meter.is-blocked .ring{background:var(--accent-soft);border-color:var(--accent)}
+.weight-meter .ring .ring-num{font-size:var(--fs-heading);font-weight:800;color:var(--ink);white-space:nowrap}
+.weight-meter.is-ready .ring .ring-num{color:var(--tone-success-fg)}
+.weight-meter .body{min-width:0}
+.weight-meter .lbl{font-size:var(--fs-micro);color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700}
+.weight-meter .msg{font-size:var(--fs-sm);font-weight:600;margin-top:2px}
+.weight-meter.is-ready .msg{color:var(--success)}
+.weight-meter.is-blocked .msg{color:var(--danger)}
+
+.rubric-status-banner{display:flex;align-items:center;gap:.75rem;border-radius:var(--radius-card);
+     padding:.7rem 1rem;margin-bottom:var(--sp-3);background:var(--tone-danger-bg);color:var(--tone-danger-fg);
+     border:1px solid color-mix(in srgb,var(--danger) 25%,transparent)}
+.rubric-status-banner .icon{font-size:1.1rem;flex-shrink:0}
+.rubric-status-banner .msg{font-weight:600;font-size:var(--fs-sm)}
+
+.rubric-cat-list{display:flex;flex-direction:column;gap:.5rem}
+.rubric-cat-card{display:flex;align-items:center;gap:.75rem;border:1px solid var(--border);
+     border-radius:var(--radius-control);padding:.65rem .8rem;background:var(--surface);
+     transition:box-shadow var(--motion) var(--ease),border-color var(--motion) var(--ease)}
+.rubric-cat-card:hover{box-shadow:var(--elev-1);border-color:var(--accent)}
+.rubric-cat-card .cat-icon{width:36px;height:36px;border-radius:9px;flex-shrink:0;display:flex;align-items:center;
+     justify-content:center;background:var(--accent-soft);color:var(--accent);font-size:1rem}
+.rubric-cat-card.is-individual .cat-icon{background:var(--tone-info-bg);color:var(--tone-info-fg)}
+.rubric-cat-card .cat-body{flex:1;min-width:0}
+.rubric-cat-card .cat-name{font-weight:700;font-size:var(--fs-body);color:var(--ink)}
+.rubric-cat-card .cat-desc{font-size:var(--fs-micro);color:var(--text-muted);margin-top:1px;
+     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rubric-cat-card .cat-meta{display:flex;align-items:center;gap:.5rem;flex-shrink:0}
+.rubric-cat-card .weight-chip{font-size:var(--fs-micro);font-weight:800;color:var(--ink);background:var(--surface-hover);
+     border:1px solid var(--border);border-radius:var(--radius-pill);padding:.15rem .55rem;white-space:nowrap}
+.rubric-cat-card .pts-chip{font-size:var(--fs-micro);color:var(--text-muted);white-space:nowrap}
+.rubric-cat-card .cat-actions{display:flex;gap:.25rem;flex-shrink:0}
+
+.weight-total-row{display:flex;justify-content:space-between;align-items:center;margin-top:.6rem;padding-top:.6rem;
+     border-top:1px dashed var(--border)}
+.weight-total-row .lbl{font-size:var(--fs-micro);color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+.weight-total-row .val{font-size:var(--fs-sm);font-weight:800}
+.weight-total-row .val.is-ok{color:var(--success)}
+.weight-total-row .val.is-bad{color:var(--danger)}
+
+.rubric-form-mode-banner{display:none;align-items:center;gap:.4rem;font-size:var(--fs-micro);font-weight:700;
+     color:var(--accent);background:var(--accent-soft);border-radius:var(--radius-control);padding:.35rem .6rem;margin-bottom:.65rem}
+.rubric-form-mode-banner.is-active{display:flex}
+.scope-hint{display:flex;gap:.5rem;align-items:flex-start;background:var(--surface-hover);border-radius:var(--radius-control);
+     padding:.5rem .65rem;font-size:var(--fs-micro);color:var(--text-soft);margin-top:.35rem}
+.scope-hint i{color:var(--accent);flex-shrink:0;margin-top:1px}
+.scope-info-toggle{width:1.2rem;height:1.2rem;padding:0;border:1px solid color-mix(in srgb,var(--accent) 35%,var(--border));border-radius:50%;background:var(--surface);color:var(--accent);display:inline-grid;place-items:center;vertical-align:middle;cursor:pointer}
+.scope-info-toggle:hover,.scope-info-toggle:focus-visible{background:var(--accent-soft);outline:none;box-shadow:var(--focus-ring)}
+.scope-info-copy{display:none;margin-top:.5rem}.scope-info-copy.is-visible{display:flex}
+
+/* --------------------------------------------------------------- Groups --
+   .groups-stat-strip/.groups-stat-pill live in the shared _design_kit.html. */
+.member-avatar{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+     font-size:.6rem;font-weight:800;flex-shrink:0;letter-spacing:.01em}
+.group-fill-bar{height:5px;border-radius:3px;background:var(--surface-sunken);overflow:hidden;margin-top:.5rem}
+.group-fill-bar .fill{height:100%;border-radius:3px;background:var(--accent);transition:width .3s var(--ease,ease)}
+.group-fill-bar.is-full .fill{background:var(--success)}
+
+.group-card{transition:box-shadow var(--motion) var(--ease),border-color var(--motion) var(--ease)}
+.group-card:hover{box-shadow:var(--elev-1)}
+.group-card .group-name{font-weight:700;font-size:var(--fs-body);color:var(--ink)}
+.group-card .count-chip{font-size:var(--fs-micro);font-weight:800;border-radius:var(--radius-pill);padding:.15rem .55rem}
+.group-card .count-chip.is-full{background:var(--tone-success-bg);color:var(--tone-success-fg)}
+.group-card .count-chip.is-open{background:var(--surface-hover);color:var(--text-soft);border:1px solid var(--border)}
+
+.member-row{cursor:grab;border-radius:8px;transition:background .12s ease;padding:.3rem .4rem}
+.member-row:hover{background:var(--surface-hover)}
+.member-row:active{cursor:grabbing}
+.member-row.is-dragging{opacity:.4}
+.group-card-body.is-drop-target{background:var(--accent-soft);outline:2px dashed var(--accent);outline-offset:-4px;border-radius:var(--radius-card)}
+.unassigned-drop-zone{transition:background .12s ease,outline .12s ease;border-radius:var(--radius-card)}
+.unassigned-drop-zone.is-drop-target{background:var(--accent-soft);outline:2px dashed var(--accent);outline-offset:-4px}
+.unassigned-badge{cursor:grab;display:inline-flex;align-items:center;gap:.35rem}
+.unassigned-badge:active{cursor:grabbing}
+.unassigned-badge.is-dragging{opacity:.4}
+
+.group-form-mode-banner{display:none;align-items:center;gap:.4rem;font-size:var(--fs-micro);font-weight:700;
+     color:var(--accent);background:var(--accent-soft);border-radius:var(--radius-control);padding:.35rem .6rem;margin-bottom:.65rem}
+.group-form-mode-banner.is-active{display:flex}
+.add-member-form select{font-size:var(--fs-sm)}
+.groups-sidebar-sticky{position:sticky;top:calc(var(--topbar-h) + var(--sticky-header-h, 0px) + var(--sp-3))}
+.unassigned-list{max-height:280px;overflow-y:auto}
+
+/* ----------------------------------------------------------- Go live CTA --
+   Reused verbatim from the old draft-state session_detail.html hero. */
+.assess-hero{background:linear-gradient(120deg,var(--surface) 0%,var(--accent-soft) 100%);
+     border:1px solid color-mix(in srgb,var(--accent) 16%,var(--border));border-radius:var(--radius-card-lg);
+     padding:var(--sp-7) var(--sp-5);text-align:center}
+.assess-hero .hero-icon{width:64px;height:64px;border-radius:50%;background:var(--surface);
+     display:flex;align-items:center;justify-content:center;margin:0 auto var(--sp-3);
+     box-shadow:var(--elev-2);font-size:1.6rem;color:var(--accent)}
+.assess-hero h2{font-size:var(--fs-title);font-weight:800;color:var(--ink);margin-bottom:var(--sp-1)}
+.assess-hero p{color:var(--text-muted);max-width:440px;margin:0 auto var(--sp-4)}
+</style>
+{% endblock %}
+
+{% block content %}
+<a href="{% url 'assessment_session_list' %}" class="back-link">
+  <i class="bi bi-chevron-left"></i>All sessions
+</a>
+
+<div class="row g-4">
+  <div class="col-lg-3">
+    <div class="setup-stepper-sticky">
+      <div class="setup-stepper-nav">
+        <a href="{% if session %}#basics-section{% else %}#{% endif %}" data-step="basics" class="stepper-item is-done">
+          <span class="stepper-dot"><i class="bi bi-check-lg"></i></span>
+          <span class="stepper-label">
+            <span class="stepper-title">Basics</span>
+            <span class="stepper-desc">Name &amp; weighting</span>
+          </span>
+        </a>
+        <a href="{% if session %}#roster-section{% else %}#{% endif %}" data-step="roster"
+           class="stepper-item {% if not session %}is-locked{% elif step_roster_done %}is-done{% elif active_step == 'roster' %}is-current{% endif %}">
+          <span class="stepper-dot">{% if step_roster_done %}<i class="bi bi-check-lg"></i>{% else %}2{% endif %}</span>
+          <span class="stepper-label">
+            <span class="stepper-title">Roster</span>
+            <span class="stepper-desc">Add students</span>
+          </span>
+        </a>
+        <a href="{% if session %}#rubric-section{% else %}#{% endif %}" data-step="rubric"
+           class="stepper-item {% if not session %}is-locked{% elif step_rubric_done %}is-done{% elif active_step == 'rubric' %}is-current{% endif %}">
+          <span class="stepper-dot">{% if step_rubric_done %}<i class="bi bi-check-lg"></i>{% else %}3{% endif %}</span>
+          <span class="stepper-label">
+            <span class="stepper-title">Rubric</span>
+            <span class="stepper-desc">Categories &amp; weights</span>
+          </span>
+        </a>
+        <a href="{% if session %}#groups-section{% else %}#{% endif %}" data-step="groups"
+           class="stepper-item {% if not session %}is-locked{% elif step_groups_done %}is-done{% elif active_step == 'groups' %}is-current{% endif %}">
+          <span class="stepper-dot">{% if step_groups_done %}<i class="bi bi-check-lg"></i>{% else %}4{% endif %}</span>
+          <span class="stepper-label">
+            <span class="stepper-title">Groups</span>
+            <span class="stepper-desc">Assign presenting groups</span>
+          </span>
+        </a>
+        <a href="{% if session %}#go-live-section{% else %}#{% endif %}" data-step="go-live"
+           class="stepper-item is-final {% if not session or not session.can_go_live %}is-locked{% endif %}">
+          <span class="stepper-dot"><i class="bi bi-rocket-takeoff"></i></span>
+          <span class="stepper-label">
+            <span class="stepper-title">Go live</span>
+            <span class="stepper-desc">Show QR, start grading</span>
+          </span>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-9">
+    {# ---------------------------------------------------------- Basics -- #}
+    <div class="card mb-3 setup-section{% if not session or active_step == 'basics' %} is-active-panel{% endif %}" id="basics-section" data-step="basics">
+      <div class="card-body">
+        {% if not session %}
+        <div class="card-icon-head">
+          <div class="head-left">
+            <span class="icon-badge"><i class="bi bi-signpost-split"></i></span>
+            <div>
+              <div class="title">Session basics</div>
+              <div class="sub">Set up the basics, then add students, a rubric and groups</div>
+            </div>
+          </div>
+        </div>
+        <form method="post">
+          {% csrf_token %}
+          <div class="mb-4">
+            <label class="form-label fw-600 t-body">Session name</label>
+            {{ form.name }}
+            {% if form.name.errors %}<div class="field-error">{{ form.name.errors|join:", " }}</div>{% endif %}
+            <div class="text-muted t-micro mt-1">e.g. "Sprint Demo - Q1 2026" or "Final-Year Project Presentations"</div>
+          </div>
+          <div class="mb-4">
+            <label class="form-label fw-600 t-body">Identify students by</label>
+            {{ form.identify_by }}
+            <div class="text-muted t-micro mt-1">Whichever field students type in on their phone to join - pick whatever's on your roster.</div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-600 t-body">Final score weighting</label>
+            <div class="text-muted t-micro mb-2">How much the group's project score and each student's individual score count toward the final result.</div>
+            <div class="row g-2">
+              <div class="col-6">
+                <div class="input-group">
+                  {{ form.group_weight_percent }}
+                  <span class="input-group-text">% group</span>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="input-group">
+                  {{ form.individual_weight_percent }}
+                  <span class="input-group-text">% individual</span>
+                </div>
+              </div>
+            </div>
+            {% if form.non_field_errors %}<div class="field-error mt-2">{{ form.non_field_errors|join:", " }}</div>{% endif %}
+          </div>
+          <div class="d-flex gap-2 mt-4">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-arrow-right-circle me-1"></i>Create session and add roster</button>
+            <a href="{% url 'assessment_session_list' %}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+        {% elif editing %}
+        {# Edit mode: show the same form fields, pre-filled via AssessmentSessionForm(instance=session) #}
+        <div class="card-icon-head mb-3">
+          <div class="head-left">
+            <span class="icon-badge"><i class="bi bi-pencil-square"></i></span>
+            <div>
+              <div class="title">Edit session basics</div>
+              <div class="sub">Changes are saved immediately and apply to this session</div>
+            </div>
+          </div>
+        </div>
+        <form method="post">
+          {% csrf_token %}
+          <div class="mb-4">
+            <label class="form-label fw-600 t-body">Session name</label>
+            {{ form.name }}
+            {% if form.name.errors %}<div class="field-error">{{ form.name.errors|join:", " }}</div>{% endif %}
+          </div>
+          <div class="mb-4">
+            <label class="form-label fw-600 t-body">Identify students by</label>
+            {{ form.identify_by }}
+            <div class="text-muted t-micro mt-1">Whichever field students type in on their phone to join.</div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-600 t-body">Final score weighting</label>
+            <div class="text-muted t-micro mb-2">How much the group's project score and each student's individual score count toward the final result.</div>
+            <div class="row g-2">
+              <div class="col-6">
+                <div class="input-group">
+                  {{ form.group_weight_percent }}
+                  <span class="input-group-text">% group</span>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="input-group">
+                  {{ form.individual_weight_percent }}
+                  <span class="input-group-text">% individual</span>
+                </div>
+              </div>
+            </div>
+            {% if form.non_field_errors %}<div class="field-error mt-2">{{ form.non_field_errors|join:", " }}</div>{% endif %}
+          </div>
+          <div class="d-flex gap-2 mt-4">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-1"></i>Save changes</button>
+            <a href="{% url 'assessment_session_detail' session.pk %}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+        {% else %}
+        <div class="card-icon-head">
+          <div class="head-left">
+            <span class="icon-badge"><i class="bi bi-check-lg"></i></span>
+            <div>
+              <div class="title">{{ session.name }}</div>
+              <div class="sub">Basics are set - add students, a rubric and groups below</div>
+            </div>
+          </div>
+        </div>
+        <div class="basics-summary">
+          <div class="stat-pill">
+            <span class="stat-icon"><i class="bi bi-key-fill"></i></span>
+            <div>
+              <div class="stat-val">{{ session.get_identify_by_display }}</div>
+              <div class="stat-lbl">Used to join</div>
+            </div>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-icon"><i class="bi bi-people-fill"></i></span>
+            <div>
+              <div class="stat-val">{{ session.group_weight_percent }}% group / {{ session.individual_weight_percent }}% individual</div>
+              <div class="stat-lbl">Final score weighting</div>
+            </div>
+          </div>
+        </div>
+        <div class="d-flex justify-content-end mt-3">
+          <a href="#roster-section" data-step="roster" class="btn btn-primary btn-sm step-nav-next">Next: Roster</a>
+        </div>
+        {% endif %}
+
+      </div>
+    </div>
+
+    {% if session %}
+    {# ---------------------------------------------------------- Roster -- #}
+    <div class="card mb-3 setup-section" id="roster-section" data-step="roster">
+      <div class="card-body">
+        <div class="setup-section-head">
+          <span class="step-num {% if step_roster_done %}is-done{% endif %}">
+            {% if step_roster_done %}<i class="bi bi-check-lg"></i>{% else %}2{% endif %}
+          </span>
+          <h3>Roster</h3>
+        </div>
+        <div class="roster-stat-strip mb-0">
+          <div class="roster-stat-pill">
+            <span class="stat-icon"><i class="bi bi-people-fill"></i></span>
+            <div>
+              <div class="stat-val">{{ roster_total }}</div>
+              <div class="stat-lbl">Total students</div>
+            </div>
+          </div>
+          <div class="roster-stat-pill">
+            <span class="stat-icon"><i class="bi bi-mortarboard-fill"></i></span>
+            <div>
+              <div class="stat-val">{{ programme_count }}</div>
+              <div class="stat-lbl">Programme{{ programme_count|pluralize }}</div>
+            </div>
+          </div>
+          <div class="roster-stat-pill">
+            <span class="stat-icon"><i class="bi bi-key-fill"></i></span>
+            <div>
+              <div class="stat-val stat-val-text">{{ session.get_identify_by_display }}</div>
+              <div class="stat-lbl">Used to join</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-3 mt-1">
+          <div class="col-md-4">
+            <div class="card mb-3">
+              <div class="card-body">
+                <div class="card-icon-head">
+                  <span class="icon-badge"><i class="bi bi-file-earmark-excel"></i></span>
+                  <span class="title">Import from Excel</span>
+                </div>
+                <form method="post" action="{% url 'assessment_roster_import' session.pk %}" enctype="multipart/form-data" id="import-form">
+                  {% csrf_token %}
+                  <div class="import-dropzone" id="import-dropzone">
+                    <i class="bi bi-cloud-arrow-up"></i>
+                    <div class="dz-text">Choose a file or drag it here</div>
+                    <div class="dz-filename" id="import-filename"></div>
+                    {{ import_form.file }}
+                  </div>
+                  <div class="form-text mt-2">{{ import_form.file.help_text }}</div>
+                  <button type="submit" class="btn btn-outline-primary btn-sm mt-2 w-100"><i class="bi bi-upload me-1"></i>Import</button>
+                </form>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-body">
+                <div class="card-icon-head">
+                  <span class="icon-badge" id="roster-form-icon"><i class="bi bi-person-plus"></i></span>
+                  <span class="title" id="roster-form-title">Add student</span>
+                </div>
+                <div class="roster-form-mode-banner" id="roster-form-mode-banner">
+                  <i class="bi bi-pencil-square"></i><span>Editing an existing student</span>
+                </div>
+                <div class="text-muted t-micro mb-2">
+                  <i class="bi bi-info-circle me-1"></i>This session identifies students by
+                  <strong>{{ session.get_identify_by_display }}</strong> when they join -
+                  that field is required below.
+                </div>
+                <form method="post" id="roster-form" action="{% url 'assessment_roster' session.pk %}">
+                  {% csrf_token %}
+                  {% if form.non_field_errors %}<div class="alert alert-danger py-2 t-sm">{{ form.non_field_errors|join:", " }}</div>{% endif %}
+                  <div class="mb-2">
+                    <label class="form-label t-sm fw-600">
+                      Full name
+                      {% if session.identify_by == 'full_name' %}<span class="badge bg-primary-subtle text-primary-emphasis">used to join</span>{% endif %}
+                    </label>
+                    {{ form.full_name }}
+                    {% if form.full_name.errors %}<div class="field-error">{{ form.full_name.errors|join:", " }}</div>{% endif %}
+                  </div>
+                  <div class="mb-2">
+                    <label class="form-label t-sm fw-600">
+                      Student ID
+                      {% if session.identify_by == 'student_id' %}<span class="badge bg-primary-subtle text-primary-emphasis">used to join</span>{% endif %}
+                    </label>
+                    {{ form.student_id }}
+                    {% if form.student_id.errors %}<div class="field-error">{{ form.student_id.errors|join:", " }}</div>{% endif %}
+                  </div>
+                  <div class="mb-2">
+                    <label class="form-label t-sm fw-600">Email <span class="text-muted fw-400">(optional)</span></label>
+                    {{ form.email }}
+                  </div>
+                  <div class="mb-2">
+                    <label class="form-label t-sm fw-600">Programme <span class="text-muted fw-400">(optional)</span></label>
+                    {{ form.programme }}
+                  </div>
+                  <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary btn-sm flex-fill" id="roster-form-submit"><i class="bi bi-plus-lg me-1"></i>Add</button>
+                    <a href="#" class="btn btn-outline-secondary btn-sm d-none" id="roster-form-cancel">Cancel</a>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-8">
+            <div class="card">
+              <div class="card-body p-0">
+                <div class="px-3 py-2 border-bottom d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                  <span class="text-muted t-body" id="roster-count-text">
+                    {% include 'assessments/_partials/roster_count.html' %}
+                  </span>
+                  <div class="d-flex align-items-center gap-2">
+                    <div class="roster-per-page">
+                      <label for="roster-per-page-select" class="text-muted t-micro mb-0">page size</label>
+                      <select id="roster-per-page-select" class="form-select form-select-sm" aria-label="Rows per page">
+                        {% for size in page_sizes %}<option value="{{ size }}" {% if size == per_page %}selected{% endif %}>{{ size }}</option>{% endfor %}
+                      </select>
+                    </div>
+                    <form method="get" class="roster-search" role="search" id="roster-search-form">
+                      <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-transparent border-end-0"><i class="bi bi-search"></i></span>
+                        <input type="search" name="q" class="form-control border-start-0" placeholder="Find a student…"
+                               value="{{ query }}" aria-label="Search roster" id="roster-search-input" autocomplete="off">
+                        <button type="button" class="btn btn-outline-secondary {% if not query %}d-none{% endif %}"
+                                id="roster-search-clear" title="Clear search"><i class="bi bi-x-lg"></i></button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+                {% include 'assessments/_partials/roster_table.html' %}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="d-flex justify-content-between mt-3">
+          <a href="#basics-section" data-step="basics" class="btn btn-outline-secondary btn-sm step-nav-back">Back</a>
+          <a href="#rubric-section" data-step="rubric" class="btn btn-primary btn-sm step-nav-next">Next: Rubric</a>
+        </div>
+      </div>
+    </div>
+
+    {# ---------------------------------------------------------- Rubric -- #}
+    <div class="card mb-3 setup-section" id="rubric-section" data-step="rubric">
+      <div class="card-body">
+        <div class="setup-section-head">
+          <span class="step-num {% if step_rubric_done %}is-done{% endif %}">
+            {% if step_rubric_done %}<i class="bi bi-check-lg"></i>{% else %}3{% endif %}
+          </span>
+          <h3>Rubric</h3>
+        </div>
+
+        {% if group_weight_total != session.group_weight_percent or individual_categories and individual_weight_total != session.individual_weight_percent %}
+        <div class="rubric-status-banner assess-stagger">
+          <i class="bi bi-exclamation-triangle-fill icon"></i>
+          <div class="msg">
+            {% if group_weight_total != session.group_weight_percent %}
+              Group weights are at {{ group_weight_total|floatformat:'-2' }}% -
+              {% if group_weight_remaining > 0 %}add {{ group_weight_remaining|floatformat:'-2' }}% more{% else %}remove {{ group_weight_remaining|cut:"-"|floatformat:'-2' }}% of weight{% endif %}
+              to reach this session's {{ session.group_weight_percent|floatformat:'-2' }}% group share before it can go live.
+            {% endif %}
+            {% if individual_categories and individual_weight_total != session.individual_weight_percent %}
+              {% if group_weight_total != session.group_weight_percent %}Individual weights also need{% else %}Individual weights are at {{ individual_weight_total|floatformat:'-2' }}% - {% if individual_weight_remaining > 0 %}add {{ individual_weight_remaining|floatformat:'-2' }}% more{% else %}remove {{ individual_weight_remaining|cut:"-"|floatformat:'-2' }}%{% endif %} to reach{% endif %} this session's {{ session.individual_weight_percent|floatformat:'-2' }}% individual share.
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="weight-meter-row assess-stagger mb-0">
+          <div class="weight-meter {% if group_weight_total == session.group_weight_percent %}is-ready{% else %}is-blocked{% endif %}">
+            <span class="ring"><span class="ring-num">{{ group_weight_total|floatformat:"-2" }}%</span></span>
+            <div class="body">
+              <div class="lbl">Group weight <span class="text-muted fw-400">/ {{ session.group_weight_percent|floatformat:"-2" }}%</span></div>
+              <div class="msg">
+                {% if group_weight_total == session.group_weight_percent %}<i class="bi bi-check-circle-fill me-1"></i>Balanced
+                {% else %}{{ group_weight_remaining|cut:"-"|floatformat:'-2' }}{% if group_weight_remaining > 0 %} to add{% else %} to remove{% endif %}{% endif %}
+              </div>
+            </div>
+          </div>
+          <div class="weight-meter {% if individual_weight_total == session.individual_weight_percent or not individual_categories %}is-ready{% else %}is-blocked{% endif %}">
+            <span class="ring"><span class="ring-num">{{ individual_weight_total|floatformat:"-2" }}%</span></span>
+            <div class="body">
+              <div class="lbl">Individual weight <span class="text-muted fw-400">/ {{ session.individual_weight_percent|floatformat:"-2" }}%</span></div>
+              <div class="msg">
+                {% if not individual_categories %}<i class="bi bi-dash-circle me-1"></i>Not used
+                {% elif individual_weight_total == session.individual_weight_percent %}<i class="bi bi-check-circle-fill me-1"></i>Balanced
+                {% else %}{{ individual_weight_remaining|cut:"-"|floatformat:'-2' }}{% if individual_weight_remaining > 0 %} to add{% else %} to remove{% endif %}{% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-3">
+          <div class="col-md-4">
+            <div class="card">
+              <div class="card-body">
+                <div class="rubric-form-mode-banner" id="rubric-form-mode-banner">
+                  <i class="bi bi-pencil-fill"></i><span>Editing an existing category</span>
+                </div>
+                <div class="card-icon-head">
+                  <div class="head-left">
+                    <span class="icon-badge" id="rubric-form-icon"><i class="bi bi-plus-square"></i></span>
+                    <div>
+                      <div class="title" id="rubric-form-title">Add rubric category</div>
+                      <div class="sub">Scored out of its max points, weighted into the total</div>
+                    </div>
+                  </div>
+                  <a href="#" class="t-sm d-none" id="rubric-form-cancel">Cancel</a>
+                </div>
+                <form method="post" id="rubric-form" action="{% url 'assessment_rubric' session.pk %}">
+                  {% csrf_token %}
+                  {% if rubric_form.non_field_errors %}<div class="alert alert-danger py-2 t-sm">{{ rubric_form.non_field_errors|join:", " }}</div>{% endif %}
+                  <div class="mb-2">
+                    <label class="form-label t-sm fw-600">Name</label>{{ rubric_form.name }}
+                    {% if rubric_form.name.errors %}<div class="field-error">{{ rubric_form.name.errors|join:", " }}</div>{% endif %}
+                  </div>
+                  <div class="mb-2">
+                    <label class="form-label t-sm fw-600">Description (optional)</label>{{ rubric_form.description }}
+                    {% if rubric_form.description.errors %}<div class="field-error">{{ rubric_form.description.errors|join:", " }}</div>{% endif %}
+                  </div>
+                  <div class="mb-2">
+                    <label class="form-label t-sm fw-600">Scope</label>{{ rubric_form.scope }}
+                    <button type="button" class="scope-info-toggle" aria-expanded="false" aria-controls="rubric-scope-info" title="More information about rubric scope"><i class="bi bi-info-lg" aria-hidden="true"></i><span class="visually-hidden">More information about rubric scope</span></button>
+                    <div class="scope-hint scope-info-copy" id="rubric-scope-info" hidden>
+                      <i class="bi bi-info-circle-fill"></i><span>Group categories score the whole presenting group at once; Individual categories are scored per student. Each scope's weights sum to this session's own group/individual share, set when it was created.</span>
+                    </div>
+                    {% if rubric_form.scope.errors %}<div class="field-error">{{ rubric_form.scope.errors|join:", " }}</div>{% endif %}
+                  </div>
+                  <div class="row g-2 mb-2">
+                    <div class="col-6">
+                      <label class="form-label t-sm fw-600">Max points</label>{{ rubric_form.max_points }}
+                      {% if rubric_form.max_points.errors %}<div class="field-error">{{ rubric_form.max_points.errors|join:", " }}</div>{% endif %}
+                    </div>
+                    <div class="col-6">
+                      <label class="form-label t-sm fw-600">Weight %</label>{{ rubric_form.weight }}
+                      {% if rubric_form.weight.errors %}<div class="field-error">{{ rubric_form.weight.errors|join:", " }}</div>{% endif %}
+                    </div>
+                  </div>
+                  <button type="submit" class="btn btn-primary btn-sm w-100" id="rubric-form-submit">
+                    <i class="bi bi-plus-lg me-1"></i>Add category
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-8">
+            <div class="card mb-3">
+              <div class="card-body">
+                <div class="card-icon-head">
+                  <div class="head-left">
+                    <span class="icon-badge"><i class="bi bi-people-fill"></i></span>
+                    <div>
+                      <div class="title">Group / project categories</div>
+                      <div class="sub">Scored once per presenting group</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="rubric-cat-list">
+                  {% for cat in group_categories %}
+                  <div class="rubric-cat-card" data-id="{{ cat.pk }}" data-name="{{ cat.name }}" data-description="{{ cat.description }}"
+                       data-scope="{{ cat.scope }}" data-max-points="{{ cat.max_points }}" data-weight="{{ cat.weight }}"
+                       data-edit-url="{% url 'assessment_rubric_edit' session.pk cat.pk %}">
+                    <span class="cat-icon"><i class="bi bi-clipboard-check"></i></span>
+                    <div class="cat-body">
+                      <div class="cat-name">{{ cat.name }}</div>
+                      {% if cat.description %}<div class="cat-desc">{{ cat.description }}</div>{% endif %}
+                    </div>
+                    <div class="cat-meta">
+                      <span class="pts-chip">/{{ cat.max_points }} pts</span>
+                      <span class="weight-chip">{{ cat.weight|floatformat:"-2" }}%</span>
+                    </div>
+                    <div class="cat-actions">
+                      <button type="button" class="btn btn-sm btn-outline-secondary py-0 rubric-edit-btn" title="Edit category"><i class="bi bi-pencil"></i></button>
+                      <form method="post" action="{% url 'assessment_rubric_delete' session.pk cat.pk %}" data-confirm="Remove this category? This can't be undone." data-confirm-label="Remove">
+                        {% csrf_token %}<button class="btn btn-sm btn-outline-danger py-0" title="Remove category"><i class="bi bi-trash"></i></button>
+                      </form>
+                    </div>
+                  </div>
+                  {% empty %}
+                  <div class="empty-state py-4"><i class="bi bi-clipboard-x"></i>No group categories yet - add one on the left.</div>
+                  {% endfor %}
+                </div>
+                {% if group_categories %}
+                <div class="weight-total-row">
+                  <span class="lbl">Total weight</span>
+                  <span class="val {% if group_weight_total == session.group_weight_percent %}is-ok{% else %}is-bad{% endif %}">{{ group_weight_total|floatformat:"-2" }}% of {{ session.group_weight_percent|floatformat:"-2" }}%</span>
+                </div>
+                {% endif %}
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-body">
+                <div class="card-icon-head">
+                  <div class="head-left">
+                    <span class="icon-badge" style="background:var(--tone-info-bg);color:var(--tone-info-fg)"><i class="bi bi-person-check-fill"></i></span>
+                    <div>
+                      <div class="title">Individual student categories</div>
+                      <div class="sub">Scored per student</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="rubric-cat-list">
+                  {% for cat in individual_categories %}
+                  <div class="rubric-cat-card is-individual" data-id="{{ cat.pk }}" data-name="{{ cat.name }}" data-description="{{ cat.description }}"
+                       data-scope="{{ cat.scope }}" data-max-points="{{ cat.max_points }}" data-weight="{{ cat.weight }}"
+                       data-edit-url="{% url 'assessment_rubric_edit' session.pk cat.pk %}">
+                    <span class="cat-icon"><i class="bi bi-person-lines-fill"></i></span>
+                    <div class="cat-body">
+                      <div class="cat-name">{{ cat.name }}</div>
+                      {% if cat.description %}<div class="cat-desc">{{ cat.description }}</div>{% endif %}
+                    </div>
+                    <div class="cat-meta">
+                      <span class="pts-chip">/{{ cat.max_points }} pts</span>
+                      <span class="weight-chip">{{ cat.weight|floatformat:"-2" }}%</span>
+                    </div>
+                    <div class="cat-actions">
+                      <button type="button" class="btn btn-sm btn-outline-secondary py-0 rubric-edit-btn" title="Edit category"><i class="bi bi-pencil"></i></button>
+                      <form method="post" action="{% url 'assessment_rubric_delete' session.pk cat.pk %}" data-confirm="Remove this category? This can't be undone." data-confirm-label="Remove">
+                        {% csrf_token %}<button class="btn btn-sm btn-outline-danger py-0" title="Remove category"><i class="bi bi-trash"></i></button>
+                      </form>
+                    </div>
+                  </div>
+                  {% empty %}
+                  <div class="empty-state py-4"><i class="bi bi-person-x"></i>No individual categories yet - group project scoring only.</div>
+                  {% endfor %}
+                </div>
+                {% if individual_categories %}
+                <div class="weight-total-row">
+                  <span class="lbl">Total weight</span>
+                  <span class="val {% if individual_weight_total == session.individual_weight_percent %}is-ok{% else %}is-bad{% endif %}">{{ individual_weight_total|floatformat:"-2" }}% of {{ session.individual_weight_percent|floatformat:"-2" }}%</span>
+                </div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="d-flex justify-content-between mt-3">
+          <a href="#roster-section" data-step="roster" class="btn btn-outline-secondary btn-sm step-nav-back">Back</a>
+          <a href="#groups-section" data-step="groups" class="btn btn-primary btn-sm step-nav-next">Next: Groups</a>
+        </div>
+      </div>
+    </div>
+
+    {# ---------------------------------------------------------- Groups -- #}
+    <div class="card mb-3 setup-section" id="groups-section" data-step="groups">
+      <div class="card-body">
+        <div class="setup-section-head">
+          <span class="step-num {% if step_groups_done %}is-done{% endif %}">
+            {% if step_groups_done %}<i class="bi bi-check-lg"></i>{% else %}4{% endif %}
+          </span>
+          <h3>Groups</h3>
+        </div>
+        {% include 'assessments/_partials/group_stats.html' %}
+
+        <div class="row g-3">
+          <div class="col-md-4">
+           <div class="groups-sidebar-sticky">
+            <div class="card mb-3">
+              <div class="card-body">
+                <div class="card-icon-head">
+                  <div class="head-left">
+                    <span class="icon-badge"><i class="bi bi-file-earmark-excel"></i></span>
+                    <div>
+                      <div class="title">Import from Excel</div>
+                      <div class="sub">Bulk-create groups from a spreadsheet</div>
+                    </div>
+                  </div>
+                </div>
+                <form method="post" action="{% url 'assessment_group_import' session.pk %}" enctype="multipart/form-data" id="group-import-form">
+                  {% csrf_token %}
+                  <div class="import-dropzone" id="group-import-dropzone">
+                    <i class="bi bi-cloud-arrow-up"></i>
+                    <div class="dz-text">Choose a file or drag it here</div>
+                    <div class="dz-filename" id="group-import-filename"></div>
+                    {{ group_import_form.file }}
+                  </div>
+                  <div class="form-text mt-2">{{ group_import_form.file.help_text }}</div>
+                  <button type="submit" class="btn btn-outline-primary btn-sm mt-2 w-100"><i class="bi bi-upload me-1"></i>Import</button>
+                </form>
+                <div class="text-muted t-micro mt-2">
+                  <i class="bi bi-shield-check me-1"></i>Only groups whose every member is
+                  already on the roster are created - the rest are flagged, not
+                  partially added.
+                </div>
+              </div>
+            </div>
+
+            <div class="card mb-3">
+              <div class="card-body">
+                <div class="group-form-mode-banner" id="group-form-mode-banner">
+                  <i class="bi bi-pencil-fill"></i><span>Editing an existing group</span>
+                </div>
+                <div class="card-icon-head">
+                  <div class="head-left">
+                    <span class="icon-badge" id="group-form-icon"><i class="bi bi-plus-square"></i></span>
+                    <div>
+                      <div class="title" id="group-form-title">Create group manually</div>
+                      <div class="sub" id="group-form-sub">Name it, cap its size, add members</div>
+                    </div>
+                  </div>
+                  <a href="#" class="t-sm d-none" id="group-form-cancel">Cancel</a>
+                </div>
+                <form method="post" id="group-form" action="{% url 'assessment_groups' session.pk %}">
+                  {% csrf_token %}
+                  {% if group_form.non_field_errors %}<div class="alert alert-danger py-2 t-sm">{{ group_form.non_field_errors|join:", " }}</div>{% endif %}
+                  <div class="row g-2">
+                    <div class="col-7">
+                      <label class="form-label t-sm fw-600">Group name <span class="text-danger">*</span></label>
+                      {{ group_form.name }}
+                      {% if group_form.name.errors %}<div class="field-error">{{ group_form.name.errors|join:", " }}</div>{% endif %}
+                    </div>
+                    <div class="col-5">
+                      <label class="form-label t-sm fw-600">Size <span class="text-danger">*</span></label>
+                      {{ group_form.max_size }}
+                      {% if group_form.max_size.errors %}<div class="field-error">{{ group_form.max_size.errors|join:", " }}</div>{% endif %}
+                    </div>
+                  </div>
+                  <div class="text-muted t-micro mt-1">
+                    <i class="bi bi-info-circle me-1"></i>A fixed size lets every card show capacity progress at a glance.
+                  </div>
+                  {% if ungrouped_students %}
+                  <label class="form-label t-sm fw-600 mt-3 mb-1" id="group-members-label">Members (optional - add now or later)</label>
+                  <div class="border rounded p-2" style="max-height:220px;overflow-y:auto" id="group-members-list">
+                    {% for student in ungrouped_students %}
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" name="members" value="{{ student.pk }}" id="new-member-{{ student.pk }}">
+                      <label class="form-check-label t-sm" for="new-member-{{ student.pk }}">
+                        {{ student.full_name|default:student.student_id }}
+                      </label>
+                    </div>
+                    {% endfor %}
+                  </div>
+                  {% else %}
+                  <div class="text-muted t-micro mt-2" id="group-members-empty-note">
+                    Every roster student is already assigned to a group.
+                  </div>
+                  {% endif %}
+                  <button type="submit" class="btn btn-primary btn-sm w-100 mt-2" id="group-form-submit">
+                    <i class="bi bi-plus-lg me-1"></i>Create
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            <div class="card">
+              {% include 'assessments/_partials/group_unassigned_pool.html' %}
+            </div>
+           </div>
+          </div>
+
+          <div class="col-md-8">
+            <div class="row g-3" id="groups-grid">
+              {% for group in groups %}
+              {% include 'assessments/_partials/group_card.html' %}
+              {% empty %}
+              <div class="col-12">
+                <div class="empty-state text-center py-5">
+                  <i class="bi bi-diagram-3 text-muted" style="font-size:2rem"></i>
+                  <p class="text-muted mt-2">No groups yet - create one to start assigning students.</p>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        <div class="d-flex justify-content-between mt-3">
+          <a href="#rubric-section" data-step="rubric" class="btn btn-outline-secondary btn-sm step-nav-back">Back</a>
+          <a href="#go-live-section" data-step="go-live" class="btn btn-primary btn-sm step-nav-next">Next: Go live</a>
+        </div>
+      </div>
+    </div>
+
+    {# --------------------------------------------------------- Go live -- #}
+    <div class="assess-hero assess-stagger setup-section" id="go-live-section" data-step="go-live">
+      <div class="hero-icon"><i class="bi bi-rocket-takeoff"></i></div>
+      <h2>Ready to go live?</h2>
+      <p>Add students, groups and a rubric first - weights must sum to this session's {{ session.group_weight_percent|floatformat:"-2" }}%/{{ session.individual_weight_percent|floatformat:"-2" }}% split before you can start.</p>
+      <form method="post" action="{% url 'assessment_go_live' session.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-primary btn-lg" {% if not session.can_go_live %}disabled{% endif %}>
+          <i class="bi bi-broadcast me-1"></i>Go live
+        </button>
+      </form>
+      {% if not session.can_go_live %}
+      <div class="text-danger t-sm mt-2">Needs at least one group and a rubric whose weights sum to this session's group/individual split.</div>
+      {% endif %}
+      <div class="mt-3">
+        <a href="#groups-section" data-step="groups" class="btn btn-outline-secondary btn-sm step-nav-back">Back</a>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if session %}
+<script>
+// Step panels - only the section matching the current stepper item is
+// shown at a time. Every section is already rendered server-side (forms
+// keep their POST-validation state), so moving between steps - forward,
+// backward, or via a "Next"/"Back" button - is a pure show/hide toggle
+// with no navigation, no reload and no re-scroll to the top of the page.
+(function () {
+  const steps = ['basics', 'roster', 'rubric', 'groups', 'go-live'];
+  const sections = {};
+  const navItems = {};
+  steps.forEach(function (step) {
+    sections[step] = document.querySelector('.setup-section[data-step="' + step + '"]');
+  });
+  document.querySelectorAll('.setup-stepper-nav .stepper-item').forEach(function (item) {
+    navItems[item.dataset.step] = (navItems[item.dataset.step] || []).concat(item);
+  });
+
+  function showStep(step) {
+    if (!sections[step]) return;
+    steps.forEach(function (s) {
+      if (sections[s]) sections[s].classList.toggle('is-active-panel', s === step);
+    });
+    document.querySelectorAll('.setup-stepper-nav .stepper-item').forEach(function (item) {
+      item.classList.toggle('is-current', item.dataset.step === step);
+    });
+  }
+
+ 
+  document.querySelectorAll('.setup-stepper-nav [data-step], .step-nav-next[data-step], .step-nav-back[data-step]').forEach(function (el) {
+    el.addEventListener('click', function (e) {
+      if (!sections[el.dataset.step]) return;
+      e.preventDefault();
+      showStep(el.dataset.step);
+    });
+  });
+
+  showStep('{{ active_step }}');
+})();
+</script>
+
+<script>
+// Roster - search-as-you-type against a dataset that may span many pages -
+// a short debounce, then a silent fetch that swaps just the table+count
+// fragments, so the search input never loses focus, cursor position or
+// scroll while the lecturer is still typing.
+(function () {
+  const input = document.getElementById('roster-search-input');
+  const clearBtn = document.getElementById('roster-search-clear');
+  const tableWrap = document.getElementById('roster-table-wrap');
+  const countText = document.getElementById('roster-count-text');
+  const perPageSelect = document.getElementById('roster-per-page-select');
+  const searchUrl = '{% url "assessment_roster_search" session.pk %}';
+  if (!input || !tableWrap) return;
+
+  let timer = null;
+  let inFlight = null;
+  let currentPerPage = perPageSelect ? perPageSelect.value : '25';
+
+  function bindPaginationLinks() {
+    document.querySelectorAll('#roster-table-wrap .pagination a.page-link').forEach(function (link) {
+      const li = link.closest('.page-item');
+      if (li && li.classList.contains('disabled')) return;
+      link.addEventListener('click', function (e) {
+        const href = link.getAttribute('href');
+        if (!href || href === '#') return;
+        e.preventDefault();
+        load(new URLSearchParams(href.replace(/^\?/, '')));
+      });
+    });
+  }
+
+  function load(params) {
+    if (!params.get('per_page')) params.set('per_page', currentPerPage);
+    if (inFlight) inFlight.abort();
+    const controller = new AbortController();
+    inFlight = controller;
+    fetch(`${searchUrl}?${params.toString()}`, { signal: controller.signal })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        document.getElementById('roster-table-wrap').outerHTML = data.table_html;
+        if (countText) countText.innerHTML = data.count_html;
+        if (clearBtn) clearBtn.classList.toggle('d-none', !params.get('q'));
+        if (window.DevPerfRosterBindEditButtons) window.DevPerfRosterBindEditButtons();
+        bindPaginationLinks();
+      })
+      .catch(function (err) { if (err.name !== 'AbortError') { /* transient - next keystroke retries */ } })
+      .finally(function () { inFlight = null; });
+  }
+
+  bindPaginationLinks();
+
+  input.addEventListener('input', function () {
+    window.clearTimeout(timer);
+    const value = input.value;
+    timer = setTimeout(function () {
+      load(new URLSearchParams(value ? { q: value } : {}));
+      window.history.replaceState(null, '', value ? `?q=${encodeURIComponent(value)}` : window.location.pathname);
+    }, 350);
+  });
+
+  if (perPageSelect) {
+    perPageSelect.addEventListener('change', function () {
+      currentPerPage = perPageSelect.value;
+      load(new URLSearchParams(input.value ? { q: input.value, per_page: currentPerPage } : { per_page: currentPerPage }));
+    });
+  }
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', function () {
+      input.value = '';
+      input.focus();
+      load(new URLSearchParams());
+      window.history.replaceState(null, '', window.location.pathname);
+    });
+  }
+
+  if (input.value) input.setSelectionRange(input.value.length, input.value.length);
+})();
+</script>
+
+<script>
+// Roster import dropzone.
+(function () {
+  const zone = document.getElementById('import-dropzone');
+  if (!zone) return;
+  const input = zone.querySelector('input[type=file]');
+  const filenameEl = document.getElementById('import-filename');
+
+  function showFilename() {
+    if (!filenameEl) return;
+    filenameEl.textContent = input.files && input.files.length ? input.files[0].name : '';
+  }
+  input.addEventListener('change', showFilename);
+
+  ['dragenter', 'dragover'].forEach(function (evt) {
+    zone.addEventListener(evt, function (e) { e.preventDefault(); zone.classList.add('is-dragover'); });
+  });
+  ['dragleave', 'drop'].forEach(function (evt) {
+    zone.addEventListener(evt, function (e) { e.preventDefault(); zone.classList.remove('is-dragover'); });
+  });
+  zone.addEventListener('drop', function (e) {
+    if (e.dataTransfer && e.dataTransfer.files.length) {
+      input.files = e.dataTransfer.files;
+      showFilename();
+    }
+  });
+})();
+</script>
+
+<script>
+// Roster - edit a student in place: the "Add student" form flips into an
+// edit form instead of opening a separate modal.
+(function () {
+  const form = document.getElementById('roster-form');
+  const icon = document.getElementById('roster-form-icon');
+  const title = document.getElementById('roster-form-title');
+  const banner = document.getElementById('roster-form-mode-banner');
+  const submitBtn = document.getElementById('roster-form-submit');
+  const cancelLink = document.getElementById('roster-form-cancel');
+  if (!form) return;
+  const createUrl = form.action;
+
+  function enterEditMode(btn) {
+    document.getElementById('id_roster_full_name').value = btn.dataset.fullName;
+    document.getElementById('id_roster_student_id').value = btn.dataset.studentId;
+    document.getElementById('id_roster_email').value = btn.dataset.email;
+    document.getElementById('id_roster_programme').value = btn.dataset.programme;
+
+    form.action = btn.dataset.editUrl;
+    icon.innerHTML = '<i class="bi bi-pencil-square"></i>';
+    title.textContent = 'Edit student';
+    banner.classList.add('is-active');
+    submitBtn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Update';
+    cancelLink.classList.remove('d-none');
+    document.getElementById('id_roster_full_name').focus();
+    document.getElementById('id_roster_full_name').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  function exitEditMode() {
+    form.reset();
+    form.action = createUrl;
+    icon.innerHTML = '<i class="bi bi-person-plus"></i>';
+    title.textContent = 'Add student';
+    banner.classList.remove('is-active');
+    submitBtn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>Add';
+    cancelLink.classList.add('d-none');
+  }
+
+  window.DevPerfRosterBindEditButtons = function () {
+    document.querySelectorAll('.roster-edit-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () { enterEditMode(btn); });
+    });
+  };
+  window.DevPerfRosterBindEditButtons();
+
+  cancelLink.addEventListener('click', function (e) {
+    e.preventDefault();
+    exitEditMode();
+  });
+})();
+</script>
+
+<script>
+// Rubric - edit a category in place, same reused-form pattern as roster.
+(function () {
+  const form = document.getElementById('rubric-form');
+  if (!form) return;
+  const icon = document.getElementById('rubric-form-icon');
+  const title = document.getElementById('rubric-form-title');
+  const submitBtn = document.getElementById('rubric-form-submit');
+  const cancelLink = document.getElementById('rubric-form-cancel');
+  const banner = document.getElementById('rubric-form-mode-banner');
+  const createUrl = form.action;
+
+  function enterEditMode(row) {
+    document.getElementById('id_rubric_name').value = row.dataset.name;
+    document.getElementById('id_rubric_description').value = row.dataset.description;
+    document.getElementById('id_rubric_scope').value = row.dataset.scope;
+    document.getElementById('id_rubric_max_points').value = row.dataset.maxPoints;
+    document.getElementById('id_rubric_weight').value = row.dataset.weight;
+
+    form.action = row.dataset.editUrl;
+    icon.innerHTML = '<i class="bi bi-pencil-square"></i>';
+    title.textContent = 'Edit rubric category';
+    submitBtn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Update category';
+    cancelLink.classList.remove('d-none');
+    banner.classList.add('is-active');
+    document.getElementById('id_rubric_name').focus();
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function exitEditMode() {
+    form.reset();
+    form.action = createUrl;
+    icon.innerHTML = '<i class="bi bi-plus-square"></i>';
+    title.textContent = 'Add rubric category';
+    submitBtn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>Add category';
+    cancelLink.classList.add('d-none');
+    banner.classList.remove('is-active');
+  }
+
+  document.querySelectorAll('.rubric-edit-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      enterEditMode(btn.closest('.rubric-cat-card'));
+    });
+  });
+
+  cancelLink.addEventListener('click', function (e) {
+    e.preventDefault();
+    exitEditMode();
+  });
+})();
+</script>
+
+<script>
+// Groups import dropzone.
+(function () {
+  const zone = document.getElementById('group-import-dropzone');
+  if (!zone) return;
+  const input = zone.querySelector('input[type=file]');
+  const filenameEl = document.getElementById('group-import-filename');
+
+  function showFilename() {
+    if (!filenameEl) return;
+    filenameEl.textContent = input.files && input.files.length ? input.files[0].name : '';
+  }
+  input.addEventListener('change', showFilename);
+
+  ['dragenter', 'dragover'].forEach(function (evt) {
+    zone.addEventListener(evt, function (e) { e.preventDefault(); zone.classList.add('is-dragover'); });
+  });
+  ['dragleave', 'drop'].forEach(function (evt) {
+    zone.addEventListener(evt, function (e) { e.preventDefault(); zone.classList.remove('is-dragover'); });
+  });
+  zone.addEventListener('drop', function (e) {
+    if (e.dataTransfer && e.dataTransfer.files.length) {
+      input.files = e.dataTransfer.files;
+      showFilename();
+    }
+  });
+})();
+</script>
+
+<script>
+// Groups - edit a group in place.
+(function () {
+  const form = document.getElementById('group-form');
+  if (!form) return;
+  const icon = document.getElementById('group-form-icon');
+  const title = document.getElementById('group-form-title');
+  const sub = document.getElementById('group-form-sub');
+  const submitBtn = document.getElementById('group-form-submit');
+  const cancelLink = document.getElementById('group-form-cancel');
+  const banner = document.getElementById('group-form-mode-banner');
+  const membersLabel = document.getElementById('group-members-label');
+  const membersList = document.getElementById('group-members-list');
+  const createUrl = form.action;
+
+  function enterEditMode(btn) {
+    document.getElementById('id_group_name').value = btn.dataset.name;
+    document.getElementById('id_group_max_size').value = btn.dataset.maxSize;
+
+    form.action = btn.dataset.editUrl;
+    icon.innerHTML = '<i class="bi bi-pencil-square"></i>';
+    title.textContent = 'Edit group';
+    sub.textContent = 'Update its name or size cap';
+    submitBtn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Update group';
+    cancelLink.classList.remove('d-none');
+    banner.classList.add('is-active');
+    if (membersLabel) membersLabel.classList.add('d-none');
+    if (membersList) membersList.classList.add('d-none');
+    document.getElementById('id_group_name').focus();
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function exitEditMode() {
+    form.reset();
+    form.action = createUrl;
+    icon.innerHTML = '<i class="bi bi-plus-square"></i>';
+    title.textContent = 'Create group manually';
+    sub.textContent = 'Name it, cap its size, add members';
+    submitBtn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>Create';
+    cancelLink.classList.add('d-none');
+    banner.classList.remove('is-active');
+    if (membersLabel) membersLabel.classList.remove('d-none');
+    if (membersList) membersList.classList.remove('d-none');
+  }
+
+  document.addEventListener('click', function (e) {
+    const btn = e.target.closest && e.target.closest('.group-edit-btn');
+    if (btn) enterEditMode(btn);
+  });
+
+  cancelLink.addEventListener('click', function (e) {
+    e.preventDefault();
+    exitEditMode();
+  });
+})();
+</script>
+
+<script>
+// Groups - drag-and-drop member reassignment between group cards and the
+// unassigned pool. Delegated on the document since group cards get
+// swapped wholesale by the patcher below.
+(function () {
+  function csrfHeaders() {
+    const el = document.querySelector('[name=csrfmiddlewaretoken]');
+    return el ? { 'X-CSRFToken': el.value } : {};
+  }
+
+  function postMembership(url, action, studentId) {
+    return fetch(url, {
+      method: 'POST',
+      headers: Object.assign({ 'X-Requested-With': 'XMLHttpRequest' }, csrfHeaders()),
+      body: new URLSearchParams({ action: action, student_id: studentId }),
+    }).then(function (res) { return res.json(); });
+  }
+
+  function applyPatch(data) {
+    if (data.group_html && data.group_id) {
+      const wrap = document.getElementById('group-card-' + data.group_id);
+      if (wrap) wrap.outerHTML = data.group_html;
+    }
+    if (data.unassigned_html) {
+      const pool = document.getElementById('unassigned-pool');
+      if (pool) pool.outerHTML = data.unassigned_html;
+    }
+    if (data.stats_html) {
+      const stats = document.getElementById('groups-stat-strip');
+      if (stats) stats.outerHTML = data.stats_html;
+    }
+  }
+
+  let dragged = null;
+
+  document.addEventListener('dragstart', function (e) {
+    const el = e.target.closest && e.target.closest('.member-row, .unassigned-badge');
+    if (!el) return;
+    dragged = {
+      studentId: el.dataset.studentId,
+      sourceGroupId: el.dataset.sourceGroup || null,
+      removeUrl: el.dataset.removeUrl || null,
+    };
+    el.classList.add('is-dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  });
+
+  document.addEventListener('dragend', function (e) {
+    const el = e.target.closest && e.target.closest('.member-row, .unassigned-badge');
+    if (el) el.classList.remove('is-dragging');
+  });
+
+  function dropZoneFor(target) {
+    return target.closest && (target.closest('.group-card-body') || target.closest('#unassigned-pool'));
+  }
+
+  document.addEventListener('dragover', function (e) {
+    if (!dragged) return;
+    const zone = dropZoneFor(e.target);
+    if (!zone) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    zone.classList.add('is-drop-target');
+  });
+
+  document.addEventListener('dragleave', function (e) {
+    const zone = dropZoneFor(e.target);
+    if (zone) zone.classList.remove('is-drop-target');
+  });
+
+  document.addEventListener('drop', function (e) {
+    const zone = dropZoneFor(e.target);
+    if (!zone || !dragged) return;
+    e.preventDefault();
+    zone.classList.remove('is-drop-target');
+    const drag = dragged;
+    dragged = null;
+
+    if (zone.id === 'unassigned-pool') {
+      if (!drag.removeUrl) return;
+      postMembership(drag.removeUrl, 'remove', drag.studentId)
+        .then(applyPatch)
+        .catch(function () { window.location.reload(); });
+      return;
+    }
+
+    const targetGroupId = zone.dataset.groupId;
+    if (String(drag.sourceGroupId) === String(targetGroupId)) return;
+    const addUrl = zone.dataset.addUrl;
+    const steps = drag.removeUrl
+      ? postMembership(drag.removeUrl, 'remove', drag.studentId).then(function (data) {
+          applyPatch(data);
+          return postMembership(addUrl, 'add', drag.studentId);
+        })
+      : postMembership(addUrl, 'add', drag.studentId);
+    steps.then(applyPatch).catch(function () { window.location.reload(); });
+  });
+})();
+</script>
+<script>
+(function () {
+  const toggle = document.querySelector('.scope-info-toggle');
+  const info = document.getElementById('rubric-scope-info');
+  if (!toggle || !info) return;
+  toggle.addEventListener('click', function () {
+    const expanded = toggle.getAttribute('aria-expanded') === 'true';
+    toggle.setAttribute('aria-expanded', String(!expanded));
+    info.hidden = expanded;
+    info.classList.toggle('is-visible', !expanded);
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

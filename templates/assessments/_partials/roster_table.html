@@ -1,0 +1,75 @@
+<div id="roster-table-wrap">
+  <div class="table-responsive" style="max-height:32rem;overflow-y:auto">
+    <table class="table table-sm table-hover mb-0 t-body">
+      <thead class="table-light" style="position:sticky;top:0;z-index:1">
+        <tr>
+          <th class="ps-3">Name {% if session.identify_by == 'full_name' %}<i class="bi bi-key-fill text-primary t-micro" title="Used to join"></i>{% endif %}</th>
+          <th>Student ID {% if session.identify_by == 'student_id' %}<i class="bi bi-key-fill text-primary t-micro" title="Used to join"></i>{% endif %}</th>
+          <th>Programme</th><th class="pe-3"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for student in students %}
+        <tr>
+          <td class="ps-3 fw-600">
+            <div class="roster-name-cell">
+              <span class="roster-avatar {% cycle 'bg-primary-subtle text-primary-emphasis' 'bg-success-subtle text-success-emphasis' 'bg-warning-subtle text-warning-emphasis' 'bg-info-subtle text-info-emphasis' 'bg-danger-subtle text-danger-emphasis' 'bg-secondary-subtle text-secondary-emphasis' %}">
+                {{ student.full_name|default:student.student_id|slice:":2"|upper }}
+              </span>
+              <span>{{ student.full_name|default:"-" }}</span>
+            </div>
+          </td>
+          <td class="text-muted">{{ student.student_id|default:"-" }}</td>
+          <td class="text-muted">{{ student.programme|default:"-" }}</td>
+          <td class="pe-3 text-end">
+            <div class="roster-row-actions">
+              <button type="button" class="btn btn-sm btn-outline-secondary py-0 roster-edit-btn"
+                      data-id="{{ student.pk }}"
+                      data-full-name="{{ student.full_name|default:'' }}"
+                      data-student-id="{{ student.student_id|default:'' }}"
+                      data-email="{{ student.email|default:'' }}"
+                      data-programme="{{ student.programme|default:'' }}"
+                      data-edit-url="{% url 'assessment_roster_edit' session.pk student.pk %}"
+                      title="Edit student">
+                <i class="bi bi-pencil"></i>
+              </button>
+              <form method="post" action="{% url 'assessment_roster_delete' session.pk student.pk %}"
+                    data-confirm="Remove {{ student.full_name|default:student.student_id }} from the roster?"
+                    data-confirm-label="Remove">
+                {% csrf_token %}
+                <button class="btn btn-sm btn-outline-danger py-0" title="Remove student"><i class="bi bi-trash"></i></button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="4" class="text-center text-muted py-4">
+          {% if query %}No students match "{{ query }}".{% else %}No students on the roster yet.{% endif %}
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if page_obj.has_other_pages %}
+  <div class="card-footer d-flex justify-content-between align-items-center">
+    <div class="text-muted small">Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ total }}</div>
+    <nav aria-label="Roster pagination">
+      <ul class="pagination pagination-sm mb-0">
+        <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+          <a class="page-link" href="{% if page_obj.has_previous %}?page={{ page_obj.previous_page_number }}&per_page={{ per_page }}{% if query %}&q={{ query|urlencode }}{% endif %}{% else %}#{% endif %}">Previous</a>
+        </li>
+        {% for num in paginator.page_range %}
+          {% if num >= page_obj.number|add:'-2' and num <= page_obj.number|add:'2' %}
+          <li class="page-item {% if page_obj.number == num %}active{% endif %}">
+            <a class="page-link" href="?page={{ num }}&per_page={{ per_page }}{% if query %}&q={{ query|urlencode }}{% endif %}">{{ num }}</a>
+          </li>
+          {% endif %}
+        {% endfor %}
+        <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+          <a class="page-link" href="{% if page_obj.has_next %}?page={{ page_obj.next_page_number }}&per_page={{ per_page }}{% if query %}&q={{ query|urlencode }}{% endif %}{% else %}#{% endif %}">Next</a>
+        </li>
+      </ul>
+    </nav>
+  </div>
+  {% endif %}
+</div>

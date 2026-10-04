@@ -1,0 +1,14 @@
+Django>=4.2,<5.0
+mozilla-django-oidc>=4.0
+python-dotenv>=1.0
+psycopg2-binary>=2.9
+channels>=4.0
+channels_redis>=4.2
+daphne>=4.0
+celery>=5.3
+redis>=5.0
+qrcode>=8.0
+Pillow>=10.0
+openpyxl>=3.1
+# Newest releases have no wheel on some platforms and fail to build.
+cbor2>=5.6,<5.7

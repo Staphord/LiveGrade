@@ -1,0 +1,17 @@
+<header class="page-header">
+  <div class="page-header-main">
+    {% if parent %}
+    <nav class="crumbs" aria-label="Breadcrumb">
+      {% if grandparent %}<a href="{{ grandparent_url|default:'#' }}">{{ grandparent }}</a><span class="crumb-sep" aria-hidden="true">/</span>{% endif %}
+      <a href="{{ parent_url|default:'#' }}">{{ parent }}</a>
+    </nav>
+    {% endif %}
+    <div class="page-title-row">
+      <h1 class="page-title">{{ title }}</h1>
+      {% if badge %}<span class="badge-pill tone-{{ badge_tone|default:'neutral' }}">{{ badge }}</span>{% endif %}
+      {% if pin %}<button type="button" class="pin-btn" data-pin-toggle data-pin-title="{{ title }}" aria-pressed="false" title="Pin to sidebar"><i class="bi bi-star icon-sm"></i></button>{% endif %}
+    </div>
+    {% if subtitle %}<div class="page-subtitle">{{ subtitle }}</div>{% endif %}
+  </div>
+  {% if actions %}<div class="page-header-actions">{{ actions }}</div>{% endif %}
+</header>

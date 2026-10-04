@@ -1,0 +1,45 @@
+<div id="live-qr">
+{% if joined_count > 0 %}
+<!-- Most of the room has already joined - the big QR code has done its
+     job, so it steps back into a small popover instead of holding a third
+     of this row for the rest of the session, freeing that width for
+     participation and the presenting hero. -->
+<div class="invite-btn-row">
+  <button type="button" class="btn btn-accent-soft btn-sm invite-cta" data-bs-toggle="popover" data-bs-html="true"
+          data-bs-placement="bottom"
+          data-bs-content="<div class='text-center'><img src='{% url 'assessment_qr' session.pk %}' style='width:170px;height:170px' class='rounded border p-1'><div class='t-micro text-muted mt-1'>Scan to grade live</div></div>">
+    <i class="bi bi-qr-code me-1"></i>Show QR code
+  </button>
+  <button type="button" class="btn btn-outline-secondary btn-sm copy-link-btn" data-join-url="{{ join_url }}" title="Copy join link">
+    <i class="bi bi-link-45deg me-1"></i>Copy link
+  </button>
+  <button type="button" class="btn btn-outline-secondary btn-sm copy-qr-btn" data-qr-url="{% url 'assessment_qr' session.pk %}" title="Copy QR code image">
+    <i class="bi bi-clipboard-image me-1"></i>Copy QR
+  </button>
+  <a href="{% url 'assessment_join_screen' session.uuid %}" target="_blank" rel="noopener" class="btn btn-outline-secondary btn-sm" title="Open a full-screen join screen to project in the room">
+    <i class="bi bi-easel2 me-1"></i>Join screen
+  </a>
+</div>
+<div class="invite-meta-row">
+  <span><i class="bi bi-people-fill me-1"></i><strong>{{ joined_count }}</strong> joined</span>
+</div>
+{% else %}
+<div class="qr-wrap" style="width:140px;height:140px">
+  <img src="{% url 'assessment_qr' session.pk %}" alt="QR code to join" class="img-fluid rounded border p-2"
+       onload="this.classList.add('is-loaded')">
+  <div class="qr-skeleton"></div>
+</div>
+<div class="t-micro text-muted mt-1">Scan to grade live</div>
+<div class="invite-btn-row mt-2">
+  <button type="button" class="btn btn-accent-soft btn-sm copy-link-btn" data-join-url="{{ join_url }}" title="Copy join link">
+    <i class="bi bi-link-45deg me-1"></i>Copy link
+  </button>
+  <button type="button" class="btn btn-outline-secondary btn-sm copy-qr-btn" data-qr-url="{% url 'assessment_qr' session.pk %}" title="Copy QR code image">
+    <i class="bi bi-clipboard-image me-1"></i>Copy QR
+  </button>
+  <a href="{% url 'assessment_join_screen' session.uuid %}" target="_blank" rel="noopener" class="btn btn-outline-secondary btn-sm" title="Open a full-screen join screen to project in the room">
+    <i class="bi bi-easel2 me-1"></i>Join screen
+  </a>
+</div>
+{% endif %}
+</div>

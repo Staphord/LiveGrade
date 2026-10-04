@@ -1,0 +1,38 @@
+<div id="live-rankings">
+{% if group_rankings %}
+<div class="rank-head">
+  <span class="rank-head-badge">Rank</span>
+  <span class="rank-head-body"><span>Group</span><span>Score</span></span>
+  <span class="rank-head-votes">Graded by</span>
+</div>
+<ol class="rank-list">
+  {% for row in group_rankings %}
+  <li class="rank-row {% if row.is_active %}is-active{% endif %} {% if row.percent is None %}is-pending{% endif %}"
+      data-group-id="{{ row.group.pk }}" data-rank="{{ row.rank }}">
+    <span class="rank-badge rank-{{ row.rank }}">
+      {% if row.rank == 1 %}<i class="bi bi-trophy-fill"></i>
+      {% elif row.rank == 2 or row.rank == 3 %}<i class="bi bi-award-fill"></i>
+      {% else %}{{ row.rank }}{% endif %}
+    </span>
+    <div class="rank-body">
+      <div class="rank-top">
+        <span class="rank-name">
+          {{ row.group.name }}
+          {% if row.is_active %}<span class="rank-live-tag"><span class="pulse-dot"></span>Presenting</span>{% endif %}
+        </span>
+        <span class="rank-score">
+          {% if row.percent is not None %}{{ row.percent }}%{% else %}<span class="text-muted t-micro">no votes yet</span>{% endif %}
+        </span>
+      </div>
+      {% if row.percent is not None %}
+      <div class="rank-bar"><div class="rank-bar-fill" style="width:{% widthratio row.percent session.group_weight_percent 100 %}%"></div></div>
+      {% endif %}
+    </div>
+    <span class="rank-votes text-muted t-micro"><i class="bi bi-person-check me-1"></i>{{ row.votes }}</span>
+  </li>
+  {% endfor %}
+</ol>
+{% else %}
+<div class="text-muted t-sm">Add groups on the Groups tab to see rankings here.</div>
+{% endif %}
+</div>

@@ -1,0 +1,24 @@
+<tbody id="results-rows">
+  {% for row in student_rows %}
+  <tr data-student-id="{{ row.student.pk }}">
+    <td class="ps-3 fw-600">
+      <div class="roster-name-cell">
+        <span class="roster-avatar {% cycle 'bg-primary-subtle text-primary-emphasis' 'bg-success-subtle text-success-emphasis' 'bg-warning-subtle text-warning-emphasis' 'bg-info-subtle text-info-emphasis' 'bg-danger-subtle text-danger-emphasis' 'bg-secondary-subtle text-secondary-emphasis' %}">
+          {{ row.student.full_name|default:row.student.student_id|slice:":2"|upper }}
+        </span>
+        <span>{{ row.student.full_name|default:row.student.student_id }}</span>
+      </div>
+    </td>
+    <td class="text-muted">{{ row.group.name }}</td>
+    <td>{% if row.group_percent is not None %}{{ row.group_percent }}%{% else %}<span class="text-muted">-</span>{% endif %}</td>
+    <td>{% if row.individual_percent is not None %}{{ row.individual_percent }}%{% else %}<span class="text-muted">-</span>{% endif %}</td>
+    <td>
+      {% if row.penalty %}<span class="badge bg-danger-subtle text-danger-emphasis" title="{{ row.penalty }} group{{ row.penalty|pluralize }} not graded">−{{ row.penalty }}%</span>
+      {% else %}<span class="text-muted">-</span>{% endif %}
+    </td>
+    <td class="pe-3 fw-700 text-primary">{{ row.final_percent }}%</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="6" class="text-center text-muted py-4">No results yet - evaluations haven't been submitted.</td></tr>
+  {% endfor %}
+</tbody>
