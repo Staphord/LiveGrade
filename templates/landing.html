@@ -282,5 +282,27 @@ body{background:var(--surface);color:var(--text);font-size:1rem;overflow-x:hidde
 </footer>
 
 </div>
+<script>
+(function () {
+  var links = document.querySelectorAll('a.btn[href]');
+  function reset() {
+    links.forEach(function (a) {
+      a.classList.remove('is-busy');
+      a.removeAttribute('aria-busy');
+    });
+  }
+  links.forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.target === '_blank') return;
+      a.classList.add('is-busy');
+      a.setAttribute('aria-busy', 'true');
+      setTimeout(reset, 15000);
+    });
+  });
+  window.addEventListener('pageshow', function (e) {
+    if (e.persisted) reset();
+  });
+})();
+</script>
 </body>
 </html>
