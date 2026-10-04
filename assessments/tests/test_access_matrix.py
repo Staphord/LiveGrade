@@ -44,7 +44,7 @@ LECTURER_ROW_ROUTES = {
     'assessment_close_turn': POST, 'assessment_close_session': POST,
     'assessment_participation': GET, 'assessment_participation_refresh': GET,
     'assessment_results': GET, 'assessment_results_refresh': GET,
-    'assessment_results_export': GET, 'assessment_qr': GET,
+    'assessment_results_export': GET, 'assessment_qr': GET, 'assessment_transfer': GET,
 }
 STUDENT_ROUTES = {
     # Reached by session link, no login: an unknown link is a 404 for everybody.

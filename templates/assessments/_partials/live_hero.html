@@ -35,12 +35,13 @@
   </div>
   <div class="actions">
     {% if active_turn.voting_ends_at and active_turn.is_voting_open and not session.voting_paused and not active_turn.presentation_ends_at %}
-    {# The +/-30s nudge only applies to plain voting-only turns: a
-       presentation-timed turn is on a fixed, auto-controlled schedule
-       (voting opens/closes/finishes at set percentages of
-       presentation_ends_at), and nudging voting_ends_at here would pull it
-       out of sync with that schedule without actually moving the real
-       finish time. #}
+    {% comment %}
+    The +/-30s nudge only applies to plain voting-only turns: a
+    presentation-timed turn is on a fixed, auto-controlled schedule (voting
+    opens/closes/finishes at set percentages of presentation_ends_at), and
+    nudging voting_ends_at here would pull it out of sync with that schedule
+    without actually moving the real finish time.
+    {% endcomment %}
     <form method="post" action="{% url 'assessment_adjust_timer' session.pk %}" class="live-ajax-form">
       {% csrf_token %}<input type="hidden" name="delta_seconds" value="-30">
       <button type="submit" class="btn btn-light group-chip"><i class="bi bi-dash-circle me-1"></i>30s</button>

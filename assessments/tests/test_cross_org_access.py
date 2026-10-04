@@ -70,6 +70,7 @@ TARGETS = {
     'assessment_results_refresh':  (GET,  'session'),
     'assessment_results_export':   (GET,  'session'),
     'assessment_qr':               (GET,  'session'),
+    'assessment_transfer':         (POST, 'session'),
 }
 
 #: Routes that take an id but are deliberately outside this check, and why.
@@ -100,14 +101,16 @@ def shape(response):
     return response.status_code, re.sub(r'\d+', '#', location.split('?')[0])
 
 
-class OtherOrganizationLecturerTests(TestCase):
-    """Org A owns one of everything; a lecturer of Org B tries to reach it."""
+class RowsAreUnreachable:
+    """Every id route, requested by somebody who must not reach Org A's rows:
+    the answer is the one a missing id gets, carries none of the data, and
+    changes nothing."""
 
     @classmethod
     def setUpTestData(cls):
         cls.org_a = make_org('Org A')
         cls.org_b = make_org('Org B')
-        owner = make_user('a_lecturer')
+        owner = cls.owner = make_user('a_lecturer')
         session = AssessmentSession.objects.create(
             organization_id=cls.org_a.pk, name=MARKER, created_by=owner)
         cls.objects = {
@@ -117,16 +120,21 @@ class OtherOrganizationLecturerTests(TestCase):
             'category': RubricCategory.objects.create(assessment_session=session, name=MARKER),
         }
         cls.lecturer_b = make_user('b_lecturer')
+        cls.colleague = make_user('a_colleague')
 
     def request(self, name, method, kwargs):
         self.client.logout()
-        sign_in(self.client, self.lecturer_b, self.org_b)
+        sign_in(self.client, self.intruder, self.intruder_org)
         return getattr(self.client, method)(reverse(name, kwargs=kwargs))
 
-    def test_other_organizations_rows_are_indistinguishable_from_missing_ones(self):
+    #: The routes that must be unreachable. All of them, unless a subclass is
+    #: about somebody who is meant to reach some.
+    targets = TARGETS
+
+    def test_other_rows_are_indistinguishable_from_missing_ones(self):
         patterns = dict(named_patterns())
         problems = []
-        for name, (method, mapping) in TARGETS.items():
+        for name, (method, mapping) in self.targets.items():
             argument_names = list(patterns[name].pattern.converters)
             if isinstance(mapping, str):
                 mapping = {arg: mapping for arg in argument_names}
@@ -143,15 +151,26 @@ class OtherOrganizationLecturerTests(TestCase):
                     f'{method.upper()} {name}: a real row answered {shape(got)}, '
                     f'a missing one {shape(baseline)} - tells the caller it exists')
             if MARKER.encode() in got.content:
-                problems.append(f'{method.upper()} {name}: Org A data in the response')
+                problems.append(f'{method.upper()} {name}: the owner\'s data in the response')
             if before != after:
                 changed = [label for label in before if before[label] != after[label]]
                 problems.append(f'{method.upper()} {name}: changed {changed}')
-        self.assertEqual(problems, [], 'Org B reached Org A')
+        self.assertEqual(problems, [], f'{self.intruder.username} reached the owner\'s session')
+
+
+class OtherOrganizationLecturerTests(RowsAreUnreachable, TestCase):
+    """A lecturer of Org B tries to reach Org A's session."""
+
+    @property
+    def intruder(self):
+        return self.lecturer_b
+
+    @property
+    def intruder_org(self):
+        return self.org_b
 
     def test_the_owner_can_reach_every_one_of_them(self):
         """The check above means something only if the rows are really there."""
-        owner = make_user('owner_check')
         patterns = dict(named_patterns())
         for name, (method, mapping) in TARGETS.items():
             if method != GET:
@@ -160,10 +179,81 @@ class OtherOrganizationLecturerTests(TestCase):
                 mapping = {arg: mapping for arg in patterns[name].pattern.converters}
             kwargs = {arg: self.objects[key].pk for arg, key in mapping.items()}
             self.client.logout()
-            sign_in(self.client, owner, self.org_a)
+            sign_in(self.client, self.owner, self.org_a)
             with self.subTest(name):
                 response = self.client.get(reverse(name, kwargs=kwargs))
                 self.assertNotEqual(response.status_code, 404)
+
+
+class ColleagueInTheSameOrganizationTests(RowsAreUnreachable, TestCase):
+    """Another lecturer - or an admin, who is the same thing here - in the SAME
+    organization tries to reach it. A session is private to its creator."""
+
+    @property
+    def intruder(self):
+        return self.colleague
+
+    @property
+    def intruder_org(self):
+        return self.org_a
+
+
+#: What somebody with oversight is meant to reach on a session that is not theirs.
+OVERSIGHT_ROUTES = {
+    'assessment_results', 'assessment_results_refresh',
+    'assessment_participation', 'assessment_participation_refresh',
+    'assessment_transfer',
+}
+
+
+class OverseerOfAnotherOrganizationTests(RowsAreUnreachable, TestCase):
+    """Oversight is for ONE organization: an overseer of Org B reaches none of
+    Org A's rows, not even the read-only ones."""
+
+    @property
+    def intruder(self):
+        return self.lecturer_b
+
+    @property
+    def intruder_org(self):
+        return self.__class__.overseeing_b
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.overseeing_b = make_org('Org B overseers', oversee=True)
+
+
+class OverseerInTheSameOrganizationTests(RowsAreUnreachable, TestCase):
+    """An overseer in the SAME organization reaches only the read-only pages and
+    the hand-over. Everything else about someone else's session stays private."""
+
+    targets = {name: spec for name, spec in TARGETS.items() if name not in OVERSIGHT_ROUTES}
+
+    @property
+    def intruder(self):
+        return self.colleague
+
+    @property
+    def intruder_org(self):
+        return self.__class__.overseeing_a
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.overseeing_a = make_org('Org A overseers', oversee=True)
+        # Same organization number as Org A, with oversight switched on.
+        cls.overseeing_a.pk = cls.overseeing_a.id = cls.org_a.pk
+
+    def test_the_read_only_pages_are_reachable(self):
+        sign_in(self.client, self.colleague, self.overseeing_a)
+        session = self.objects['session']
+        for name in ('assessment_results', 'assessment_results_refresh',
+                     'assessment_participation', 'assessment_participation_refresh',
+                     'assessment_transfer'):
+            with self.subTest(name):
+                self.assertEqual(
+                    self.client.get(reverse(name, args=[session.pk])).status_code, 200)
 
 
 class EveryRowRouteIsCheckedTests(TestCase):

@@ -182,7 +182,7 @@ class TimerViewsTests(TestCase):
         self.org = make_org('Test Uni')
         self.lecturer = make_user('lecturer')
         sign_in(self.client, self.lecturer, self.org)
-        self.session = AssessmentSession.objects.create(organization_id=self.org.pk, name='Session')
+        self.session = AssessmentSession.objects.create(organization_id=self.org.pk, name='Session', created_by=self.lecturer)
         self.group1 = PresentationGroup.objects.create(assessment_session=self.session, name='Group 1', order=1)
         self.group2 = PresentationGroup.objects.create(assessment_session=self.session, name='Group 2', order=2)
 

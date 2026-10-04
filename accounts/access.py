@@ -18,12 +18,15 @@ def usable_orgs(orgs):
     """The organizations in a token's ``orgs`` claim where LiveGrade may be run.
 
     Defensive about shape: the claim comes from another service, so anything
-    that is not a well-formed entry is ignored rather than trusted.
+    that is not a well-formed entry is ignored rather than trusted. An entry
+    carries ``can_oversee`` only when DevPerf said so with a literal true; it
+    never stands in for the right to run LiveGrade, which is checked first.
     """
     if not isinstance(orgs, list):
         return []
     return [
-        {'id': org['id'], 'slug': str(org.get('slug', '')), 'name': str(org.get('name', ''))}
+        {'id': org['id'], 'slug': str(org.get('slug', '')), 'name': str(org.get('name', '')),
+         'can_oversee': org.get('can_oversee_assessments') is True}
         for org in orgs
         if isinstance(org, dict) and org.get('can_run_assessments') is True
         and isinstance(org.get('id'), int) and not isinstance(org.get('id'), bool)
@@ -41,6 +44,13 @@ def active_organization(request):
         if org['id'] == chosen:
             return org
     return orgs[0] if orgs else None
+
+
+def can_oversee(request):
+    """Whether this person may see every lecturer's session in the active
+    organization (read-only, plus handing one over), as DevPerf last said."""
+    organization = active_organization(request)
+    return bool(organization and organization.get('can_oversee'))
 
 
 def lecturer_required(view):

@@ -42,6 +42,9 @@ class LecturerTestCase(SessionFixture):
         super().setUp()
         self.lecturer = make_user('lect')
         sign_in(self.client, self.lecturer, self.org)
+        # Sessions are private to their creator: this lecturer owns the fixture's.
+        AssessmentSession.objects.filter(pk=self.session.pk).update(created_by=self.lecturer)
+        self.session.refresh_from_db()
         for target in ('close_voting_window', 'auto_advance_turn', 'activate_pending_group',
                        'open_scheduled_voting', 'finish_presentation'):
             patcher = mock.patch(f'assessments.tasks.{target}.apply_async')
@@ -62,7 +65,8 @@ class SessionPagesTests(LecturerTestCase):
         self.set_status('live')
         self.active_turn(self.red)
         ParticipationRecord.objects.create(assessment_session=self.session, student=self.cat)
-        draft = AssessmentSession.objects.create(organization_id=self.org.pk, name='Later')
+        draft = AssessmentSession.objects.create(
+            organization_id=self.org.pk, name='Later', created_by=self.lecturer)
         response = self.client.get(reverse('assessment_session_list'))
         sessions = response.context['sessions']
         self.assertEqual(sessions[0], self.session)

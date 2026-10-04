@@ -63,7 +63,24 @@
 {% block content %}
 {% include 'partials/_page_header.html' with title='LiveGrade' subtitle='Run live, QR-joined peer assessment for presentations, demos, or any session worth grading in the room.' %}
 
-{% if not sessions %}
+{% if can_oversee %}
+<div class="page-tabs mb-3">
+  <a href="{% url 'assessment_session_list' %}" class="page-tab {% if not show_all %}active{% endif %}">
+    <i class="bi bi-person me-1"></i>My sessions
+  </a>
+  <a href="{% url 'assessment_session_list' %}?scope=all" class="page-tab {% if show_all %}active{% endif %}">
+    <i class="bi bi-people me-1"></i>All sessions in {{ active_org.name }}
+  </a>
+</div>
+{% endif %}
+
+{% if not sessions and show_all %}
+<div class="assess-empty assess-stagger">
+  <div class="empty-icon"><i class="bi bi-clipboard2-data"></i></div>
+  <h2>Nobody has created a session yet</h2>
+  <p>Sessions made by any lecturer in {{ active_org.name }} will be listed here.</p>
+</div>
+{% elif not sessions %}
 <div class="assess-empty assess-stagger">
   <div class="empty-icon"><i class="bi bi-clipboard2-data"></i></div>
   <h2>No assessment sessions yet</h2>
@@ -81,7 +98,7 @@
   {% for session in sessions %}
   <div class="col-md-6 col-lg-4 assess-stagger">
     <div class="session-card-wrap">
-    <a href="{% url 'assessment_session_detail' session.pk %}" class="text-decoration-none text-reset">
+    <a href="{% if session.is_mine %}{% url 'assessment_session_detail' session.pk %}{% elif session.status == 'live' %}{% url 'assessment_participation' session.pk %}{% else %}{% url 'assessment_results' session.pk %}{% endif %}" class="text-decoration-none text-reset">
       <div class="card session-card {% if session.status == 'live' %}is-live{% endif %}">
         <div class="card-body">
           <div class="d-flex justify-content-between align-items-start mb-2">
@@ -99,6 +116,9 @@
             <span class="session-mini-stat"><i class="bi bi-diagram-3"></i>{{ session.groups.count }} groups</span>
           </div>
           <div class="text-muted t-sm"><i class="bi bi-clock me-1"></i>Created {{ session.created_at|date:'d M Y' }}</div>
+          {% if show_all %}
+          <div class="text-muted t-sm"><i class="bi bi-person me-1"></i>{% if session.is_mine %}Yours{% elif session.created_by %}{{ session.created_by.display_name }}{% else %}No owner{% endif %}</div>
+          {% endif %}
           {% if session.status == 'live' %}
           <div class="session-live-glance">
             <i class="bi bi-people-fill"></i>{{ session.live_joined_count }}/{{ session.students.count }} joined
@@ -113,6 +133,13 @@
         <i class="bi bi-three-dots-vertical"></i>
       </button>
       <ul class="dropdown-menu dropdown-menu-end">
+        {% if not session.is_mine %}
+        {% if session.status == 'live' %}
+        <li><a class="dropdown-item" href="{% url 'assessment_participation' session.pk %}"><i class="bi bi-people me-2"></i>View participation</a></li>
+        {% endif %}
+        <li><a class="dropdown-item" href="{% url 'assessment_results' session.pk %}"><i class="bi bi-bar-chart me-2"></i>View results</a></li>
+        <li><a class="dropdown-item" href="{% url 'assessment_transfer' session.pk %}"><i class="bi bi-arrow-left-right me-2"></i>Transfer ownership</a></li>
+        {% else %}
         {% if session.status == 'draft' %}
         <li><a class="dropdown-item" href="{% url 'assessment_session_edit' session.pk %}"><i class="bi bi-pencil me-2"></i>Edit session</a></li>
         {% elif session.status == 'live' %}
@@ -121,10 +148,12 @@
         {% else %}
         <li><a class="dropdown-item" href="{% url 'assessment_results' session.pk %}"><i class="bi bi-bar-chart me-2"></i>View results</a></li>
         {% endif %}
+        <li><a class="dropdown-item" href="{% url 'assessment_transfer' session.pk %}"><i class="bi bi-arrow-left-right me-2"></i>Transfer ownership</a></li>
         <li><hr class="dropdown-divider"></li>
         <li><form method="post" action="{% url 'assessment_session_delete' session.pk %}" data-confirm="Delete &quot;{{ session.name }}&quot;? This permanently removes all roster, rubric, and grade data." data-confirm-label="Delete session" data-confirm-tone="danger">
           {% csrf_token %}<button type="submit" class="dropdown-item text-danger"><i class="bi bi-trash me-2"></i>Delete session</button>
         </form></li>
+        {% endif %}
       </ul>
     </div>
     </div>

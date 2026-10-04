@@ -18,17 +18,19 @@ class TestOrganization:
 
     __test__ = False
 
-    def __init__(self, name, slug=''):
+    def __init__(self, name, slug='', oversee=False):
         self.pk = self.id = next(_org_ids)
         self.name = name
         self.slug = slug or name.lower().replace(' ', '-')
+        self.oversee = oversee
 
     def as_claim(self):
-        return {'id': self.pk, 'slug': self.slug, 'name': self.name}
+        return {'id': self.pk, 'slug': self.slug, 'name': self.name, 'can_oversee': self.oversee}
 
 
-def make_org(name, slug=''):
-    return TestOrganization(name, slug)
+def make_org(name, slug='', oversee=False):
+    """``oversee=True``: whoever signs in to it may see every lecturer's session."""
+    return TestOrganization(name, slug, oversee)
 
 
 def make_user(username, **fields):

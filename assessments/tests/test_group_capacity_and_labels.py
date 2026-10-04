@@ -65,7 +65,7 @@ class GroupViewsCapacityTests(TestCase):
         self.org = make_org('Test Uni')
         self.lecturer = make_user('lecturer')
         sign_in(self.client, self.lecturer, self.org)
-        self.session = AssessmentSession.objects.create(organization_id=self.org.pk, name='FYP 2026')
+        self.session = AssessmentSession.objects.create(organization_id=self.org.pk, name='FYP 2026', created_by=self.lecturer)
         self.a = Student.objects.create(assessment_session=self.session, full_name='A')
         self.b = Student.objects.create(assessment_session=self.session, full_name='B')
         self.c = Student.objects.create(assessment_session=self.session, full_name='C')
@@ -149,7 +149,7 @@ class RosterFormLabelsTests(TestCase):
     def test_roster_form_fields_are_labeled(self):
         session = AssessmentSession.objects.create(
             organization_id=self.org.pk, name='FYP 2026',
-            identify_by=AssessmentSession.IdentifyBy.STUDENT_ID)
+            identify_by=AssessmentSession.IdentifyBy.STUDENT_ID, created_by=self.lecturer)
         response = self.client.get(f'/assessments/{session.pk}/roster/')
         self.assertContains(response, 'Full name')
         self.assertContains(response, 'Student ID')

@@ -11,8 +11,8 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from accounts.access import active_organization, lecturer_required
-from accounts.scoping import get_scoped_or_404
+from accounts.access import active_organization, can_oversee, lecturer_required
+from accounts.models import User
 
 from ..excel import export_results, import_groups, import_roster
 from ..forms import (
@@ -27,6 +27,7 @@ from ..pagination import PAGE_SIZES, paginate
 from ..qr import join_url, qr_png
 from ..realtime import broadcast_session_event
 from ..scoring import group_score_percent, session_results
+from ..transfers import TransferError, eligible_recipients, transfer_session
 from ..turns import (
     activate_turn, adjust_timer, ensure_turn_progressed, open_voting, pause_timer, resume_timer,
 )
@@ -43,21 +44,44 @@ __all__ = [
     'set_default_presentation_seconds', 'set_designated_next_group', 'toggle_pause', 'toggle_joining',
     'adjust_turn_timer', 'close_turn', 'close_session',
     'participation', 'participation_refresh', 'results', 'results_refresh',
-    'results_export', 'session_qr',
+    'results_export', 'session_qr', 'session_transfer',
 ]
 
 
-def _session(request, pk):
-    return get_scoped_or_404(AssessmentSession, request, pk=pk)
+def _session(request, pk, oversight=False):
+    """The session, if it belongs to this lecturer in the active organization.
+
+    Both conditions, every time: a session is private to the person who created
+    it, so another lecturer - or an admin - in the same organization gets the
+    same 404 as for an id that does not exist, which confirms nothing.
+
+    ``oversight=True`` is for the few read-only pages (results, participation)
+    and the hand-over, which somebody DevPerf has given the oversee permission
+    may use on any session in the organization. It is opted into per view, never
+    the default, so a new page is private to its owner until somebody decides
+    otherwise. The organization still applies.
+    """
+    sessions = AssessmentSession.objects.for_request(request)
+    if not (oversight and can_oversee(request)):
+        sessions = sessions.owned_by(request.user)
+    return get_object_or_404(sessions, pk=pk)
 
 
 @lecturer_required
 def assessment_session_list(request):
     organization = active_organization(request)
+    # "All sessions in the organization" is for people DevPerf has given the
+    # oversee permission; for everybody else the parameter does nothing.
+    show_all = request.GET.get('scope') == 'all' and can_oversee(request)
+    visible = AssessmentSession.objects.for_organization(organization)
+    if not show_all:
+        visible = visible.owned_by(request.user)
     sessions = list(
-        AssessmentSession.objects.for_organization(organization)
+        visible.select_related('created_by')
         .prefetch_related('students', 'groups')
         .order_by('-created_at'))
+    for session in sessions:
+        session.is_mine = session.created_by_id == request.user.pk
 
     # Live sessions always lead, regardless of age - a session that's
     # actually running in a room right now is the one thing on this page
@@ -90,7 +114,8 @@ def assessment_session_list(request):
             session.live_active_group = active_turns.get(session.pk)
             session.live_joined_count = joined_counts.get(session.pk, 0)
 
-    return render(request, 'assessments/session_list.html', {'sessions': sessions})
+    return render(request, 'assessments/session_list.html', {
+        'sessions': sessions, 'show_all': show_all, 'can_oversee': can_oversee(request)})
 
 
 @lecturer_required
@@ -1066,8 +1091,9 @@ def _participation_context(request, session):
 
 @lecturer_required
 def participation(request, pk):
-    session = _session(request, pk)
+    session = _session(request, pk, oversight=True)
     context = _participation_context(request, session)
+    context['is_owner'] = session.created_by_id == request.user.pk
     return render(request, 'assessments/participation.html', context)
 
 
@@ -1077,7 +1103,7 @@ def participation_refresh(request, pk):
     plausibly open on a second screen during the session - updates itself
     the same silent way the Live control tab already does, rather than
     only ever refreshing on a manual reload."""
-    session = _session(request, pk)
+    session = _session(request, pk, oversight=True)
     context = _participation_context(request, session)
     return JsonResponse({
         'status': session.status,
@@ -1136,8 +1162,9 @@ def _results_context(request, session):
 
 @lecturer_required
 def results(request, pk):
-    session = _session(request, pk)
+    session = _session(request, pk, oversight=True)
     context = _results_context(request, session)
+    context['is_owner'] = session.created_by_id == request.user.pk
     return render(request, 'assessments/results.html', context)
 
 
@@ -1146,7 +1173,7 @@ def results_refresh(request, pk):
     """Polled (and websocket-triggered) while the session is live, so the
     results table and both charts stay current as evaluations are submitted
     instead of only ever reflecting whatever the page looked like on load."""
-    session = _session(request, pk)
+    session = _session(request, pk, oversight=True)
     context = _results_context(request, session)
     return JsonResponse({
         'status': session.status,
@@ -1180,3 +1207,40 @@ def results_export(request, pk):
 def session_qr(request, pk):
     session = _session(request, pk)
     return HttpResponse(qr_png(join_url(request, session)), content_type='image/png')
+
+
+@lecturer_required
+def session_transfer(request, pk):
+    """Hand a session to another lecturer in the same organization.
+
+    The owner's access ends the moment this succeeds - the session simply stops
+    being theirs - so the page says so before it asks, and a successful transfer
+    sends them back to their list rather than to a page they can no longer open.
+
+    Somebody with oversight may hand over any session in the organization, not
+    only their own; it is recorded with them as the person who did it.
+    """
+    session = _session(request, pk, oversight=True)
+    recipients = list(eligible_recipients(session))
+    is_owner = session.created_by_id == request.user.pk
+    back = reverse('assessment_session_list') + ('?scope=all' if can_oversee(request) else '')
+
+    if request.method == 'POST':
+        try:
+            chosen = next(user for user in recipients if str(user.pk) == request.POST.get('new_owner', ''))
+        except StopIteration:
+            messages.error(request, 'Choose one of the lecturers in the list.')
+        else:
+            try:
+                transfer_session(session, chosen, by_user=request.user)
+            except TransferError as error:
+                # Only if the recipient stopped being eligible between the list
+                # being drawn and this request.
+                messages.error(request, str(error))
+            else:
+                messages.success(
+                    request, f'"{session.name}" now belongs to {chosen.get_full_name() or chosen.username}.')
+                return redirect(back)
+
+    return render(request, 'assessments/session_transfer.html', {
+        'session': session, 'recipients': recipients, 'is_owner': is_owner, 'back': back})

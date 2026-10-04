@@ -2,9 +2,11 @@
 {% block title %}Results - {{ session.name }}{% endblock %}
 {% block page_title %}{{ session.name }}{% endblock %}
 {% block topbar_actions %}
+{% if is_owner is not False %}
 <a href="{% url 'assessment_results_export' session.pk %}" class="btn btn-outline-primary btn-sm">
   <i class="bi bi-download me-1"></i>Export Excel
 </a>
+{% endif %}
 <a href="{% url 'assessment_session_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>All sessions</a>
 {% endblock %}
 

@@ -28,7 +28,7 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from accounts.scoping import OrganizationManager, OrganizationScopedModel
+from accounts.scoping import OrganizationScopedModel, OwnedManager
 
 
 class AssessmentSession(OrganizationScopedModel):
@@ -91,7 +91,7 @@ class AssessmentSession(OrganizationScopedModel):
     created_at = models.DateTimeField(auto_now_add=True)
     closed_at = models.DateTimeField(null=True, blank=True)
 
-    objects = OrganizationManager()
+    objects = OwnedManager()
 
     class Meta:
         ordering = ['-created_at']
@@ -403,3 +403,29 @@ class EvaluationScore(models.Model):
 
     def __str__(self):
         return f'{self.rubric_category.name}: {self.value}'
+
+
+class SessionTransfer(models.Model):
+    """One hand-over of a session from one lecturer to another.
+
+    A log, not a permission: it records who gave what to whom and when, so a
+    session that changed hands is never a mystery. ``by_user`` is empty when an
+    operator did it from the command line.
+    """
+
+    session = models.ForeignKey(AssessmentSession, on_delete=models.CASCADE,
+        related_name='transfers')
+    from_user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='+')
+    to_user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='+')
+    by_user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='+')
+    note = models.CharField(max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
+
+    def __str__(self):
+        return f'{self.session_id}: {self.from_user_id} -> {self.to_user_id}'

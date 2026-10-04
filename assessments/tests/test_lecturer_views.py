@@ -121,7 +121,7 @@ class RosterEditViewTests(TestCase):
         self.org = make_org('Test Uni')
         self.lecturer = make_user('lecturer')
         sign_in(self.client, self.lecturer, self.org)
-        self.session = AssessmentSession.objects.create(organization_id=self.org.pk, name='Session')
+        self.session = AssessmentSession.objects.create(organization_id=self.org.pk, name='Session', created_by=self.lecturer)
         self.student = Student.objects.create(
             assessment_session=self.session, full_name='Jane Doe', student_id='SCT001')
 
@@ -155,7 +155,7 @@ class RosterSearchViewTests(TestCase):
         self.org = make_org('Test Uni')
         self.lecturer = make_user('lecturer')
         sign_in(self.client, self.lecturer, self.org)
-        self.session = AssessmentSession.objects.create(organization_id=self.org.pk, name='Session')
+        self.session = AssessmentSession.objects.create(organization_id=self.org.pk, name='Session', created_by=self.lecturer)
         Student.objects.create(assessment_session=self.session, full_name='Alice Wang', student_id='SCT001')
         Student.objects.create(assessment_session=self.session, full_name='Boniface Omondi', student_id='SCT002')
 
@@ -181,7 +181,7 @@ class LecturerNextGroupTests(TestCase):
         self.lecturer = make_user('lecturer')
         sign_in(self.client, self.lecturer, self.org)
         self.session = AssessmentSession.objects.create(
-            organization_id=self.org.pk, name='Live Session', status=AssessmentSession.Status.LIVE)
+            organization_id=self.org.pk, name='Live Session', status=AssessmentSession.Status.LIVE, created_by=self.lecturer)
         self.group1 = PresentationGroup.objects.create(assessment_session=self.session, name='G1', order=1)
         self.group2 = PresentationGroup.objects.create(assessment_session=self.session, name='G2', order=2)
         self.group3 = PresentationGroup.objects.create(assessment_session=self.session, name='G3', order=3)

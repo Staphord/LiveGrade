@@ -102,7 +102,7 @@ class GroupImportViewTests(TestCase):
         self.org = make_org('Test Uni')
         self.lecturer = make_user('lecturer')
         sign_in(self.client, self.lecturer, self.org)
-        self.session = AssessmentSession.objects.create(organization_id=self.org.pk, name='FYP 2026')
+        self.session = AssessmentSession.objects.create(organization_id=self.org.pk, name='FYP 2026', created_by=self.lecturer)
 
     def test_import_requires_roster_first(self):
         f = _xlsx(['Group', 'Student ID'], [['Group 1', 'A1']])

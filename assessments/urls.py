@@ -44,4 +44,5 @@ urlpatterns = [
     path('<int:pk>/results/refresh/', views.results_refresh, name='assessment_results_refresh'),
     path('<int:pk>/results/export/', views.results_export, name='assessment_results_export'),
     path('<int:pk>/qr.png', views.session_qr, name='assessment_qr'),
+    path('<int:pk>/transfer/', views.session_transfer, name='assessment_transfer'),
 ]

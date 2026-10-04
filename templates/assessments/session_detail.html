@@ -3,6 +3,9 @@
 {% block page_title %}{{ session.name }}{% endblock %}
 
 {% block topbar_actions %}
+<a href="{% url 'assessment_transfer' session.pk %}" class="btn btn-outline-secondary btn-sm">
+  <i class="bi bi-arrow-left-right me-1"></i>Transfer ownership
+</a>
 <a href="{% url 'assessment_session_list' %}" class="btn btn-outline-secondary btn-sm">
   <i class="bi bi-arrow-left me-1"></i>All sessions
 </a>

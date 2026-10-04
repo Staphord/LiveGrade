@@ -61,7 +61,7 @@ class ManualGroupViewsExclusivityTests(TestCase):
         self.lecturer = make_user('lecturer')
         sign_in(self.client, self.lecturer, self.org)
 
-        self.session = AssessmentSession.objects.create(organization_id=self.org.pk, name='FYP 2026')
+        self.session = AssessmentSession.objects.create(organization_id=self.org.pk, name='FYP 2026', created_by=self.lecturer)
         self.student = Student.objects.create(assessment_session=self.session, full_name='Alice Wang')
         self.group1 = PresentationGroup.objects.create(assessment_session=self.session, name='Group 1')
         self.group2 = PresentationGroup.objects.create(assessment_session=self.session, name='Group 2')

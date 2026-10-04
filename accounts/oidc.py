@@ -12,6 +12,7 @@ from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 from mozilla_django_oidc.views import OIDCAuthenticationCallbackView
 
 from .access import ORGS_KEY, usable_orgs
+from .directory import record_sign_in
 from .models import User
 
 
@@ -51,8 +52,10 @@ class CallbackView(OIDCAuthenticationCallbackView):
 
     def login_success(self):
         response = super().login_success()
-        self.request.session[ORGS_KEY] = usable_orgs(
-            self.user.devperf_claims.get('orgs'))
+        organizations = usable_orgs(self.user.devperf_claims.get('orgs'))
+        self.request.session[ORGS_KEY] = organizations
+        # So colleagues can hand this person a session (accounts.directory).
+        record_sign_in(self.user, organizations)
         return response
 
 

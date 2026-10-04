@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block title %}Transfer {{ session.name }} - LiveGrade{% endblock %}
+{% block page_title %}Transfer ownership{% endblock %}
+{% block topbar_actions %}
+<a href="{{ back }}" class="btn btn-outline-secondary btn-sm">
+  <i class="bi bi-arrow-left me-1"></i>All sessions
+</a>
+{% endblock %}
+
+{% block content %}
+{% include 'partials/_page_header.html' with title=session.name subtitle='Hand this session to another lecturer.' %}
+
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-body p-4">
+        {% if is_owner %}
+        <div class="alert alert-warning">
+          <i class="bi bi-exclamation-triangle me-1"></i>
+          Once transferred, this session is theirs and <strong>you will no longer see or control it</strong>.
+          Students already in the room are not affected.
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+          <i class="bi bi-info-circle me-1"></i>
+          This session belongs to <strong>{% if session.created_by %}{{ session.created_by.display_name }}{% else %}nobody{% endif %}</strong>.
+          After the transfer it belongs to the person you choose, and the current owner loses access to it.
+          Students already in the room are not affected.
+        </div>
+        {% endif %}
+
+        {% if recipients %}
+        <form method="post">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label fw-600" for="new_owner">New owner</label>
+            <select name="new_owner" id="new_owner" class="form-select" required>
+              <option value="">Choose a lecturer…</option>
+              {% for person in recipients %}
+              <option value="{{ person.pk }}">{{ person.get_full_name|default:person.username }}{% if person.email %} ({{ person.email }}){% endif %}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">Only lecturers who have signed in to LiveGrade for this organization are listed.</div>
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Transfer session</button>
+            <a href="{{ back }}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+        {% else %}
+        <p class="mb-0">
+          No other lecturer has signed in to LiveGrade for this organization yet, so there is nobody to
+          hand it to. Ask the person to sign in to LiveGrade once, then come back.
+        </p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

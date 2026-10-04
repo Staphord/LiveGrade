@@ -1,7 +1,7 @@
 from django.test import RequestFactory, TestCase
 from django.urls import reverse
 
-from accounts.access import ACTIVE_KEY, ORGS_KEY, active_organization, usable_orgs
+from accounts.access import ACTIVE_KEY, ORGS_KEY, active_organization, can_oversee, usable_orgs
 from accounts.context import livegrade
 from accounts.models import User
 
@@ -27,7 +27,7 @@ class UsableOrgsTests(TestCase):
             {'id': 1, 'slug': 'a', 'name': 'A', 'can_run_assessments': True},
             {'id': 2, 'slug': 'b', 'name': 'B', 'can_run_assessments': False},
         ]
-        self.assertEqual(usable_orgs(orgs), [{'id': 1, 'slug': 'a', 'name': 'A'}])
+        self.assertEqual(usable_orgs(orgs), [{'id': 1, 'slug': 'a', 'name': 'A', 'can_oversee': False}])
 
     def test_a_claim_that_is_not_a_list_grants_nothing(self):
         for claim in (None, 'acme', {'id': 1, 'can_run_assessments': True}, 5):
@@ -41,9 +41,48 @@ class UsableOrgsTests(TestCase):
             with self.subTest(entry=entry):
                 self.assertEqual(usable_orgs([entry]), [])
 
+    def test_oversight_is_claimed_only_with_a_literal_true(self):
+        def oversee(value):
+            entry = {'id': 1, 'can_run_assessments': True, 'can_oversee_assessments': value}
+            return usable_orgs([entry])[0]['can_oversee']
+
+        self.assertTrue(oversee(True))
+        for not_true in (False, None, 'yes', 1, 'true', [True]):
+            with self.subTest(value=not_true):
+                self.assertFalse(oversee(not_true))
+
+    def test_a_missing_oversight_claim_means_no_oversight(self):
+        self.assertFalse(usable_orgs([{'id': 1, 'can_run_assessments': True}])[0]['can_oversee'])
+
+    def test_oversight_never_stands_in_for_the_right_to_run_livegrade(self):
+        self.assertEqual(usable_orgs([{'id': 1, 'can_run_assessments': False,
+                                       'can_oversee_assessments': True}]), [])
+
     def test_a_missing_name_or_slug_becomes_empty_text(self):
         self.assertEqual(usable_orgs([{'id': 3, 'can_run_assessments': True}]),
-                         [{'id': 3, 'slug': '', 'name': ''}])
+                         [{'id': 3, 'slug': '', 'name': '', 'can_oversee': False}])
+
+
+class CanOverseeTests(TestCase):
+
+    def request(self, *orgs, active=None):
+        request = RequestFactory().get('/')
+        request.session = {ORGS_KEY: list(orgs)}
+        if active is not None:
+            request.session[ACTIVE_KEY] = active
+        return request
+
+    def test_it_follows_the_active_organization_only(self):
+        acme = {'id': 1, 'slug': 'a', 'name': 'A', 'can_oversee': True}
+        globex = {'id': 2, 'slug': 'g', 'name': 'G', 'can_oversee': False}
+        self.assertTrue(can_oversee(self.request(acme, globex, active=1)))
+        self.assertFalse(can_oversee(self.request(acme, globex, active=2)))
+
+    def test_somebody_with_no_organization_oversees_nothing(self):
+        self.assertFalse(can_oversee(self.request()))
+
+    def test_a_session_from_before_oversight_existed_means_no_oversight(self):
+        self.assertFalse(can_oversee(self.request({'id': 1, 'slug': 'a', 'name': 'A'})))
 
 
 class ActiveOrganizationTests(TestCase):

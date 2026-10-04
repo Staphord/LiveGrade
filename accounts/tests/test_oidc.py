@@ -106,8 +106,35 @@ class SignInFlowTests(TestCase):
         response = self.finish()
         self.assertRedirects(response, '/', fetch_redirect_response=False)
         self.assertEqual(User.objects.get().sub, '42')
-        self.assertEqual(self.client.session[ORGS_KEY], [{'id': 1, 'slug': 'acme', 'name': 'Acme'}])
+        self.assertEqual(self.client.session[ORGS_KEY],
+                         [{'id': 1, 'slug': 'acme', 'name': 'Acme', 'can_oversee': False}])
         self.assertContains(self.client.get('/assessments/'), 'Tea Cher')
+
+    def test_a_sign_in_adds_the_person_to_the_colleague_directory(self):
+        from accounts.models import OrganizationLecturer
+
+        self.finish()
+        row = OrganizationLecturer.objects.get()
+        self.assertEqual((row.user.sub, row.organization_id, row.organization_name), ('42', 1, 'Acme'))
+
+    def test_signing_in_again_without_that_organization_removes_the_row(self):
+        from accounts.models import OrganizationLecturer
+
+        self.finish()
+        self.client.logout()
+        self.finish({**CLAIMS, 'orgs': [{'id': 9, 'slug': 'new', 'name': 'New', 'can_run_assessments': True}]})
+        self.assertEqual(list(OrganizationLecturer.objects.values_list('organization_id', flat=True)), [9])
+
+    def test_oversight_travels_into_the_session_when_devperf_grants_it(self):
+        orgs = [{'id': 1, 'slug': 'acme', 'name': 'Acme', 'can_run_assessments': True,
+                 'can_oversee_assessments': True}]
+        self.finish({**CLAIMS, 'orgs': orgs})
+        self.assertEqual(self.client.session[ORGS_KEY][0]['can_oversee'], True)
+        self.assertContains(self.client.get('/assessments/?scope=all'), 'All sessions in Acme')
+
+    def test_without_the_claim_there_is_no_oversight(self):
+        self.finish()
+        self.assertNotContains(self.client.get('/assessments/?scope=all'), 'All sessions in')
 
     def test_only_the_organizations_where_they_may_run_it_are_kept(self):
         self.finish()

@@ -35,6 +35,22 @@ class OrganizationManager(models.Manager.from_queryset(OrganizationQuerySet)):
     """Default manager for scoped models. Deliberately not auto-filtering."""
 
 
+class OwnedQuerySet(OrganizationQuerySet):
+    """For scoped models with a ``created_by``: what one person may see of an
+    organization's rows is their own."""
+
+    def owned_by(self, user):
+        """Rows ``user`` created. Nobody - an anonymous visitor, or a row whose
+        creator is unknown - owns anything: the filter never widens to "all"."""
+        if not user or not getattr(user, 'pk', None):
+            return self.none()
+        return self.filter(created_by_id=user.pk)
+
+
+class OwnedManager(models.Manager.from_queryset(OwnedQuerySet)):
+    """Default manager for scoped, owned models. Deliberately not auto-filtering."""
+
+
 class OrganizationScopedModel(models.Model):
     """Mixin adding DevPerf's organization id and the scoped manager."""
 

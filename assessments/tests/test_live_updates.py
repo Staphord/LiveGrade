@@ -130,7 +130,7 @@ class AssessmentLiveStateViewTests(TestCase):
         self.lecturer = make_user('lecturer')
         sign_in(self.client, self.lecturer, self.org)
         self.session = AssessmentSession.objects.create(
-            organization_id=self.org.pk, name='Session', status=AssessmentSession.Status.LIVE)
+            organization_id=self.org.pk, name='Session', status=AssessmentSession.Status.LIVE, created_by=self.lecturer)
         self.group1 = PresentationGroup.objects.create(assessment_session=self.session, name='Group 1', order=1)
         self.group2 = PresentationGroup.objects.create(assessment_session=self.session, name='Group 2', order=2)
 
@@ -222,7 +222,7 @@ class SetDefaultTurnSecondsViewTests(TestCase):
         self.lecturer = make_user('lecturer')
         sign_in(self.client, self.lecturer, self.org)
         self.session = AssessmentSession.objects.create(
-            organization_id=self.org.pk, name='Session', status=AssessmentSession.Status.LIVE)
+            organization_id=self.org.pk, name='Session', status=AssessmentSession.Status.LIVE, created_by=self.lecturer)
 
     def test_saves_the_chosen_duration_as_the_session_default(self):
         response = self.client.post(
