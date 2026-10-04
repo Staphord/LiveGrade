@@ -71,24 +71,19 @@ class CallbackView(OIDCAuthenticationCallbackView):
         return response
 
 
-def devperf_switch_account_url():
-    """Where to send somebody who is signed in to DevPerf as the wrong account, so
-    they can leave it and come back to LiveGrade to choose another. There is no
-    token to hint with (they never got in), so DevPerf asks them to confirm."""
-    query = {
-        'client_id': settings.OIDC_RP_CLIENT_ID,
-        'post_logout_redirect_uri': f'{settings.LIVEGRADE_BASE_URL}/',
-    }
-    return f'{settings.OIDC_OP_LOGOUT_ENDPOINT}?{urlencode(query)}'
+SWITCH_ACCOUNT_STATE = 'switch-account'
 
 
-def devperf_logout_url(request):
+def devperf_logout_url(request, state=None):
     """Where to send somebody so signing out here ends their DevPerf session
     too, returning them to LiveGrade afterwards. The return address is the one
-    registered in DevPerf; anything else it refuses."""
+    registered in DevPerf; anything else it refuses. ``state`` comes back on the
+    return address untouched."""
     query = {
         'id_token_hint': request.session.get('oidc_id_token', ''),
         'client_id': settings.OIDC_RP_CLIENT_ID,
         'post_logout_redirect_uri': f'{settings.LIVEGRADE_BASE_URL}/',
     }
+    if state:
+        query['state'] = state
     return f'{settings.OIDC_OP_LOGOUT_ENDPOINT}?{urlencode(query)}'

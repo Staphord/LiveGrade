@@ -169,7 +169,7 @@ class HomeAccessTests(TestCase):
 
     def test_the_no_access_page_opens_for_anybody(self):
         response = self.client.get(reverse('no_access'))
-        self.assertContains(response, 'Sign in again', status_code=403)
+        self.assertContains(response, 'Use a different account', status_code=403)
 
     def test_the_health_check_needs_no_sign_in(self):
         self.assertEqual(self.client.get(reverse('health')).content, b'ok')

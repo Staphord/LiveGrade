@@ -56,6 +56,7 @@ ACCOUNT_ROUTES = {
     # LiveGrade's own sign-in and housekeeping pages.
     'home': (GET, 200, 403, '/assessments/'),
     'no_access': (GET, 403, 403, 403),
+    'switch_account': (GET, 405, 405, 405),
     'switch_organization': (GET, LOGIN, 403, 405),
     'health': (GET, 200, 200, 200),
     'oidc_authentication_callback': (GET, '/no-access/', '/no-access/', '/no-access/'),
