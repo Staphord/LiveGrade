@@ -3,6 +3,7 @@ from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
 
 from .access import ACTIVE_KEY, ORGS_KEY, active_organization, lecturer_required
+from .oidc import devperf_switch_account_url
 
 
 def home(request):
@@ -11,13 +12,14 @@ def home(request):
     if not request.user.is_authenticated:
         return render(request, 'landing.html')
     if active_organization(request) is None:
-        return render(request, 'accounts/no_access.html', status=403)
+        return no_access(request)
     return redirect('assessment_session_list')
 
 
 def no_access(request):
     """Shown to somebody DevPerf signed in but who may not run LiveGrade."""
-    return render(request, 'accounts/no_access.html', status=403)
+    return render(request, 'accounts/no_access.html', {
+        'switch_account_url': devperf_switch_account_url()}, status=403)
 
 
 @lecturer_required

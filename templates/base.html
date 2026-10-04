@@ -239,6 +239,7 @@ display:none!important;
     </a>
     {% endif %}
   </nav>
+  {% if request.user.is_authenticated %}
   <div class="sidebar-footer">
     <div class="d-flex align-items-center gap-2 flex-grow-1">
       <div class="sidebar-footer-text">
@@ -254,6 +255,7 @@ display:none!important;
       <i class="bi bi-box-arrow-right"></i>
     </button>
   </div>
+  {% endif %}
 </div>
 
 <div class="nav-progress" id="nav-progress"></div>
