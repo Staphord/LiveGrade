@@ -33,10 +33,10 @@ def transfer_session(session, to_user, by_user=None, note='', require_known=True
     # Locked, so two hand-overs at once cannot both succeed from the same owner.
     session = AssessmentSession.objects.select_for_update().get(pk=session.pk)
     if to_user.pk == session.created_by_id:
-        raise TransferError('That lecturer already owns this session.')
+        raise TransferError('That person already owns this session.')
     if require_known and not eligible_recipients(session).filter(pk=to_user.pk).exists():
         raise TransferError(
-            'That lecturer is not known to run LiveGrade in this organization. '
+            'That person is not known to run LiveGrade in this organization. '
             'They need to sign in to LiveGrade once first.')
     previous = session.created_by
     session.created_by = to_user

@@ -87,7 +87,7 @@
     <h2 class="fw-800 s-h2">Waiting for a group to present</h2>
     <p class="text-muted s-text mb-2">
       You're checked in as <strong>{{ student.full_name|default:student.student_id }}</strong>.
-      This screen updates the instant your lecturer starts a group - no need to refresh.
+      This screen updates the instant a group starts - no need to refresh.
     </p>
     {% endif %}
 
@@ -106,7 +106,7 @@
     </div>
     {% endif %}
 
-    <p class="text-muted s-text-sm mt-3 mb-0 wait-tip" id="wait-tip">{% if session.default_presentation_seconds %}The next group will begin automatically.{% else %}Your lecturer will start the next group.{% endif %}</p>
+    <p class="text-muted s-text-sm mt-3 mb-0 wait-tip" id="wait-tip">{% if session.default_presentation_seconds %}The next group will begin automatically.{% else %}The next group will start shortly.{% endif %}</p>
   </div>
 </div>
 
@@ -149,7 +149,7 @@
       {% endif %}
     </div>
     {% endif %}
-    <p class="text-muted s-text-sm mt-3 mb-0">{% if session.default_presentation_seconds %}The next group will begin automatically.{% else %}Your lecturer will start the next group.{% endif %}</p>
+    <p class="text-muted s-text-sm mt-3 mb-0">{% if session.default_presentation_seconds %}The next group will begin automatically.{% else %}The next group will start shortly.{% endif %}</p>
   </div>
 </div>
 
@@ -184,7 +184,7 @@
   <div class="s-card fade-in text-center py-5">
     <i class="bi bi-pause-circle-fill text-warning s-icon-xl"></i>
     <h2 class="fw-800 mt-2 s-h2">Voting is paused</h2>
-    <p class="text-muted s-text">Your lecturer has temporarily paused grading. Hang tight.</p>
+    <p class="text-muted s-text">Grading is temporarily paused. Hang tight.</p>
   </div>
 </div>
 
@@ -338,7 +338,7 @@
   const tip = document.getElementById('wait-tip');
   if (!tip) return;
   const tips = [
-    'Sit tight - grading opens automatically the moment your lecturer starts a group.',
+    'Sit tight - grading opens automatically the moment a group starts.',
     'No need to refresh - this page updates itself the instant it’s your turn.',
     'Tip: score every category thoughtfully - your input shapes the final grade.',
     'Almost there - the next group could start any moment now.',

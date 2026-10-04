@@ -54,7 +54,7 @@ STUDENT_ROUTES = {
 }
 ACCOUNT_ROUTES = {
     # LiveGrade's own sign-in and housekeeping pages.
-    'home': (GET, LOGIN, 403, '/assessments/'),
+    'home': (GET, 200, 403, '/assessments/'),
     'no_access': (GET, 403, 403, 403),
     'switch_organization': (GET, LOGIN, 403, 405),
     'health': (GET, 200, 200, 200),

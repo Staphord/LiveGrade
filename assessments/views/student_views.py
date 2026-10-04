@@ -38,7 +38,7 @@ def join(request, session_uuid):
         if session.joining_locked:
             return render(request, 'assessments/student/join.html', {
                 'session': session, 'form': JoinForm(),
-                'error': 'Joining is closed for this live session. Please ask your lecturer for help.',
+                'error': 'Joining is closed for this live session. Please ask for help.',
                 'field_label': 'your full name' if session.identify_by == AssessmentSession.IdentifyBy.FULL_NAME else 'your student ID',
             })
         form = JoinForm(request.POST)
@@ -46,7 +46,7 @@ def join(request, session_uuid):
             student = match_student(session, form.cleaned_data['identifier'])
             if student is None:
                 error = ("We couldn't find you on the roster. Check what you typed, "
-                          "or ask your lecturer to add you.")
+                          "or ask to be added.")
             else:
                 record_join(request, student)
                 broadcast_session_event(session, 'participation.updated', {

@@ -68,7 +68,7 @@ def submit_evaluation(turn, evaluator, group_scores, individual_scores_by_studen
     partially written.
     """
     if turn.assessment_session.voting_paused:
-        raise ValidationError('Voting is currently paused by the lecturer.')
+        raise ValidationError('Voting is currently paused.')
     if not eligible_to_evaluate(evaluator, turn):
         raise ValidationError('You cannot evaluate this group.')
     if already_submitted(evaluator, turn):

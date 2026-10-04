@@ -3,9 +3,9 @@
 {% block page_title %}{{ session.name }}{% endblock %}
 
 {% block topbar_actions %}
-<a href="{% url 'assessment_transfer' session.pk %}" class="btn btn-outline-secondary btn-sm">
+{% if not active_org.public %}<a href="{% url 'assessment_transfer' session.pk %}" class="btn btn-outline-secondary btn-sm">
   <i class="bi bi-arrow-left-right me-1"></i>Transfer ownership
-</a>
+</a>{% endif %}
 <a href="{% url 'assessment_session_list' %}" class="btn btn-outline-secondary btn-sm">
   <i class="bi bi-arrow-left me-1"></i>All sessions
 </a>
@@ -522,7 +522,7 @@
 
     <div class="turn-settings-hint">
       <i class="bi bi-info-circle-fill"></i>
-      <span>With a <strong>presentation timer</strong>, voting opens and closes automatically during the presentation, then the next group starts after the <strong>gap</strong>. With only a <strong>voting timer</strong>, voting closes on expiry but the lecturer remains in control. With no timers, the turn is fully manual.</span>
+      <span>With a <strong>presentation timer</strong>, voting opens and closes automatically during the presentation, then the next group starts after the <strong>gap</strong>. With only a <strong>voting timer</strong>, voting closes on expiry but you remain in control. With no timers, the turn is fully manual.</span>
     </div>
 
     {% include 'assessments/_partials/live_groups_summary.html' %}

@@ -16,6 +16,9 @@ def record_sign_in(user, organizations):
     """Remember that ``user`` may run LiveGrade in exactly ``organizations``
     (the token's usable ones): add or refresh those, forget any other."""
     now = timezone.now()
+    # The shared workspace for self-registered lecturers has no colleagues:
+    # nothing is recorded, so there is never a list of strangers to offer anybody.
+    organizations = [o for o in organizations if not o.get('public')]
     for organization in organizations:
         OrganizationLecturer.objects.update_or_create(
             user=user, organization_id=organization['id'],

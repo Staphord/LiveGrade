@@ -2,12 +2,16 @@ from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
 
-from .access import ACTIVE_KEY, ORGS_KEY, lecturer_required
+from .access import ACTIVE_KEY, ORGS_KEY, active_organization, lecturer_required
 
 
-@lecturer_required
 def home(request):
-    """LiveGrade has one place to start: the lecturer's sessions."""
+    """A visitor sees what LiveGrade is and how to start; somebody signed in goes
+    straight to their sessions."""
+    if not request.user.is_authenticated:
+        return render(request, 'landing.html')
+    if active_organization(request) is None:
+        return render(request, 'accounts/no_access.html', status=403)
     return redirect('assessment_session_list')
 
 
@@ -31,3 +35,10 @@ def switch_organization(request):
 
 def health(request):
     return HttpResponse('ok', content_type='text/plain')
+
+
+def csrf_failure(request, reason=''):
+    """The security token on a form did not match: almost always a page left open
+    across a sign-out or sign-in elsewhere. Not the person's fault, and nothing
+    was changed - the page says so and offers a fresh start."""
+    return render(request, 'errors/csrf.html', {'reload_url': request.get_full_path()}, status=403)

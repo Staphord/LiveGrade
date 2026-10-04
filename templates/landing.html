@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LiveGrade - live peer assessment for presentations</title>
+<meta name="description" content="Run live, QR-joined peer assessment in your classroom. Students join from their phones; you watch the grades arrive.">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+{% include 'partials/_design_system.html' %}
+<style>
+:root{
+--lp-night:#0f2a4d;
+--lp-deep:#123c6e;
+--lp-sky:#e8f1fc;
+--lp-mint:#2fd4b0;
+--lp-sun:#ffd166;
+--lp-violet:#7c5cff;
+}
+html{scroll-behavior:smooth}
+body{background:var(--surface);color:var(--text);font-size:1rem;overflow-x:hidden}
+.lp-wrap{position:relative}
+
+/* ---------- Navigation ---------- */
+.lp-nav{position:absolute;inset:0 0 auto 0;z-index:20}
+.lp-nav .container{padding-top:1.1rem;padding-bottom:1.1rem}
+.lp-brand{display:flex;align-items:center;gap:.6rem;text-decoration:none;color:#fff}
+.lp-brand-mark{width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);display:flex;align-items:center;justify-content:center;font-size:1.15rem;backdrop-filter:blur(6px)}
+.lp-brand-name{font-weight:700;font-size:1.2rem;letter-spacing:-.01em}
+.lp-nav-links a.lp-link{color:rgba(255,255,255,.85);text-decoration:none;font-weight:600;font-size:.95rem;margin-right:1.25rem}
+.lp-nav-links a.lp-link:hover{color:#fff}
+.btn-lp-ghost{color:#fff;border:1px solid rgba(255,255,255,.45);font-weight:600;background:transparent}
+.btn-lp-ghost:hover,.btn-lp-ghost:focus{background:rgba(255,255,255,.14);color:#fff;border-color:#fff}
+.btn-lp-solid{background:#fff;color:var(--lp-deep);font-weight:700;border:1px solid #fff;box-shadow:0 8px 22px rgba(8,26,56,.28)}
+.btn-lp-solid:hover,.btn-lp-solid:focus{background:var(--lp-sun);border-color:var(--lp-sun);color:var(--lp-night);transform:translateY(-1px)}
+.btn-lp-solid,.btn-lp-ghost{transition:transform var(--motion-fast) var(--ease),background var(--motion-fast) var(--ease),box-shadow var(--motion-fast) var(--ease)}
+
+/* ---------- Hero ---------- */
+.lp-hero{position:relative;color:#fff;overflow:hidden;
+  background:
+    radial-gradient(900px 500px at 85% 10%,rgba(124,92,255,.35),transparent 60%),
+    radial-gradient(700px 480px at 5% 95%,rgba(47,212,176,.22),transparent 60%),
+    linear-gradient(135deg,var(--lp-night) 0%,var(--lp-deep) 48%,#1f5fc4 100%);
+  padding:clamp(7rem,13vw,9.5rem) 0 clamp(8rem,14vw,11rem)}
+.lp-orb{position:absolute;border-radius:50%;pointer-events:none}
+.lp-orb-1{width:520px;height:520px;right:-170px;top:-190px;border:1px solid rgba(255,255,255,.14)}
+.lp-orb-2{width:340px;height:340px;right:-80px;top:-100px;border:1px solid rgba(255,255,255,.12)}
+.lp-orb-3{width:260px;height:260px;left:-110px;bottom:70px;background:radial-gradient(circle at 30% 30%,rgba(255,255,255,.12),rgba(255,255,255,0) 70%)}
+.lp-eyebrow{display:inline-flex;align-items:center;gap:.5rem;padding:.4rem .9rem .4rem .45rem;border-radius:var(--radius-pill);background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);font-size:.85rem;font-weight:600;color:#fff;backdrop-filter:blur(6px)}
+.lp-eyebrow .dot{width:22px;height:22px;border-radius:50%;background:var(--lp-mint);color:var(--lp-night);display:flex;align-items:center;justify-content:center;font-size:.7rem}
+.lp-pulse{width:9px;height:9px;border-radius:50%;background:var(--lp-mint);box-shadow:0 0 0 0 rgba(47,212,176,.7);animation:lp-pulse 2s infinite}
+@keyframes lp-pulse{70%{box-shadow:0 0 0 10px rgba(47,212,176,0)}100%{box-shadow:0 0 0 0 rgba(47,212,176,0)}}
+.lp-hero h1{font-size:clamp(2.4rem,5.6vw,4.1rem);line-height:1.06;font-weight:800;letter-spacing:-.03em;margin:1.4rem 0 0}
+.lp-hero h1 .lp-live{position:relative;display:inline-block;background:linear-gradient(90deg,var(--lp-sun),var(--lp-mint));-webkit-background-clip:text;background-clip:text;color:transparent}
+.lp-hero h1 .lp-live::after{content:"";position:absolute;left:0;right:0;bottom:-.08em;height:.14em;border-radius:99px;background:linear-gradient(90deg,var(--lp-sun),var(--lp-mint));opacity:.55}
+.lp-lead{font-size:clamp(1.05rem,1.9vw,1.25rem);line-height:1.65;color:rgba(255,255,255,.88);max-width:34rem;margin-top:1.4rem}
+.lp-cta{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:2.1rem}
+.lp-cta .btn{padding:.85rem 1.6rem;border-radius:var(--radius-pill);font-size:1.02rem}
+.lp-proof{display:flex;flex-wrap:wrap;gap:.6rem 1.4rem;margin-top:2rem;color:rgba(255,255,255,.82);font-size:.92rem;font-weight:600}
+.lp-proof span{display:inline-flex;align-items:center;gap:.45rem}
+.lp-proof i{color:var(--lp-mint)}
+
+/* Hero visual: a live results panel with a phone beside it */
+.lp-stage{position:relative;min-height:500px;max-width:540px;margin-left:auto}
+.lp-panel{text-align:left;position:absolute;right:0;top:20px;width:min(100%,430px);background:#fff;color:var(--text);border-radius:22px;padding:1.3rem 1.4rem 1.4rem;box-shadow:0 40px 80px rgba(5,20,45,.45),0 0 0 1px rgba(255,255,255,.4);animation:lp-float 7s ease-in-out infinite}
+.lp-panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem}
+.lp-panel-title{font-weight:700;color:var(--ink);font-size:1rem}
+.lp-live-tag{display:inline-flex;align-items:center;gap:.4rem;font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#0a6b54;background:#d6f7ee;border-radius:99px;padding:.25rem .65rem}
+.lp-row{display:grid;grid-template-columns:30px 1fr auto;gap:.8rem;align-items:center;padding:.65rem 0;border-top:1px solid var(--border)}
+.lp-row:first-of-type{border-top:0}
+.lp-rank{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.85rem}
+.lp-rank.r1{background:#fff1c9;color:#7a5600}
+.lp-rank.r2{background:#e6ecf5;color:#41506a}
+.lp-rank.r3{background:#fde3d2;color:#8a4310}
+.lp-name{font-weight:700;color:var(--ink);font-size:.92rem;line-height:1.2}
+.lp-bar{height:7px;border-radius:99px;background:#edf1f6;margin-top:.4rem;overflow:hidden}
+.lp-bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--lp-violet));transform-origin:left;animation:lp-grow 1.6s var(--ease) both}
+.lp-row:nth-of-type(2) .lp-bar i{animation-delay:.15s}
+.lp-row:nth-of-type(3) .lp-bar i{animation-delay:.3s}
+@keyframes lp-grow{from{transform:scaleX(0)}}
+.lp-score{font-weight:800;color:var(--ink);font-size:1.05rem;font-variant-numeric:tabular-nums}
+.lp-panel-foot{display:flex;align-items:center;gap:.5rem;margin-top:.9rem;padding-top:.9rem;border-top:1px dashed var(--border-strong);font-size:.82rem;color:var(--text-muted)}
+.lp-phone{position:absolute;left:0;bottom:-46px;width:178px;background:#0b1b33;border-radius:30px;padding:9px;box-shadow:0 30px 60px rgba(5,20,45,.5),0 0 0 1px rgba(255,255,255,.2);animation:lp-float 7s ease-in-out -3.5s infinite}
+.lp-phone-screen{background:#fff;border-radius:23px;padding:1rem .9rem 1.05rem;text-align:center}
+.lp-phone-notch{width:54px;height:5px;border-radius:9px;background:#d6dde8;margin:0 auto .8rem}
+.lp-qr{width:112px;height:112px;margin:0 auto;border-radius:12px;background:var(--lp-sky);display:flex;align-items:center;justify-content:center;font-size:4.2rem;color:var(--lp-deep)}
+.lp-phone-cap{font-size:.74rem;font-weight:700;color:var(--ink);margin-top:.7rem;line-height:1.3}
+.lp-phone-cap small{display:block;font-weight:600;color:var(--text-muted);font-size:.68rem;margin-top:.15rem}
+.lp-chip{position:absolute;display:inline-flex;align-items:center;gap:.5rem;background:#fff;color:var(--ink);font-weight:700;font-size:.82rem;padding:.55rem .85rem;border-radius:14px;box-shadow:0 18px 40px rgba(5,20,45,.35);animation:lp-float 6s ease-in-out infinite}
+.lp-chip i{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:.9rem}
+.lp-chip-a{left:150px;top:-22px;animation-delay:-1.5s}
+.lp-chip-a i{background:#d6f7ee;color:#0a6b54}
+.lp-chip-b{right:-14px;bottom:36px;animation-delay:-4s}
+.lp-chip-b i{background:#ece6ff;color:#5b3fd6}
+@keyframes lp-float{50%{transform:translateY(-10px)}}
+
+/* ---------- Curved dividers ---------- */
+.lp-curve{position:absolute;left:0;width:100%;line-height:0;pointer-events:none}
+.lp-curve svg{display:block;width:100%;height:clamp(70px,10vw,150px)}
+.lp-curve-bottom{bottom:-1px}
+.lp-curve-top{top:-1px}
+
+/* ---------- Sections ---------- */
+.lp-section{position:relative;padding:clamp(3.5rem,8vw,6rem) 0}
+.lp-kicker{display:inline-block;font-size:.8rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.lp-h2{font-size:clamp(1.8rem,3.6vw,2.7rem);font-weight:800;letter-spacing:-.025em;line-height:1.12;color:var(--ink);margin:.7rem 0 0}
+.lp-sub{font-size:1.1rem;color:var(--text-soft);line-height:1.65;max-width:38rem;margin:1rem auto 0}
+
+.lp-features{background:linear-gradient(180deg,var(--surface) 0%,#f3f7fd 100%);overflow:hidden;padding-bottom:clamp(5rem,10vw,8rem)}
+.lp-blob{position:absolute;border-radius:50%;pointer-events:none}
+.lp-blob-a{width:420px;height:420px;left:-170px;top:10%;background:radial-gradient(circle at 40% 40%,rgba(46,134,222,.20),rgba(46,134,222,0) 70%)}
+.lp-blob-b{width:380px;height:380px;right:-140px;bottom:0;background:radial-gradient(circle at 50% 50%,rgba(124,92,255,.16),rgba(124,92,255,0) 70%)}
+.lp-card{position:relative;height:100%;background:#fff;border:1px solid rgba(18,60,110,.08);border-radius:22px;padding:1.9rem 1.7rem 1.8rem;box-shadow:0 1px 2px rgba(16,24,40,.04),0 14px 34px rgba(18,60,110,.08);transition:transform var(--motion) var(--ease),box-shadow var(--motion) var(--ease)}
+.lp-card:hover{transform:translateY(-6px);box-shadow:0 2px 4px rgba(16,24,40,.05),0 26px 50px rgba(18,60,110,.16)}
+.lp-card::after{content:"";position:absolute;left:1.7rem;right:1.7rem;top:0;height:3px;border-radius:0 0 4px 4px;background:var(--tint)}
+.lp-ico{width:56px;height:56px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:1.55rem;color:#fff;background:var(--tint);box-shadow:0 12px 24px var(--glow);margin-bottom:1.3rem}
+.lp-card h3{font-size:1.2rem;font-weight:800;color:var(--ink);letter-spacing:-.01em;margin-bottom:.55rem}
+.lp-card p{color:var(--text-soft);line-height:1.65;margin:0;font-size:1rem}
+.lp-t1{--tint:linear-gradient(135deg,#2e86de,#1b4f8a);--glow:rgba(27,79,138,.35)}
+.lp-t2{--tint:linear-gradient(135deg,#7c5cff,#5b3fd6);--glow:rgba(91,63,214,.35)}
+.lp-t3{--tint:linear-gradient(135deg,#19c3a0,#0a8f74);--glow:rgba(10,143,116,.35)}
+
+/* How it works */
+.lp-how{background:var(--lp-sky);padding-top:clamp(5rem,10vw,8rem)}
+.lp-steps{position:relative;display:grid;grid-template-columns:repeat(4,1fr);gap:1.5rem;margin-top:3.2rem;padding:0;list-style:none}
+.lp-steps::before{content:"";position:absolute;left:12%;right:12%;top:33px;border-top:2px dashed rgba(27,79,138,.28)}
+.lp-step{position:relative;text-align:center;padding:0 .5rem}
+.lp-step-num{position:relative;width:68px;height:68px;border-radius:50%;margin:0 auto 1.2rem;display:flex;align-items:center;justify-content:center;font-size:1.5rem;color:#fff;background:linear-gradient(135deg,var(--brand-bright),var(--brand-deep));box-shadow:0 14px 26px rgba(27,79,138,.35),0 0 0 7px var(--lp-sky)}
+.lp-step-num b{position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;background:var(--lp-sun);color:var(--lp-night);font-size:.78rem;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 3px var(--lp-sky)}
+.lp-step p{margin:0;color:var(--ink);font-weight:600;line-height:1.5;font-size:1.02rem}
+
+/* Closing call to action */
+.lp-final{position:relative;color:#fff;text-align:center;overflow:hidden;
+  background:
+    radial-gradient(700px 360px at 12% 0%,rgba(47,212,176,.25),transparent 60%),
+    radial-gradient(700px 400px at 95% 100%,rgba(124,92,255,.4),transparent 60%),
+    linear-gradient(135deg,var(--lp-night),var(--lp-deep) 55%,#1f5fc4);
+  padding:clamp(7rem,13vw,10rem) 0 clamp(4rem,8vw,6rem)}
+.lp-final h2{font-size:clamp(1.9rem,4vw,3rem);font-weight:800;letter-spacing:-.03em;line-height:1.1;margin:0}
+.lp-final p{color:rgba(255,255,255,.86);font-size:1.12rem;max-width:34rem;margin:1rem auto 0;line-height:1.6}
+.lp-final .lp-cta{justify-content:center}
+
+.lp-foot{background:var(--lp-night);color:rgba(255,255,255,.7);padding:1.6rem 0;font-size:.9rem}
+
+/* ---------- Small screens ---------- */
+@media (max-width:991px){
+  .lp-stage{margin:3.2rem auto 0;max-width:460px;min-height:480px}
+  .lp-hero{text-align:center}
+  .lp-lead{margin-left:auto;margin-right:auto}
+  .lp-cta,.lp-proof{justify-content:center}
+  .lp-steps{grid-template-columns:repeat(2,1fr);row-gap:2.4rem}
+  .lp-steps::before{display:none}
+}
+@media (max-width:575px){
+  .lp-nav-links .lp-link{display:none}
+  .lp-nav .btn{padding:.4rem .8rem;font-size:.9rem}
+  .lp-stage{min-height:470px}
+  .lp-phone{width:150px;bottom:-64px}
+  .lp-qr{width:92px;height:92px;font-size:3.4rem}
+  .lp-chip-a{left:112px}
+  .lp-chip-b{right:-4px}
+  .lp-steps{grid-template-columns:1fr}
+  .lp-cta .btn{width:100%}
+}
+</style>
+</head>
+<body>
+<div class="lp-wrap">
+
+<nav class="lp-nav">
+  <div class="container d-flex align-items-center justify-content-between">
+    <a class="lp-brand" href="{% url 'home' %}">
+      <span class="lp-brand-mark"><i class="bi bi-clipboard2-data"></i></span>
+      <span class="lp-brand-name">LiveGrade</span>
+    </a>
+    <div class="lp-nav-links d-flex align-items-center">
+      <a href="#how" class="lp-link">How it works</a>
+      <div class="d-flex gap-2">
+        <a href="{% url 'oidc_authentication_init' %}" class="btn btn-lp-ghost rounded-pill px-3">Log in</a>
+        <a href="{% url 'oidc_authentication_init' %}?signup=1" class="btn btn-lp-solid rounded-pill px-3">Sign up free</a>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<header class="lp-hero">
+  <span class="lp-orb lp-orb-1"></span><span class="lp-orb lp-orb-2"></span><span class="lp-orb lp-orb-3"></span>
+  <div class="container position-relative">
+    <div class="row align-items-center g-5">
+      <div class="col-lg-6">
+        <span class="lp-eyebrow"><span class="dot"><i class="bi bi-lightning-charge-fill"></i></span>Live peer assessment for presentations</span>
+        <h1>Grade presentations <span class="lp-live">live</span>, together.</h1>
+        <p class="lp-lead">Put a QR code on the screen. Students join from their phones, grade each group as it presents against your rubric, and you watch the results arrive in real time - anonymous for them, effortless for you.</p>
+        <div class="lp-cta">
+          <a href="{% url 'oidc_authentication_init' %}?signup=1" class="btn btn-lp-solid btn-lg">Create your free account <i class="bi bi-arrow-right ms-1"></i></a>
+          <a href="{% url 'oidc_authentication_init' %}" class="btn btn-lp-ghost btn-lg">I already have an account</a>
+        </div>
+        <div class="lp-proof">
+          <span><i class="bi bi-check-circle-fill"></i>No student accounts</span>
+          <span><i class="bi bi-check-circle-fill"></i>Anonymous scoring</span>
+          <span><i class="bi bi-check-circle-fill"></i>Excel export</span>
+        </div>
+      </div>
+
+      <div class="col-lg-6">
+        <div class="lp-stage" aria-hidden="true">
+          <div class="lp-panel">
+            <div class="lp-panel-head">
+              <span class="lp-panel-title">Live rankings</span>
+              <span class="lp-live-tag"><span class="lp-pulse"></span>Live</span>
+            </div>
+            <div class="lp-row"><span class="lp-rank r1">1</span><div><div class="lp-name">Group Aurora</div><div class="lp-bar"><i style="width:92%"></i></div></div><span class="lp-score">4.6</span></div>
+            <div class="lp-row"><span class="lp-rank r2">2</span><div><div class="lp-name">Group Meridian</div><div class="lp-bar"><i style="width:81%"></i></div></div><span class="lp-score">4.1</span></div>
+            <div class="lp-row"><span class="lp-rank r3">3</span><div><div class="lp-name">Group Horizon</div><div class="lp-bar"><i style="width:70%"></i></div></div><span class="lp-score">3.5</span></div>
+            <div class="lp-panel-foot"><i class="bi bi-people-fill"></i>Votes arriving from the class</div>
+          </div>
+          <div class="lp-phone">
+            <div class="lp-phone-screen">
+              <div class="lp-phone-notch"></div>
+              <div class="lp-qr"><i class="bi bi-qr-code"></i></div>
+              <div class="lp-phone-cap">Scan to join<small>Enter your name or ID, start grading</small></div>
+            </div>
+          </div>
+          <span class="lp-chip lp-chip-a"><i class="bi bi-phone"></i>Joined in seconds</span>
+          <span class="lp-chip lp-chip-b"><i class="bi bi-file-earmark-excel"></i>Export to Excel</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="lp-curve lp-curve-bottom"><svg viewBox="0 0 1440 150" preserveAspectRatio="none"><path fill="#ffffff" d="M0,96 C240,168 480,168 720,112 C960,56 1200,40 1440,96 L1440,150 L0,150 Z"/></svg></div>
+</header>
+
+<section class="lp-section lp-features">
+  <span class="lp-blob lp-blob-a"></span><span class="lp-blob lp-blob-b"></span>
+  <div class="container position-relative">
+    <div class="text-center">
+      <span class="lp-kicker">Why you’ll love it</span>
+      <h2 class="lp-h2">Everything a live presentation day needs</h2>
+      <p class="lp-sub">Set it up once, run it from the front of the room, and keep the whole class engaged.</p>
+    </div>
+    <div class="row g-4 mt-3">
+      <div class="col-md-4"><div class="lp-card lp-t1"><div class="lp-ico"><i class="bi bi-qr-code-scan"></i></div><h3>Students join in seconds</h3><p>No accounts, no apps. They scan the code, pick their name from your roster and they are in.</p></div></div>
+      <div class="col-md-4"><div class="lp-card lp-t2"><div class="lp-ico"><i class="bi bi-sliders"></i></div><h3>Your rubric, your weights</h3><p>Build the criteria and weighting once. Group and individual scores are worked out for you.</p></div></div>
+      <div class="col-md-4"><div class="lp-card lp-t3"><div class="lp-ico"><i class="bi bi-bar-chart-line"></i></div><h3>Results as they happen</h3><p>Live participation, rankings and charts, then an Excel export when you are done.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="lp-section lp-how" id="how">
+  <div class="lp-curve lp-curve-top"><svg viewBox="0 0 1440 150" preserveAspectRatio="none"><path fill="#f3f7fd" d="M0,0 L1440,0 L1440,50 C1200,130 960,130 720,80 C480,30 240,10 0,70 Z"/></svg></div>
+  <div class="container position-relative">
+    <div class="text-center">
+      <span class="lp-kicker">Simple by design</span>
+      <h2 class="lp-h2">How it works</h2>
+    </div>
+    <ol class="lp-steps">
+      <li class="lp-step"><div class="lp-step-num"><i class="bi bi-people"></i><b>1</b></div><p>Create a session and import your class roster.</p></li>
+      <li class="lp-step"><div class="lp-step-num"><i class="bi bi-list-check"></i><b>2</b></div><p>Add your rubric and presentation groups.</p></li>
+      <li class="lp-step"><div class="lp-step-num"><i class="bi bi-broadcast"></i><b>3</b></div><p>Go live, show the QR code, and run the presentations.</p></li>
+      <li class="lp-step"><div class="lp-step-num"><i class="bi bi-download"></i><b>4</b></div><p>Review the results and export them.</p></li>
+    </ol>
+  </div>
+</section>
+
+<section class="lp-final">
+  <div class="lp-curve lp-curve-top"><svg viewBox="0 0 1440 150" preserveAspectRatio="none"><path fill="#e8f1fc" d="M0,0 L1440,0 L1440,60 C1200,10 960,10 720,64 C480,118 240,128 0,70 Z"/></svg></div>
+  <div class="container position-relative">
+    <h2>Ready for your next presentation day?</h2>
+    <p>Create your free account and have a live session running in minutes.</p>
+    <div class="lp-cta">
+      <a href="{% url 'oidc_authentication_init' %}?signup=1" class="btn btn-lp-solid btn-lg">Create your free account <i class="bi bi-arrow-right ms-1"></i></a>
+      <a href="{% url 'oidc_authentication_init' %}" class="btn btn-lp-ghost btn-lg">Log in</a>
+    </div>
+  </div>
+</section>
+
+<footer class="lp-foot">
+  <div class="container d-flex flex-wrap justify-content-between gap-2">
+    <span>&copy; LiveGrade</span>
+    <span>Sign-in is provided by DevPerf.</span>
+  </div>
+</footer>
+
+</div>
+</body>
+</html>

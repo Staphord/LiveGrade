@@ -26,7 +26,11 @@ def usable_orgs(orgs):
         return []
     return [
         {'id': org['id'], 'slug': str(org.get('slug', '')), 'name': str(org.get('name', '')),
-         'can_oversee': org.get('can_oversee_assessments') is True}
+         'public': org.get('is_public_workspace') is True,
+         # Nobody oversees the shared workspace: everybody in it is a stranger to
+         # everybody else, and each only ever sees their own sessions.
+         'can_oversee': (org.get('can_oversee_assessments') is True
+                         and org.get('is_public_workspace') is not True)}
         for org in orgs
         if isinstance(org, dict) and org.get('can_run_assessments') is True
         and isinstance(org.get('id'), int) and not isinstance(org.get('id'), bool)
@@ -46,11 +50,19 @@ def active_organization(request):
     return orgs[0] if orgs else None
 
 
+def in_public_workspace(request):
+    """Whether the active organization is the shared one self-registered
+    lecturers use: no organization to show, no colleagues to hand sessions to."""
+    organization = active_organization(request)
+    return bool(organization and organization.get('public'))
+
+
 def can_oversee(request):
     """Whether this person may see every lecturer's session in the active
     organization (read-only, plus handing one over), as DevPerf last said."""
     organization = active_organization(request)
-    return bool(organization and organization.get('can_oversee'))
+    # Never in the shared workspace, however the flag got into the session.
+    return bool(organization and organization.get('can_oversee') and not organization.get('public'))
 
 
 def lecturer_required(view):

@@ -27,7 +27,7 @@ class UsableOrgsTests(TestCase):
             {'id': 1, 'slug': 'a', 'name': 'A', 'can_run_assessments': True},
             {'id': 2, 'slug': 'b', 'name': 'B', 'can_run_assessments': False},
         ]
-        self.assertEqual(usable_orgs(orgs), [{'id': 1, 'slug': 'a', 'name': 'A', 'can_oversee': False}])
+        self.assertEqual(usable_orgs(orgs), [{'id': 1, 'slug': 'a', 'name': 'A', 'public': False, 'can_oversee': False}])
 
     def test_a_claim_that_is_not_a_list_grants_nothing(self):
         for claim in (None, 'acme', {'id': 1, 'can_run_assessments': True}, 5):
@@ -60,7 +60,7 @@ class UsableOrgsTests(TestCase):
 
     def test_a_missing_name_or_slug_becomes_empty_text(self):
         self.assertEqual(usable_orgs([{'id': 3, 'can_run_assessments': True}]),
-                         [{'id': 3, 'slug': '', 'name': '', 'can_oversee': False}])
+                         [{'id': 3, 'slug': '', 'name': '', 'public': False, 'can_oversee': False}])
 
 
 class CanOverseeTests(TestCase):
@@ -116,7 +116,8 @@ class ContextTests(TestCase):
         with self.settings(DEVPERF_URL='https://devperf.example.test'):
             context = livegrade(request)
         self.assertEqual(context['active_org'], GLOBEX)
-        self.assertEqual(context['my_orgs'], [ACME, GLOBEX])
+        self.assertEqual([o['display_name'] for o in context['my_orgs']], ['Acme', 'Globex'])
+        self.assertFalse(context['only_personal'])
         self.assertEqual(context['devperf_url'], 'https://devperf.example.test')
 
     def test_a_visitor_with_no_session_data_gets_empty_values(self):
@@ -129,8 +130,14 @@ class ContextTests(TestCase):
 
 class HomeAccessTests(TestCase):
 
-    def test_a_visitor_is_sent_to_sign_in_and_brought_back(self):
+    def test_a_visitor_sees_the_public_landing_page_with_both_ways_in(self):
         response = self.client.get(reverse('home'))
+        self.assertContains(response, 'Grade presentations')
+        self.assertContains(response, reverse('oidc_authentication_init') + '?signup=1')
+        self.assertContains(response, 'Log in')
+
+    def test_a_protected_page_still_sends_a_visitor_to_sign_in_and_back(self):
+        response = self.client.get(reverse('assessment_session_list'))
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response['Location'].startswith(reverse('oidc_authentication_init')))
         self.assertIn('next=', response['Location'])

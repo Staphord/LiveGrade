@@ -183,6 +183,13 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# Our own 404 and 500 pages even while DEBUG is on (see accounts/error_pages.py). Set
+# FRIENDLY_ERROR_PAGES=False to get Django's technical pages back while debugging.
+FRIENDLY_ERROR_PAGES = os.getenv('FRIENDLY_ERROR_PAGES', 'True') == 'True'
+
+# A readable page, not Django's yellow one, when a form's security token does not match.
+CSRF_FAILURE_VIEW = 'accounts.views.csrf_failure'
+
 # Cookie names are LiveGrade's own. Browsers share cookies across ports on one
 # host, so in local development localhost:8000 (DevPerf) and localhost:8001
 # (this) would otherwise overwrite each other's session and CSRF cookies and

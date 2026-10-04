@@ -121,20 +121,20 @@
       <div id="join-locked-state" hidden>
         <div class="join-qr-frame" style="background:var(--surface-hover)"><i class="bi bi-lock-fill" style="font-size:3rem;color:var(--text-muted)"></i></div>
         <h1 class="join-headline">Joining is closed</h1>
-        <p class="join-sub">The lecturer has locked the room. If you should be participating, please contact them directly.</p>
+        <p class="join-sub">The room is locked. If you should be participating, please get in touch with the person running this session.</p>
         <span class="status-pill is-closed"><i class="bi bi-lock-fill"></i>Room locked</span>
       </div>
       {% elif session.status == 'live' and session.joining_locked %}
       <div class="join-qr-frame" style="background:var(--surface-hover)"><i class="bi bi-lock-fill" style="font-size:3rem;color:var(--text-muted)"></i></div>
       <h1 class="join-headline">Joining is closed</h1>
-      <p class="join-sub">The lecturer has locked the room. If you should be participating, please contact them directly.</p>
+      <p class="join-sub">The room is locked. If you should be participating, please get in touch with the person running this session.</p>
       <span class="status-pill is-closed"><i class="bi bi-lock-fill"></i>Room locked</span>
       {% elif session.status == 'draft' %}
       <div class="join-qr-frame" style="background:var(--surface-hover)">
         <i class="bi bi-hourglass-split" style="font-size:3rem;color:var(--text-muted)"></i>
       </div>
       <h1 class="join-headline">Hang tight - not live yet!</h1>
-      <p class="join-sub">The lecturer is still setting things up. This screen will light up with a scan code the moment grading goes live.</p>
+      <p class="join-sub">The session is still being set up. This screen will light up with a scan code the moment grading goes live.</p>
       <span class="status-pill"><i class="bi bi-clock-history"></i>Waiting to start</span>
       {% else %}
       <h1 class="join-headline">That's a wrap!</h1>

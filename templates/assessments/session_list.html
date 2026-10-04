@@ -78,7 +78,7 @@
 <div class="assess-empty assess-stagger">
   <div class="empty-icon"><i class="bi bi-clipboard2-data"></i></div>
   <h2>Nobody has created a session yet</h2>
-  <p>Sessions made by any lecturer in {{ active_org.name }} will be listed here.</p>
+  <p>Sessions made by anyone in {{ active_org.name }} will be listed here.</p>
 </div>
 {% elif not sessions %}
 <div class="assess-empty assess-stagger">
@@ -148,7 +148,7 @@
         {% else %}
         <li><a class="dropdown-item" href="{% url 'assessment_results' session.pk %}"><i class="bi bi-bar-chart me-2"></i>View results</a></li>
         {% endif %}
-        <li><a class="dropdown-item" href="{% url 'assessment_transfer' session.pk %}"><i class="bi bi-arrow-left-right me-2"></i>Transfer ownership</a></li>
+        {% if not active_org.public %}<li><a class="dropdown-item" href="{% url 'assessment_transfer' session.pk %}"><i class="bi bi-arrow-left-right me-2"></i>Transfer ownership</a></li>{% endif %}
         <li><hr class="dropdown-divider"></li>
         <li><form method="post" action="{% url 'assessment_session_delete' session.pk %}" data-confirm="Delete &quot;{{ session.name }}&quot;? This permanently removes all roster, rubric, and grade data." data-confirm-label="Delete session" data-confirm-tone="danger">
           {% csrf_token %}<button type="submit" class="dropdown-item text-danger"><i class="bi bi-trash me-2"></i>Delete session</button>

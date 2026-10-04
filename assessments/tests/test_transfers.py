@@ -106,7 +106,7 @@ class TransferPageTests(TransferTestCase):
         record_sign_in(self.ben, [])
         record_sign_in(self.cat, [])
         response = self.client.get(self.url)
-        self.assertContains(response, 'No other lecturer has signed in')
+        self.assertContains(response, 'No other colleague has signed in')
         self.assertNotContains(response, 'name="new_owner"')
 
     def test_choosing_a_colleague_hands_it_over_and_returns_to_the_list(self):

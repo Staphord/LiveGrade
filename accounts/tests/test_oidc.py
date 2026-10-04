@@ -107,7 +107,7 @@ class SignInFlowTests(TestCase):
         self.assertRedirects(response, '/', fetch_redirect_response=False)
         self.assertEqual(User.objects.get().sub, '42')
         self.assertEqual(self.client.session[ORGS_KEY],
-                         [{'id': 1, 'slug': 'acme', 'name': 'Acme', 'can_oversee': False}])
+                         [{'id': 1, 'slug': 'acme', 'name': 'Acme', 'public': False, 'can_oversee': False}])
         self.assertContains(self.client.get('/assessments/'), 'Tea Cher')
 
     def test_a_sign_in_adds_the_person_to_the_colleague_directory(self):

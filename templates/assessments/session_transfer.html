@@ -8,7 +8,7 @@
 {% endblock %}
 
 {% block content %}
-{% include 'partials/_page_header.html' with title=session.name subtitle='Hand this session to another lecturer.' %}
+{% include 'partials/_page_header.html' with title=session.name subtitle='Hand this session to a colleague.' %}
 
 <div class="row justify-content-center">
   <div class="col-lg-7">
@@ -35,12 +35,12 @@
           <div class="mb-3">
             <label class="form-label fw-600" for="new_owner">New owner</label>
             <select name="new_owner" id="new_owner" class="form-select" required>
-              <option value="">Choose a lecturer…</option>
+              <option value="">Choose a colleague…</option>
               {% for person in recipients %}
               <option value="{{ person.pk }}">{{ person.get_full_name|default:person.username }}{% if person.email %} ({{ person.email }}){% endif %}</option>
               {% endfor %}
             </select>
-            <div class="form-text">Only lecturers who have signed in to LiveGrade for this organization are listed.</div>
+            <div class="form-text">Only colleagues who have signed in to LiveGrade for this organization are listed.</div>
           </div>
           <div class="d-flex gap-2">
             <button type="submit" class="btn btn-primary">Transfer session</button>
@@ -49,7 +49,7 @@
         </form>
         {% else %}
         <p class="mb-0">
-          No other lecturer has signed in to LiveGrade for this organization yet, so there is nobody to
+          No other colleague has signed in to LiveGrade for this organization yet, so there is nobody to
           hand it to. Ask the person to sign in to LiveGrade once, then come back.
         </p>
         {% endif %}

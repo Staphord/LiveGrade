@@ -9,7 +9,7 @@ from urllib.parse import urlencode
 
 from django.conf import settings
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend
-from mozilla_django_oidc.views import OIDCAuthenticationCallbackView
+from mozilla_django_oidc.views import OIDCAuthenticationCallbackView, OIDCAuthenticationRequestView
 
 from .access import ORGS_KEY, usable_orgs
 from .directory import record_sign_in
@@ -45,6 +45,18 @@ class DevPerfBackend(OIDCAuthenticationBackend):
         # login has settled (logging in can replace the session).
         user.devperf_claims = claims
         return user
+
+
+class SignInStartView(OIDCAuthenticationRequestView):
+    """Sends the browser to DevPerf to sign in - or, with ``?signup=1``, to create
+    an account there first (the standard ``screen_hint=signup`` request parameter;
+    DevPerf answers it with its sign-up page and then carries on to sign in)."""
+
+    def get_extra_params(self, request):
+        params = dict(super().get_extra_params(request))
+        if request.GET.get('signup') == '1':
+            params['screen_hint'] = 'signup'
+        return params
 
 
 class CallbackView(OIDCAuthenticationCallbackView):

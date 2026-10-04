@@ -4,14 +4,14 @@ from decimal import Decimal, InvalidOperation
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.http import HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from accounts.access import active_organization, can_oversee, lecturer_required
+from accounts.access import active_organization, can_oversee, in_public_workspace, lecturer_required
 from accounts.models import User
 
 from ..excel import export_results, import_groups, import_roster
@@ -1220,6 +1220,10 @@ def session_transfer(request, pk):
     Somebody with oversight may hand over any session in the organization, not
     only their own; it is recorded with them as the person who did it.
     """
+    if in_public_workspace(request):
+        # Everybody in the shared workspace is a stranger to everybody else, so
+        # there is nobody to hand a session to and no list to show.
+        raise Http404
     session = _session(request, pk, oversight=True)
     recipients = list(eligible_recipients(session))
     is_owner = session.created_by_id == request.user.pk
