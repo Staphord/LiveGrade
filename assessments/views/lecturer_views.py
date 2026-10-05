@@ -31,7 +31,7 @@ from ..pagination import PAGE_SIZES, paginate
 from ..pending_imports import pending_group_import, pending_rubric_import
 from ..qr import join_url, qr_png
 from ..realtime import broadcast_session_event
-from ..scoring import group_score_percent, session_results
+from ..scoring import group_score_percents, group_vote_counts, session_results, turn_vote_counts
 from ..transfers import TransferError, eligible_recipients, transfer_session
 from ..turns import (
     activate_turn, adjust_timer, ensure_turn_progressed, open_voting, pause_timer, resume_timer,
@@ -223,10 +223,9 @@ def _live_context(session):
         .order_by('-closed_at')[:5])
     recent_activity = []
     durations = []
+    recent_votes = turn_vote_counts([turn.pk for turn in closed_turns])
     for turn in closed_turns:
-        votes = Evaluation.objects.filter(
-            presentation_turn=turn, target_student__isnull=True
-        ).values('evaluator').distinct().count()
+        votes = recent_votes.get(turn.pk, 0)
         if turn.opened_at and turn.closed_at:
             durations.append((turn.closed_at - turn.opened_at).total_seconds())
         recent_activity.append({'group': turn.group, 'closed_at': turn.closed_at, 'votes': votes, 'turn_id': turn.pk})
@@ -249,14 +248,12 @@ def _live_context(session):
     # votes yet sort to the bottom instead of being dropped, so the full
     # roster of groups is always visible here.
     group_rankings = []
-    for group in session.groups.all().order_by('order', 'id'):
-        pct = group_score_percent(group, session)
-        votes = Evaluation.objects.filter(
-            presentation_turn__group=group, presentation_turn__assessment_session=session,
-            target_student__isnull=True
-        ).values('evaluator').distinct().count()
+    ranked_groups = list(session.groups.all().order_by('order', 'id'))
+    percent_by_group = group_score_percents(session, ranked_groups)
+    votes_by_group = group_vote_counts(session)
+    for group in ranked_groups:
         group_rankings.append({
-            'group': group, 'percent': pct, 'votes': votes,
+            'group': group, 'percent': percent_by_group[group.pk], 'votes': votes_by_group.get(group.pk, 0),
             'is_active': bool(active_turn and active_turn.group_id == group.pk),
         })
     group_rankings.sort(key=lambda row: (row['percent'] is None, -(row['percent'] or 0)))
@@ -288,10 +285,9 @@ def _live_context(session):
             session.presentation_turns.filter(status=PresentationTurn.Status.CLOSED)
             .exclude(closed_at__isnull=True).select_related('group'))
         timeline = []
+        timeline_votes = turn_vote_counts([turn.pk for turn in all_closed_turns])
         for turn in all_closed_turns:
-            votes = Evaluation.objects.filter(
-                presentation_turn=turn, target_student__isnull=True
-            ).values('evaluator').distinct().count()
+            votes = timeline_votes.get(turn.pk, 0)
             duration_label = None
             if turn.opened_at and turn.closed_at:
                 secs = int((turn.closed_at - turn.opened_at).total_seconds())
@@ -700,7 +696,10 @@ def _groups_context(session):
     """Shared by the full-page view and the drag/drop AJAX patch below -
     both need the same groups/ungrouped/full-count trio to render their
     respective templates (full page vs. just the affected fragments)."""
-    groups_list = list(session.groups.all().order_by('order', 'id'))
+    # Members and their students come in with the groups (3 queries in all), so the
+    # card's counts and member rows read from memory instead of querying per group.
+    groups_list = list(session.groups.all().order_by('order', 'id')
+                       .prefetch_related('memberships__student'))
     annotate_groups(session, groups_list)
     return {
         'session': session,
@@ -1070,9 +1069,17 @@ def _participation_rows(session):
     groups = list(session.groups.all().order_by('order', 'id'))
     all_group_ids = {g.pk for g in groups}
     groups_by_id = {g.pk: g for g in groups}
+    # One query for every membership instead of one per group (and, in the
+    # template, one per card per group). Each group then answers
+    # `member_ids()` from memory with the same set it would have fetched.
+    member_ids_by_group = {group.pk: set() for group in groups}
+    for group_id, student_id in GroupMembership.objects.filter(
+            group__assessment_session=session).values_list('group_id', 'student_id'):
+        member_ids_by_group[group_id].add(student_id)
     own_group_id_by_student = {}
     for group in groups:
-        for student_id in group.member_ids():
+        group.member_ids = lambda ids=member_ids_by_group[group.pk]: ids
+        for student_id in member_ids_by_group[group.pk]:
             own_group_id_by_student[student_id] = group.pk
 
     joined_ids = set(session.participation_records.values_list('student_id', flat=True))

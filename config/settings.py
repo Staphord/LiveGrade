@@ -122,6 +122,12 @@ DATABASES = {
         'PORT': os.getenv('DB_PORT', ''),
     }
 }
+if DATABASES['default']['ENGINE'] != 'django.db.backends.sqlite3':  # pragma: no cover - server databases only; tests and dev run on SQLite
+    # Reuse the database connection between requests instead of opening a new one
+    # for each (a handshake on every page and every live-state poll). The health
+    # check replaces a connection the server dropped rather than failing a request.
+    DATABASES['default']['CONN_MAX_AGE'] = int(os.getenv('DB_CONN_MAX_AGE', '60'))
+    DATABASES['default']['CONN_HEALTH_CHECKS'] = True
 
 # Live updates and the turn timers. Redis database 1, not DevPerf's 0, so the
 # two services sharing one Redis server can never read each other's messages or

@@ -260,6 +260,7 @@ def apply_import(session, parsed):
     counts = {'groups_created': 0, 'groups_updated': 0, 'students_created': 0,
               'members_added': 0, 'skipped': [g['name'] for g in plan['groups'] if not g['ready']]}
     next_order = (session.groups.aggregate(models.Max('order'))['order__max'] or 0)
+    new_students, placements = [], []
     for entry in plan['groups']:
         if not entry['ready']:
             continue
@@ -283,12 +284,18 @@ def apply_import(session, parsed):
                 continue
             student = member['student']
             if student is None:
-                student = Student.objects.create(
+                student = Student(
                     assessment_session=session, full_name=member['name'], student_id=member['student_id'])
+                new_students.append(student)
                 counts['students_created'] += 1
             elif member['fill_id']:
                 student.student_id = member['student_id']
                 student.save(update_fields=['student_id'])
-            GroupMembership.objects.create(group=group, student=student)
+            placements.append((group, student))
             counts['members_added'] += 1
+    # New students and their memberships go in as two bulk inserts, in the order the
+    # file listed them, instead of two queries per person.
+    Student.objects.bulk_create(new_students)
+    GroupMembership.objects.bulk_create(
+        [GroupMembership(group=group, student=student) for group, student in placements])
     return counts

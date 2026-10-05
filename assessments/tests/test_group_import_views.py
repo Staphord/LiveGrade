@@ -168,12 +168,12 @@ class LandingPageMatchesTheFlowTests(LecturerTestCase):
         super().setUp()
         self.html = self.client_class().get('/').content.decode()
 
-    def test_the_first_step_is_one_file_for_groups_and_students_with_no_separate_roster(self):
-        self.assertIn('Create a session and import your groups and students from one Excel file.', self.html)
+    def test_the_first_step_imports_groups_and_students_with_no_separate_roster(self):
+        self.assertIn('Create a session and import groups and students.', self.html)
         self.assertNotIn('class roster', self.html)
 
-    def test_the_second_step_offers_the_rubric_by_hand_or_from_excel_with_the_weights_checked(self):
-        self.assertIn('Build your rubric by hand or import it from Excel. We check the weights add up.', self.html)
+    def test_the_second_step_offers_creating_or_importing_the_rubric(self):
+        self.assertIn('Create or import your rubric.', self.html)
         self.assertNotIn('Add your rubric and presentation groups', self.html)
 
     def test_there_are_still_four_steps_in_order(self):

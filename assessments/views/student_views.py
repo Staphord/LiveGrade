@@ -271,10 +271,10 @@ def _public_live_state(session):
         submitted_count = Evaluation.objects.filter(
             presentation_turn=turn, target_student__isnull=True
         ).values('evaluator_id').distinct().count()
-    grading_now_count = sum(
-        1 for student in session.students.only('pk')
-        if cache.get(f'assessment-grading:{session.uuid}:{student.pk}')
-    )
+    # One cache round trip for the whole roster instead of one per student.
+    grading_now_count = sum(1 for flag in cache.get_many(
+        [f'assessment-grading:{session.uuid}:{student_id}'
+         for student_id in session.students.values_list('pk', flat=True)]).values() if flag)
     if session.status == AssessmentSession.Status.CLOSED:
         stage = 'Session complete'
     elif session.status != AssessmentSession.Status.LIVE:

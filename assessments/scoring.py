@@ -5,7 +5,7 @@ evaluator identity to a raw score in the same row (see models.py docstring).
 
 from decimal import Decimal, ROUND_HALF_UP
 
-from django.db.models import Avg
+from django.db.models import Avg, Count
 
 from .models import EvaluationScore, RubricCategory
 
@@ -110,22 +110,106 @@ def final_score_percent(student, group, assessment_session):
     return final.quantize(Decimal('0.1'), ROUND_HALF_UP)
 
 
+def _weighted_percent(categories, avg_by_category):
+    """The same sum `group_score_percent` / `individual_score_percent` build,
+    from category averages that were already fetched (in the categories' own
+    order, so the Decimal arithmetic is identical)."""
+    weighted_sum = Decimal('0')
+    any_scored = False
+    for category in categories:
+        avg = avg_by_category.get(category.pk)
+        if avg is None or not category.max_points:
+            continue
+        any_scored = True
+        weighted_sum += (Decimal(avg) / category.max_points) * 100 * category.weight
+    if not any_scored:
+        return None
+    return (weighted_sum / 100).quantize(Decimal('0.1'), ROUND_HALF_UP)
+
+
+def group_score_percents(assessment_session, groups):
+    """``{group.pk: group_score_percent(group)}`` for every group given, from one
+    grouped query instead of one per group and category."""
+    group_cats = list(assessment_session.rubric_categories.filter(scope=RubricCategory.Scope.GROUP))
+    if not group_cats:
+        return {group.pk: None for group in groups}
+    avgs = {}
+    for row in (EvaluationScore.objects
+                .filter(evaluation__presentation_turn__assessment_session=assessment_session,
+                        evaluation__target_student__isnull=True, rubric_category__in=group_cats)
+                .values('evaluation__presentation_turn__group_id', 'rubric_category_id')
+                .annotate(avg=Avg('value'))):
+        avgs.setdefault(row['evaluation__presentation_turn__group_id'], {})[
+            row['rubric_category_id']] = row['avg']
+    return {group.pk: _weighted_percent(group_cats, avgs.get(group.pk, {})) for group in groups}
+
+
+def group_vote_counts(assessment_session):
+    """``{group_id: distinct students who submitted a group-scope evaluation}``."""
+    from .models import Evaluation
+
+    return {row['presentation_turn__group_id']: row['n'] for row in Evaluation.objects.filter(
+        presentation_turn__assessment_session=assessment_session, target_student__isnull=True
+    ).values('presentation_turn__group_id').annotate(n=Count('evaluator', distinct=True))}
+
+
+def turn_vote_counts(turn_ids):
+    """``{turn_id: distinct students who submitted a group-scope evaluation}``."""
+    from .models import Evaluation
+
+    return {row['presentation_turn_id']: row['n'] for row in Evaluation.objects.filter(
+        presentation_turn_id__in=turn_ids, target_student__isnull=True
+    ).values('presentation_turn_id').annotate(n=Count('evaluator', distinct=True))}
+
+
 def session_results(assessment_session):
-    """Full results table: one row per student, plus per-group summary."""
+    """Full results table: one row per student, plus per-group summary.
+
+    Same numbers as calling `group_score_percent`, `individual_score_percent`,
+    `ungraded_group_count` and `final_score_percent` one student at a time,
+    but read in a handful of grouped queries instead of hundreds."""
+    from .models import Evaluation
+
     groups = list(assessment_session.groups.prefetch_related('memberships__student'))
+    individual_cats = list(assessment_session.rubric_categories.filter(
+        scope=RubricCategory.Scope.INDIVIDUAL))
+
+    group_percents = group_score_percents(assessment_session, groups)
+    individual_avgs = {}
+    if individual_cats:
+        for row in (EvaluationScore.objects
+                    .filter(evaluation__presentation_turn__assessment_session=assessment_session,
+                            evaluation__target_student__isnull=False, rubric_category__in=individual_cats)
+                    .values('evaluation__target_student_id', 'rubric_category_id')
+                    .annotate(avg=Avg('value'))):
+            individual_avgs.setdefault(row['evaluation__target_student_id'], {})[
+                row['rubric_category_id']] = row['avg']
+
+    all_group_ids = {group.pk for group in groups}
+    voted_by_student = {}
+    for evaluator_id, group_id in Evaluation.objects.filter(
+            presentation_turn__assessment_session=assessment_session, target_student__isnull=True,
+    ).values_list('evaluator_id', 'presentation_turn__group_id'):
+        voted_by_student.setdefault(evaluator_id, set()).add(group_id)
+
     group_rows = []
     student_rows = []
     for group in groups:
-        g_pct = group_score_percent(group, assessment_session)
+        g_pct = group_percents[group.pk]
         group_rows.append({'group': group, 'percent': g_pct})
+        other_group_ids = all_group_ids - {group.pk}
         for membership in group.memberships.all():
             student = membership.student
-            i_pct = individual_score_percent(student, assessment_session)
-            penalty = ungraded_group_count(student, group, assessment_session)
-            final_pct = final_score_percent(student, group, assessment_session)
+            i_pct = (_weighted_percent(individual_cats, individual_avgs.get(student.pk, {}))
+                     if individual_cats else None)
+            penalty = (len(other_group_ids - voted_by_student.get(student.pk, set()))
+                       if other_group_ids else 0)
+            final = (g_pct or Decimal('0')) + (i_pct or Decimal('0')) - Decimal(penalty)
+            if final < 0:
+                final = Decimal('0')
             student_rows.append({
                 'student': student, 'group': group,
                 'individual_percent': i_pct, 'group_percent': g_pct,
-                'penalty': penalty, 'final_percent': final_pct,
+                'penalty': penalty, 'final_percent': final.quantize(Decimal('0.1'), ROUND_HALF_UP),
             })
     return {'group_rows': group_rows, 'student_rows': student_rows}
