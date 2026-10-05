@@ -55,6 +55,7 @@
     .room-stage{font-weight:800;font-size:1.05rem;color:var(--ink);display:flex;align-items:center;gap:.5rem}
     .room-stage .stage-dot{width:9px;height:9px;border-radius:50%;background:var(--success);animation:pulse 1.4s ease-in-out infinite}
     .room-group{font-size:clamp(1.2rem,2vw,1.65rem);font-weight:800;color:var(--accent);margin:.3rem 0 .65rem}
+    .room-group .room-topic{font-weight:600;color:var(--text-soft)}
     .room-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem;margin-top:.65rem}
     .room-metric{background:var(--surface-hover);border-radius:.7rem;padding:.55rem .6rem;min-width:0}
     .room-metric strong{display:block;font-size:1.05rem;color:var(--ink)}.room-metric span{font-size:.68rem;color:var(--text-muted);font-weight:600;line-height:1.15}
@@ -152,7 +153,7 @@
           <span class="badge bg-light text-dark fw-bold text-nowrap" id="public-groups-progress">{% if public_group_name %}Group {{ public_current_index }} of {{ public_total_groups }} · {{ public_completed_groups }} completed{% else %}0 of {{ public_total_groups }} completed{% endif %}</span>
         </div>
         <div class="text-muted small text-uppercase fw-bold mt-2" id="public-group-label">{% if public_group_name %}Now presenting{% else %}Session status{% endif %}</div>
-        <div class="room-group" id="public-group">{% if public_group_name %}{{ public_group_name }}{% else %}Ready to begin{% endif %}</div>
+        <div class="room-group"><span id="public-group">{% if public_group_name %}{{ public_group_name }}{% else %}Ready to begin{% endif %}</span><span class="room-topic" id="public-group-topic">{% if public_group_name and public_group_topic %} - {{ public_group_topic }}{% endif %}</span></div>
         <div class="room-next-up mb-2 p-2 rounded" style="background:var(--surface-hover);font-size:0.9rem;border-left:3px solid var(--accent)">
           <div class="text-muted small text-uppercase fw-bold"><i class="bi bi-arrow-right-circle me-1"></i>Up Next</div>
           <strong id="public-next-group">{% if public_next_group_name %}{{ public_next_group_name }}{% else %}To be determined{% endif %}</strong>
@@ -212,6 +213,8 @@
           const groupLabel = document.getElementById('public-group-label');
           if (groupLabel) groupLabel.textContent = state.public_group_name ? 'Now presenting' : 'Session status';
           if (group) group.textContent = state.public_group_name || 'Ready to begin';
+          const groupTopic = document.getElementById('public-group-topic');
+          if (groupTopic) groupTopic.textContent = state.public_group_name && state.public_group_topic ? ' - ' + state.public_group_topic : '';
           if (nextGroup) nextGroup.textContent = state.public_next_group_name || 'To be determined';
           if (groupsProgress) groupsProgress.textContent = state.public_group_name
             ? 'Group ' + state.public_current_index + ' of ' + state.public_total_groups + ' · ' + state.public_completed_groups + ' completed'

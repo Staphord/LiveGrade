@@ -1,5 +1,5 @@
 """The assessment engine's edges: turn races, scheduled jobs, scoring with
-nothing to score, the roster and group importers, and what a student's cookie
+nothing to score, the spreadsheet importers, and what a student's cookie
 is and is not allowed to mean.
 
 Students have no account. The only thing identifying one is a cookie holding
@@ -432,105 +432,6 @@ class PaginationAndAdminTests(SimpleTestCase):
             self.assertIsNone(realtime.broadcast_session_event(mock.Mock(), 'x'))
 
 
-class RosterImportTests(SessionFixture):
-
-    def setUp(self):
-        super().setUp()
-        Student.objects.all().delete()
-
-    def test_an_empty_sheet_is_reported(self):
-        result = excel.import_roster(self.session, workbook())
-        self.assertEqual(result['created'], 0)
-        self.assertEqual(result['errors'][0][1], 'The file is empty.')
-
-    def test_a_sheet_with_no_recognisable_columns_is_refused(self):
-        result = excel.import_roster(self.session, workbook(['Colour', 'Shape'], ['red', 'round']))
-        self.assertEqual(result['created'], 0)
-        self.assertIn('Could not find a name or student ID column', result['errors'][0][1])
-
-    def test_rows_are_imported_with_whatever_headers_the_sheet_uses(self):
-        result = excel.import_roster(self.session, workbook(
-            ['Registration Number', 'Student Name', 'E-mail', 'Programme'],
-            ['S1', 'Ann Able', 'ann@example.com', 'BSc'],
-            [None, None, None, None],
-            ['S2', 'Bob Best']))
-        self.assertEqual(result, {'created': 2, 'errors': []})
-        self.assertEqual(Student.objects.get(student_id='S1').email, 'ann@example.com')
-        self.assertEqual(Student.objects.get(student_id='S2').programme, '')
-
-    def test_a_bad_row_is_reported_by_number_and_the_others_still_import(self):
-        # The session identifies by student ID, so a row with only a name fails.
-        result = excel.import_roster(self.session, workbook(
-            ['Name', 'Reg No'], ['Ann Able', 'S1'], ['No Id', None], ['Cat Cole', 'S3']))
-        self.assertEqual(result['created'], 2)
-        self.assertEqual(result['errors'][0][0], 3)
-        self.assertIn('student ID', result['errors'][0][1])
-
-
-class GroupImportTests(SessionFixture):
-
-    def setUp(self):
-        super().setUp()
-        GroupMembership.objects.all().delete()
-        PresentationGroup.objects.all().delete()
-
-    def run_import(self, *rows):
-        return excel.import_groups(self.session, workbook(['Group', 'Student'], *rows))
-
-    def test_an_empty_sheet_is_reported(self):
-        result = excel.import_groups(self.session, workbook())
-        self.assertEqual(result['row_errors'][0][1], 'The file is empty.')
-
-    def test_a_sheet_missing_either_column_is_refused(self):
-        result = excel.import_groups(self.session, workbook(['Group'], ['Red']))
-        self.assertIn('Could not find a "Group" column', result['row_errors'][0][1])
-
-    def test_a_clean_sheet_creates_the_groups_and_memberships(self):
-        result = self.run_import(['Red', 'S1'], ['Red', 'Bob Best'], ['Blue', 'S3'], [None, None])
-        self.assertEqual((result['groups_created'], result['members_added']), (2, 3))
-        self.assertEqual(result['flagged'], [])
-
-    def test_a_row_missing_its_group_or_its_student_is_reported(self):
-        result = self.run_import([None, 'S1'], ['Red', None])
-        self.assertEqual(result['row_errors'], [
-            (2, 'Missing group name.'), (3, 'Missing student for group "Red".')])
-
-    def test_a_student_who_is_not_on_the_roster_flags_the_whole_group(self):
-        result = self.run_import(['Red', 'S1'], ['Red', 'S99'])
-        self.assertEqual(result['groups_created'], 0)
-        self.assertEqual(result['flagged'][0]['group'], 'Red')
-        self.assertIn('"S99" is not on the roster', result['flagged'][0]['issues'])
-        self.assertFalse(PresentationGroup.objects.exists())
-
-    def test_a_student_already_in_another_group_flags_the_group(self):
-        existing = self.group('Existing', 1, self.ann)
-        result = self.run_import(['Red', 'S1'])
-        self.assertIn('already in "Existing"', result['flagged'][0]['issues'][0])
-        self.assertEqual(existing.memberships.count(), 1)
-
-    def test_a_student_listed_under_two_groups_flags_both(self):
-        result = self.run_import(['Red', 'S1'], ['Blue', 'S1'])
-        self.assertEqual(sorted(f['group'] for f in result['flagged']), ['Blue', 'Red'])
-        self.assertEqual(result['groups_created'], 0)
-
-    def test_a_capped_group_refuses_more_new_members_than_it_has_room_for(self):
-        capped = self.group('Red', 1, self.ann)
-        PresentationGroup.objects.filter(pk=capped.pk).update(max_size=1)
-        result = self.run_import(['Red', 'S2'])
-        self.assertIn('allows 1 member(s)', result['flagged'][0]['issues'][0])
-        self.assertEqual(capped.memberships.count(), 1)
-
-    def test_re_importing_into_an_existing_group_adds_only_the_new_member(self):
-        existing = self.group('Red', 1, self.ann)
-        result = self.run_import(['Red', 'S1'], ['Red', 'S2'])
-        self.assertEqual((result['groups_created'], result['members_added']), (0, 1))
-        self.assertEqual(existing.memberships.count(), 2)
-
-    def test_an_empty_identifier_matches_nobody(self):
-        self.assertIsNone(excel._find_student(self.session, '  ', {}, {}))
-        self.assertIsNone(excel._find_student(self.session, None, {}, {}))
-
-
 class ExportTests(SessionFixture):
 
     def test_the_export_has_one_sheet_each_for_participation_results_and_groups(self):
@@ -561,19 +462,6 @@ class ExportTests(SessionFixture):
         self.assertEqual(book['Group scores'].cell(3, 2).value, None)
 
 
-class GroupCapacityFitsTests(SessionFixture):
-
-    def test_a_capped_group_takes_new_members_that_fit_in_the_room_left(self):
-        GroupMembership.objects.all().delete()
-        PresentationGroup.objects.all().delete()
-        capped = self.group('Red', 1, self.ann)
-        PresentationGroup.objects.filter(pk=capped.pk).update(max_size=3)
-        result = excel.import_groups(
-            self.session, workbook(['Group', 'Student'], ['Red', 'S2'], ['Red', 'S3']))
-        self.assertEqual((result['members_added'], result['flagged']), (2, []))
-        self.assertEqual(capped.memberships.count(), 3)
-
-
 class VotingWindowNoOpTests(SessionFixture):
 
     def test_a_voting_window_that_has_nothing_to_close_is_left_alone(self):
@@ -593,24 +481,27 @@ class UploadSafetyTests(SessionFixture):
     that is the wrong kind or an unreasonable size."""
 
     def test_a_file_that_is_not_a_workbook_is_reported_not_raised(self):
+        from assessments import group_import, rubric_import
+        from assessments.sheets import UNREADABLE
+
         junk = BytesIO(b'this is not a workbook')
-        self.assertEqual(excel.import_roster(self.session, junk),
-                         {'created': 0, 'errors': [(0, excel.UNREADABLE)]})
-        groups = excel.import_groups(self.session, BytesIO(b'PK\x03\x04 truncated'))
-        self.assertEqual(groups['row_errors'], [(0, excel.UNREADABLE)])
-        self.assertEqual(groups['groups_created'], 0)
+        self.assertEqual(group_import.parse_groups(junk)['fatal'], UNREADABLE)
+        self.assertEqual(group_import.parse_groups(BytesIO(b'PK\x03\x04 truncated'))['fatal'], UNREADABLE)
+        self.assertEqual(rubric_import.parse_rubric(BytesIO(b'nope'))['fatal'], UNREADABLE)
 
     def test_only_a_modest_xlsx_is_accepted(self):
-        from assessments.forms import MAX_IMPORT_BYTES, RosterImportForm
+        from assessments.forms import MAX_IMPORT_BYTES, GroupImportForm, RubricImportForm
 
-        def accepted(name, size=10):
+        def accepted(form_class, name, size=10):
             upload = SimpleUploadedFile(name, b'x' * size)
-            return RosterImportForm({}, {'file': upload}).is_valid()
+            data = {'mode': 'replace'} if form_class is RubricImportForm else {}
+            return form_class(data, {'file': upload}).is_valid()
 
-        self.assertTrue(accepted('roster.xlsx'))
-        self.assertTrue(accepted('ROSTER.XLSX'))
-        self.assertFalse(accepted('roster.xls'))
-        self.assertFalse(accepted('roster.exe'))
-        self.assertFalse(accepted('roster'))
-        self.assertFalse(accepted('big.xlsx', size=MAX_IMPORT_BYTES + 1))
-        self.assertTrue(accepted('edge.xlsx', size=MAX_IMPORT_BYTES))
+        for form_class in (GroupImportForm, RubricImportForm):
+            self.assertTrue(accepted(form_class, 'groups.xlsx'))
+            self.assertTrue(accepted(form_class, 'GROUPS.XLSX'))
+            self.assertFalse(accepted(form_class, 'groups.xls'))
+            self.assertFalse(accepted(form_class, 'groups.exe'))
+            self.assertFalse(accepted(form_class, 'groups'))
+            self.assertFalse(accepted(form_class, 'big.xlsx', size=MAX_IMPORT_BYTES + 1))
+            self.assertTrue(accepted(form_class, 'edge.xlsx', size=MAX_IMPORT_BYTES))

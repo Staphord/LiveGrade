@@ -3,7 +3,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
@@ -14,16 +14,21 @@ from django.views.decorators.http import require_POST
 from accounts.access import active_organization, can_oversee, in_public_workspace, lecturer_required
 from accounts.models import User
 
-from ..excel import export_results, import_groups, import_roster
+from ..excel import export_results
 from ..forms import (
     AssessmentSessionForm, GroupImportForm, PresentationGroupForm,
-    RosterImportForm, RubricCategoryForm, StudentForm,
+    RubricCategoryForm, RubricImportForm, SessionRenameForm, StudentForm,
 )
 from ..models import (
     AssessmentSession, Evaluation, GroupMembership, ParticipationRecord,
     PresentationGroup, PresentationTurn, RubricCategory, Student,
 )
+from ..setup_rules import (
+    annotate_groups, closed_reason, group_delete_lock, group_members_lock, is_live,
+    live_rubric_lock, record_change, student_delete_lock,
+)
 from ..pagination import PAGE_SIZES, paginate
+from ..pending_imports import pending_group_import, pending_rubric_import
 from ..qr import join_url, qr_png
 from ..realtime import broadcast_session_event
 from ..scoring import group_score_percent, session_results
@@ -37,8 +42,8 @@ __all__ = [
     'assessment_session_list', 'assessment_session_create', 'assessment_session_edit',
     'assessment_session_detail',
     'assessment_session_delete', 'assessment_live_state', 'roster', 'roster_search', 'roster_edit',
-    'roster_delete', 'roster_import_view',
-    'rubric', 'rubric_edit', 'rubric_delete', 'groups', 'group_import_view', 'group_edit',
+    'roster_delete',
+    'rubric', 'rubric_edit', 'rubric_delete', 'groups', 'group_edit',
     'group_members', 'group_delete',
     'go_live', 'activate_group', 'set_transition_gap', 'set_default_turn_seconds',
     'set_default_presentation_seconds', 'set_designated_next_group', 'toggle_pause', 'toggle_joining',
@@ -65,6 +70,16 @@ def _session(request, pk, oversight=False):
     if not (oversight and can_oversee(request)):
         sessions = sessions.owned_by(request.user)
     return get_object_or_404(sessions, pk=pk)
+
+
+def _closed(request, session):
+    """A redirect to the console, with the reason, when the session is closed and so a
+    read-only record; otherwise ``None``."""
+    reason = closed_reason(session)
+    if reason is None:
+        return None
+    messages.error(request, reason)
+    return redirect('assessment_session_detail', pk=session.pk)
 
 
 @lecturer_required
@@ -123,7 +138,7 @@ def assessment_session_create(request):
     """A full page rather than a modal - the form has five fields across two
     concerns (identity + weighting), which a dialog box compresses awkwardly.
     A dedicated page also gives each field room for its help text and makes
-    the "what happens next" (roster → rubric → groups → go live) explicit."""
+    the "what happens next" (groups and students → rubric → go live) explicit."""
     organization = active_organization(request)
     if request.method == 'POST':
         form = AssessmentSessionForm(request.POST)
@@ -132,8 +147,8 @@ def assessment_session_create(request):
             session.organization_id = organization['id']
             session.created_by = request.user
             session.save()
-            messages.success(request, f'"{session.name}" created - add your roster next.')
-            return redirect('assessment_roster', pk=session.pk)
+            messages.success(request, f'"{session.name}" created - add your groups next.')
+            return redirect('assessment_groups', pk=session.pk)
     else:
         form = AssessmentSessionForm()
 
@@ -146,28 +161,30 @@ def assessment_session_create(request):
 def assessment_session_edit(request, pk):
     """Edit a session's name, identity mode, and weight split.
 
-    Only allowed while the session is in DRAFT status — once it goes live,
-    the rubric categories and weight splits are live grading data, and
-    changing them mid-session would silently break any scores already
-    submitted against the original weights.
+    The identity mode and the weight split are fixed once the session goes live:
+    they are what the grading record is measured against, and changing them
+    mid-session would silently break any scores already submitted. A live
+    session can still be renamed. A closed one is a read-only record.
     """
     session = _session(request, pk)
-    if session.status != AssessmentSession.Status.DRAFT:
-        messages.error(
-            request,
-            'Session settings can only be edited while the session is in Draft status. '
-            'A live or closed session\'s configuration is part of the grading record.')
-        return redirect('assessment_session_detail', pk=session.pk)
+    blocked = _closed(request, session)
+    if blocked:
+        return blocked
+    form_class = SessionRenameForm if is_live(session) else AssessmentSessionForm
 
     if request.method == 'POST':
-        form = AssessmentSessionForm(request.POST, instance=session)
+        form = form_class(request.POST, instance=session)
         if form.is_valid():
             form.save()
+            record_change(session, request.user, f'Renamed the session to "{session.name}".')
             messages.success(request, f'"{session.name}" updated.')
             return redirect('assessment_session_detail', pk=session.pk)
     else:
-        form = AssessmentSessionForm(instance=session)
+        form = form_class(instance=session)
 
+    if is_live(session):
+        return render(request, 'assessments/session_setup.html',
+                      {**_setup_context(request, session, 'basics'), 'form': form, 'editing': True})
     return render(request, 'assessments/session_setup.html', {
         'session': session, 'active_step': 'basics', 'form': form, 'editing': True,
     })
@@ -324,13 +341,13 @@ def assessment_session_detail(request, pk):
     session = _session(request, pk)
     if session.status == AssessmentSession.Status.DRAFT:
         # A draft session has no live console to show yet - render the same
-        # merged setup screen the roster/rubric/groups steps render, opened
+        # merged setup screen the groups/rubric steps render, opened
         # on whichever step isn't done yet.
-        active_step = 'roster'
-        if session.students.exists():
+        active_step = 'groups'
+        if session.groups.exists():
             active_step = 'rubric'
         if session.rubric_categories.exists():
-            active_step = 'groups'
+            active_step = 'go-live' if session.can_go_live() else 'rubric'
         return render(request, 'assessments/session_setup.html',
                       _setup_context(request, session, active_step))
     if session.status == AssessmentSession.Status.LIVE:
@@ -413,13 +430,15 @@ def _roster_context(request, session):
 
 
 def _setup_context(request, session, active_step, roster_form=None, rubric_form=None, group_form=None):
-    """Everything the merged create → roster → rubric → groups → go-live
+    """Everything the merged create → groups and students → rubric → go-live
     screen needs, built from the same context-builders each standalone step
     already used (`_roster_context`, the rubric aggregates, `_groups_context`)
-    so the three sections keep behaving exactly as they did on their own
-    pages. Each section's own form can be overridden with an in-progress
-    (possibly invalid) instance from a POST handler; the other two get a
-    fresh blank form.
+    so the sections keep behaving exactly as they did on their own pages.
+    Each section's own form can be overridden with an in-progress (possibly
+    invalid) instance from a POST handler; the others get a fresh blank form.
+
+    The same screen serves a live session (``live_mode``): then it also carries
+    the log of edits made since going live.
 
     Each form gets a distinct `auto_id` prefix - with all three forms live
     on one page at once, Django's default `id_%s` would collide wherever
@@ -431,7 +450,6 @@ def _setup_context(request, session, active_step, roster_form=None, rubric_form=
 
     context.update(_roster_context(request, session))
     context['form'] = roster_form or StudentForm(auto_id='id_roster_%s')
-    context['import_form'] = RosterImportForm(auto_id='id_roster_import_%s')
 
     group_categories = session.rubric_categories.filter(scope=RubricCategory.Scope.GROUP)
     individual_categories = session.rubric_categories.filter(scope=RubricCategory.Scope.INDIVIDUAL)
@@ -450,12 +468,17 @@ def _setup_context(request, session, active_step, roster_form=None, rubric_form=
     context.update(_groups_context(session))
     context['group_form'] = group_form or PresentationGroupForm(auto_id='id_group_%s')
     context['group_import_form'] = GroupImportForm(auto_id='id_group_import_%s')
+    context['rubric_import_form'] = RubricImportForm(auto_id='id_rubric_import_%s')
+    context['live_mode'] = is_live(session)
+    context['recent_changes'] = list(session.changes.select_related('by_user')[:8]) if is_live(session) else []
+    context['rubric_live_lock'] = live_rubric_lock(session)
+    context['import_plan'] = pending_group_import(request, session) if active_step == 'groups' else None
+    context['rubric_review'] = pending_rubric_import(request, session) if active_step == 'rubric' else None
 
     rubric_ready = (
         session.rubric_categories.exists() and group_weight_total == session.group_weight_percent
         and (not individual_categories or individual_weight_total == session.individual_weight_percent))
     context.update({
-        'step_roster_done': context['roster_total'] > 0,
         'step_rubric_done': rubric_ready,
         'step_groups_done': session.groups.exists(),
     })
@@ -466,6 +489,9 @@ def _setup_context(request, session, active_step, roster_form=None, rubric_form=
 
 def roster(request, pk):
     session = _session(request, pk)
+    blocked = _closed(request, session)
+    if blocked:
+        return blocked
     form = None
     if request.method == 'POST':
         form = StudentForm(request.POST, auto_id='id_roster_%s')
@@ -479,11 +505,12 @@ def roster(request, pk):
                     messages.error(request, msg)
             else:
                 student.save()
+                record_change(session, request.user, f'Added student {student}.')
                 messages.success(request, f'{student.full_name or student.student_id} added.')
                 return redirect('assessment_roster', pk=session.pk)
 
     return render(request, 'assessments/session_setup.html',
-                  _setup_context(request, session, 'roster', roster_form=form))
+                  {**_setup_context(request, session, 'groups', roster_form=form), 'students_open': True})
 
 
 @lecturer_required
@@ -503,6 +530,9 @@ def roster_search(request, pk):
 @require_POST
 def roster_edit(request, pk, student_pk):
     session = _session(request, pk)
+    blocked = _closed(request, session)
+    if blocked:
+        return blocked
     student = get_object_or_404(Student, pk=student_pk, assessment_session=session)
     form = StudentForm(request.POST, instance=student)
     if form.is_valid():
@@ -514,6 +544,7 @@ def roster_edit(request, pk, student_pk):
                 messages.error(request, msg)
         else:
             student.save()
+            record_change(session, request.user, f'Edited student {student}.')
             messages.success(request, f'{student.full_name or student.student_id} updated.')
     else:
         for field_errors in form.errors.values():
@@ -526,28 +557,18 @@ def roster_edit(request, pk, student_pk):
 @require_POST
 def roster_delete(request, pk, student_pk):
     session = _session(request, pk)
+    blocked = _closed(request, session)
+    if blocked:
+        return blocked
     student = get_object_or_404(Student, pk=student_pk, assessment_session=session)
-    student.delete()
-    messages.success(request, 'Student removed from roster.')
-    return redirect('assessment_roster', pk=session.pk)
-
-
-@lecturer_required
-@require_POST
-def roster_import_view(request, pk):
-    session = _session(request, pk)
-    form = RosterImportForm(request.POST, request.FILES)
-    if not form.is_valid():
-        messages.error(request, 'Please choose a valid .xlsx file.')
+    reason = student_delete_lock(student)
+    if reason:
+        messages.error(request, reason)
         return redirect('assessment_roster', pk=session.pk)
-
-    result = import_roster(session, form.cleaned_data['file'])
-    if result['created']:
-        messages.success(request, f"Imported {result['created']} student(s).")
-    for row_number, error in result['errors'][:10]:
-        messages.warning(request, f'Row {row_number}: {error}')
-    if len(result['errors']) > 10:
-        messages.warning(request, f"...and {len(result['errors']) - 10} more row error(s).")
+    name = str(student)
+    student.delete()
+    record_change(session, request.user, f'Removed student {name}.')
+    messages.success(request, 'Student removed.')
     return redirect('assessment_roster', pk=session.pk)
 
 
@@ -556,8 +577,15 @@ def roster_import_view(request, pk):
 @lecturer_required
 def rubric(request, pk):
     session = _session(request, pk)
+    blocked = _closed(request, session)
+    if blocked:
+        return blocked
     form = None
     if request.method == 'POST':
+        lock = live_rubric_lock(session)
+        if lock:
+            messages.error(request, lock)
+            return redirect('assessment_rubric', pk=session.pk)
         form = RubricCategoryForm(request.POST, assessment_session=session, auto_id='id_rubric_%s')
         if form.is_valid():
             category = form.save(commit=False)
@@ -574,6 +602,13 @@ def rubric(request, pk):
 @require_POST
 def rubric_edit(request, pk, category_pk):
     session = _session(request, pk)
+    blocked = _closed(request, session)
+    if blocked:
+        return blocked
+    lock = live_rubric_lock(session)
+    if lock:
+        messages.error(request, lock)
+        return redirect('assessment_rubric', pk=session.pk)
     category = get_object_or_404(RubricCategory, pk=category_pk, assessment_session=session)
     form = RubricCategoryForm(request.POST, instance=category, assessment_session=session)
     if form.is_valid():
@@ -590,6 +625,13 @@ def rubric_edit(request, pk, category_pk):
 @require_POST
 def rubric_delete(request, pk, category_pk):
     session = _session(request, pk)
+    blocked = _closed(request, session)
+    if blocked:
+        return blocked
+    lock = live_rubric_lock(session)
+    if lock:
+        messages.error(request, lock)
+        return redirect('assessment_rubric', pk=session.pk)
     category = get_object_or_404(RubricCategory, pk=category_pk, assessment_session=session)
     category.delete()
     messages.success(request, 'Rubric category removed.')
@@ -609,6 +651,9 @@ def _unassigned_students(session):
 @lecturer_required
 def groups(request, pk):
     session = _session(request, pk)
+    blocked = _closed(request, session)
+    if blocked:
+        return blocked
     form = None
     if request.method == 'POST':
         form = PresentationGroupForm(request.POST, auto_id='id_group_%s')
@@ -640,6 +685,7 @@ def groups(request, pk):
                 group.save()
                 for student_id in member_ids:
                     GroupMembership.objects.create(group=group, student_id=student_id)
+                record_change(session, request.user, f'Added group "{group.name}".')
                 messages.success(
                     request,
                     f'"{group.name}" created with {len(member_ids)} member(s).'
@@ -654,50 +700,15 @@ def _groups_context(session):
     """Shared by the full-page view and the drag/drop AJAX patch below -
     both need the same groups/ungrouped/full-count trio to render their
     respective templates (full page vs. just the affected fragments)."""
-    groups_qs = session.groups.all().order_by('order', 'id')
+    groups_list = list(session.groups.all().order_by('order', 'id'))
+    annotate_groups(session, groups_list)
     return {
         'session': session,
-        'groups': groups_qs,
+        'groups': groups_list,
         'ungrouped_students': _unassigned_students(session),
-        'full_group_count': sum(1 for group in groups_qs if group.is_full),
+        'full_group_count': sum(1 for group in groups_list if group.is_full()),
+        'live_mode': is_live(session),
     }
-
-
-@lecturer_required
-@require_POST
-def group_import_view(request, pk):
-    session = _session(request, pk)
-    form = GroupImportForm(request.POST, request.FILES)
-    if not form.is_valid():
-        messages.error(request, 'Please choose a valid .xlsx file.')
-        return redirect('assessment_groups', pk=session.pk)
-
-    if not session.students.exists():
-        messages.error(request, 'Import the student roster before importing groups.')
-        return redirect('assessment_groups', pk=session.pk)
-
-    result = import_groups(session, form.cleaned_data['file'])
-
-    if result['groups_created']:
-        messages.success(
-            request,
-            f"Created {result['groups_created']} group(s) with "
-            f"{result['members_added']} member assignment(s).")
-    elif not result['flagged'] and not result['row_errors']:
-        messages.info(request, 'No new groups found in that file.')
-
-    for flagged in result['flagged'][:10]:
-        issues = '; '.join(flagged['issues'])
-        messages.warning(
-            request,
-            f"Skipped \"{flagged['group']}\" - {issues}.")
-    if len(result['flagged']) > 10:
-        messages.warning(request, f"...and {len(result['flagged']) - 10} more group(s) skipped.")
-
-    for row_number, error in result['row_errors'][:10]:
-        messages.warning(request, f'Row {row_number}: {error}')
-
-    return redirect('assessment_groups', pk=session.pk)
 
 
 @lecturer_required
@@ -708,8 +719,10 @@ def group_members(request, pk, group_pk):
     action = request.POST.get('action')
     student_id = request.POST.get('student_id')
     student = get_object_or_404(Student, pk=student_id, assessment_session=session)
-    error = None
-    if action == 'add':
+    error = closed_reason(session) or group_members_lock(group)
+    if error is not None:
+        messages.error(request, error)
+    elif action == 'add':
         membership = GroupMembership(group=group, student=student)
         try:
             membership.full_clean()
@@ -718,8 +731,10 @@ def group_members(request, pk, group_pk):
             messages.error(request, error)
         else:
             membership.save()
+            record_change(session, request.user, f'Added {student} to "{group.name}".')
     elif action == 'remove':
         GroupMembership.objects.filter(group=group, student=student).delete()
+        record_change(session, request.user, f'Removed {student} from "{group.name}".')
 
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         # Drag-and-drop reassignment - reply with just the fragments that
@@ -744,10 +759,14 @@ def group_members(request, pk, group_pk):
 @require_POST
 def group_edit(request, pk, group_pk):
     session = _session(request, pk)
+    blocked = _closed(request, session)
+    if blocked:
+        return blocked
     group = get_object_or_404(PresentationGroup, pk=group_pk, assessment_session=session)
     form = PresentationGroupForm(request.POST, instance=group)
     if form.is_valid():
         form.save()
+        record_change(session, request.user, f'Edited group "{group.name}".')
         messages.success(request, f'"{group.name}" updated.')
     else:
         for field_errors in form.errors.values():
@@ -760,10 +779,45 @@ def group_edit(request, pk, group_pk):
 @require_POST
 def group_delete(request, pk, group_pk):
     session = _session(request, pk)
+    blocked = _closed(request, session)
+    if blocked:
+        return blocked
     group = get_object_or_404(PresentationGroup, pk=group_pk, assessment_session=session)
-    group.delete()
-    messages.success(request, 'Group deleted.')
+    delete_groups(request, session, [group])
     return redirect('assessment_groups', pk=session.pk)
+
+
+def delete_groups(request, session, groups):
+    """Delete groups together with their students, skipping any that must stay.
+
+    Deleting a group deletes the students in it: they were added for that group.
+    A group stays when it has presented, is presenting, or any of its students has
+    already graded (removing them would erase those grades); each skipped group
+    says why. All or nothing for the deletions that go ahead.
+    """
+    deleted, students_removed, skipped = [], 0, []
+    with transaction.atomic():
+        for group in groups:
+            reason = group_delete_lock(group)
+            if reason:
+                skipped.append(reason)
+                continue
+            student_ids = list(group.memberships.values_list('student_id', flat=True))
+            students_removed += Student.objects.filter(
+                pk__in=student_ids, assessment_session=session).delete()[1].get('assessments.Student', 0)
+            deleted.append(group.name)
+            group.delete()
+    if deleted:
+        names = ', '.join(f'"{n}"' for n in deleted[:5]) + (f' and {len(deleted) - 5} more' if len(deleted) > 5 else '')
+        record_change(session, request.user, f'Deleted {len(deleted)} group(s): {names}.')
+        messages.success(
+            request, f'Deleted {len(deleted)} group{"s" if len(deleted) != 1 else ""} '
+                     f'and {students_removed} student{"s" if students_removed != 1 else ""}.')
+    for reason in skipped[:5]:
+        messages.warning(request, reason)
+    if len(skipped) > 5:
+        messages.warning(request, f'...and {len(skipped) - 5} more group(s) could not be deleted.')
+    return len(deleted)
 
 
 # ------------------------------------------------------------ Live control --
@@ -1076,6 +1130,12 @@ def _participation_context(request, session):
     status_filter = request.GET.get('status')
     if status_filter in PARTICIPATION_STATUSES:
         rows = [row for row in rows if row['status'] == status_filter]
+
+    # How the page lists people, nothing more: by presenting group in the order the groups
+    # present, students without a group last, each group's students still A-Z. The export
+    # builds from `_participation_rows` and keeps its own order.
+    position = {group.pk: index for index, group in enumerate(base['groups'])}
+    rows = sorted(rows, key=lambda row: position[row['own_group'].pk] if row['own_group'] else len(position))
 
     paginator, page = paginate(request, rows)
     return {

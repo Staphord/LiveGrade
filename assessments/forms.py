@@ -112,30 +112,44 @@ def validate_workbook(upload):
             f'That file is larger than {MAX_IMPORT_BYTES // 1024 // 1024} MB.')
 
 
-class RosterImportForm(forms.Form):
-    file = forms.FileField(
-        validators=[validate_workbook],
-        widget=forms.ClearableFileInput(attrs={'class': 'form-control', 'accept': '.xlsx'}),
-        help_text='Columns: registration number, name, email, programme/class.')
-
-
 class GroupImportForm(forms.Form):
     file = forms.FileField(
         validators=[validate_workbook],
         widget=forms.ClearableFileInput(attrs={'class': 'form-control', 'accept': '.xlsx'}),
-        help_text='Columns: Group, and Student (ID or name) — one row per student. '
-                  'Every student must already be on the roster.')
+        help_text='One row per group: Group Name, then Name (members separated by commas). '
+                  'Student ID, Topic and Presentation Location are optional.')
+
+
+class RubricImportForm(forms.Form):
+    MODES = [('replace', 'Replace the current rubric'), ('add', 'Add to the current rubric')]
+
+    file = forms.FileField(
+        validators=[validate_workbook],
+        widget=forms.ClearableFileInput(attrs={'class': 'form-control', 'accept': '.xlsx'}),
+        help_text='Columns: Category, Description, Scope, Max points, Weight %.')
+    mode = forms.ChoiceField(choices=MODES, initial='replace', widget=forms.RadioSelect)
+
+
+class SessionRenameForm(forms.ModelForm):
+    """All that may change once a session is live."""
+
+    class Meta:
+        model = AssessmentSession
+        fields = ['name']
+        widgets = {'name': forms.TextInput(attrs={'class': 'form-control'})}
 
 
 class PresentationGroupForm(forms.ModelForm):
     class Meta:
         model = PresentationGroup
-        fields = ['name', 'max_size']  # see the comment on RubricCategoryForm re: 'order'
+        fields = ['name', 'max_size', 'topic', 'location']  # see the comment on RubricCategoryForm re: 'order'
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Group 1'}),
             'max_size': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'e.g. 2', 'min': '1'}),
+            'topic': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Smart campus map'}),
+            'location': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Room 1340'}),
         }
-        labels = {'max_size': 'Group size'}
+        labels = {'max_size': 'Group size', 'location': 'Presentation location'}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

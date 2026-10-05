@@ -1,5 +1,25 @@
-<div class="participation-grid" id="participation-cards">
-  {% for row in rows %}
+<div class="participation-groups" id="participation-cards">
+  {% regroup rows by own_group as sections %}
+  {% for section in sections %}
+  <section class="participation-section" data-group-id="{{ section.grouper.pk|default:'' }}">
+    <header class="participation-section-head d-flex align-items-center flex-wrap gap-3 px-3 pt-3 pb-1">
+      <span class="section-icon d-inline-flex align-items-center justify-content-center flex-shrink-0"><i class="bi bi-diagram-3"></i></span>
+      <div class="section-titles">
+        <div class="section-name fw-bold">{% if section.grouper %}{{ section.grouper.name }}{% else %}No group yet{% endif %}</div>
+        {% if section.grouper.topic or section.grouper.location %}
+        <div class="section-sub text-muted">
+          {% if section.grouper.topic %}<span><i class="bi bi-lightbulb me-1"></i>{{ section.grouper.topic }}</span>{% endif %}
+          {% if section.grouper.location %}<span><i class="bi bi-geo-alt me-1"></i>{{ section.grouper.location }}</span>{% endif %}
+        </div>
+        {% endif %}
+      </div>
+      <div class="section-meta d-flex align-items-center gap-2 ms-auto">
+        {% if section.grouper and section.grouper.pk == active_group_id %}<span class="section-live d-inline-flex align-items-center gap-1"><span class="live-dot"></span>Presenting now</span>{% endif %}
+        <span class="section-count">{{ section.list|length }} student{{ section.list|length|pluralize }}</span>
+      </div>
+    </header>
+    <div class="participation-grid">
+  {% for row in section.list %}
   <div class="participant-card status-{{ row.status }}{% if row.is_presenting_now %} is-presenting-now{% endif %}" data-student-id="{{ row.student.pk }}" data-own-group-id="{{ row.own_group.pk|default:'' }}">
     <div class="participant-card-head">
       <div class="avatar-ring" style="--pct:{{ row.progress_pct }}">
@@ -54,6 +74,9 @@
     </div>
     {% endif %}
   </div>
+  {% endfor %}
+    </div>
+  </section>
   {% empty %}
   <div class="text-center text-muted py-5 w-100"><i class="bi bi-people d-block s-icon-xl mb-2"></i>No students on the roster yet.</div>
   {% endfor %}

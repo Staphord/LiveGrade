@@ -1,0 +1,69 @@
+<div class="modal fade dp-modal dp-review" id="rubric-import-modal" tabindex="-1" role="dialog" aria-modal="true"
+     aria-labelledby="rubric-import-title" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable modal-dialog-centered modal-fullscreen-md-down">
+    <form method="post" action="{% url 'assessment_rubric_import_preview' session.pk %}" class="modal-content">
+      {% csrf_token %}
+      <div class="modal-header">
+        <div class="dp-review-title">
+          <span class="icon-badge"><i class="bi bi-file-earmark-excel"></i></span>
+          <div>
+            <h2 class="modal-title" id="rubric-import-title">Review rubric import</h2>
+            <div class="sub">Check this rubric. Nothing is saved until you press Import.</div>
+          </div>
+        </div>
+        <div class="dp-review-actions">
+          <button type="submit" name="action" value="cancel" class="btn btn-outline-secondary btn-sm">Cancel</button>
+          <button type="submit" name="action" value="apply" class="btn btn-primary btn-sm" {% if not rubric_review.verdict.ok %}disabled{% endif %}>
+            <i class="bi bi-upload me-1"></i>Import rubric
+          </button>
+        </div>
+      </div>
+      <div class="dp-review-stats">
+        <span class="dp-stat"><b>{{ rubric_review.rows|length }}</b> categor{{ rubric_review.rows|length|pluralize:"y,ies" }} in the file</span>
+        {% for total in rubric_review.totals %}
+        <span class="dp-stat {% if total.ok %}is-good{% else %}is-bad{% endif %}"><b>{{ total.total|floatformat:"-2" }}%</b> of {{ total.target|floatformat:"-2" }}% {{ total.label|lower }} weight {% if total.ok %}<i class="bi bi-check-circle-fill"></i>{% else %}<i class="bi bi-x-circle-fill"></i>{% endif %}</span>
+        {% endfor %}
+      </div>
+      <div class="modal-body">
+        <div class="alert {% if rubric_review.replacing %}alert-warning{% else %}alert-info{% endif %} py-2 t-body">
+          {% if rubric_review.replacing %}
+          <i class="bi bi-arrow-repeat me-1"></i>This will <strong>replace</strong> the {{ rubric_review.existing_count }} categor{{ rubric_review.existing_count|pluralize:"y,ies" }} currently in the rubric.
+          {% else %}
+          <i class="bi bi-plus-circle me-1"></i>This will <strong>add</strong> to the {{ rubric_review.existing_count }} categor{{ rubric_review.existing_count|pluralize:"y,ies" }} already in the rubric. Weights are checked on the combined rubric.
+          {% endif %}
+        </div>
+
+        {% if rubric_review.verdict.ok %}
+        <div class="alert alert-success py-2 t-body"><i class="bi bi-check-circle-fill me-1"></i>The rubric is valid: weights add up to this session's split.</div>
+        {% else %}
+        <div class="alert alert-danger py-2 t-body">
+          <strong>Fix these in the file and upload it again:</strong>
+          <ul class="mb-0 mt-1">
+            {% for message in rubric_review.general_errors %}<li>{{ message }}</li>{% endfor %}
+            {% for row in rubric_review.rows %}{% for message in row.problems %}<li>Row {{ row.row }}: {{ message }}</li>{% endfor %}{% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        <div class="dp-table card">
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead><tr><th>Row</th><th>Category</th><th>Scope</th><th class="text-end">Max points</th><th class="text-end">Weight %</th></tr></thead>
+              <tbody>
+                {% for row in rubric_review.rows %}
+                <tr class="{% if row.problems %}table-danger{% endif %}">
+                  <td class="text-muted">{{ row.row }}</td>
+                  <td><div class="fw-600">{{ row.name }}</div>{% if row.description %}<div class="text-muted t-sm">{{ row.description }}</div>{% endif %}</td>
+                  <td>{{ row.scope|default:"Group" }}</td>
+                  <td class="text-end">{{ row.max_points }}</td>
+                  <td class="text-end">{{ row.weight }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>

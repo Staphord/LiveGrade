@@ -1,0 +1,60 @@
+<div class="modal fade dp-modal dp-review" id="group-import-modal" tabindex="-1" role="dialog" aria-modal="true"
+     aria-labelledby="group-import-title" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable modal-dialog-centered modal-fullscreen-md-down">
+    <form method="post" action="{% url 'assessment_group_import_preview' session.pk %}" class="modal-content">
+      {% csrf_token %}
+      <div class="modal-header">
+        <div class="dp-review-title">
+          <span class="icon-badge"><i class="bi bi-file-earmark-excel"></i></span>
+          <div>
+            <h2 class="modal-title" id="group-import-title">Review import</h2>
+            <div class="sub">Check what this file will add. Nothing is saved until you press Import.</div>
+          </div>
+        </div>
+        <div class="dp-review-actions">
+          <button type="submit" name="action" value="cancel" class="btn btn-outline-secondary btn-sm">Cancel</button>
+          <button type="submit" name="action" value="apply" class="btn btn-primary btn-sm" {% if not import_plan.summary.ready %}disabled{% endif %}>
+            <i class="bi bi-upload me-1"></i>Import {{ import_plan.summary.ready }} group{{ import_plan.summary.ready|pluralize }}
+          </button>
+        </div>
+      </div>
+      <div class="dp-review-stats">
+        <span class="dp-stat is-good"><b>{{ import_plan.summary.ready }}</b> group{{ import_plan.summary.ready|pluralize }} ready</span>
+        <span class="dp-stat {% if import_plan.summary.skipped %}is-bad{% endif %}"><b>{{ import_plan.summary.skipped }}</b> with problems (skipped)</span>
+        <span class="dp-stat"><b>{{ import_plan.summary.new_students }}</b> new student{{ import_plan.summary.new_students|pluralize }}</span>
+        <span class="dp-stat"><b>{{ import_plan.summary.matched_students }}</b> already in the session</span>
+      </div>
+      <div class="modal-body">
+        {% if import_plan.problems %}
+        <div class="alert alert-warning py-2 t-body">
+          <strong>Some rows could not be read:</strong>
+          <ul class="mb-0 mt-1">{% for row, message in import_plan.problems %}<li>Row {{ row }}: {{ message }}</li>{% endfor %}</ul>
+        </div>
+        {% endif %}
+
+        {% if import_plan.summary.skipped %}
+        <h3 class="dp-section is-bad"><i class="bi bi-exclamation-octagon-fill"></i>Needs attention<span>{{ import_plan.summary.skipped }} will be skipped, never half-added. Fix the file and import them again.</span></h3>
+        <div class="dp-grid">
+          {% for group in import_plan.groups %}{% if not group.ready %}{% include 'assessments/_partials/import_group_card.html' %}{% endif %}{% endfor %}
+        </div>
+        {% endif %}
+
+        {% if import_plan.summary.ready %}
+        <h3 class="dp-section"><i class="bi bi-check-circle-fill"></i>Ready to import<span>{{ import_plan.summary.ready }} group{{ import_plan.summary.ready|pluralize }}</span></h3>
+        <div class="dp-legend">
+          <span><span class="dp-chip is-new">Name</span> new student</span>
+          <span><span class="dp-chip is-matched">Name</span> matched to a student already in the session</span>
+          <span><span class="dp-chip">Name</span> already in this group</span>
+        </div>
+        <div class="dp-grid">
+          {% for group in import_plan.groups %}{% if group.ready %}{% include 'assessments/_partials/import_group_card.html' %}{% endif %}{% endfor %}
+        </div>
+        {% endif %}
+
+        {% if not import_plan.groups %}
+        <div class="empty-state text-center py-5"><i class="bi bi-file-earmark-excel text-muted" style="font-size:2rem"></i><p class="text-muted mt-2">No groups were found in that file.</p></div>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>

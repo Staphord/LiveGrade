@@ -7,12 +7,11 @@
    page waits the brief moment for the server's real turn-closed reload. */
 #eval-form.is-locked{opacity:.55;pointer-events:none;filter:grayscale(.3)}
 
-/* Missing-category validation - a category block flashes a red outline
-   instead of the submit attempt silently doing nothing. */
-@keyframes category-shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-4px)}
-     40%{transform:translateX(4px)}60%{transform:translateX(-3px)}80%{transform:translateX(3px)}}
-.category-block.is-flagged{outline:2px solid var(--danger);outline-offset:4px;border-radius:10px;
-     animation:category-shake .4s ease-in-out}
+/* Missing-category validation - a category that still needs a score says so with one short line of red
+   text on the line that already holds "out of N". No outline, tint or movement: the line is in the block's
+   own row, so it takes no extra height and cannot touch anything around it. */
+.category-error{display:none;align-items:center;gap:.35rem;color:var(--tone-danger-fg);font-weight:600}
+.category-block.is-flagged .category-error{display:inline-flex}
 .eval-validation-msg{display:none;align-items:center;gap:6px;background:var(--tone-danger-bg);
      color:var(--tone-danger-fg);border-radius:12px;padding:.6rem .85rem;font-size:var(--fs-sm);
      font-weight:600;margin-bottom:.6rem}
@@ -115,6 +114,7 @@
   <div class="s-card listening-card fade-in text-center py-5 px-4">
     <i class="bi bi-earbuds text-primary s-icon-xl"></i>
     <h2 class="fw-800 mt-2 s-h2">{{ turn.group.name }} is presenting</h2>
+    {% if turn.group.topic or turn.group.location %}<p class="text-muted s-text-sm mb-0">{{ turn.group.topic }}{% if turn.group.topic and turn.group.location %} &middot; {% endif %}{{ turn.group.location }}</p>{% endif %}
     {% if not turn.voting_opened_at %}<p class="text-muted s-text mb-3">Listen along — voting opens automatically during the presentation.</p>{% else %}<p class="text-muted s-text mb-3">Voting has closed for this group. The presentation is still in progress.</p>{% endif %}
     {% if turn.presentation_ends_at and not turn.voting_opened_at %}
     <span class="status-badge status-wait" id="presentation-countdown" data-opens-at="{{ turn.opened_at|date:'c' }}" data-presentation-ends-at="{{ turn.presentation_ends_at|date:'c' }}"><i class="bi bi-hourglass-split me-1"></i><span id="presentation-countdown-text">Calculating countdown…</span></span>
@@ -158,6 +158,7 @@
   <div class="s-card fade-in text-center py-4">
     <i class="bi bi-people-fill text-primary s-icon-xl"></i>
     <h2 class="fw-800 mt-2 s-h2">{{ turn.group.name }} is presenting</h2>
+    {% if turn.group.topic or turn.group.location %}<p class="text-muted s-text-sm mb-0">{{ turn.group.topic }}{% if turn.group.topic and turn.group.location %} &middot; {% endif %}{{ turn.group.location }}</p>{% endif %}
     <p class="text-muted s-text mb-3">
       You're a member of this group, so you can't grade it.
     </p>
@@ -205,7 +206,7 @@
   <div class="s-card stagger-in">
     <div class="d-flex align-items-center gap-2 mb-1">
       <i class="bi bi-people text-primary"></i>
-      <h3 class="fw-800 mb-0 s-h3">{{ turn.group.name }} - Project</h3>
+      <h3 class="fw-800 mb-0 s-h3">{{ turn.group.name }}{% if turn.group.topic %} - {{ turn.group.topic }}{% endif %}</h3>
     </div>
     <p class="text-muted mb-0 s-text-sm">Rate the project and presentation as a whole.</p>
 
@@ -222,7 +223,10 @@
         <input type="number" class="score-num" min="0" max="{{ cat.max_points }}" step="0.5" value="0"
                name="group_{{ cat.pk }}" data-score-num id="group_{{ cat.pk }}">
       </div>
-      <div class="text-muted s-text-xs text-end mt-1">out of {{ cat.max_points|floatformat:0 }}</div>
+      <div class="d-flex align-items-center justify-content-between s-text-xs mt-1">
+        <span class="category-error"><i class="bi bi-exclamation-circle-fill"></i>Grade this category</span>
+        <span class="text-muted ms-auto">out of {{ cat.max_points|floatformat:0 }}</span>
+      </div>
     </div>
     {% endfor %}
   </div>
@@ -255,7 +259,10 @@
                  name="ind_{{ membership.student.pk }}_{{ cat.pk }}" data-score-num
                  id="ind_{{ membership.student.pk }}_{{ cat.pk }}">
         </div>
-        <div class="text-muted s-text-xs text-end mt-1">out of {{ cat.max_points|floatformat:0 }}</div>
+        <div class="d-flex align-items-center justify-content-between s-text-xs mt-1">
+          <span class="category-error"><i class="bi bi-exclamation-circle-fill"></i>Grade this category</span>
+          <span class="text-muted ms-auto">out of {{ cat.max_points|floatformat:0 }}</span>
+        </div>
       </div>
       {% endfor %}
     </div>
@@ -265,7 +272,7 @@
 
   <div class="eval-validation-msg" id="eval-validation-msg">
     <i class="bi bi-exclamation-circle-fill"></i>
-    <span>Please score every category before submitting - jumping you to the first one you missed.</span>
+    <span id="eval-validation-text">Please score every category before submitting - jumping you to the first one you missed.</span>
   </div>
   <button type="submit" class="btn btn-primary big-btn w-100 mb-2" id="submit-btn">
     <i class="bi bi-send-check me-1"></i>Submit evaluation
@@ -368,7 +375,7 @@
       }
       return;
     }
-    if (['turn.activated', 'voting.opened', 'turn.closed', 'voting.closed', 'voting.paused', 'session.closed', 'transition.scheduled'].includes(data.type)) {
+    if (['turn.activated', 'voting.opened', 'turn.closed', 'voting.closed', 'voting.paused', 'session.closed', 'transition.scheduled', 'rubric.changed'].includes(data.type)) {
       // These genuinely change what should be on screen (a different
       // group, grading stopped entirely, or a gap now counting down before
       // the next group) — a reload is the correct, expected transition
@@ -635,9 +642,14 @@ startCountdown();
       if (unanswered.length) {
         e.preventDefault();
         if (validationMsg) validationMsg.classList.add('is-visible');
+        const validationText = document.getElementById('eval-validation-text');
+        if (validationText) {
+          validationText.textContent = unanswered.length + (unanswered.length === 1 ? ' category still needs' : ' categories still need') +
+            ' a score - jumping you to the first one.';
+        }
         unanswered.forEach(function (block) {
           block.classList.remove('is-flagged');
-          // Force a reflow so re-adding the class restarts the shake
+          // Force a reflow so re-adding the class restarts the highlight
           // animation even if it was already flagged from a previous
           // failed attempt.
           void block.offsetWidth;

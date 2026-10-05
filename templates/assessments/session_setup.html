@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}{% if session %}{{ session.name }} - Setup{% else %}New assessment session{% endif %} - DevPerf{% endblock %}
+{% block title %}{% if session %}{{ session.name }} - Setup{% else %}New assessment session{% endif %} - LiveGrade{% endblock %}
 {% block page_title %}{% if session %}{{ session.name }}{% else %}New assessment session{% endif %}{% endblock %}
 {% block topbar_actions %}
 {% if session and not active_org.public %}<a href="{% url 'assessment_transfer' session.pk %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left-right me-1"></i>Transfer ownership</a>{% endif %}
@@ -201,6 +201,81 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
      box-shadow:var(--elev-2);font-size:1.6rem;color:var(--accent)}
 .assess-hero h2{font-size:var(--fs-title);font-weight:800;color:var(--ink);margin-bottom:var(--sp-1)}
 .assess-hero p{color:var(--text-muted);max-width:440px;margin:0 auto var(--sp-4)}
+
+/* ------------------------------------------------ Groups & students, imports, live edit */
+.students-panel-toggle{display:flex;align-items:center;gap:.75rem;width:100%;background:transparent;border:0;padding:.85rem 1rem;text-align:left;color:var(--ink)}
+.students-panel-toggle .icon-badge{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--accent-soft);color:var(--accent);font-size:1rem}
+.students-panel-toggle .title{font-weight:700;font-size:var(--fs-body)}
+.students-panel-toggle .sub{color:var(--text-muted);font-size:var(--fs-micro);font-weight:400}
+.students-panel-toggle .toggle-caret{transition:transform var(--motion) var(--ease)}
+.students-panel-toggle[aria-expanded="true"] .toggle-caret{transform:rotate(180deg)}
+.import-format summary{cursor:pointer;font-size:var(--fs-sm);font-weight:700;color:var(--accent)}
+.import-format-table{font-size:var(--fs-micro);white-space:nowrap}
+.import-format-table th{color:var(--text-muted);font-weight:700}
+.import-format-notes{padding-left:1.1rem;margin:.25rem 0 .5rem;font-size:var(--fs-micro);color:var(--text-soft)}
+.import-format-notes li{margin-bottom:.2rem}
+.groups-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:.75rem;padding:.55rem .85rem;margin-bottom:var(--sp-3);
+     background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);
+     position:sticky;top:calc(var(--topbar-h) + var(--sticky-header-h, 0px) + var(--sp-2));z-index:var(--z-base)}
+.groups-toolbar.has-selection{border-color:var(--accent);background:var(--accent-soft)}
+.groups-select-all{display:inline-flex;align-items:center;gap:.5rem;margin:0;font-size:var(--fs-sm);font-weight:700;cursor:pointer}
+.groups-selected-count{color:var(--text-muted);font-size:var(--fs-sm)}
+.groups-bulk{display:flex;align-items:center;gap:.5rem;margin-left:auto}
+.group-card .group-select{margin-right:.5rem;flex-shrink:0}
+.group-card.is-selected{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.group-meta{display:flex;flex-wrap:wrap;gap:.6rem;font-size:var(--fs-micro);color:var(--text-muted);margin-top:.35rem}
+.group-lock{display:flex;gap:.4rem;align-items:flex-start;font-size:var(--fs-micro);color:var(--text-muted);margin-top:.5rem}
+.live-edit-banner{background:var(--tone-info-bg);color:var(--tone-info-fg);border:1px solid color-mix(in srgb,var(--tone-info-fg) 25%,transparent);
+     border-radius:var(--radius-card);padding:.7rem 1rem;margin-bottom:var(--sp-3);font-size:var(--fs-sm)}
+.live-edit-banner .live-dot{width:9px;height:9px;border-radius:50%;background:var(--danger);box-shadow:0 0 0 0 rgba(220,53,69,.6);animation:live-pulse 1.8s infinite}
+@keyframes live-pulse{70%{box-shadow:0 0 0 8px rgba(220,53,69,0)}100%{box-shadow:0 0 0 0 rgba(220,53,69,0)}}
+.live-edit-banner summary{cursor:pointer;font-weight:700}
+.live-changes{list-style:none;padding:0;margin:.4rem 0 0}
+.live-changes li{padding:.15rem 0}
+.live-changes .when{font-variant-numeric:tabular-nums;font-weight:700;margin-right:.35rem}
+.live-changes .by{opacity:.75}
+.rubric-import-modes{display:grid;gap:.15rem}
+
+/* ------------------------------------------------ Review window for an uploaded file */
+.dp-review .modal-dialog{max-width:1080px}
+.dp-review .modal-content{overflow:hidden}
+.dp-review .modal-header{align-items:center;flex-wrap:wrap;gap:var(--sp-3)}
+.dp-review-title{display:flex;align-items:center;gap:var(--sp-3);min-width:0}
+.dp-review-title .sub{color:var(--text-muted);font-size:var(--fs-sm)}
+.dp-review-title .icon-badge{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--accent-soft);color:var(--accent);font-size:1.05rem}
+.dp-review-actions{display:flex;gap:var(--sp-2);margin-left:auto;flex-shrink:0}
+.dp-review-stats{display:flex;flex-wrap:wrap;gap:var(--sp-2);padding:var(--sp-3) var(--sp-4);background:var(--surface-hover);border-bottom:1px solid var(--border)}
+.dp-stat{display:inline-flex;align-items:baseline;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-pill);padding:3px 12px;font-size:var(--fs-sm);color:var(--text-soft)}
+.dp-stat b{font-size:var(--fs-heading);color:var(--ink)}
+.dp-stat.is-good{border-color:color-mix(in srgb,var(--success) 40%,var(--border))}
+.dp-stat.is-good b,.dp-stat.is-good i{color:var(--tone-success-fg)}
+.dp-stat.is-bad{border-color:color-mix(in srgb,var(--danger) 45%,var(--border))}
+.dp-stat.is-bad b,.dp-stat.is-bad i{color:var(--tone-danger-fg)}
+.dp-review .modal-body{background:var(--canvas);padding:var(--sp-4)}
+.dp-section{display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-2);margin:var(--sp-4) 0 var(--sp-3);font-size:var(--fs-body);font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ink)}
+.dp-section:first-child{margin-top:0}
+.dp-section i{color:var(--success)}
+.dp-section.is-bad i{color:var(--danger)}
+.dp-section span{font-size:var(--fs-sm);font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-muted)}
+.dp-legend{display:flex;flex-wrap:wrap;gap:var(--sp-3);font-size:var(--fs-sm);color:var(--text-muted);margin-bottom:var(--sp-3)}
+.dp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:var(--sp-3)}
+.dp-group{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);padding:var(--sp-3) var(--sp-4)}
+.dp-group.is-skipped{border-color:color-mix(in srgb,var(--danger) 45%,var(--border));background:color-mix(in srgb,var(--tone-danger-bg) 30%,var(--surface))}
+.dp-group-head{display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-2)}
+.dp-group-head h3{font-size:var(--fs-heading);font-weight:700;margin:0;color:var(--ink)}
+.dp-count{margin-left:auto;font-size:var(--fs-sm);color:var(--text-muted)}
+.dp-meta{display:flex;flex-wrap:wrap;gap:var(--sp-3);font-size:var(--fs-sm);color:var(--text-muted);margin-top:var(--sp-1)}
+.dp-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:var(--sp-2)}
+.dp-chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:var(--radius-pill);font-size:var(--fs-sm);background:var(--surface-sunken);color:var(--text)}
+.dp-chip.is-new{background:var(--tone-success-bg);color:var(--tone-success-fg)}
+.dp-chip.is-matched{background:var(--tone-info-bg);color:var(--tone-info-fg)}
+.dp-chip .sid{opacity:.7}
+.dp-none{font-size:var(--fs-sm);color:var(--text-muted)}
+.dp-notes{list-style:none;padding:0;margin:var(--sp-2) 0 0;font-size:var(--fs-body)}
+.dp-notes li{display:flex;gap:6px;align-items:flex-start;margin-top:4px}
+.dp-notes .issue{color:var(--tone-danger-fg)}
+.dp-notes .warn{color:var(--tone-warn-fg)}
+.dp-table{margin-top:var(--sp-3)}
 </style>
 {% endblock %}
 
@@ -220,12 +295,12 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
             <span class="stepper-desc">Name &amp; weighting</span>
           </span>
         </a>
-        <a href="{% if session %}#roster-section{% else %}#{% endif %}" data-step="roster"
-           class="stepper-item {% if not session %}is-locked{% elif step_roster_done %}is-done{% elif active_step == 'roster' %}is-current{% endif %}">
-          <span class="stepper-dot">{% if step_roster_done %}<i class="bi bi-check-lg"></i>{% else %}2{% endif %}</span>
+        <a href="{% if session %}#groups-section{% else %}#{% endif %}" data-step="groups"
+           class="stepper-item {% if not session %}is-locked{% elif step_groups_done %}is-done{% elif active_step == 'groups' %}is-current{% endif %}">
+          <span class="stepper-dot">{% if step_groups_done %}<i class="bi bi-check-lg"></i>{% else %}2{% endif %}</span>
           <span class="stepper-label">
-            <span class="stepper-title">Roster</span>
-            <span class="stepper-desc">Add students</span>
+            <span class="stepper-title">Groups &amp; students</span>
+            <span class="stepper-desc">Import or build groups</span>
           </span>
         </a>
         <a href="{% if session %}#rubric-section{% else %}#{% endif %}" data-step="rubric"
@@ -236,14 +311,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
             <span class="stepper-desc">Categories &amp; weights</span>
           </span>
         </a>
-        <a href="{% if session %}#groups-section{% else %}#{% endif %}" data-step="groups"
-           class="stepper-item {% if not session %}is-locked{% elif step_groups_done %}is-done{% elif active_step == 'groups' %}is-current{% endif %}">
-          <span class="stepper-dot">{% if step_groups_done %}<i class="bi bi-check-lg"></i>{% else %}4{% endif %}</span>
-          <span class="stepper-label">
-            <span class="stepper-title">Groups</span>
-            <span class="stepper-desc">Assign presenting groups</span>
-          </span>
-        </a>
+        {% if not live_mode %}
         <a href="{% if session %}#go-live-section{% else %}#{% endif %}" data-step="go-live"
            class="stepper-item is-final {% if not session or not session.can_go_live %}is-locked{% endif %}">
           <span class="stepper-dot"><i class="bi bi-rocket-takeoff"></i></span>
@@ -252,11 +320,32 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
             <span class="stepper-desc">Show QR, start grading</span>
           </span>
         </a>
+        {% endif %}
       </div>
     </div>
   </div>
 
   <div class="col-lg-9">
+    {% if session and live_mode %}
+    <div class="live-edit-banner">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <span class="live-dot"></span>
+        <strong>This session is live.</strong>
+        <span>Changes apply straight away. Anything students have already graded stays fixed.</span>
+        <a href="{% url 'assessment_session_detail' session.pk %}" class="btn btn-sm btn-outline-primary ms-auto"><i class="bi bi-broadcast me-1"></i>Back to live control</a>
+      </div>
+      {% if recent_changes %}
+      <details class="mt-2">
+        <summary>Recent changes ({{ recent_changes|length }})</summary>
+        <ul class="live-changes">
+          {% for change in recent_changes %}
+          <li><span class="when">{{ change.created_at|date:"H:i" }}</span> {{ change.summary }}{% if change.by_user %} <span class="by">- {{ change.by_user.display_name }}</span>{% endif %}</li>
+          {% endfor %}
+        </ul>
+      </details>
+      {% endif %}
+    </div>
+    {% endif %}
     {# ---------------------------------------------------------- Basics -- #}
     <div class="card mb-3 setup-section{% if not session or active_step == 'basics' %} is-active-panel{% endif %}" id="basics-section" data-step="basics">
       <div class="card-body">
@@ -266,7 +355,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
             <span class="icon-badge"><i class="bi bi-signpost-split"></i></span>
             <div>
               <div class="title">Session basics</div>
-              <div class="sub">Set up the basics, then add students, a rubric and groups</div>
+              <div class="sub">Set up the basics, then add your groups and students, then a rubric</div>
             </div>
           </div>
         </div>
@@ -303,7 +392,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
             {% if form.non_field_errors %}<div class="field-error mt-2">{{ form.non_field_errors|join:", " }}</div>{% endif %}
           </div>
           <div class="d-flex gap-2 mt-4">
-            <button type="submit" class="btn btn-primary"><i class="bi bi-arrow-right-circle me-1"></i>Create session and add roster</button>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-arrow-right-circle me-1"></i>Create session and add groups</button>
             <a href="{% url 'assessment_session_list' %}" class="btn btn-outline-secondary">Cancel</a>
           </div>
         </form>
@@ -325,6 +414,9 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
             {{ form.name }}
             {% if form.name.errors %}<div class="field-error">{{ form.name.errors|join:", " }}</div>{% endif %}
           </div>
+          {% if live_mode %}
+          <div class="text-muted t-sm"><i class="bi bi-lock-fill me-1"></i>How students join ({{ session.get_identify_by_display }}) and the {{ session.group_weight_percent|floatformat:"-2" }}% group / {{ session.individual_weight_percent|floatformat:"-2" }}% individual weighting are fixed once a session is live.</div>
+          {% else %}
           <div class="mb-4">
             <label class="form-label fw-600 t-body">Identify students by</label>
             {{ form.identify_by }}
@@ -349,6 +441,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
             </div>
             {% if form.non_field_errors %}<div class="field-error mt-2">{{ form.non_field_errors|join:", " }}</div>{% endif %}
           </div>
+          {% endif %}
           <div class="d-flex gap-2 mt-4">
             <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-1"></i>Save changes</button>
             <a href="{% url 'assessment_session_detail' session.pk %}" class="btn btn-outline-secondary">Cancel</a>
@@ -360,7 +453,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
             <span class="icon-badge"><i class="bi bi-check-lg"></i></span>
             <div>
               <div class="title">{{ session.name }}</div>
-              <div class="sub">Basics are set - add students, a rubric and groups below</div>
+              <div class="sub">Basics are set - add your groups and students, then a rubric</div>
             </div>
           </div>
         </div>
@@ -381,7 +474,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
           </div>
         </div>
         <div class="d-flex justify-content-end mt-3">
-          <a href="#roster-section" data-step="roster" class="btn btn-primary btn-sm step-nav-next">Next: Roster</a>
+          <a href="#groups-section" data-step="groups" class="btn btn-primary btn-sm step-nav-next">Next: Groups &amp; students</a>
         </div>
         {% endif %}
 
@@ -389,15 +482,183 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
     </div>
 
     {% if session %}
-    {# ---------------------------------------------------------- Roster -- #}
-    <div class="card mb-3 setup-section" id="roster-section" data-step="roster">
+    {# ---------------------------------------------------------- Groups -- #}
+    <div class="card mb-3 setup-section" id="groups-section" data-step="groups">
       <div class="card-body">
         <div class="setup-section-head">
-          <span class="step-num {% if step_roster_done %}is-done{% endif %}">
-            {% if step_roster_done %}<i class="bi bi-check-lg"></i>{% else %}2{% endif %}
+          <span class="step-num {% if step_groups_done %}is-done{% endif %}">
+            {% if step_groups_done %}<i class="bi bi-check-lg"></i>{% else %}2{% endif %}
           </span>
-          <h3>Roster</h3>
+          <h3>Groups &amp; students</h3>
         </div>
+        {% include 'assessments/_partials/group_stats.html' %}
+
+        <div class="row g-3">
+          <div class="col-md-4">
+           <div class="groups-sidebar-sticky">
+            <div class="card mb-3">
+              <div class="card-body">
+                <div class="card-icon-head">
+                  <div class="head-left">
+                    <span class="icon-badge"><i class="bi bi-file-earmark-excel"></i></span>
+                    <div>
+                      <div class="title">Import groups &amp; students</div>
+                      <div class="sub">One Excel file creates both</div>
+                    </div>
+                  </div>
+                </div>
+                <form method="post" action="{% url 'assessment_group_import' session.pk %}" enctype="multipart/form-data" id="group-import-form">
+                  {% csrf_token %}
+                  <div class="import-dropzone" id="group-import-dropzone">
+                    <i class="bi bi-cloud-arrow-up"></i>
+                    <div class="dz-text">Choose a file or drag it here</div>
+                    <div class="dz-filename" id="group-import-filename"></div>
+                    {{ group_import_form.file }}
+                  </div>
+                  <button type="submit" class="btn btn-outline-primary btn-sm mt-2 w-100"><i class="bi bi-eye me-1"></i>Preview import</button>
+                </form>
+                <details class="import-format mt-3" {% if not groups %}open{% endif %}>
+                  <summary>What should the file look like?</summary>
+                  <div class="table-responsive mt-2">
+                    <table class="table table-sm import-format-table mb-2">
+                      <thead><tr><th>Group Name</th><th>Name</th><th>Student ID</th><th>Topic</th><th>Presentation Location</th></tr></thead>
+                      <tbody>
+                        <tr><td>Aurora</td><td>Ann Lee, Bo Ng, Cy Oh</td><td>A101, A102, A103</td><td>Campus map</td><td>Room 1</td></tr>
+                        <tr><td>Meridian</td><td>Di Park, Ed Roy</td><td>B201, B202</td><td></td><td></td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <ul class="import-format-notes">
+                    <li>One row per group. Put every member in the <strong>Name</strong> column, separated by commas.</li>
+                    <li><strong>Student ID</strong> is optional. If you use it, list the IDs in the same order as the names.</li>
+                    <li><strong>Topic</strong> and <strong>Presentation Location</strong> are optional.</li>
+                    <li>Students are created from this file, so there is no separate roster to import.</li>
+                    <li>You review everything before it is saved. A group with a problem is skipped whole.</li>
+                  </ul>
+                  <a href="{% url 'assessment_group_import_sample' session.pk %}" class="btn btn-sm btn-link p-0"><i class="bi bi-download me-1"></i>Download a sample file</a>
+                </details>
+              </div>
+            </div>
+
+            <div class="card mb-3">
+              <div class="card-body">
+                <div class="group-form-mode-banner" id="group-form-mode-banner">
+                  <i class="bi bi-pencil-fill"></i><span>Editing an existing group</span>
+                </div>
+                <div class="card-icon-head">
+                  <div class="head-left">
+                    <span class="icon-badge" id="group-form-icon"><i class="bi bi-plus-square"></i></span>
+                    <div>
+                      <div class="title" id="group-form-title">Create group manually</div>
+                      <div class="sub" id="group-form-sub">Name it, cap its size, add members</div>
+                    </div>
+                  </div>
+                  <a href="#" class="t-sm d-none" id="group-form-cancel">Cancel</a>
+                </div>
+                <form method="post" id="group-form" action="{% url 'assessment_groups' session.pk %}">
+                  {% csrf_token %}
+                  {% if group_form.non_field_errors %}<div class="alert alert-danger py-2 t-sm">{{ group_form.non_field_errors|join:", " }}</div>{% endif %}
+                  <div class="row g-2">
+                    <div class="col-7">
+                      <label class="form-label t-sm fw-600">Group name <span class="text-danger">*</span></label>
+                      {{ group_form.name }}
+                      {% if group_form.name.errors %}<div class="field-error">{{ group_form.name.errors|join:", " }}</div>{% endif %}
+                    </div>
+                    <div class="col-5">
+                      <label class="form-label t-sm fw-600">Size <span class="text-danger">*</span></label>
+                      {{ group_form.max_size }}
+                      {% if group_form.max_size.errors %}<div class="field-error">{{ group_form.max_size.errors|join:", " }}</div>{% endif %}
+                    </div>
+                  </div>
+                  <div class="text-muted t-micro mt-1">
+                    <i class="bi bi-info-circle me-1"></i>A fixed size lets every card show capacity progress at a glance.
+                  </div>
+                  <div class="row g-2 mt-1">
+                    <div class="col-12">
+                      <label class="form-label t-sm fw-600">Topic <span class="text-muted fw-400">(optional)</span></label>
+                      {{ group_form.topic }}
+                      {% if group_form.topic.errors %}<div class="field-error">{{ group_form.topic.errors|join:", " }}</div>{% endif %}
+                    </div>
+                    <div class="col-12">
+                      <label class="form-label t-sm fw-600">Presentation location <span class="text-muted fw-400">(optional)</span></label>
+                      {{ group_form.location }}
+                      {% if group_form.location.errors %}<div class="field-error">{{ group_form.location.errors|join:", " }}</div>{% endif %}
+                    </div>
+                  </div>
+                  {% if ungrouped_students %}
+                  <label class="form-label t-sm fw-600 mt-3 mb-1" id="group-members-label">Members (optional - add now or later)</label>
+                  <div class="border rounded p-2" style="max-height:220px;overflow-y:auto" id="group-members-list">
+                    {% for student in ungrouped_students %}
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" name="members" value="{{ student.pk }}" id="new-member-{{ student.pk }}">
+                      <label class="form-check-label t-sm" for="new-member-{{ student.pk }}">
+                        {{ student.full_name|default:student.student_id }}
+                      </label>
+                    </div>
+                    {% endfor %}
+                  </div>
+                  {% else %}
+                  <div class="text-muted t-micro mt-2" id="group-members-empty-note">
+                    Every student is already in a group.
+                  </div>
+                  {% endif %}
+                  <button type="submit" class="btn btn-primary btn-sm w-100 mt-2" id="group-form-submit">
+                    <i class="bi bi-plus-lg me-1"></i>Create
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            <div class="card">
+              {% include 'assessments/_partials/group_unassigned_pool.html' %}
+            </div>
+           </div>
+          </div>
+
+          <div class="col-md-8">
+            {% if groups %}
+            <div class="groups-toolbar" id="groups-toolbar">
+              <label class="groups-select-all">
+                <input type="checkbox" class="form-check-input" id="groups-select-all">
+                <span>Select all</span>
+              </label>
+              <span class="groups-selected-count" id="groups-selected-count" aria-live="polite">{{ groups|length }} group{{ groups|length|pluralize }}</span>
+              <form method="post" action="{% url 'assessment_groups_bulk_delete' session.pk %}" id="groups-bulk-form" class="groups-bulk d-none"
+                    data-confirm="Delete the selected groups and their students?" data-confirm-label="Delete" data-confirm-title="Delete groups">
+                {% csrf_token %}
+                <span id="groups-bulk-inputs"></span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="groups-clear">Clear</button>
+                <button type="submit" class="btn btn-sm btn-danger" id="groups-bulk-delete"><i class="bi bi-trash me-1"></i><span id="groups-bulk-label">Delete selected</span></button>
+              </form>
+            </div>
+            {% endif %}
+            <div class="row g-3" id="groups-grid">
+              {% for group in groups %}
+              {% include 'assessments/_partials/group_card.html' %}
+              {% empty %}
+              <div class="col-12">
+                <div class="empty-state text-center py-5">
+                  <i class="bi bi-diagram-3 text-muted" style="font-size:2rem"></i>
+                  <p class="text-muted mt-2">No groups yet - import a spreadsheet, or create one by hand.</p>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+    {# ---------------------------------------------------------- Roster -- #}
+    <div class="card students-panel mt-3" id="students-panel">
+      <button type="button" class="students-panel-toggle" data-bs-toggle="collapse" data-bs-target="#students-body"
+              aria-expanded="{% if students_open or form.errors or query %}true{% else %}false{% endif %}" aria-controls="students-body">
+        <span class="icon-badge"><i class="bi bi-people-fill"></i></span>
+        <span class="flex-grow-1 text-start">
+          <span class="title">Manage students</span>
+          <span class="sub d-block">{{ roster_total }} student{{ roster_total|pluralize }} - correct a name or ID, add one person, or remove someone</span>
+        </span>
+        <i class="bi bi-chevron-down toggle-caret"></i>
+      </button>
+      <div class="collapse {% if students_open or form.errors or query %}show{% endif %}" id="students-body">
+      <div class="card-body">
         <div class="roster-stat-strip mb-0">
           <div class="roster-stat-pill">
             <span class="stat-icon"><i class="bi bi-people-fill"></i></span>
@@ -424,26 +685,6 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 
         <div class="row g-3 mt-1">
           <div class="col-md-4">
-            <div class="card mb-3">
-              <div class="card-body">
-                <div class="card-icon-head">
-                  <span class="icon-badge"><i class="bi bi-file-earmark-excel"></i></span>
-                  <span class="title">Import from Excel</span>
-                </div>
-                <form method="post" action="{% url 'assessment_roster_import' session.pk %}" enctype="multipart/form-data" id="import-form">
-                  {% csrf_token %}
-                  <div class="import-dropzone" id="import-dropzone">
-                    <i class="bi bi-cloud-arrow-up"></i>
-                    <div class="dz-text">Choose a file or drag it here</div>
-                    <div class="dz-filename" id="import-filename"></div>
-                    {{ import_form.file }}
-                  </div>
-                  <div class="form-text mt-2">{{ import_form.file.help_text }}</div>
-                  <button type="submit" class="btn btn-outline-primary btn-sm mt-2 w-100"><i class="bi bi-upload me-1"></i>Import</button>
-                </form>
-              </div>
-            </div>
-
             <div class="card">
               <div class="card-body">
                 <div class="card-icon-head">
@@ -524,6 +765,11 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
             </div>
           </div>
         </div>
+      </div>
+      </div>
+    </div>
+
+
         <div class="d-flex justify-content-between mt-3">
           <a href="#basics-section" data-step="basics" class="btn btn-outline-secondary btn-sm step-nav-back">Back</a>
           <a href="#rubric-section" data-step="rubric" class="btn btn-primary btn-sm step-nav-next">Next: Rubric</a>
@@ -583,6 +829,71 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 
         <div class="row g-3">
           <div class="col-md-4">
+            <div class="card mb-3">
+              <div class="card-body">
+                <div class="card-icon-head">
+                  <div class="head-left">
+                    <span class="icon-badge"><i class="bi bi-file-earmark-excel"></i></span>
+                    <div>
+                      <div class="title">Import rubric</div>
+                      <div class="sub">Build the whole rubric from Excel</div>
+                    </div>
+                  </div>
+                </div>
+                <form method="post" action="{% url 'assessment_rubric_import' session.pk %}" enctype="multipart/form-data" id="rubric-import-form">
+                  {% csrf_token %}
+                  <div class="import-dropzone" id="rubric-import-dropzone">
+                    <i class="bi bi-cloud-arrow-up"></i>
+                    <div class="dz-text">Choose a file or drag it here</div>
+                    <div class="dz-filename" id="rubric-import-filename"></div>
+                    {{ rubric_import_form.file }}
+                  </div>
+                  <div class="rubric-import-modes mt-2">
+                    {% for radio in rubric_import_form.mode %}
+                    <label class="form-check t-sm">{{ radio.tag }} <span class="form-check-label">{{ radio.choice_label }}</span></label>
+                    {% endfor %}
+                  </div>
+                  <button type="submit" class="btn btn-outline-primary btn-sm mt-2 w-100"><i class="bi bi-eye me-1"></i>Preview import</button>
+                </form>
+                <details class="import-format mt-3" {% if not group_categories and not individual_categories %}open{% endif %}>
+                  <summary>What should the file look like?</summary>
+                  <div class="table-responsive mt-2">
+                    <table class="table table-sm import-format-table mb-2">
+                      <thead><tr><th>Category</th><th>Description</th><th>Scope</th><th>Max points</th><th>Weight %</th></tr></thead>
+                      <tbody>
+                        <tr><td>Technical depth</td><td>Quality of the solution</td><td>Group</td><td>10</td><td>30</td></tr>
+                        <tr><td>Teamwork</td><td>This student's part</td><td>Individual</td><td>5</td><td>40</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <ul class="import-format-notes">
+                    <li><strong>Scope</strong> is Group or Individual.</li>
+                    <li>Weights must add up to this session's split: <strong>{{ session.group_weight_percent|floatformat:"-2" }}%</strong> for group categories and <strong>{{ session.individual_weight_percent|floatformat:"-2" }}%</strong> for individual ones.</li>
+                    <li>Max points is what a student can give; Description is optional.</li>
+                    <li>You review everything, and any weight problem, before it is saved.</li>
+                  </ul>
+                  <a href="{% url 'assessment_rubric_import_sample' session.pk %}" class="btn btn-sm btn-link p-0"><i class="bi bi-download me-1"></i>Download a sample file</a>
+                </details>
+              </div>
+            </div>
+
+            <div class="card mb-3">
+              <div class="card-body">
+                <div class="card-icon-head">
+                  <div class="head-left">
+                    <span class="icon-badge"><i class="bi bi-table"></i></span>
+                    <div>
+                      <div class="title">Edit as a table</div>
+                      <div class="sub">All categories and weights at once</div>
+                    </div>
+                  </div>
+                </div>
+                {% if rubric_live_lock %}<div class="text-muted t-sm mb-2"><i class="bi bi-info-circle me-1"></i>{{ rubric_live_lock }}</div>{% endif %}
+                <a href="{% url 'assessment_rubric_table' session.pk %}" class="btn btn-outline-primary btn-sm w-100"><i class="bi bi-pencil-square me-1"></i>Edit rubric as a table</a>
+              </div>
+            </div>
+
+            {% if not live_mode %}
             <div class="card">
               <div class="card-body">
                 <div class="rubric-form-mode-banner" id="rubric-form-mode-banner">
@@ -633,6 +944,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                 </form>
               </div>
             </div>
+            {% endif %}
           </div>
 
           <div class="col-md-8">
@@ -661,12 +973,14 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                       <span class="pts-chip">/{{ cat.max_points }} pts</span>
                       <span class="weight-chip">{{ cat.weight|floatformat:"-2" }}%</span>
                     </div>
+                    {% if not live_mode %}
                     <div class="cat-actions">
                       <button type="button" class="btn btn-sm btn-outline-secondary py-0 rubric-edit-btn" title="Edit category"><i class="bi bi-pencil"></i></button>
                       <form method="post" action="{% url 'assessment_rubric_delete' session.pk cat.pk %}" data-confirm="Remove this category? This can't be undone." data-confirm-label="Remove">
                         {% csrf_token %}<button class="btn btn-sm btn-outline-danger py-0" title="Remove category"><i class="bi bi-trash"></i></button>
                       </form>
                     </div>
+                    {% endif %}
                   </div>
                   {% empty %}
                   <div class="empty-state py-4"><i class="bi bi-clipboard-x"></i>No group categories yet - add one on the left.</div>
@@ -706,12 +1020,14 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                       <span class="pts-chip">/{{ cat.max_points }} pts</span>
                       <span class="weight-chip">{{ cat.weight|floatformat:"-2" }}%</span>
                     </div>
+                    {% if not live_mode %}
                     <div class="cat-actions">
                       <button type="button" class="btn btn-sm btn-outline-secondary py-0 rubric-edit-btn" title="Edit category"><i class="bi bi-pencil"></i></button>
                       <form method="post" action="{% url 'assessment_rubric_delete' session.pk cat.pk %}" data-confirm="Remove this category? This can't be undone." data-confirm-label="Remove">
                         {% csrf_token %}<button class="btn btn-sm btn-outline-danger py-0" title="Remove category"><i class="bi bi-trash"></i></button>
                       </form>
                     </div>
+                    {% endif %}
                   </div>
                   {% empty %}
                   <div class="empty-state py-4"><i class="bi bi-person-x"></i>No individual categories yet - group project scoring only.</div>
@@ -728,146 +1044,18 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
           </div>
         </div>
         <div class="d-flex justify-content-between mt-3">
-          <a href="#roster-section" data-step="roster" class="btn btn-outline-secondary btn-sm step-nav-back">Back</a>
-          <a href="#groups-section" data-step="groups" class="btn btn-primary btn-sm step-nav-next">Next: Groups</a>
-        </div>
-      </div>
-    </div>
-
-    {# ---------------------------------------------------------- Groups -- #}
-    <div class="card mb-3 setup-section" id="groups-section" data-step="groups">
-      <div class="card-body">
-        <div class="setup-section-head">
-          <span class="step-num {% if step_groups_done %}is-done{% endif %}">
-            {% if step_groups_done %}<i class="bi bi-check-lg"></i>{% else %}4{% endif %}
-          </span>
-          <h3>Groups</h3>
-        </div>
-        {% include 'assessments/_partials/group_stats.html' %}
-
-        <div class="row g-3">
-          <div class="col-md-4">
-           <div class="groups-sidebar-sticky">
-            <div class="card mb-3">
-              <div class="card-body">
-                <div class="card-icon-head">
-                  <div class="head-left">
-                    <span class="icon-badge"><i class="bi bi-file-earmark-excel"></i></span>
-                    <div>
-                      <div class="title">Import from Excel</div>
-                      <div class="sub">Bulk-create groups from a spreadsheet</div>
-                    </div>
-                  </div>
-                </div>
-                <form method="post" action="{% url 'assessment_group_import' session.pk %}" enctype="multipart/form-data" id="group-import-form">
-                  {% csrf_token %}
-                  <div class="import-dropzone" id="group-import-dropzone">
-                    <i class="bi bi-cloud-arrow-up"></i>
-                    <div class="dz-text">Choose a file or drag it here</div>
-                    <div class="dz-filename" id="group-import-filename"></div>
-                    {{ group_import_form.file }}
-                  </div>
-                  <div class="form-text mt-2">{{ group_import_form.file.help_text }}</div>
-                  <button type="submit" class="btn btn-outline-primary btn-sm mt-2 w-100"><i class="bi bi-upload me-1"></i>Import</button>
-                </form>
-                <div class="text-muted t-micro mt-2">
-                  <i class="bi bi-shield-check me-1"></i>Only groups whose every member is
-                  already on the roster are created - the rest are flagged, not
-                  partially added.
-                </div>
-              </div>
-            </div>
-
-            <div class="card mb-3">
-              <div class="card-body">
-                <div class="group-form-mode-banner" id="group-form-mode-banner">
-                  <i class="bi bi-pencil-fill"></i><span>Editing an existing group</span>
-                </div>
-                <div class="card-icon-head">
-                  <div class="head-left">
-                    <span class="icon-badge" id="group-form-icon"><i class="bi bi-plus-square"></i></span>
-                    <div>
-                      <div class="title" id="group-form-title">Create group manually</div>
-                      <div class="sub" id="group-form-sub">Name it, cap its size, add members</div>
-                    </div>
-                  </div>
-                  <a href="#" class="t-sm d-none" id="group-form-cancel">Cancel</a>
-                </div>
-                <form method="post" id="group-form" action="{% url 'assessment_groups' session.pk %}">
-                  {% csrf_token %}
-                  {% if group_form.non_field_errors %}<div class="alert alert-danger py-2 t-sm">{{ group_form.non_field_errors|join:", " }}</div>{% endif %}
-                  <div class="row g-2">
-                    <div class="col-7">
-                      <label class="form-label t-sm fw-600">Group name <span class="text-danger">*</span></label>
-                      {{ group_form.name }}
-                      {% if group_form.name.errors %}<div class="field-error">{{ group_form.name.errors|join:", " }}</div>{% endif %}
-                    </div>
-                    <div class="col-5">
-                      <label class="form-label t-sm fw-600">Size <span class="text-danger">*</span></label>
-                      {{ group_form.max_size }}
-                      {% if group_form.max_size.errors %}<div class="field-error">{{ group_form.max_size.errors|join:", " }}</div>{% endif %}
-                    </div>
-                  </div>
-                  <div class="text-muted t-micro mt-1">
-                    <i class="bi bi-info-circle me-1"></i>A fixed size lets every card show capacity progress at a glance.
-                  </div>
-                  {% if ungrouped_students %}
-                  <label class="form-label t-sm fw-600 mt-3 mb-1" id="group-members-label">Members (optional - add now or later)</label>
-                  <div class="border rounded p-2" style="max-height:220px;overflow-y:auto" id="group-members-list">
-                    {% for student in ungrouped_students %}
-                    <div class="form-check">
-                      <input class="form-check-input" type="checkbox" name="members" value="{{ student.pk }}" id="new-member-{{ student.pk }}">
-                      <label class="form-check-label t-sm" for="new-member-{{ student.pk }}">
-                        {{ student.full_name|default:student.student_id }}
-                      </label>
-                    </div>
-                    {% endfor %}
-                  </div>
-                  {% else %}
-                  <div class="text-muted t-micro mt-2" id="group-members-empty-note">
-                    Every roster student is already assigned to a group.
-                  </div>
-                  {% endif %}
-                  <button type="submit" class="btn btn-primary btn-sm w-100 mt-2" id="group-form-submit">
-                    <i class="bi bi-plus-lg me-1"></i>Create
-                  </button>
-                </form>
-              </div>
-            </div>
-
-            <div class="card">
-              {% include 'assessments/_partials/group_unassigned_pool.html' %}
-            </div>
-           </div>
-          </div>
-
-          <div class="col-md-8">
-            <div class="row g-3" id="groups-grid">
-              {% for group in groups %}
-              {% include 'assessments/_partials/group_card.html' %}
-              {% empty %}
-              <div class="col-12">
-                <div class="empty-state text-center py-5">
-                  <i class="bi bi-diagram-3 text-muted" style="font-size:2rem"></i>
-                  <p class="text-muted mt-2">No groups yet - create one to start assigning students.</p>
-                </div>
-              </div>
-              {% endfor %}
-            </div>
-          </div>
-        </div>
-        <div class="d-flex justify-content-between mt-3">
-          <a href="#rubric-section" data-step="rubric" class="btn btn-outline-secondary btn-sm step-nav-back">Back</a>
-          <a href="#go-live-section" data-step="go-live" class="btn btn-primary btn-sm step-nav-next">Next: Go live</a>
+          <a href="#groups-section" data-step="groups" class="btn btn-outline-secondary btn-sm step-nav-back">Back</a>
+          {% if live_mode %}<a href="{% url 'assessment_session_detail' session.pk %}" class="btn btn-primary btn-sm">Back to live control</a>{% else %}<a href="#go-live-section" data-step="go-live" class="btn btn-primary btn-sm step-nav-next">Next: Go live</a>{% endif %}
         </div>
       </div>
     </div>
 
     {# --------------------------------------------------------- Go live -- #}
+    {% if not live_mode %}
     <div class="assess-hero assess-stagger setup-section" id="go-live-section" data-step="go-live">
       <div class="hero-icon"><i class="bi bi-rocket-takeoff"></i></div>
       <h2>Ready to go live?</h2>
-      <p>Add students, groups and a rubric first - weights must sum to this session's {{ session.group_weight_percent|floatformat:"-2" }}%/{{ session.individual_weight_percent|floatformat:"-2" }}% split before you can start.</p>
+      <p>Add your groups (with their students) and a rubric first - weights must sum to this session's {{ session.group_weight_percent|floatformat:"-2" }}%/{{ session.individual_weight_percent|floatformat:"-2" }}% split before you can start.</p>
       <form method="post" action="{% url 'assessment_go_live' session.pk %}">
         {% csrf_token %}
         <button type="submit" class="btn btn-primary btn-lg" {% if not session.can_go_live %}disabled{% endif %}>
@@ -878,16 +1066,32 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
       <div class="text-danger t-sm mt-2">Needs at least one group and a rubric whose weights sum to this session's group/individual split.</div>
       {% endif %}
       <div class="mt-3">
-        <a href="#groups-section" data-step="groups" class="btn btn-outline-secondary btn-sm step-nav-back">Back</a>
+        <a href="#rubric-section" data-step="rubric" class="btn btn-outline-secondary btn-sm step-nav-back">Back</a>
       </div>
     </div>
     {% endif %}
+    {% endif %}
   </div>
 </div>
+{% if session %}
+{% if import_plan %}{% include 'assessments/_partials/group_import_modal.html' %}{% endif %}
+{% if rubric_review %}{% include 'assessments/_partials/rubric_import_modal.html' %}{% endif %}
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
 {% if session %}
+<script>
+// A file waiting for a decision opens its review window as soon as the page is ready.
+// The window can only be left with Cancel or Import, so a half-decided file is never left behind.
+(function () {
+  ['group-import-modal', 'rubric-import-modal'].forEach(function (id) {
+    const node = document.getElementById(id);
+    if (node && window.bootstrap) window.bootstrap.Modal.getOrCreateInstance(node).show();
+  });
+})();
+</script>
+
 <script>
 // Step panels - only the section matching the current stepper item is
 // shown at a time. Every section is already rendered server-side (forms
@@ -895,7 +1099,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 // backward, or via a "Next"/"Back" button - is a pure show/hide toggle
 // with no navigation, no reload and no re-scroll to the top of the page.
 (function () {
-  const steps = ['basics', 'roster', 'rubric', 'groups', 'go-live'];
+  const steps = ['basics', 'groups', 'rubric', 'go-live'];
   const sections = {};
   const navItems = {};
   steps.forEach(function (step) {
@@ -1009,35 +1213,6 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 </script>
 
 <script>
-// Roster import dropzone.
-(function () {
-  const zone = document.getElementById('import-dropzone');
-  if (!zone) return;
-  const input = zone.querySelector('input[type=file]');
-  const filenameEl = document.getElementById('import-filename');
-
-  function showFilename() {
-    if (!filenameEl) return;
-    filenameEl.textContent = input.files && input.files.length ? input.files[0].name : '';
-  }
-  input.addEventListener('change', showFilename);
-
-  ['dragenter', 'dragover'].forEach(function (evt) {
-    zone.addEventListener(evt, function (e) { e.preventDefault(); zone.classList.add('is-dragover'); });
-  });
-  ['dragleave', 'drop'].forEach(function (evt) {
-    zone.addEventListener(evt, function (e) { e.preventDefault(); zone.classList.remove('is-dragover'); });
-  });
-  zone.addEventListener('drop', function (e) {
-    if (e.dataTransfer && e.dataTransfer.files.length) {
-      input.files = e.dataTransfer.files;
-      showFilename();
-    }
-  });
-})();
-</script>
-
-<script>
 // Roster - edit a student in place: the "Add student" form flips into an
 // edit form instead of opening a separate modal.
 (function () {
@@ -1143,6 +1318,32 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 </script>
 
 <script>
+// Rubric import dropzone.
+(function () {
+  const zone = document.getElementById('rubric-import-dropzone');
+  if (!zone) return;
+  const input = zone.querySelector('input[type=file]');
+  const filenameEl = document.getElementById('rubric-import-filename');
+  function showFilename() {
+    if (filenameEl) filenameEl.textContent = input.files && input.files.length ? input.files[0].name : '';
+  }
+  input.addEventListener('change', showFilename);
+  ['dragenter', 'dragover'].forEach(function (evt) {
+    zone.addEventListener(evt, function (e) { e.preventDefault(); zone.classList.add('is-dragover'); });
+  });
+  ['dragleave', 'drop'].forEach(function (evt) {
+    zone.addEventListener(evt, function (e) { e.preventDefault(); zone.classList.remove('is-dragover'); });
+  });
+  zone.addEventListener('drop', function (e) {
+    if (e.dataTransfer && e.dataTransfer.files.length) {
+      input.files = e.dataTransfer.files;
+      showFilename();
+    }
+  });
+})();
+</script>
+
+<script>
 // Groups import dropzone.
 (function () {
   const zone = document.getElementById('group-import-dropzone');
@@ -1172,6 +1373,71 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 </script>
 
 <script>
+// Groups - one "Select all" box, a box on every card, and a single bar that
+// deletes whatever is selected (one group, several, or all of them).
+(function () {
+  const grid = document.getElementById('groups-grid');
+  const toolbar = document.getElementById('groups-toolbar');
+  if (!grid || !toolbar) return;
+  const selectAll = document.getElementById('groups-select-all');
+  const count = document.getElementById('groups-selected-count');
+  const form = document.getElementById('groups-bulk-form');
+  const inputs = document.getElementById('groups-bulk-inputs');
+  const label = document.getElementById('groups-bulk-label');
+  const selected = new Set();
+
+  function boxes() { return Array.prototype.slice.call(grid.querySelectorAll('.group-select-box:not(:disabled)')); }
+  function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
+
+  function render() {
+    const all = boxes();
+    all.forEach(function (box) {
+      box.checked = selected.has(box.value);
+      const card = box.closest('.group-card');
+      if (card) card.classList.toggle('is-selected', box.checked);
+    });
+    const n = selected.size;
+    selectAll.checked = all.length > 0 && n === all.length;
+    selectAll.indeterminate = n > 0 && n < all.length;
+    toolbar.classList.toggle('has-selection', n > 0);
+    form.classList.toggle('d-none', n === 0);
+    count.textContent = n ? plural(n, 'group') + ' selected' : plural(grid.querySelectorAll('.group-card').length, 'group');
+    label.textContent = n === all.length && n > 1 ? 'Delete all' : (n === 1 ? 'Delete group' : 'Delete selected');
+    inputs.innerHTML = '';
+    selected.forEach(function (id) {
+      const input = document.createElement('input');
+      input.type = 'hidden'; input.name = 'group_ids'; input.value = id;
+      inputs.appendChild(input);
+    });
+    const names = boxes().filter(function (box) { return selected.has(box.value); })
+      .map(function (box) { return '"' + box.dataset.name + '"'; });
+    const students = boxes().filter(function (box) { return selected.has(box.value); })
+      .reduce(function (sum, box) { return sum + (parseInt(box.dataset.members, 10) || 0); }, 0);
+    form.dataset.confirm = 'Delete ' + plural(n, 'group') + ' (' + names.slice(0, 4).join(', ') + (names.length > 4 ? ' and ' + (names.length - 4) + ' more' : '') +
+      ') and the ' + plural(students, 'student') + ' in ' + (n === 1 ? 'it' : 'them') + '? Groups that have already presented are kept. This cannot be undone.';
+  }
+
+  grid.addEventListener('change', function (e) {
+    const box = e.target.closest('.group-select-box');
+    if (!box) return;
+    if (box.checked) selected.add(box.value); else selected.delete(box.value);
+    render();
+  });
+  selectAll.addEventListener('change', function () {
+    boxes().forEach(function (box) { if (selectAll.checked) selected.add(box.value); else selected.delete(box.value); });
+    render();
+  });
+  document.getElementById('groups-clear').addEventListener('click', function () { selected.clear(); render(); });
+  new MutationObserver(function () {
+    const live = new Set(boxes().map(function (box) { return box.value; }));
+    selected.forEach(function (id) { if (!live.has(id)) selected.delete(id); });
+    render();
+  }).observe(grid, { childList: true, subtree: true });
+  render();
+})();
+</script>
+
+<script>
 // Groups - edit a group in place.
 (function () {
   const form = document.getElementById('group-form');
@@ -1189,11 +1455,13 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
   function enterEditMode(btn) {
     document.getElementById('id_group_name').value = btn.dataset.name;
     document.getElementById('id_group_max_size').value = btn.dataset.maxSize;
+    document.getElementById('id_group_topic').value = btn.dataset.topic || '';
+    document.getElementById('id_group_location').value = btn.dataset.location || '';
 
     form.action = btn.dataset.editUrl;
     icon.innerHTML = '<i class="bi bi-pencil-square"></i>';
     title.textContent = 'Edit group';
-    sub.textContent = 'Update its name or size cap';
+    sub.textContent = 'Update its name, size, topic or location';
     submitBtn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Update group';
     cancelLink.classList.remove('d-none');
     banner.classList.add('is-active');

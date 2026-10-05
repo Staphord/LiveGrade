@@ -44,6 +44,17 @@
  * handful of groups.
  * -------------------------------------------------------------------- */
 .participation-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:.85rem;padding:1rem}
+.participation-section + .participation-section{border-top:1px solid var(--border);margin-top:.35rem}
+.participation-section-head{padding-top:1.1rem !important}
+.participation-section .participation-grid{padding:.8rem 1rem 1.2rem}
+.participation-section-head .section-icon{width:36px;height:36px;border-radius:10px;background:var(--accent-soft);color:var(--accent);font-size:1.05rem}
+.participation-section-head .section-name{font-size:var(--fs-heading);line-height:1.25;color:var(--ink)}
+.participation-section-head .section-sub{display:flex;flex-wrap:wrap;gap:.2rem .9rem;font-size:var(--fs-sm);margin-top:2px}
+.participation-section-head .section-live{font-size:var(--fs-micro);font-weight:700;color:var(--tone-danger-fg);
+     background:var(--tone-danger-bg);border-radius:var(--radius-pill);padding:.2rem .65rem}
+.participation-section-head .section-live .live-dot{width:7px;height:7px;border-radius:50%;background:var(--danger)}
+.participation-section-head .section-count{font-size:var(--fs-sm);font-weight:600;color:var(--text-soft);background:var(--surface-hover);
+     border:1px solid var(--border);border-radius:var(--radius-pill);padding:.2rem .7rem;white-space:nowrap}
 .participant-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);
      padding:1rem;display:flex;flex-direction:column;gap:.65rem;
      transition:transform var(--motion-fast) var(--ease),box-shadow var(--motion-fast) var(--ease),border-color var(--motion-fast) var(--ease)}

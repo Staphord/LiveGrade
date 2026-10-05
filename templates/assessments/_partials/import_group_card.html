@@ -1,0 +1,26 @@
+<section class="dp-group {% if not group.ready %}is-skipped{% endif %}">
+  <div class="dp-group-head">
+    <h3>{{ group.name }}</h3>
+    <span class="badge-pill tone-{% if group.is_new %}success{% else %}info{% endif %}">{% if group.is_new %}New group{% else %}Existing group{% endif %}</span>
+    <span class="dp-count">{{ group.members|length }} member{{ group.members|length|pluralize }}</span>
+  </div>
+  {% if group.topic or group.location %}
+  <div class="dp-meta">
+    {% if group.topic %}<span><i class="bi bi-lightbulb me-1"></i>{{ group.topic }}</span>{% endif %}
+    {% if group.location %}<span><i class="bi bi-geo-alt me-1"></i>{{ group.location }}</span>{% endif %}
+  </div>
+  {% endif %}
+  <div class="dp-chips">
+    {% for member in group.members %}
+    <span class="dp-chip {% if member.state == 'new' %}is-new{% elif member.state == 'matched' %}is-matched{% endif %}">{{ member.name }}{% if member.student_id %} <span class="sid">{{ member.student_id }}</span>{% endif %}</span>
+    {% empty %}
+    <span class="dp-none">No members listed.</span>
+    {% endfor %}
+  </div>
+  {% if group.issues or group.warnings %}
+  <ul class="dp-notes">
+    {% for issue in group.issues %}<li class="issue"><i class="bi bi-x-circle-fill"></i><span>{{ issue }}</span></li>{% endfor %}
+    {% for warning in group.warnings %}<li class="warn"><i class="bi bi-exclamation-triangle-fill"></i><span>{{ warning }}</span></li>{% endfor %}
+  </ul>
+  {% endif %}
+</section>

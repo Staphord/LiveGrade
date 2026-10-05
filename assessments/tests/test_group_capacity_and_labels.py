@@ -1,32 +1,17 @@
 """Group size cap (PresentationGroup.max_size) and the roster form's
 missing labels — both raised directly by the user after trying the UI."""
 
-from io import BytesIO
 
-import openpyxl
 from accounts.models import User
 from django.core.exceptions import ValidationError
-from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
+from .xlsx_helpers import xlsx_buffer
 from accounts.testing import make_org, make_user, sign_in
-from assessments.excel import import_groups
+from assessments.group_import import plan_import, parse_groups
 from assessments.models import (
     AssessmentSession, GroupMembership, PresentationGroup, Student,
 )
-
-
-def _xlsx(headers, rows):
-    workbook = openpyxl.Workbook()
-    sheet = workbook.active
-    sheet.append(headers)
-    for row in rows:
-        sheet.append(row)
-    buffer = BytesIO()
-    workbook.save(buffer)
-    buffer.seek(0)
-    return SimpleUploadedFile('groups.xlsx', buffer.read(),
-        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
 class ModelCapacityTests(TestCase):
@@ -132,11 +117,12 @@ class ImportGroupsCapacityTests(TestCase):
         group = PresentationGroup.objects.create(assessment_session=self.session, name='Group 1', max_size=1)
         GroupMembership.objects.create(group=group, student=self.a)
 
-        f = _xlsx(['Group', 'Student ID'], [['Group 1', 'A1'], ['Group 1', 'B1']])
-        result = import_groups(self.session, f)
+        f = xlsx_buffer(['Group Name', 'Name', 'Student ID'], ['Group 1', 'A, B', 'A1, B1'])
+        plan = plan_import(self.session, parse_groups(f))
 
-        self.assertEqual(len(result['flagged']), 1)
-        self.assertIn('allows 1 member', result['flagged'][0]['issues'][0])
+        flagged = [g for g in plan['groups'] if not g['ready']]
+        self.assertEqual(len(flagged), 1)
+        self.assertIn('allows 1 member', flagged[0]['issues'][0])
         self.assertEqual(group.member_count(), 1)
 
 

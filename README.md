@@ -2,7 +2,8 @@
 
 Live, QR-joined peer assessment for presentations, demos and project defences.
 
-A lecturer builds a session (roster, rubric, groups), puts a QR code on screen, and
+A lecturer builds a session (groups with their students, and a rubric - each can come from one
+Excel file), puts a QR code on screen, and
 students join from their phones with no account. Groups present one after another; the
 students in the room grade the group on stage against the lecturer's rubric, and the
 lecturer watches participation and results update live.

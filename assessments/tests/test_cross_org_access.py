@@ -42,7 +42,6 @@ TARGETS = {
     'assessment_session_delete':   (POST, 'session'),
     'assessment_roster':           (GET,  'session'),
     'assessment_roster_search':    (GET,  'session'),
-    'assessment_roster_import':    (POST, 'session'),
     'assessment_roster_edit':      (POST, {'pk': 'session', 'student_pk': 'student'}),
     'assessment_roster_delete':    (POST, {'pk': 'session', 'student_pk': 'student'}),
     'assessment_rubric':           (GET,  'session'),
@@ -71,6 +70,14 @@ TARGETS = {
     'assessment_results_export':   (GET,  'session'),
     'assessment_qr':               (GET,  'session'),
     'assessment_transfer':         (POST, 'session'),
+    'assessment_setup':            (GET,  'session'),
+    'assessment_group_import_preview': (GET, 'session'),
+    'assessment_group_import_sample':  (GET, 'session'),
+    'assessment_groups_bulk_delete':   (POST, 'session'),
+    'assessment_rubric_import':    (POST, 'session'),
+    'assessment_rubric_import_preview': (GET, 'session'),
+    'assessment_rubric_import_sample':  (GET, 'session'),
+    'assessment_rubric_table':     (GET,  'session'),
 }
 
 #: Routes that take an id but are deliberately outside this check, and why.

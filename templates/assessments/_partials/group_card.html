@@ -4,6 +4,9 @@
          data-add-url="{% url 'assessment_group_members' session.pk group.pk %}">
       <div class="card-icon-head mb-1">
         <div class="head-left">
+          <input type="checkbox" class="form-check-input group-select group-select-box" value="{{ group.pk }}"
+                 data-name="{{ group.name }}" data-members="{{ group.member_count }}" aria-label="Select {{ group.name }}"
+                 {% if group.delete_lock %}disabled title="{{ group.delete_lock }}"{% endif %}>
           <span class="icon-badge"><i class="bi bi-diagram-3"></i></span>
           <div>
             <div class="title group-name">{{ group.name }}</div>
@@ -16,16 +19,18 @@
           </span>
           <button type="button" class="btn btn-sm btn-outline-secondary py-0 group-edit-btn" title="Edit group"
                   data-id="{{ group.pk }}" data-name="{{ group.name }}" data-max-size="{{ group.max_size|default:'' }}"
+                  data-topic="{{ group.topic }}" data-location="{{ group.location }}"
                   data-edit-url="{% url 'assessment_group_edit' session.pk group.pk %}">
             <i class="bi bi-pencil"></i>
           </button>
-          <form method="post" action="{% url 'assessment_group_delete' session.pk group.pk %}"
-                data-confirm="Delete &quot;{{ group.name }}&quot;? Its members become unassigned again."
-                data-confirm-label="Delete group">
-            {% csrf_token %}<button class="btn btn-sm btn-outline-danger py-0" title="Delete group"><i class="bi bi-trash"></i></button>
-          </form>
         </div>
       </div>
+      {% if group.topic or group.location %}
+      <div class="group-meta">
+        {% if group.topic %}<span><i class="bi bi-lightbulb me-1"></i>{{ group.topic }}</span>{% endif %}
+        {% if group.location %}<span><i class="bi bi-geo-alt me-1"></i>{{ group.location }}</span>{% endif %}
+      </div>
+      {% endif %}
       {% if group.max_size %}
       <div class="group-fill-bar {% if group.is_full %}is-full{% endif %}">
         <div class="fill" style="width:{% widthratio group.member_count group.max_size 100 %}%"></div>
@@ -33,27 +38,31 @@
       {% endif %}
       <div class="mt-2">
       {% for membership in group.memberships.all %}
-      <div class="d-flex justify-content-between align-items-center member-row" draggable="true"
+      <div class="d-flex justify-content-between align-items-center member-row" {% if not group.members_lock %}draggable="true"{% endif %}
            data-student-id="{{ membership.student.pk }}" data-source-group="{{ group.pk }}"
            data-remove-url="{% url 'assessment_group_members' session.pk group.pk %}">
         <span class="t-sm d-flex align-items-center gap-2">
-          <span class="member-avatar {% cycle 'bg-primary-subtle text-primary-emphasis' 'bg-success-subtle text-success-emphasis' 'bg-warning-subtle text-warning-emphasis' 'bg-info-subtle text-info-emphasis' 'bg-danger-subtle text-danger-emphasis' 'bg-secondary-subtle text-secondary-emphasis' %}">
+          <span class="member-avatar {% cycle 'bg-primary-subtle text-primary-emphasis' 'bg-success-subtle text-success-emphasis' 'bg-warning-subtle text-warning-emphasis' 'bg-info-subtle text-info-emphasis' %}">
             {{ membership.student.full_name|default:membership.student.student_id|slice:":2"|upper }}
           </span>
           {{ membership.student.full_name|default:membership.student.student_id }}
         </span>
+        {% if not group.members_lock %}
         <form method="post" action="{% url 'assessment_group_members' session.pk group.pk %}">
           {% csrf_token %}
           <input type="hidden" name="action" value="remove">
           <input type="hidden" name="student_id" value="{{ membership.student.pk }}">
           <button class="btn btn-sm btn-link text-danger p-0" title="Remove from group"><i class="bi bi-x-lg"></i></button>
         </form>
+        {% endif %}
       </div>
       {% empty %}
       <div class="empty-state py-3"><i class="bi bi-people"></i>No members yet - drag a student here.</div>
       {% endfor %}
       </div>
-      {% if group.is_full %}
+      {% if group.members_lock %}
+      <div class="group-lock"><i class="bi bi-lock-fill"></i><span>{{ group.members_lock }}</span></div>
+      {% elif group.is_full %}
       <div class="text-tone-success t-micro mt-2"><i class="bi bi-check-circle-fill me-1"></i>Group is full.</div>
       {% elif ungrouped_students %}
       <form method="post" action="{% url 'assessment_group_members' session.pk group.pk %}" class="d-flex gap-1 mt-2 add-member-form">
@@ -69,6 +78,9 @@
       </form>
       {% else %}
       <div class="text-muted t-micro mt-2">No unassigned students left to add.</div>
+      {% endif %}
+      {% if group.delete_lock and not group.members_lock %}
+      <div class="group-lock"><i class="bi bi-lock-fill"></i><span>{{ group.delete_lock }}</span></div>
       {% endif %}
     </div>
   </div>

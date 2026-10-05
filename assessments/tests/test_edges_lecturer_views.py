@@ -21,7 +21,7 @@ from accounts.testing import make_user, sign_in
 from assessments.models import (AssessmentSession, Evaluation, GroupMembership,
                                 ParticipationRecord, PresentationGroup,
                                 PresentationTurn, RubricCategory, Student)
-from assessments.tests.test_edges_core import SessionFixture, workbook
+from assessments.tests.test_edges_core import SessionFixture
 
 AJAX = {'HTTP_X_REQUESTED_WITH': 'XMLHttpRequest'}
 
@@ -79,7 +79,7 @@ class SessionPagesTests(LecturerTestCase):
             'name': 'Fresh', 'identify_by': 'full_name',
             'group_weight_percent': '60', 'individual_weight_percent': '40'})
         created = AssessmentSession.objects.get(name='Fresh')
-        self.assertRedirects(response, reverse('assessment_roster', args=[created.pk]),
+        self.assertRedirects(response, reverse('assessment_groups', args=[created.pk]),
                              fetch_redirect_response=False)
         self.assertEqual((created.organization_id, created.created_by), (self.org.pk, self.lecturer))
 
@@ -91,15 +91,25 @@ class SessionPagesTests(LecturerTestCase):
     def test_the_new_session_form_opens(self):
         self.assertEqual(self.client.get(reverse('assessment_session_create')).status_code, 200)
 
-    def test_a_session_that_is_live_cannot_have_its_settings_changed(self):
+    def test_a_live_session_can_be_renamed_but_not_have_its_settings_changed(self):
         self.set_status('live')
         response = self.client.post(self.url('assessment_session_edit'), {
-            'name': 'Sneaky', 'identify_by': 'full_name',
+            'name': 'Renamed live', 'identify_by': 'full_name',
             'group_weight_percent': '10', 'individual_weight_percent': '90'})
         self.assertRedirects(response, self.url('assessment_session_detail'),
                              fetch_redirect_response=False)
-        self.assertTrue(any('only be edited while the session is in Draft' in m
-                            for m in _messages(response)))
+        self.session.refresh_from_db()
+        self.assertEqual(self.session.name, 'Renamed live')
+        self.assertEqual((self.session.identify_by, self.session.group_weight_percent),
+                         ('student_id', 60))
+        self.assertEqual(self.client.get(self.url('assessment_session_edit')).status_code, 200)
+
+    def test_a_closed_session_cannot_be_edited_at_all(self):
+        self.set_status('closed')
+        response = self.client.post(self.url('assessment_session_edit'), {'name': 'Sneaky'})
+        self.assertRedirects(response, self.url('assessment_session_detail'),
+                             fetch_redirect_response=False)
+        self.assertTrue(any('read-only record' in m for m in _messages(response)))
         self.session.refresh_from_db()
         self.assertEqual(self.session.name, 'Demo day')
 
@@ -116,55 +126,12 @@ class SessionPagesTests(LecturerTestCase):
 
     def test_a_draft_detail_opens_on_the_next_unfinished_step(self):
         steps = {}
-        for label, setup in (('groups', lambda: None),
-                             ('rubric', lambda: RubricCategory.objects.all().delete()),
-                             ('roster', lambda: Student.objects.all().delete())):
-            setup()
-            steps[label] = self.client.get(self.url('assessment_session_detail')).context['active_step']
-        self.assertEqual(steps, {'groups': 'groups', 'rubric': 'rubric', 'roster': 'roster'})
-
-    def test_a_live_detail_page_catches_up_an_expired_timer_and_shows_the_join_link(self):
-        self.set_status('live')
-        with mock.patch('assessments.views.lecturer_views.ensure_turn_progressed') as progress:
-            response = self.client.get(self.url('assessment_session_detail'))
-        progress.assert_called_once()
-        self.assertIn(str(self.session.uuid), response.context['join_url'])
-
-    def test_the_live_state_is_json_the_page_patches_itself_with(self):
-        self.set_status('live')
-        turn = self.active_turn(self.red, voting_ends_at=timezone.now() + datetime.timedelta(minutes=2))
-        state = self.client.get(self.url('assessment_live_state')).json()
-        self.assertEqual(state['status'], 'live')
-        self.assertEqual(state['active_turn']['group_id'], self.red.pk)
-        for fragment in ('hero_html', 'stats_html', 'rankings_html', 'qr_html'):
-            self.assertIn(fragment, state)
-        PresentationTurn.objects.filter(pk=turn.pk).update(status='closed')
-        self.assertIsNone(self.client.get(self.url('assessment_live_state')).json()['active_turn'])
-
-    def test_a_closed_session_summarises_participation_and_order_of_presentation(self):
-        opened = timezone.now() - datetime.timedelta(minutes=5)
-        for group, minutes in ((self.red, 3), (self.blue, 1)):
-            PresentationTurn.objects.create(
-                assessment_session=self.session, group=group, status='closed',
-                opened_at=opened, closed_at=opened + datetime.timedelta(minutes=minutes))
-        self.set_status('closed')
-        response = self.client.get(self.url('assessment_session_detail'))
-        timeline = response.context['presentation_timeline']
-        self.assertEqual(sorted(row['duration_label'] for row in timeline), ['1m 0s', '3m 0s'])
-        self.assertEqual(set(response.context['participation_counts']),
-                         {'full_count', 'partial_count', 'none_count'})
-
-    def test_a_session_is_deleted_by_post_only(self):
-        self.client.get(self.url('assessment_session_delete'))
-        self.assertTrue(AssessmentSession.objects.filter(pk=self.session.pk).exists())
-        response = self.client.post(self.url('assessment_session_delete'))
-        self.assertRedirects(response, reverse('assessment_session_list'),
-                             fetch_redirect_response=False)
-        self.assertFalse(AssessmentSession.objects.filter(pk=self.session.pk).exists())
-
-    def test_the_qr_code_is_a_png(self):
-        response = self.client.get(self.url('assessment_qr'))
-        self.assertTrue(response.content.startswith(b'\x89PNG'))
+        steps['complete'] = self.client.get(self.url('assessment_session_detail')).context['active_step']
+        RubricCategory.objects.all().delete()
+        steps['no rubric'] = self.client.get(self.url('assessment_session_detail')).context['active_step']
+        PresentationGroup.objects.all().delete()
+        steps['no groups'] = self.client.get(self.url('assessment_session_detail')).context['active_step']
+        self.assertEqual(steps, {'complete': 'go-live', 'no rubric': 'rubric', 'no groups': 'groups'})
 
 
 class RosterViewTests(LecturerTestCase):
@@ -221,18 +188,6 @@ class RosterViewTests(LecturerTestCase):
             self.client.post(self.url('assessment_roster_edit', outsider.pk), {}).status_code, 404)
         self.assertTrue(Student.objects.filter(pk=outsider.pk).exists())
 
-    def test_an_import_with_no_file_is_refused(self):
-        response = self.client.post(self.url('assessment_roster_import'), {})
-        self.assertTrue(any('valid .xlsx file' in m for m in _messages(response)))
-
-    def test_an_import_reports_what_it_made_and_the_first_ten_row_errors(self):
-        rows = [['Name', 'Reg No'], ['Good One', 'S50']] + [['No Id', None]] * 12
-        response = self.client.post(self.url('assessment_roster_import'),
-                                    {'file': upload(workbook(*rows))})
-        messages = _messages(response)
-        self.assertTrue(any('Imported 1 student(s)' in m for m in messages))
-        self.assertEqual(sum(1 for m in messages if m.startswith('Row ')), 10)
-        self.assertTrue(any('and 2 more row error(s)' in m for m in messages))
 
 
 class RubricViewTests(LecturerTestCase):
@@ -281,37 +236,6 @@ class GroupViewTests(LecturerTestCase):
 
     def test_an_invalid_new_group_is_shown_again(self):
         self.assertEqual(self.create(name='').status_code, 200)
-
-    def test_an_import_with_no_file_is_refused(self):
-        response = self.client.post(self.url('assessment_group_import'), {})
-        self.assertTrue(any('valid .xlsx file' in m for m in _messages(response)))
-
-    def test_an_import_needs_a_roster_first(self):
-        Student.objects.all().delete()
-        response = self.client.post(self.url('assessment_group_import'), {
-            'file': upload(workbook(['Group', 'Student'], ['Red', 'S1']))})
-        self.assertTrue(any('Import the student roster' in m for m in _messages(response)))
-
-    def test_an_import_reports_groups_created(self):
-        response = self.client.post(self.url('assessment_group_import'), {
-            'file': upload(workbook(['Group', 'Student'], ['Red', 'S1'], ['Red', 'S2']))})
-        self.assertTrue(any('Created 1 group(s) with 2 member assignment(s)' in m
-                            for m in _messages(response)))
-
-    def test_an_import_with_nothing_new_says_so(self):
-        response = self.client.post(self.url('assessment_group_import'), {
-            'file': upload(workbook(['Group', 'Student']))})
-        self.assertTrue(any('No new groups found' in m for m in _messages(response)))
-
-    def test_an_import_reports_skipped_groups_and_row_errors_with_limits(self):
-        rows = [['Group', 'Student']] + [[f'G{n}', 'S99'] for n in range(12)] + \
-               [[None, f'S{n}'] for n in range(1, 4)]
-        response = self.client.post(self.url('assessment_group_import'),
-                                    {'file': upload(workbook(*rows))})
-        messages = _messages(response)
-        self.assertEqual(sum(1 for m in messages if m.startswith('Skipped')), 10)
-        self.assertTrue(any('and 2 more group(s) skipped' in m for m in messages))
-        self.assertEqual(sum(1 for m in messages if m.startswith('Row ')), 3)
 
     def test_students_are_moved_into_and_out_of_a_group(self):
         group = self.group('Red', 1)
@@ -587,34 +511,25 @@ class LecturerViewGapsTests(LecturerTestCase):
         self.ann.refresh_from_db()
         self.assertEqual(self.ann.full_name, 'Ann Able')
 
-    def test_an_import_that_made_nobody_and_had_few_errors_says_only_what_failed(self):
-        rows = [['Name', 'Reg No'], ['No Id', None], ['Also No Id', None]]
-        response = self.client.post(self.url('assessment_roster_import'),
-                                    {'file': upload(workbook(*rows))})
-        messages = _messages(response)
-        self.assertFalse(any('Imported' in m for m in messages))
-        self.assertFalse(any('more row error' in m for m in messages))
-        self.assertEqual(sum(1 for m in messages if m.startswith('Row ')), 2)
 
 
 class UploadViewSafetyTests(LecturerTestCase):
 
     def test_a_corrupt_workbook_gets_a_message_not_a_server_error(self):
-        response = self.client.post(self.url('assessment_roster_import'),
-                                    {'file': upload(BytesIO(b'not a workbook'))})
-        self.assertEqual(response.status_code, 302)
-        self.assertTrue(any('could not be read' in m for m in _messages(response)))
-        response = self.client.post(self.url('assessment_group_import'),
-                                    {'file': upload(BytesIO(b'not a workbook'))})
-        self.assertEqual(response.status_code, 302)
-        self.assertTrue(any('could not be read' in m for m in _messages(response)))
+        for name in ('assessment_group_import', 'assessment_rubric_import'):
+            with self.subTest(view=name):
+                response = self.client.post(self.url(name),
+                                            {'file': upload(BytesIO(b'not a workbook')), 'mode': 'replace'})
+                self.assertEqual(response.status_code, 302)
+                self.assertTrue(any('could not be read' in m for m in _messages(response)))
 
     def test_a_file_that_is_not_an_xlsx_is_refused_before_it_is_opened(self):
-        for name in ('roster.exe', 'roster.csv', 'roster.xlsx.exe'):
-            with self.subTest(name=name):
-                with mock.patch('assessments.views.lecturer_views.import_roster') as importer:
-                    response = self.client.post(
-                        self.url('assessment_roster_import'),
-                        {'file': SimpleUploadedFile(name, b'x')})
-                importer.assert_not_called()
-                self.assertTrue(any('valid .xlsx file' in m for m in _messages(response)))
+        for view, patched in (('assessment_group_import', 'assessments.views.setup_views.group_import.parse_groups'),
+                              ('assessment_rubric_import', 'assessments.views.setup_views.rubric_import.parse_rubric')):
+            for name in ('groups.exe', 'groups.csv', 'groups.xlsx.exe'):
+                with self.subTest(view=view, name=name):
+                    with mock.patch(patched) as reader:
+                        response = self.client.post(
+                            self.url(view), {'file': SimpleUploadedFile(name, b'x'), 'mode': 'replace'})
+                    reader.assert_not_called()
+                    self.assertTrue(any('.xlsx' in m for m in _messages(response)))

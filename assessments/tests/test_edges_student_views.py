@@ -288,6 +288,34 @@ class JoinScreenTests(StudentTestCase):
             self.assertNotIn(student.full_name, body)
 
 
+    def page(self):
+        return self.client.get(self.url('assessment_join_screen')).content.decode()
+
+    def test_the_presenting_group_s_topic_follows_its_name_on_the_page_and_in_the_live_state(self):
+        PresentationGroup.objects.filter(pk=self.red.pk).update(topic='Smart maps')
+        self.active_turn(self.red)
+        self.assertIn('<span id="public-group">Red</span><span class="room-topic" id="public-group-topic"> - Smart maps</span>',
+                      self.page())
+        self.assertEqual(self.client.get(self.url('assessment_join_screen_state')).json()['public_group_topic'],
+                         'Smart maps')
+
+    def test_a_group_with_no_topic_shows_just_its_name(self):
+        self.active_turn(self.red)
+        self.assertIn('<span id="public-group">Red</span><span class="room-topic" id="public-group-topic"></span>',
+                      self.page())
+        self.assertEqual(self.client.get(self.url('assessment_join_screen_state')).json()['public_group_topic'], '')
+
+    def test_with_nobody_presenting_there_is_no_topic(self):
+        PresentationGroup.objects.filter(pk=self.red.pk).update(topic='Smart maps')
+        self.assertIn('Ready to begin</span><span class="room-topic" id="public-group-topic"></span>', self.page())
+        self.assertEqual(self.client.get(self.url('assessment_join_screen_state')).json()['public_group_topic'], '')
+
+    def test_the_live_update_script_changes_the_topic_along_with_the_name(self):
+        page = self.page()
+        self.assertIn("document.getElementById('public-group-topic')", page)
+        self.assertIn("' - ' + state.public_group_topic", page)
+
+
 class JoinScreenInconsistencyTests(StudentTestCase):
 
     def test_a_turn_for_a_group_outside_the_session_has_no_position_but_still_renders(self):

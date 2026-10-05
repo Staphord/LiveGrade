@@ -23,7 +23,7 @@ class LecturerFlowTests(TestCase):
         })
         self.assertEqual(AssessmentSession.objects.count(), 1)
         session = AssessmentSession.objects.first()
-        self.assertRedirects(response, f'/assessments/{session.pk}/roster/')
+        self.assertRedirects(response, f'/assessments/{session.pk}/groups/')
 
     def test_session_list_renders(self):
         response = self.client.get('/assessments/')

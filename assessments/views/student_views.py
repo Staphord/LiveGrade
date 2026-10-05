@@ -300,6 +300,7 @@ def _public_live_state(session):
     return {
         'public_stage': stage,
         'public_group_name': turn.group.name if turn else '',
+        'public_group_topic': turn.group.topic if turn else '',
         'public_started_at': turn.opened_at.isoformat() if turn and turn.opened_at else '',
         'public_presentation_ends_at': turn.presentation_ends_at.isoformat() if turn and turn.presentation_ends_at else '',
         'public_ends_at': turn.voting_ends_at.isoformat() if turn and turn.voting_ends_at else '',

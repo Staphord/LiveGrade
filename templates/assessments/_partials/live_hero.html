@@ -14,6 +14,7 @@
     <div class="flex-grow-1">
       <div class="eyebrow"><span class="pulse-dot" style="background:currentColor"></span>Presenting now</div>
       <div class="group-name">{{ active_turn.group.name }}</div>
+      {% if active_turn.group.topic or active_turn.group.location %}<div class="opacity-75 t-body mt-1">{% if active_turn.group.topic %}<i class="bi bi-lightbulb me-1"></i>{{ active_turn.group.topic }}{% endif %}{% if active_turn.group.topic and active_turn.group.location %} &middot; {% endif %}{% if active_turn.group.location %}<i class="bi bi-geo-alt me-1"></i>{{ active_turn.group.location }}{% endif %}</div>{% endif %}
       <div class="meta-row">
         {% if active_turn.presentation_ends_at and not active_turn.voting_opened_at %}<span class="phase-chip" id="presentation-opens-countdown" data-started-at="{{ active_turn.opened_at|date:'c' }}" data-presentation-ends-at="{{ active_turn.presentation_ends_at|date:'c' }}"><i class="bi bi-mic-fill me-1"></i><span id="presentation-opens-text">Voting opens soon</span></span>{% elif active_turn.presentation_ends_at and active_turn.is_voting_open %}<span class="phase-chip is-voting"><i class="bi bi-pencil-fill me-1"></i>Voting open</span>{% endif %}
         <span><i class="bi bi-clock me-1"></i>Started {{ active_turn.opened_at|time:'H:i' }}</span>

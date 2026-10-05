@@ -31,7 +31,7 @@ LECTURER_ROW_ROUTES = {
     'assessment_session_edit': GET, 'assessment_session_detail': GET,
     'assessment_live_state': GET, 'assessment_session_delete': POST,
     'assessment_roster': GET, 'assessment_roster_search': GET,
-    'assessment_roster_import': POST, 'assessment_roster_edit': POST,
+    'assessment_roster_edit': POST,
     'assessment_roster_delete': POST, 'assessment_rubric': GET,
     'assessment_rubric_edit': POST, 'assessment_rubric_delete': POST,
     'assessment_groups': GET, 'assessment_group_import': POST,
@@ -45,6 +45,10 @@ LECTURER_ROW_ROUTES = {
     'assessment_participation': GET, 'assessment_participation_refresh': GET,
     'assessment_results': GET, 'assessment_results_refresh': GET,
     'assessment_results_export': GET, 'assessment_qr': GET, 'assessment_transfer': GET,
+    'assessment_setup': GET, 'assessment_group_import_preview': GET,
+    'assessment_group_import_sample': GET, 'assessment_groups_bulk_delete': POST,
+    'assessment_rubric_import': POST, 'assessment_rubric_import_preview': GET,
+    'assessment_rubric_import_sample': GET, 'assessment_rubric_table': GET,
 }
 STUDENT_ROUTES = {
     # Reached by session link, no login: an unknown link is a 404 for everybody.

@@ -219,6 +219,8 @@ class PresentationGroup(models.Model):
     assessment_session = models.ForeignKey(AssessmentSession,
         on_delete=models.CASCADE, related_name='groups')
     name = models.CharField(max_length=100)
+    topic = models.CharField(max_length=200, blank=True)
+    location = models.CharField(max_length=120, blank=True)
     order = models.PositiveIntegerField(default=0)
     max_size = models.PositiveIntegerField(null=True, blank=True,
         help_text='Optional cap on members (e.g. 2). Leave blank for no limit.')
@@ -429,3 +431,24 @@ class SessionTransfer(models.Model):
 
     def __str__(self):
         return f'{self.session_id}: {self.from_user_id} -> {self.to_user_id}'
+
+
+class SessionChange(models.Model):
+    """One edit made to a session's setup after it went live.
+
+    Results are worked out from the setup as it stands, so an edit made while
+    people are grading is part of the record: this says who changed what, and when.
+    """
+
+    session = models.ForeignKey(AssessmentSession, on_delete=models.CASCADE,
+        related_name='changes')
+    by_user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='+')
+    summary = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
+
+    def __str__(self):
+        return f'{self.session_id}: {self.summary}'
