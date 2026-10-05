@@ -740,12 +740,20 @@ def group_members(request, pk, group_pk):
         # changed (this group's card, the unassigned pool, the stat strip)
         # so the page can patch itself in place instead of reloading.
         context = _groups_context(session)
+        # The card needs the lock details `_groups_context` worked out, so use its
+        # copy of the group. The page shows `error` as a toast now, so the queued
+        # message is dropped rather than showing again on the next page load.
+        list(messages.get_messages(request))
+        card_group = next(g for g in context['groups'] if g.pk == group.pk)
+        context['recent_changes'] = list(session.changes.select_related('by_user')[:8]) if is_live(session) else []
         return JsonResponse({
             'ok': error is None,
             'error': error,
             'group_id': group.pk,
+            'changes_html': render_to_string(
+                'assessments/_partials/live_recent_changes.html', context, request=request),
             'group_html': render_to_string(
-                'assessments/_partials/group_card.html', {**context, 'group': group}, request=request),
+                'assessments/_partials/group_card.html', {**context, 'group': card_group}, request=request),
             'unassigned_html': render_to_string(
                 'assessments/_partials/group_unassigned_pool.html', context, request=request),
             'stats_html': render_to_string(

@@ -1,7 +1,8 @@
 <div class="col-md-6" id="group-card-{{ group.pk }}">
   <div class="card h-100 group-card">
     <div class="card-body group-card-body" data-group-id="{{ group.pk }}"
-         data-add-url="{% url 'assessment_group_members' session.pk group.pk %}">
+         data-add-url="{% url 'assessment_group_members' session.pk group.pk %}"
+         {% if group.members_lock %}data-members-lock="{{ group.members_lock }}"{% endif %}>
       <div class="card-icon-head mb-1">
         <div class="head-left">
           <input type="checkbox" class="form-check-input group-select group-select-box" value="{{ group.pk }}"

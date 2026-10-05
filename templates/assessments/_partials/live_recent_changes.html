@@ -1,0 +1,12 @@
+<div id="recent-changes">
+{% if recent_changes %}
+<details class="mt-2">
+  <summary>Recent changes ({{ recent_changes|length }})</summary>
+  <ul class="live-changes">
+    {% for change in recent_changes %}
+    <li><span class="when">{{ change.created_at|date:"H:i" }}</span> {{ change.summary }}{% if change.by_user %} <span class="by">- {{ change.by_user.display_name }}</span>{% endif %}</li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}
+</div>

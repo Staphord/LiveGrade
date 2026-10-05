@@ -213,3 +213,50 @@ class GradingNowCountTests(SessionFixture):
         self.addCleanup(cache.clear)
         data = self.client.get(reverse('assessment_join_screen_state', args=[self.session.uuid])).json()
         self.assertEqual(data['public_grading_now_count'], 2)
+
+
+class DragOnAPresentedGroupTests(RandomSession):
+    """The in-place reply for a refused move carries the lock, the reason and the change log."""
+
+    def setUp(self):
+        super().setUp()
+        from accounts.testing import make_user, sign_in
+        self.session.status = self.session.Status.LIVE
+        self.session.save(update_fields=['status'])
+        user = make_user('lect')
+        self.session.created_by = user
+        self.session.save(update_fields=['created_by'])
+        sign_in(self.client, user, self.org)
+
+    def test_a_refused_move_returns_the_fixed_card_the_reason_and_the_changes_list(self):
+        from django.urls import reverse
+        member = self.red.memberships.first().student
+        url = reverse('assessment_group_members', args=[self.session.pk, self.red.pk])
+        data = self.client.post(url, {'action': 'remove', 'student_id': member.pk},
+                                HTTP_X_REQUESTED_WITH='XMLHttpRequest').json()
+        self.assertFalse(data['ok'])
+        self.assertIn('fixed', data['error'])
+        self.assertIn('group-lock', data['group_html'])
+        self.assertNotIn('draggable="true"', data['group_html'])
+        self.assertIn('id="recent-changes"', data['changes_html'])
+        self.assertTrue(self.red.memberships.filter(student=member).exists())
+        follow = self.client.get(reverse('assessment_groups', args=[self.session.pk]))
+        self.assertNotContains(follow, data['error'])
+
+    def test_an_allowed_move_lists_itself_in_recent_changes_at_once(self):
+        from django.urls import reverse
+        group = self.empty
+        student = self.loner
+        url = reverse('assessment_group_members', args=[self.session.pk, group.pk])
+        data = self.client.post(url, {'action': 'add', 'student_id': student.pk},
+                                HTTP_X_REQUESTED_WITH='XMLHttpRequest').json()
+        self.assertTrue(data['ok'])
+        self.assertIn('Added', data['changes_html'])
+
+    def test_a_fixed_group_card_carries_its_reason_so_the_page_can_refuse_the_drop_up_front(self):
+        from django.urls import reverse
+        data = self.client.post(
+            reverse('assessment_group_members', args=[self.session.pk, self.red.pk]),
+            {'action': 'add', 'student_id': self.loner.pk}, HTTP_X_REQUESTED_WITH='XMLHttpRequest').json()
+        self.assertIn('data-members-lock="', data['group_html'])
+        self.assertIn('so its members are fixed', data['group_html'])

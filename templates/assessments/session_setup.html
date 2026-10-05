@@ -334,16 +334,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
         <span>Changes apply straight away. Anything students have already graded stays fixed.</span>
         <a href="{% url 'assessment_session_detail' session.pk %}" class="btn btn-sm btn-outline-primary ms-auto"><i class="bi bi-broadcast me-1"></i>Back to live control</a>
       </div>
-      {% if recent_changes %}
-      <details class="mt-2">
-        <summary>Recent changes ({{ recent_changes|length }})</summary>
-        <ul class="live-changes">
-          {% for change in recent_changes %}
-          <li><span class="when">{{ change.created_at|date:"H:i" }}</span> {{ change.summary }}{% if change.by_user %} <span class="by">- {{ change.by_user.display_name }}</span>{% endif %}</li>
-          {% endfor %}
-        </ul>
-      </details>
-      {% endif %}
+      {% include 'assessments/_partials/live_recent_changes.html' %}
     </div>
     {% endif %}
     {# ---------------------------------------------------------- Basics -- #}
@@ -1527,6 +1518,16 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
       const stats = document.getElementById('groups-stat-strip');
       if (stats) stats.outerHTML = data.stats_html;
     }
+    if (data.changes_html) {
+      const box = document.getElementById('recent-changes');
+      if (box) {
+        const wasOpen = !!box.querySelector('details[open]');
+        box.outerHTML = data.changes_html;
+        const fresh = document.querySelector('#recent-changes details');
+        if (fresh && wasOpen) fresh.open = true;
+      }
+    }
+    if (data.error && window.notify) window.notify(data.error, 'danger');
   }
 
   let dragged = null;
@@ -1585,10 +1586,21 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
     const targetGroupId = zone.dataset.groupId;
     if (String(drag.sourceGroupId) === String(targetGroupId)) return;
     const addUrl = zone.dataset.addUrl;
+    // A fixed group refuses new members: say so now, before the student is taken
+    // out of the group they are in.
+    if (zone.dataset.membersLock) {
+      if (window.notify) window.notify(zone.dataset.membersLock, 'danger');
+      return;
+    }
     const steps = drag.removeUrl
       ? postMembership(drag.removeUrl, 'remove', drag.studentId).then(function (data) {
           applyPatch(data);
-          return postMembership(addUrl, 'add', drag.studentId);
+          return postMembership(addUrl, 'add', drag.studentId).then(function (added) {
+            if (added.ok) return added;
+            // Refused after all (the group changed meanwhile): back to where they were.
+            applyPatch(added);
+            return postMembership(drag.removeUrl, 'add', drag.studentId);
+          });
         })
       : postMembership(addUrl, 'add', drag.studentId);
     steps.then(applyPatch).catch(function () { window.location.reload(); });
