@@ -27,9 +27,19 @@ jobs:
             requirements.txt
             requirements-dev.txt
       - run: pip install -r requirements.txt -r requirements-dev.txt
-      # Same commands as CLAUDE.md; .coveragerc enforces fail_under = 100.
-      - run: coverage run manage.py test --parallel
-      - run: coverage combine && coverage report
+      - name: Run tests
+        run: |
+          set -o pipefail
+          coverage run manage.py test --parallel 2>&1 | tee test.log
+      # .coveragerc enforces fail_under = 100.
+      - name: Coverage gate
+        run: coverage combine && coverage report
+      - name: Job summary
+        if: always()
+        run: |
+          coverage combine >/dev/null 2>&1 || true
+          coverage json -o cov.json -q || true
+          python scripts/ci_summary.py test test.log cov.json >> "$GITHUB_STEP_SUMMARY"
 
   deploy:
     needs: test
@@ -46,6 +56,13 @@ jobs:
           ssh-keyscan -p "${{ secrets.VPS_PORT || 22 }}" "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
       - name: Deploy
         run: |
+          set -o pipefail
           ssh -i ~/.ssh/id_deploy -p "${{ secrets.VPS_PORT || 22 }}" \
             "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
-            "APP_DIR='${{ secrets.VPS_APP_DIR }}' SERVICES='${{ secrets.VPS_SERVICES }}' bash -s" < scripts/deploy.sh
+            "APP_DIR='${{ secrets.VPS_APP_DIR }}' SERVICES='${{ secrets.VPS_SERVICES }}' bash -s" \
+            < scripts/deploy.sh 2>&1 | tee deploy.log
+      - name: Job summary
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: python3 scripts/ci_summary.py deploy deploy.log >> "$GITHUB_STEP_SUMMARY"
