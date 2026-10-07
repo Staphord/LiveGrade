@@ -1,2 +1,3 @@
 -r requirements.txt
 coverage>=7.4
+tblib>=3.0
