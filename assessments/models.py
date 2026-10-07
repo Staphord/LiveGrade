@@ -23,12 +23,16 @@ import uuid
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
 from accounts.scoping import OrganizationScopedModel, OwnedManager
+
+#: What a session's rubric weights add up to. A category's weight is its real
+#: share of this many points.
+TOTAL_WEIGHT = Decimal('100')
 
 
 class AssessmentSession(OrganizationScopedModel):
@@ -54,10 +58,11 @@ class AssessmentSession(OrganizationScopedModel):
         help_text='Which roster field a student types in to join.')
     status = models.CharField(max_length=10, choices=Status.choices,
         default=Status.DRAFT)
-    group_weight_percent = models.DecimalField(max_digits=5, decimal_places=2,
-        default=Decimal('60.00'))
-    individual_weight_percent = models.DecimalField(max_digits=5, decimal_places=2,
-        default=Decimal('40.00'))
+    ungraded_penalty = models.DecimalField(max_digits=5, decimal_places=2,
+        default=Decimal('1.00'),
+        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))],
+        help_text='Points taken off a student\'s final score for every other group '
+                  'they did not grade. 0 turns the penalty off.')
     voting_paused = models.BooleanField(default=False,
         help_text='Lecturer-controlled kill switch: no evaluation can be '
                   'submitted while true, independent of which turn is active.')
@@ -99,12 +104,6 @@ class AssessmentSession(OrganizationScopedModel):
     def __str__(self):
         return self.name
 
-    def clean(self):
-        total = (self.group_weight_percent or 0) + (self.individual_weight_percent or 0)
-        if total != 100:
-            raise ValidationError(
-                'Group weight and individual weight must add up to 100%.')
-
     def active_turn(self):
         return self.presentation_turns.filter(
             status=PresentationTurn.Status.ACTIVE).first()
@@ -132,28 +131,33 @@ class AssessmentSession(OrganizationScopedModel):
         active = self.active_turn()
         return self.next_group_after(active.group if active else None)
 
+    def rubric_weight_total(self):
+        """All category weights added up, whichever scope they are in."""
+        return sum((c.weight for c in self.rubric_categories.all()), Decimal('0'))
+
+    def group_weight_total(self):
+        return sum((c.weight for c in self.rubric_categories.filter(
+            scope=RubricCategory.Scope.GROUP)), Decimal('0'))
+
+    def individual_weight_total(self):
+        return sum((c.weight for c in self.rubric_categories.filter(
+            scope=RubricCategory.Scope.INDIVIDUAL)), Decimal('0'))
+
     def can_go_live(self):
-        """Every scope with at least one category must have weights summing
-        to that scope's share of the final score (`group_weight_percent` /
-        `individual_weight_percent`), not a flat 100 - a category's weight
-        already *is* its real contribution to the 100-point final score."""
-        targets = {
-            RubricCategory.Scope.GROUP: self.group_weight_percent,
-            RubricCategory.Scope.INDIVIDUAL: self.individual_weight_percent,
-        }
-        for scope, target in targets.items():
-            categories = self.rubric_categories.filter(scope=scope)
-            if categories.exists() and sum(c.weight for c in categories) != target:
-                return False
-        return self.rubric_categories.exists() and self.groups.exists()
+        """The rubric's weights, group and individual together, must add up to
+        exactly ``TOTAL_WEIGHT``: a category's weight is its real share of the
+        100-point final score, so anything less would cap the best possible
+        score below 100."""
+        return (self.rubric_categories.exists() and self.groups.exists()
+                and self.rubric_weight_total() == TOTAL_WEIGHT)
 
 
 class RubricCategory(models.Model):
     """A gradeable dimension, e.g. 'Technical implementation'.
 
     Defaults to group scope per the lecturer's instruction ('by default iwe
-    group but you can change it individual'); max_points is configurable
-    rather than a fixed 1-5 scale, and a submitted value must be <= it.
+    group but you can change it individual'). ``weight`` is the category's share
+    of the 100-point final score, and a student scores it from 0 up to that weight.
     """
 
     class Scope(models.TextChoices):
@@ -166,14 +170,11 @@ class RubricCategory(models.Model):
     description = models.CharField(max_length=255, blank=True)
     scope = models.CharField(max_length=10, choices=Scope.choices,
         default=Scope.GROUP)
-    max_points = models.DecimalField(max_digits=6, decimal_places=2,
-        default=Decimal('10.00'), validators=[MinValueValidator(Decimal('0.01'))])
     weight = models.DecimalField(max_digits=5, decimal_places=2,
         default=Decimal('0.00'),
-        help_text='This category\'s real share of the 100-point final score - '
-                  'group-scope weights sum to the session\'s group weight '
-                  'percent, individual-scope weights to its individual '
-                  'weight percent.')
+        help_text='This category\'s real share of the 100-point final score. All '
+                  'weights in a session, group and individual together, add up '
+                  'to at most 100 (exactly 100 to go live).')
     order = models.PositiveIntegerField(default=0)
 
     class Meta:
@@ -181,7 +182,7 @@ class RubricCategory(models.Model):
         verbose_name_plural = 'rubric categories'
 
     def __str__(self):
-        return f'{self.name} ({self.get_scope_display()}, /{self.max_points})'
+        return f'{self.name} ({self.get_scope_display()}, {self.weight}%)'
 
 
 class Student(models.Model):
@@ -391,6 +392,11 @@ class EvaluationScore(models.Model):
     rubric_category = models.ForeignKey(RubricCategory, on_delete=models.CASCADE,
         related_name='scores')
     value = models.DecimalField(max_digits=6, decimal_places=2)
+    max_value = models.DecimalField(max_digits=6, decimal_places=2,
+        help_text='The category\'s weight when this score was given: ``value`` is out '
+                  'of this. Results use value / max_value against the category\'s '
+                  'current weight, so a weight edited later rescales past scores '
+                  'instead of invalidating them.')
 
     class Meta:
         unique_together = ('evaluation', 'rubric_category')
@@ -398,10 +404,16 @@ class EvaluationScore(models.Model):
     def clean(self):
         if self.value is None or self.value < 0:
             raise ValidationError('Score cannot be negative.')
-        if self.rubric_category_id and self.value > self.rubric_category.max_points:
-            raise ValidationError(
-                f'Score cannot exceed {self.rubric_category.max_points} for '
-                f'"{self.rubric_category.name}".')
+        if self.max_value is None or self.max_value <= 0:
+            raise ValidationError('This category has no weight to score against.')
+        if self.value > self.max_value:
+            name = self.rubric_category.name if self.rubric_category_id else 'this category'
+            raise ValidationError(f'Score cannot exceed {self.max_value.normalize():f} for "{name}".')
+
+    def save(self, *args, **kwargs):
+        if self.max_value is None:
+            self.max_value = self.rubric_category.weight
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f'{self.rubric_category.name}: {self.value}'

@@ -16,20 +16,19 @@ HEADERS = {
     'name': {'category', 'category name', 'criterion', 'criteria', 'name'},
     'description': {'description', 'guidance', 'details'},
     'scope': {'scope', 'type', 'level', 'applies to'},
-    'max_points': {'max points', 'max', 'maximum', 'points', 'max score', 'out of'},
     'weight': {'weight', 'weight %', 'weight (%)', '% weight', 'weighting'},
 }
 
-SAMPLE_HEADERS = ['Category', 'Description', 'Scope', 'Max points', 'Weight %']
+SAMPLE_HEADERS = ['Category', 'Description', 'Scope', 'Weight %']
 SAMPLE_ROWS = [
-    ['Technical depth', 'Quality and difficulty of the solution', 'Group', 10, 30],
-    ['Presentation', 'Clarity and delivery', 'Group', 10, 30],
-    ['Teamwork', "This student's contribution to the group", 'Individual', 5, 40],
+    ['Technical depth', 'Quality and difficulty of the solution', 'Group', 30],
+    ['Presentation', 'Clarity and delivery', 'Group', 30],
+    ['Teamwork', "This student's contribution to the group", 'Individual', 40],
 ]
 
 
 def sample_workbook():
-    return workbook_bytes(SAMPLE_HEADERS, SAMPLE_ROWS, {'A': 24, 'B': 46, 'C': 14, 'D': 12, 'E': 12})
+    return workbook_bytes(SAMPLE_HEADERS, SAMPLE_ROWS, {'A': 24, 'B': 46, 'C': 14, 'D': 12})
 
 
 def parse_rubric(uploaded_file):
@@ -44,11 +43,10 @@ def parse_rubric(uploaded_file):
         result['fatal'] = 'The file is empty.'
         return result
     mapping = map_headers(rows[0], HEADERS)
-    missing = [label for field, label in (('name', 'Category'), ('max_points', 'Max points'),
-                                          ('weight', 'Weight %')) if field not in mapping]
+    missing = [label for field, label in (('name', 'Category'), ('weight', 'Weight %')) if field not in mapping]
     if missing:
         result['fatal'] = (f'Could not find the {", ".join(missing)} column(s). The first row must '
-                           f'have headers like "Category", "Scope", "Max points" and "Weight %".')
+                           f'have headers like "Category", "Scope" and "Weight %".')
         return result
     if len(rows) - 1 > rules.MAX_ROWS:
         result['fatal'] = f'A rubric can have at most {rules.MAX_ROWS} categories.'
@@ -72,18 +70,18 @@ def check_import(raw_rows, session, mode):
         errors.extend((raw['row'], message) for message in problems)
         rows.append(row)
     if errors:
-        return {'rows': rows, 'errors': errors, 'totals': {}, 'ok': False}
+        return {'rows': rows, 'errors': errors, 'totals': {}, 'total': None, 'ok': False}
     combined = list(rows)
     if mode == 'add':
         combined = [_existing_row(c) for c in session.rubric_categories.all()] + rows
-    verdict = rules.check_rubric(combined, session, strict=True)
+    verdict = rules.check_rubric(combined, strict=True)
     return {'rows': rows, 'errors': verdict['errors'], 'totals': verdict['totals'],
-            'ok': not verdict['errors']}
+            'total': verdict['total'], 'ok': not verdict['errors']}
 
 
 def _existing_row(category):
     return {'row': None, 'id': category.pk, 'name': category.name, 'description': category.description,
-            'scope': category.scope, 'max_points': category.max_points, 'weight': category.weight}
+            'scope': category.scope, 'weight': category.weight}
 
 
 @transaction.atomic
@@ -99,7 +97,7 @@ def apply_import(session, raw_rows, mode):
         order += 1
         RubricCategory.objects.create(
             assessment_session=session, name=row['name'], description=row['description'],
-            scope=row['scope'], max_points=row['max_points'], weight=row['weight'], order=order)
+            scope=row['scope'], weight=row['weight'], order=order)
     return len(verdict['rows'])
 
 
@@ -118,7 +116,7 @@ def check_table(rows_raw, session, strict):
         if row['id'] is not None and category is None:
             errors.append((index, 'That category no longer exists. Reload the page.'))
         elif category is not None and not problems:
-            if (row['scope'], row['max_points']) != (category.scope, category.max_points):
+            if row['scope'] != category.scope:
                 lock = category_core_lock(category)
                 if lock:
                     errors.append((index, lock))
@@ -127,10 +125,10 @@ def check_table(rows_raw, session, strict):
     if strict and not rows:
         errors.append((None, 'A live session needs at least one rubric category.'))
     if errors:
-        return {'rows': rows, 'errors': errors, 'totals': {}, 'ok': False, 'removed': removed}
-    verdict = rules.check_rubric(rows, session, strict=strict)
+        return {'rows': rows, 'errors': errors, 'totals': {}, 'total': None, 'ok': False, 'removed': removed}
+    verdict = rules.check_rubric(rows, strict=strict)
     return {'rows': rows, 'errors': verdict['errors'], 'totals': verdict['totals'],
-            'ok': not verdict['errors'], 'removed': removed}
+            'total': verdict['total'], 'ok': not verdict['errors'], 'removed': removed}
 
 
 @transaction.atomic
@@ -145,11 +143,11 @@ def apply_table(session, verdict):
             order += 1
             RubricCategory.objects.create(
                 assessment_session=session, name=row['name'], description=row['description'],
-                scope=row['scope'], max_points=row['max_points'], weight=row['weight'], order=order)
+                scope=row['scope'], weight=row['weight'], order=order)
             added += 1
             continue
         fields = {'name': row['name'], 'description': row['description'], 'scope': row['scope'],
-                  'max_points': row['max_points'], 'weight': row['weight']}
+                  'weight': row['weight']}
         if any(getattr(category, f) != v for f, v in fields.items()):
             for field, value in fields.items():
                 setattr(category, field, value)

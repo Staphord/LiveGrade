@@ -41,13 +41,13 @@ def export_results(assessment_session, results, participation_rows):
         ])
 
     results_sheet = workbook.create_sheet('Results')
-    results_sheet.append(['Student', 'Group', 'Group %', 'Individual %', 'Penalty %', 'Final %'])
+    results_sheet.append(['Student', 'Group', 'Group %', 'Individual %', 'Penalty (points)', 'Final %'])
     for row in results['student_rows']:
         results_sheet.append([
             row['student'].full_name, row['group'].name,
             float(row['group_percent']) if row['group_percent'] is not None else '',
             float(row['individual_percent']) if row['individual_percent'] is not None else '',
-            row.get('penalty', 0),
+            float(row.get('penalty', 0)),
             float(row['final_percent']) if row['final_percent'] is not None else '',
         ])
 

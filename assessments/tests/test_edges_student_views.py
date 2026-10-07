@@ -143,7 +143,7 @@ class EvaluateTests(StudentTestCase):
 
     def test_a_score_above_the_maximum_is_refused_and_nothing_is_kept(self):
         self.join_as(self.cat)
-        response = self.grade(**{f'group_{self.quality.pk}': '11'})
+        response = self.grade(**{f'group_{self.quality.pk}': '60.5'})
         self.assertContains(response, 'cannot exceed')
         self.assertFalse(Evaluation.objects.exists())
         self.assertFalse(EvaluationScore.objects.exists())

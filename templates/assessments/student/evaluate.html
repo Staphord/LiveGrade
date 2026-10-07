@@ -218,14 +218,14 @@
       </div>
       {% if cat.description %}<div class="category-desc">{{ cat.description }}</div>{% endif %}
       <div class="score-input-row">
-        <input type="range" min="0" max="{{ cat.max_points }}" step="0.5" value="0"
+        <input type="range" min="0" max="{{ cat.weight|stringformat:'f' }}" step="0.5" value="0"
                data-score-slider data-pair="group_{{ cat.pk }}">
-        <input type="number" class="score-num" min="0" max="{{ cat.max_points }}" step="0.5" value="0"
+        <input type="number" class="score-num" min="0" max="{{ cat.weight|stringformat:'f' }}" step="0.01" value="0"
                name="group_{{ cat.pk }}" data-score-num id="group_{{ cat.pk }}">
       </div>
       <div class="d-flex align-items-center justify-content-between s-text-xs mt-1">
         <span class="category-error"><i class="bi bi-exclamation-circle-fill"></i>Grade this category</span>
-        <span class="text-muted ms-auto">out of {{ cat.max_points|floatformat:0 }}</span>
+        <span class="text-muted ms-auto">out of {{ cat.weight|floatformat:"-2" }}</span>
       </div>
     </div>
     {% endfor %}
@@ -253,15 +253,15 @@
           <i class="bi bi-check-circle-fill category-check"></i>
         </div>
         <div class="score-input-row">
-          <input type="range" min="0" max="{{ cat.max_points }}" step="0.5" value="0"
+          <input type="range" min="0" max="{{ cat.weight|stringformat:'f' }}" step="0.5" value="0"
                  data-score-slider data-pair="ind_{{ membership.student.pk }}_{{ cat.pk }}">
-          <input type="number" class="score-num" min="0" max="{{ cat.max_points }}" step="0.5" value="0"
+          <input type="number" class="score-num" min="0" max="{{ cat.weight|stringformat:'f' }}" step="0.01" value="0"
                  name="ind_{{ membership.student.pk }}_{{ cat.pk }}" data-score-num
                  id="ind_{{ membership.student.pk }}_{{ cat.pk }}">
         </div>
         <div class="d-flex align-items-center justify-content-between s-text-xs mt-1">
           <span class="category-error"><i class="bi bi-exclamation-circle-fill"></i>Grade this category</span>
-          <span class="text-muted ms-auto">out of {{ cat.max_points|floatformat:0 }}</span>
+          <span class="text-muted ms-auto">out of {{ cat.weight|floatformat:"-2" }}</span>
         </div>
       </div>
       {% endfor %}

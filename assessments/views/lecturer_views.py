@@ -17,10 +17,10 @@ from accounts.models import User
 from ..excel import export_results
 from ..forms import (
     AssessmentSessionForm, GroupImportForm, PresentationGroupForm,
-    RubricCategoryForm, RubricImportForm, SessionRenameForm, StudentForm,
+    RubricCategoryForm, RubricImportForm, StudentForm,
 )
 from ..models import (
-    AssessmentSession, Evaluation, GroupMembership, ParticipationRecord,
+    TOTAL_WEIGHT, AssessmentSession, Evaluation, GroupMembership, ParticipationRecord,
     PresentationGroup, PresentationTurn, RubricCategory, Student,
 )
 from ..setup_rules import (
@@ -30,6 +30,7 @@ from ..setup_rules import (
 from ..pagination import PAGE_SIZES, paginate
 from ..pending_imports import pending_group_import, pending_rubric_import
 from ..qr import join_url, qr_png
+from ..weight_pie import weight_pie
 from ..realtime import broadcast_session_event
 from ..scoring import group_score_percents, group_vote_counts, session_results, turn_vote_counts
 from ..transfers import TransferError, eligible_recipients, transfer_session
@@ -135,8 +136,8 @@ def assessment_session_list(request):
 
 @lecturer_required
 def assessment_session_create(request):
-    """A full page rather than a modal - the form has five fields across two
-    concerns (identity + weighting), which a dialog box compresses awkwardly.
+    """A full page rather than a modal - the form has three fields across two
+    concerns (identity + penalty), which a dialog box compresses awkwardly.
     A dedicated page also gives each field room for its help text and makes
     the "what happens next" (groups and students → rubric → go live) explicit."""
     organization = active_organization(request)
@@ -157,30 +158,38 @@ def assessment_session_create(request):
     })
 
 
+BASICS_LABELS = {'name': 'name', 'identify_by': 'how students join', 'ungraded_penalty': 'penalty per group not graded'}
+
+
 @lecturer_required
 def assessment_session_edit(request, pk):
-    """Edit a session's name, identity mode, and weight split.
+    """Edit a session's name, how students join, and the penalty for groups not graded.
 
-    The identity mode and the weight split are fixed once the session goes live:
-    they are what the grading record is measured against, and changing them
-    mid-session would silently break any scores already submitted. A live
-    session can still be renamed. A closed one is a read-only record.
+    All three stay editable while the session is live. Students already in are not
+    affected by a change to how they join (they are recognised by their record),
+    and a changed penalty rewrites the results of every student, including past
+    groups, because results are always worked out from the current setup. Each live
+    change is logged for the change history. A closed session is a read-only record.
     """
     session = _session(request, pk)
     blocked = _closed(request, session)
     if blocked:
         return blocked
-    form_class = SessionRenameForm if is_live(session) else AssessmentSessionForm
 
     if request.method == 'POST':
-        form = form_class(request.POST, instance=session)
+        form = AssessmentSessionForm(request.POST, instance=session)
         if form.is_valid():
+            changed = list(form.changed_data)
             form.save()
-            record_change(session, request.user, f'Renamed the session to "{session.name}".')
+            if changed:
+                record_change(session, request.user,
+                              'Changed the ' + ', '.join(BASICS_LABELS[f] for f in changed) + '.')
             messages.success(request, f'"{session.name}" updated.')
+            if request.POST.get('next') == 'setup':
+                return redirect(reverse('assessment_setup', args=[session.pk]) + '?step=basics')
             return redirect('assessment_session_detail', pk=session.pk)
     else:
-        form = form_class(instance=session)
+        form = AssessmentSessionForm(instance=session)
 
     if is_live(session):
         return render(request, 'assessments/session_setup.html',
@@ -446,19 +455,22 @@ def _setup_context(request, session, active_step, roster_form=None, rubric_form=
 
     context.update(_roster_context(request, session))
     context['form'] = roster_form or StudentForm(auto_id='id_roster_%s')
+    context['basics_form'] = AssessmentSessionForm(instance=session, auto_id='id_basics_%s')
 
     group_categories = session.rubric_categories.filter(scope=RubricCategory.Scope.GROUP)
     individual_categories = session.rubric_categories.filter(scope=RubricCategory.Scope.INDIVIDUAL)
-    group_weight_total = sum(c.weight for c in group_categories)
-    individual_weight_total = sum(c.weight for c in individual_categories)
+    group_weight_total = sum((c.weight for c in group_categories), Decimal('0'))
+    individual_weight_total = sum((c.weight for c in individual_categories), Decimal('0'))
+    weight_total = group_weight_total + individual_weight_total
     context.update({
         'rubric_form': rubric_form or RubricCategoryForm(assessment_session=session, auto_id='id_rubric_%s'),
         'group_categories': group_categories,
         'individual_categories': individual_categories,
         'group_weight_total': group_weight_total,
         'individual_weight_total': individual_weight_total,
-        'group_weight_remaining': session.group_weight_percent - group_weight_total,
-        'individual_weight_remaining': session.individual_weight_percent - individual_weight_total,
+        'weight_total': weight_total,
+        'weight_remaining': TOTAL_WEIGHT - weight_total,
+        'weight_pie': weight_pie(session.rubric_categories.all()),
     })
 
     context.update(_groups_context(session))
@@ -471,9 +483,7 @@ def _setup_context(request, session, active_step, roster_form=None, rubric_form=
     context['import_plan'] = pending_group_import(request, session) if active_step == 'groups' else None
     context['rubric_review'] = pending_rubric_import(request, session) if active_step == 'rubric' else None
 
-    rubric_ready = (
-        session.rubric_categories.exists() and group_weight_total == session.group_weight_percent
-        and (not individual_categories or individual_weight_total == session.individual_weight_percent))
+    rubric_ready = weight_total == TOTAL_WEIGHT
     context.update({
         'step_rubric_done': rubric_ready,
         'step_groups_done': session.groups.exists(),
@@ -606,15 +616,17 @@ def rubric_edit(request, pk, category_pk):
         messages.error(request, lock)
         return redirect('assessment_rubric', pk=session.pk)
     category = get_object_or_404(RubricCategory, pk=category_pk, assessment_session=session)
-    form = RubricCategoryForm(request.POST, instance=category, assessment_session=session)
+    form = RubricCategoryForm(request.POST, instance=category, assessment_session=session,
+                              auto_id='id_rubric_%s')
     if form.is_valid():
         form.save()
         messages.success(request, f'"{category.name}" updated.')
-    else:
-        for field_errors in form.errors.values():
-            for error in field_errors:
-                messages.error(request, error)
-    return redirect('assessment_rubric', pk=session.pk)
+        return redirect('assessment_rubric', pk=session.pk)
+    # Show the edit form again with what was typed and each problem under its own
+    # field, rather than clearing it and reporting the errors in a toast.
+    context = _setup_context(request, session, 'rubric', rubric_form=form)
+    context['editing_category'] = RubricCategory.objects.get(pk=category.pk)
+    return render(request, 'assessments/session_setup.html', context)
 
 
 @lecturer_required
@@ -834,8 +846,8 @@ def delete_groups(request, session, groups):
 def go_live(request, pk):
     session = _session(request, pk)
     if not session.can_go_live():
-        messages.error(request, 'Add at least one rubric category (weights summing '
-                                 'to 100% per scope) and at least one group before going live.')
+        messages.error(request, 'Add rubric categories whose weights add up to exactly 100% '
+                                 'and at least one group before going live.')
         return redirect('assessment_session_detail', pk=session.pk)
     session.status = AssessmentSession.Status.LIVE
     session.save(update_fields=['status'])

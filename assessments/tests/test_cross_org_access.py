@@ -78,6 +78,7 @@ TARGETS = {
     'assessment_rubric_import_preview': (GET, 'session'),
     'assessment_rubric_import_sample':  (GET, 'session'),
     'assessment_rubric_table':     (GET,  'session'),
+    'assessment_rubric_bulk_delete': (POST, 'session'),
 }
 
 #: Routes that take an id but are deliberately outside this check, and why.

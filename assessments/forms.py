@@ -3,7 +3,7 @@ import os
 from django import forms
 from django.core.exceptions import ValidationError
 
-from .models import AssessmentSession, PresentationGroup, RubricCategory, Student
+from .models import TOTAL_WEIGHT, AssessmentSession, PresentationGroup, RubricCategory, Student
 
 
 def _fmt(decimal_value):
@@ -16,31 +16,29 @@ def _fmt(decimal_value):
 
 
 class AssessmentSessionForm(forms.ModelForm):
+    """A session's basics: name, how students join, and the penalty for every other
+    group a student does not grade. The same form creates a session and edits it,
+    draft or live."""
+
     class Meta:
         model = AssessmentSession
-        fields = ['name', 'identify_by', 'group_weight_percent', 'individual_weight_percent']
+        fields = ['name', 'identify_by', 'ungraded_penalty']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Sprint Demo — Q1 2026'}),
             'identify_by': forms.Select(attrs={'class': 'form-select'}),
-            'group_weight_percent': forms.NumberInput(attrs={'class': 'form-control', 'step': '1'}),
-            'individual_weight_percent': forms.NumberInput(attrs={'class': 'form-control', 'step': '1'}),
+            'ungraded_penalty': forms.NumberInput(attrs={
+                'class': 'form-control', 'step': '0.01', 'min': '0', 'max': '100'}),
         }
-
-    def clean(self):
-        cleaned = super().clean()
-        total = (cleaned.get('group_weight_percent') or 0) + (cleaned.get('individual_weight_percent') or 0)
-        if total != 100:
-            raise forms.ValidationError('Group weight and individual weight must add up to 100%.')
-        return cleaned
+        labels = {'ungraded_penalty': 'Penalty for each group not graded'}
 
 
 class RubricCategoryForm(forms.ModelForm):
     """Takes the session explicitly (not inferred from `instance`) so the
     same form works for both create and edit, and checks the new weight
-    against the *other* categories already in that scope — a category can
-    never be saved if it would push its scope's total over 100%, rather
-    than being allowed to save and just showing a red "200% of 100%" after
-    the fact."""
+    against the *other* categories already in the session - group and
+    individual together - so a category can never be saved if it would push
+    the rubric's total over 100%, rather than being allowed to save and just
+    showing a red "200% of 100%" after the fact."""
 
     class Meta:
         model = RubricCategory
@@ -50,39 +48,46 @@ class RubricCategoryForm(forms.ModelForm):
         # browser can never satisfy — every submission would silently fail
         # validation. (This exact bug shipped once already; see
         # PresentationGroupForm below and the regression tests for both.)
-        fields = ['name', 'description', 'scope', 'max_points', 'weight']
+        fields = ['name', 'description', 'scope', 'weight']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
             'description': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Optional guidance shown to students'}),
             'scope': forms.Select(attrs={'class': 'form-select'}),
-            'max_points': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.5', 'min': '0.5'}),
-            'weight': forms.NumberInput(attrs={'class': 'form-control', 'step': '1', 'min': '0', 'max': '100'}),
+            'weight': forms.NumberInput(attrs={
+                'class': 'form-control', 'step': '0.01', 'min': '0.01', 'max': '100', 'placeholder': 'e.g. 30'}),
         }
 
     def __init__(self, *args, assessment_session=None, **kwargs):
         self.assessment_session = assessment_session
         super().__init__(*args, **kwargs)
+        if not self.instance.pk:
+            # The model's 0.00 default is not a value the lecturer chose: leave the box
+            # empty so the placeholder shows and they can just start typing.
+            self.initial['weight'] = None
+
+    def clean_weight(self):
+        weight = self.cleaned_data['weight']
+        if weight <= 0 or weight > TOTAL_WEIGHT:
+            raise forms.ValidationError(f'Weight must be more than 0 and at most {_fmt(TOTAL_WEIGHT)}.')
+        return weight
 
     def clean(self):
         cleaned = super().clean()
-        scope = cleaned.get('scope')
         weight = cleaned.get('weight')
-        if self.assessment_session is None or scope is None or weight is None:
+        if self.assessment_session is None or weight is None:
             return cleaned
-        target = (self.assessment_session.group_weight_percent
-                  if scope == RubricCategory.Scope.GROUP
-                  else self.assessment_session.individual_weight_percent)
-        others = self.assessment_session.rubric_categories.filter(scope=scope)
+        others = self.assessment_session.rubric_categories.all()
         if self.instance.pk:
             others = others.exclude(pk=self.instance.pk)
         existing_total = sum((c.weight for c in others), start=type(weight)(0))
         new_total = existing_total + weight
-        if new_total > target:
-            room_left = target - existing_total
-            scope_label = RubricCategory.Scope(scope).label
-            raise forms.ValidationError(
-                f'{scope_label} weights would total {_fmt(new_total)}%, over {_fmt(target)}% - '
-                f'this session\'s {scope_label.lower()} share. At most {_fmt(room_left)}% is available.')
+        if new_total > TOTAL_WEIGHT:
+            room_left = TOTAL_WEIGHT - existing_total
+            # On the weight field itself, so the page can show it right under the box
+            # that needs fixing.
+            self.add_error('weight',
+                           f'Weights would total {_fmt(new_total)}%, over {_fmt(TOTAL_WEIGHT)}%. '
+                           f'At most {_fmt(room_left)}% is available.')
         return cleaned
 
 
@@ -126,17 +131,8 @@ class RubricImportForm(forms.Form):
     file = forms.FileField(
         validators=[validate_workbook],
         widget=forms.ClearableFileInput(attrs={'class': 'form-control', 'accept': '.xlsx'}),
-        help_text='Columns: Category, Description, Scope, Max points, Weight %.')
+        help_text='Columns: Category, Description, Scope, Weight %. Weights must add up to 100.')
     mode = forms.ChoiceField(choices=MODES, initial='replace', widget=forms.RadioSelect)
-
-
-class SessionRenameForm(forms.ModelForm):
-    """All that may change once a session is live."""
-
-    class Meta:
-        model = AssessmentSession
-        fields = ['name']
-        widgets = {'name': forms.TextInput(attrs={'class': 'form-control'})}
 
 
 class PresentationGroupForm(forms.ModelForm):

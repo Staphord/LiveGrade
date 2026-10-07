@@ -6,6 +6,7 @@ page. Pressing Import applies it; Cancel drops it. These helpers build what that
 window shows, from the stored file, against the session as it is right now.
 """
 from . import group_import, rubric_import, rubric_rules
+from .models import TOTAL_WEIGHT
 from .setup_rules import rubric_structure_lock
 
 GROUP_KEY = 'group_import'
@@ -33,15 +34,15 @@ def pending_rubric_import(request, session):
         request.session.pop(RUBRIC_KEY, None)
         return None
     verdict = rubric_import.check_import(stash['rows'], session, stash['mode'])
-    targets = rubric_rules.targets(session)
-    totals = [{'label': rubric_rules.SCOPE_LABEL[scope], 'total': total, 'target': targets[scope],
-               'ok': total == targets[scope]}
+    totals = [{'label': rubric_rules.SCOPE_LABEL[scope], 'total': total}
               for scope, total in verdict['totals'].items() if total]
+    total = verdict.get('total')
     problems = {}
     for number, message in verdict['errors']:
         problems.setdefault(number, []).append(message)
     return {
         'verdict': verdict, 'replacing': stash['mode'] == 'replace', 'totals': totals,
+        'total': total, 'total_ok': total == TOTAL_WEIGHT,
         'existing_count': session.rubric_categories.count(),
         'general_errors': problems.get(None, []),
         'rows': [{**raw, 'problems': problems.get(raw['row'], [])} for raw in stash['rows']],

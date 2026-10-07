@@ -36,7 +36,7 @@ class MultiPageRenderTests(TestCase):
             assessment_session=self.session, name='Group 1')
         RubricCategory.objects.create(
             assessment_session=self.session, name='Implementation',
-            scope=RubricCategory.Scope.GROUP, max_points=Decimal('10'), weight=Decimal('100'))
+            scope=RubricCategory.Scope.GROUP, weight=Decimal('100'))
 
     def test_roster_page_one_renders_with_more_than_one_page(self):
         response = self.client.get(f'/assessments/{self.session.pk}/roster/')

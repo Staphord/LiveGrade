@@ -112,6 +112,16 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 .weight-meter .ring .ring-num{font-size:var(--fs-heading);font-weight:800;color:var(--ink);white-space:nowrap}
 .weight-meter.is-ready .ring .ring-num{color:var(--tone-success-fg)}
 .weight-meter .body{min-width:0}
+.weight-pie-card{align-items:flex-start}
+.weight-pie{width:96px;height:96px;border-radius:50%;flex-shrink:0;border:2px solid var(--border)}
+.weight-pie-legend{list-style:none;margin:.25rem 0 0;padding:0;display:grid;gap:2px;font-size:var(--fs-sm)}
+.weight-pie-legend li{display:flex;align-items:center;gap:.4rem;min-width:0}
+.weight-pie-legend .dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.weight-pie-legend .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
+.weight-pie-legend .pc{margin-left:auto;font-weight:700;color:var(--ink);padding-left:.5rem}
+.weight-pie-legend .is-free .nm,.weight-pie-legend .is-free .pc{color:var(--text-muted);font-weight:500}
+.weight-pie-card{grid-column:span 2}
+@media (max-width:640px){.weight-pie-card{grid-column:auto}}
 .weight-meter .lbl{font-size:var(--fs-micro);color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700}
 .weight-meter .msg{font-size:var(--fs-sm);font-weight:600;margin-top:2px}
 .weight-meter.is-ready .msg{color:var(--success)}
@@ -222,6 +232,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 .groups-selected-count{color:var(--text-muted);font-size:var(--fs-sm)}
 .groups-bulk{display:flex;align-items:center;gap:.5rem;margin-left:auto}
 .group-card .group-select{margin-right:.5rem;flex-shrink:0}
+.rubric-cat-card.is-selected{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
 .group-card.is-selected{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
 .group-meta{display:flex;flex-wrap:wrap;gap:.6rem;font-size:var(--fs-micro);color:var(--text-muted);margin-top:.35rem}
 .group-lock{display:flex;gap:.4rem;align-items:flex-start;font-size:var(--fs-micro);color:var(--text-muted);margin-top:.5rem}
@@ -292,7 +303,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
           <span class="stepper-dot"><i class="bi bi-check-lg"></i></span>
           <span class="stepper-label">
             <span class="stepper-title">Basics</span>
-            <span class="stepper-desc">Name &amp; weighting</span>
+            <span class="stepper-desc">Name, join &amp; penalty</span>
           </span>
         </a>
         <a href="{% if session %}#groups-section{% else %}#{% endif %}" data-step="groups"
@@ -364,23 +375,13 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
             <div class="text-muted t-micro mt-1">Whichever field students type in on their phone to join - pick whatever's on your roster.</div>
           </div>
           <div class="mb-2">
-            <label class="form-label fw-600 t-body">Final score weighting</label>
-            <div class="text-muted t-micro mb-2">How much the group's project score and each student's individual score count toward the final result.</div>
-            <div class="row g-2">
-              <div class="col-6">
-                <div class="input-group">
-                  {{ form.group_weight_percent }}
-                  <span class="input-group-text">% group</span>
-                </div>
-              </div>
-              <div class="col-6">
-                <div class="input-group">
-                  {{ form.individual_weight_percent }}
-                  <span class="input-group-text">% individual</span>
-                </div>
-              </div>
+            <label class="form-label fw-600 t-body">{{ form.ungraded_penalty.label }}</label>
+            <div class="input-group" style="max-width:220px">
+              {{ form.ungraded_penalty }}
+              <span class="input-group-text">points</span>
             </div>
-            {% if form.non_field_errors %}<div class="field-error mt-2">{{ form.non_field_errors|join:", " }}</div>{% endif %}
+            {% if form.ungraded_penalty.errors %}<div class="field-error">{{ form.ungraded_penalty.errors|join:", " }}</div>{% endif %}
+            <div class="text-muted t-micro mt-1">Taken off a student's final score for every other group they did not grade. Use 0 for no penalty.{% if live_mode %} Changing it now recalculates everyone's results, including groups that have already presented.{% endif %}</div>
           </div>
           <div class="d-flex gap-2 mt-4">
             <button type="submit" class="btn btn-primary"><i class="bi bi-arrow-right-circle me-1"></i>Create session and add groups</button>
@@ -405,68 +406,62 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
             {{ form.name }}
             {% if form.name.errors %}<div class="field-error">{{ form.name.errors|join:", " }}</div>{% endif %}
           </div>
-          {% if live_mode %}
-          <div class="text-muted t-sm"><i class="bi bi-lock-fill me-1"></i>How students join ({{ session.get_identify_by_display }}) and the {{ session.group_weight_percent|floatformat:"-2" }}% group / {{ session.individual_weight_percent|floatformat:"-2" }}% individual weighting are fixed once a session is live.</div>
-          {% else %}
           <div class="mb-4">
             <label class="form-label fw-600 t-body">Identify students by</label>
             {{ form.identify_by }}
-            <div class="text-muted t-micro mt-1">Whichever field students type in on their phone to join.</div>
+            <div class="text-muted t-micro mt-1">Whichever field students type in on their phone to join.{% if live_mode %} Students already in the room stay in; this only changes how new students join.{% endif %}</div>
           </div>
           <div class="mb-2">
-            <label class="form-label fw-600 t-body">Final score weighting</label>
-            <div class="text-muted t-micro mb-2">How much the group's project score and each student's individual score count toward the final result.</div>
-            <div class="row g-2">
-              <div class="col-6">
-                <div class="input-group">
-                  {{ form.group_weight_percent }}
-                  <span class="input-group-text">% group</span>
-                </div>
-              </div>
-              <div class="col-6">
-                <div class="input-group">
-                  {{ form.individual_weight_percent }}
-                  <span class="input-group-text">% individual</span>
-                </div>
-              </div>
+            <label class="form-label fw-600 t-body">{{ form.ungraded_penalty.label }}</label>
+            <div class="input-group" style="max-width:220px">
+              {{ form.ungraded_penalty }}
+              <span class="input-group-text">points</span>
             </div>
-            {% if form.non_field_errors %}<div class="field-error mt-2">{{ form.non_field_errors|join:", " }}</div>{% endif %}
+            {% if form.ungraded_penalty.errors %}<div class="field-error">{{ form.ungraded_penalty.errors|join:", " }}</div>{% endif %}
+            <div class="text-muted t-micro mt-1">Taken off a student's final score for every other group they did not grade. Use 0 for no penalty.{% if live_mode %} Changing it now recalculates everyone's results, including groups that have already presented.{% endif %}</div>
           </div>
-          {% endif %}
           <div class="d-flex gap-2 mt-4">
             <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-1"></i>Save changes</button>
             <a href="{% url 'assessment_session_detail' session.pk %}" class="btn btn-outline-secondary">Cancel</a>
           </div>
         </form>
         {% else %}
-        <div class="card-icon-head">
+        <div class="card-icon-head mb-3">
           <div class="head-left">
-            <span class="icon-badge"><i class="bi bi-check-lg"></i></span>
+            <span class="icon-badge"><i class="bi bi-pencil-square"></i></span>
             <div>
-              <div class="title">{{ session.name }}</div>
-              <div class="sub">Basics are set - add your groups and students, then a rubric</div>
+              <div class="title">Session basics</div>
+              <div class="sub">Edit these any time, including while the session is live</div>
             </div>
           </div>
         </div>
-        <div class="basics-summary">
-          <div class="stat-pill">
-            <span class="stat-icon"><i class="bi bi-key-fill"></i></span>
-            <div>
-              <div class="stat-val">{{ session.get_identify_by_display }}</div>
-              <div class="stat-lbl">Used to join</div>
+        <form method="post" action="{% url 'assessment_session_edit' session.pk %}">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="setup">
+          <div class="mb-3">
+            <label class="form-label fw-600 t-body" for="{{ basics_form.name.id_for_label }}">Session name</label>
+            {{ basics_form.name }}
+          </div>
+          <div class="row g-3 mb-2">
+            <div class="col-md-6">
+              <label class="form-label fw-600 t-body" for="{{ basics_form.identify_by.id_for_label }}">Identify students by</label>
+              {{ basics_form.identify_by }}
+              <div class="text-muted t-micro mt-1">Whichever field students type in on their phone to join.{% if live_mode %} Students already in the room stay in; this only changes how new students join.{% endif %}</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-600 t-body" for="{{ basics_form.ungraded_penalty.id_for_label }}">{{ basics_form.ungraded_penalty.label }}</label>
+              <div class="input-group">
+                {{ basics_form.ungraded_penalty }}
+                <span class="input-group-text">points</span>
+              </div>
+              <div class="text-muted t-micro mt-1">Taken off a student's final score for every other group they did not grade. Use 0 for no penalty.{% if live_mode %} Changing it now recalculates everyone's results, including groups that have already presented.{% endif %}</div>
             </div>
           </div>
-          <div class="stat-pill">
-            <span class="stat-icon"><i class="bi bi-people-fill"></i></span>
-            <div>
-              <div class="stat-val">{{ session.group_weight_percent }}% group / {{ session.individual_weight_percent }}% individual</div>
-              <div class="stat-lbl">Final score weighting</div>
-            </div>
+          <div class="d-flex flex-wrap justify-content-between gap-2 mt-3">
+            <button type="submit" class="btn btn-outline-primary btn-sm"><i class="bi bi-check-circle me-1"></i>Save basics</button>
+            <a href="#groups-section" data-step="groups" class="btn btn-primary btn-sm step-nav-next">Next: Groups &amp; students</a>
           </div>
-        </div>
-        <div class="d-flex justify-content-end mt-3">
-          <a href="#groups-section" data-step="groups" class="btn btn-primary btn-sm step-nav-next">Next: Groups &amp; students</a>
-        </div>
+        </form>
         {% endif %}
 
       </div>
@@ -778,42 +773,40 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
           <h3>Rubric</h3>
         </div>
 
-        {% if group_weight_total != session.group_weight_percent or individual_categories and individual_weight_total != session.individual_weight_percent %}
+        {% if weight_total != 100 %}
         <div class="rubric-status-banner assess-stagger">
           <i class="bi bi-exclamation-triangle-fill icon"></i>
           <div class="msg">
-            {% if group_weight_total != session.group_weight_percent %}
-              Group weights are at {{ group_weight_total|floatformat:'-2' }}% -
-              {% if group_weight_remaining > 0 %}add {{ group_weight_remaining|floatformat:'-2' }}% more{% else %}remove {{ group_weight_remaining|cut:"-"|floatformat:'-2' }}% of weight{% endif %}
-              to reach this session's {{ session.group_weight_percent|floatformat:'-2' }}% group share before it can go live.
-            {% endif %}
-            {% if individual_categories and individual_weight_total != session.individual_weight_percent %}
-              {% if group_weight_total != session.group_weight_percent %}Individual weights also need{% else %}Individual weights are at {{ individual_weight_total|floatformat:'-2' }}% - {% if individual_weight_remaining > 0 %}add {{ individual_weight_remaining|floatformat:'-2' }}% more{% else %}remove {{ individual_weight_remaining|cut:"-"|floatformat:'-2' }}%{% endif %} to reach{% endif %} this session's {{ session.individual_weight_percent|floatformat:'-2' }}% individual share.
-            {% endif %}
+            Weights are at {{ weight_total|floatformat:'-2' }}% -
+            {% if weight_remaining > 0 %}add {{ weight_remaining|floatformat:'-2' }}% more{% else %}remove {{ weight_remaining|cut:"-"|floatformat:'-2' }}% of weight{% endif %}
+            so the rubric adds up to exactly 100% before it can go live.
           </div>
         </div>
         {% endif %}
 
         <div class="weight-meter-row assess-stagger mb-0">
-          <div class="weight-meter {% if group_weight_total == session.group_weight_percent %}is-ready{% else %}is-blocked{% endif %}">
-            <span class="ring"><span class="ring-num">{{ group_weight_total|floatformat:"-2" }}%</span></span>
+          <div class="weight-meter {% if weight_total == 100 %}is-ready{% else %}is-blocked{% endif %}">
+            <span class="ring"><span class="ring-num">{{ weight_total|floatformat:"-2" }}%</span></span>
             <div class="body">
-              <div class="lbl">Group weight <span class="text-muted fw-400">/ {{ session.group_weight_percent|floatformat:"-2" }}%</span></div>
+              <div class="lbl">Total weight <span class="text-muted fw-400">/ 100%</span></div>
               <div class="msg">
-                {% if group_weight_total == session.group_weight_percent %}<i class="bi bi-check-circle-fill me-1"></i>Balanced
-                {% else %}{{ group_weight_remaining|cut:"-"|floatformat:'-2' }}{% if group_weight_remaining > 0 %} to add{% else %} to remove{% endif %}{% endif %}
+                {% if weight_total == 100 %}<i class="bi bi-check-circle-fill me-1"></i>Balanced
+                {% else %}{{ weight_remaining|cut:"-"|floatformat:'-2' }}{% if weight_remaining > 0 %} to add{% else %} to remove{% endif %}{% endif %}
               </div>
             </div>
           </div>
-          <div class="weight-meter {% if individual_weight_total == session.individual_weight_percent or not individual_categories %}is-ready{% else %}is-blocked{% endif %}">
-            <span class="ring"><span class="ring-num">{{ individual_weight_total|floatformat:"-2" }}%</span></span>
+          <div class="weight-meter weight-pie-card" id="weight-pie-card">
+            <div class="weight-pie" role="img" aria-label="How the 100% of weight is split between group, individual and not yet allocated"
+                 style="background:conic-gradient({{ weight_pie.gradient }})"></div>
             <div class="body">
-              <div class="lbl">Individual weight <span class="text-muted fw-400">/ {{ session.individual_weight_percent|floatformat:"-2" }}%</span></div>
-              <div class="msg">
-                {% if not individual_categories %}<i class="bi bi-dash-circle me-1"></i>Not used
-                {% elif individual_weight_total == session.individual_weight_percent %}<i class="bi bi-check-circle-fill me-1"></i>Balanced
-                {% else %}{{ individual_weight_remaining|cut:"-"|floatformat:'-2' }}{% if individual_weight_remaining > 0 %} to add{% else %} to remove{% endif %}{% endif %}
-              </div>
+              <div class="lbl">Weight distribution</div>
+              <ul class="weight-pie-legend">
+                {% for piece in weight_pie.slices %}
+                <li{% if piece.is_free %} class="is-free"{% endif %}><span class="dot" style="background:{{ piece.colour }}"></span><span class="nm">{{ piece.name }}</span><span class="pc">{{ piece.label }}%</span></li>
+                {% empty %}
+                <li class="is-free"><span class="dot" style="background:#d4d4d8"></span><span class="nm">Not allocated yet</span><span class="pc">100%</span></li>
+                {% endfor %}
+              </ul>
             </div>
           </div>
         </div>
@@ -850,17 +843,17 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                   <summary>What should the file look like?</summary>
                   <div class="table-responsive mt-2">
                     <table class="table table-sm import-format-table mb-2">
-                      <thead><tr><th>Category</th><th>Description</th><th>Scope</th><th>Max points</th><th>Weight %</th></tr></thead>
+                      <thead><tr><th>Category</th><th>Description</th><th>Scope</th><th>Weight %</th></tr></thead>
                       <tbody>
-                        <tr><td>Technical depth</td><td>Quality of the solution</td><td>Group</td><td>10</td><td>30</td></tr>
-                        <tr><td>Teamwork</td><td>This student's part</td><td>Individual</td><td>5</td><td>40</td></tr>
+                        <tr><td>Technical depth</td><td>Quality of the solution</td><td>Group</td><td>30</td></tr>
+                        <tr><td>Teamwork</td><td>This student's part</td><td>Individual</td><td>40</td></tr>
                       </tbody>
                     </table>
                   </div>
                   <ul class="import-format-notes">
                     <li><strong>Scope</strong> is Group or Individual.</li>
-                    <li>Weights must add up to this session's split: <strong>{{ session.group_weight_percent|floatformat:"-2" }}%</strong> for group categories and <strong>{{ session.individual_weight_percent|floatformat:"-2" }}%</strong> for individual ones.</li>
-                    <li>Max points is what a student can give; Description is optional.</li>
+                    <li>Weights add up to exactly <strong>100%</strong> across all categories. Split them between group and individual however you like (87 and 13, for example).</li>
+                    <li>A student scores each category from 0 up to its weight. Description is optional.</li>
                     <li>You review everything, and any weight problem, before it is saved.</li>
                   </ul>
                   <a href="{% url 'assessment_rubric_import_sample' session.pk %}" class="btn btn-sm btn-link p-0"><i class="bi bi-download me-1"></i>Download a sample file</a>
@@ -887,20 +880,21 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
             {% if not live_mode %}
             <div class="card">
               <div class="card-body">
-                <div class="rubric-form-mode-banner" id="rubric-form-mode-banner">
+                <div class="rubric-form-mode-banner{% if editing_category %} is-active{% endif %}" id="rubric-form-mode-banner">
                   <i class="bi bi-pencil-fill"></i><span>Editing an existing category</span>
                 </div>
                 <div class="card-icon-head">
                   <div class="head-left">
-                    <span class="icon-badge" id="rubric-form-icon"><i class="bi bi-plus-square"></i></span>
+                    <span class="icon-badge" id="rubric-form-icon">{% if editing_category %}<i class="bi bi-pencil-square"></i>{% else %}<i class="bi bi-plus-square"></i>{% endif %}</span>
                     <div>
-                      <div class="title" id="rubric-form-title">Add rubric category</div>
-                      <div class="sub">Scored out of its max points, weighted into the total</div>
+                      <div class="title" id="rubric-form-title">{% if editing_category %}Edit rubric category{% else %}Add rubric category{% endif %}</div>
+                      <div class="sub">Students score it from 0 up to its weight</div>
                     </div>
                   </div>
-                  <a href="#" class="t-sm d-none" id="rubric-form-cancel">Cancel</a>
+                  <a href="#" class="t-sm{% if not editing_category %} d-none{% endif %}" id="rubric-form-cancel">Cancel</a>
                 </div>
-                <form method="post" id="rubric-form" action="{% url 'assessment_rubric' session.pk %}">
+                <form method="post" id="rubric-form" data-create-url="{% url 'assessment_rubric' session.pk %}"
+                      action="{% if editing_category %}{% url 'assessment_rubric_edit' session.pk editing_category.pk %}{% else %}{% url 'assessment_rubric' session.pk %}{% endif %}">
                   {% csrf_token %}
                   {% if rubric_form.non_field_errors %}<div class="alert alert-danger py-2 t-sm">{{ rubric_form.non_field_errors|join:", " }}</div>{% endif %}
                   <div class="mb-2">
@@ -915,22 +909,17 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                     <label class="form-label t-sm fw-600">Scope</label>{{ rubric_form.scope }}
                     <button type="button" class="scope-info-toggle" aria-expanded="false" aria-controls="rubric-scope-info" title="More information about rubric scope"><i class="bi bi-info-lg" aria-hidden="true"></i><span class="visually-hidden">More information about rubric scope</span></button>
                     <div class="scope-hint scope-info-copy" id="rubric-scope-info" hidden>
-                      <i class="bi bi-info-circle-fill"></i><span>Group categories score the whole presenting group at once; Individual categories are scored per student. Each scope's weights sum to this session's own group/individual share, set when it was created.</span>
+                      <i class="bi bi-info-circle-fill"></i><span>Group categories score the whole presenting group at once; Individual categories are scored per student. All weights, group and individual together, add up to 100%.</span>
                     </div>
                     {% if rubric_form.scope.errors %}<div class="field-error">{{ rubric_form.scope.errors|join:", " }}</div>{% endif %}
                   </div>
-                  <div class="row g-2 mb-2">
-                    <div class="col-6">
-                      <label class="form-label t-sm fw-600">Max points</label>{{ rubric_form.max_points }}
-                      {% if rubric_form.max_points.errors %}<div class="field-error">{{ rubric_form.max_points.errors|join:", " }}</div>{% endif %}
-                    </div>
-                    <div class="col-6">
-                      <label class="form-label t-sm fw-600">Weight %</label>{{ rubric_form.weight }}
-                      {% if rubric_form.weight.errors %}<div class="field-error">{{ rubric_form.weight.errors|join:", " }}</div>{% endif %}
-                    </div>
+                  <div class="mb-2">
+                    <label class="form-label t-sm fw-600">Weight %</label>{{ rubric_form.weight }}
+                    <div class="text-muted t-micro mt-1">{{ weight_remaining|floatformat:"-2" }}% of the 100% is still free.</div>
+                    {% if rubric_form.weight.errors %}<div class="field-error">{{ rubric_form.weight.errors|join:", " }}</div>{% endif %}
                   </div>
                   <button type="submit" class="btn btn-primary btn-sm w-100" id="rubric-form-submit">
-                    <i class="bi bi-plus-lg me-1"></i>Add category
+                    {% if editing_category %}<i class="bi bi-check-lg me-1"></i>Update category{% else %}<i class="bi bi-plus-lg me-1"></i>Add category{% endif %}
                   </button>
                 </form>
               </div>
@@ -938,7 +927,23 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
             {% endif %}
           </div>
 
-          <div class="col-md-8">
+          <div class="col-md-8" id="rubric-lists">
+            {% if group_categories or individual_categories %}{% if not live_mode %}
+            <div class="groups-toolbar" id="rubric-toolbar">
+              <label class="groups-select-all">
+                <input type="checkbox" class="form-check-input" id="rubric-select-all">
+                <span>Select all</span>
+              </label>
+              <span class="groups-selected-count" id="rubric-selected-count" aria-live="polite"></span>
+              <form method="post" action="{% url 'assessment_rubric_bulk_delete' session.pk %}" id="rubric-bulk-form" class="groups-bulk d-none"
+                    data-confirm="Delete the selected categories?" data-confirm-label="Delete" data-confirm-title="Delete rubric categories">
+                {% csrf_token %}
+                <span id="rubric-bulk-inputs"></span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="rubric-clear">Clear</button>
+                <button type="submit" class="btn btn-sm btn-danger"><i class="bi bi-trash me-1"></i><span id="rubric-bulk-label">Delete selected</span></button>
+              </form>
+            </div>
+            {% endif %}{% endif %}
             <div class="card mb-3">
               <div class="card-body">
                 <div class="card-icon-head">
@@ -953,15 +958,15 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                 <div class="rubric-cat-list">
                   {% for cat in group_categories %}
                   <div class="rubric-cat-card" data-id="{{ cat.pk }}" data-name="{{ cat.name }}" data-description="{{ cat.description }}"
-                       data-scope="{{ cat.scope }}" data-max-points="{{ cat.max_points }}" data-weight="{{ cat.weight }}"
+                       data-scope="{{ cat.scope }}" data-weight="{{ cat.weight }}"
                        data-edit-url="{% url 'assessment_rubric_edit' session.pk cat.pk %}">
+                    {% if not live_mode %}<input type="checkbox" class="form-check-input rubric-select-box me-2 flex-shrink-0" value="{{ cat.pk }}" data-name="{{ cat.name }}" aria-label="Select {{ cat.name }}">{% endif %}
                     <span class="cat-icon"><i class="bi bi-clipboard-check"></i></span>
                     <div class="cat-body">
                       <div class="cat-name">{{ cat.name }}</div>
                       {% if cat.description %}<div class="cat-desc">{{ cat.description }}</div>{% endif %}
                     </div>
                     <div class="cat-meta">
-                      <span class="pts-chip">/{{ cat.max_points }} pts</span>
                       <span class="weight-chip">{{ cat.weight|floatformat:"-2" }}%</span>
                     </div>
                     {% if not live_mode %}
@@ -979,8 +984,8 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                 </div>
                 {% if group_categories %}
                 <div class="weight-total-row">
-                  <span class="lbl">Total weight</span>
-                  <span class="val {% if group_weight_total == session.group_weight_percent %}is-ok{% else %}is-bad{% endif %}">{{ group_weight_total|floatformat:"-2" }}% of {{ session.group_weight_percent|floatformat:"-2" }}%</span>
+                  <span class="lbl">Group weight</span>
+                  <span class="val is-ok">{{ group_weight_total|floatformat:"-2" }}%</span>
                 </div>
                 {% endif %}
               </div>
@@ -1000,15 +1005,15 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                 <div class="rubric-cat-list">
                   {% for cat in individual_categories %}
                   <div class="rubric-cat-card is-individual" data-id="{{ cat.pk }}" data-name="{{ cat.name }}" data-description="{{ cat.description }}"
-                       data-scope="{{ cat.scope }}" data-max-points="{{ cat.max_points }}" data-weight="{{ cat.weight }}"
+                       data-scope="{{ cat.scope }}" data-weight="{{ cat.weight }}"
                        data-edit-url="{% url 'assessment_rubric_edit' session.pk cat.pk %}">
+                    {% if not live_mode %}<input type="checkbox" class="form-check-input rubric-select-box me-2 flex-shrink-0" value="{{ cat.pk }}" data-name="{{ cat.name }}" aria-label="Select {{ cat.name }}">{% endif %}
                     <span class="cat-icon"><i class="bi bi-person-lines-fill"></i></span>
                     <div class="cat-body">
                       <div class="cat-name">{{ cat.name }}</div>
                       {% if cat.description %}<div class="cat-desc">{{ cat.description }}</div>{% endif %}
                     </div>
                     <div class="cat-meta">
-                      <span class="pts-chip">/{{ cat.max_points }} pts</span>
                       <span class="weight-chip">{{ cat.weight|floatformat:"-2" }}%</span>
                     </div>
                     {% if not live_mode %}
@@ -1026,8 +1031,8 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                 </div>
                 {% if individual_categories %}
                 <div class="weight-total-row">
-                  <span class="lbl">Total weight</span>
-                  <span class="val {% if individual_weight_total == session.individual_weight_percent %}is-ok{% else %}is-bad{% endif %}">{{ individual_weight_total|floatformat:"-2" }}% of {{ session.individual_weight_percent|floatformat:"-2" }}%</span>
+                  <span class="lbl">Individual weight</span>
+                  <span class="val is-ok">{{ individual_weight_total|floatformat:"-2" }}%</span>
                 </div>
                 {% endif %}
               </div>
@@ -1046,7 +1051,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
     <div class="assess-hero assess-stagger setup-section" id="go-live-section" data-step="go-live">
       <div class="hero-icon"><i class="bi bi-rocket-takeoff"></i></div>
       <h2>Ready to go live?</h2>
-      <p>Add your groups (with their students) and a rubric first - weights must sum to this session's {{ session.group_weight_percent|floatformat:"-2" }}%/{{ session.individual_weight_percent|floatformat:"-2" }}% split before you can start.</p>
+      <p>Add your groups (with their students) and a rubric first - the rubric's weights must add up to exactly 100% before you can start.</p>
       <form method="post" action="{% url 'assessment_go_live' session.pk %}">
         {% csrf_token %}
         <button type="submit" class="btn btn-primary btn-lg" {% if not session.can_go_live %}disabled{% endif %}>
@@ -1054,7 +1059,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
         </button>
       </form>
       {% if not session.can_go_live %}
-      <div class="text-danger t-sm mt-2">Needs at least one group and a rubric whose weights sum to this session's group/individual split.</div>
+      <div class="text-danger t-sm mt-2">Needs at least one group and a rubric whose weights add up to exactly 100%.</div>
       {% endif %}
       <div class="mt-3">
         <a href="#rubric-section" data-step="rubric" class="btn btn-outline-secondary btn-sm step-nav-back">Back</a>
@@ -1257,6 +1262,61 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 </script>
 
 <script>
+// Rubric - one "Select all" box, a box on every category, and a single bar that
+// deletes whatever is selected (one category, several, or all of them).
+(function () {
+  const lists = document.getElementById('rubric-lists');
+  const toolbar = document.getElementById('rubric-toolbar');
+  if (!lists || !toolbar) return;
+  const selectAll = document.getElementById('rubric-select-all');
+  const count = document.getElementById('rubric-selected-count');
+  const form = document.getElementById('rubric-bulk-form');
+  const inputs = document.getElementById('rubric-bulk-inputs');
+  const label = document.getElementById('rubric-bulk-label');
+  const selected = new Set();
+  const boxes = Array.prototype.slice.call(lists.querySelectorAll('.rubric-select-box'));
+  function plural(n, word, many) { return n + ' ' + (n === 1 ? word : many); }
+
+  function render() {
+    boxes.forEach(function (box) {
+      box.checked = selected.has(box.value);
+      box.closest('.rubric-cat-card').classList.toggle('is-selected', box.checked);
+    });
+    const n = selected.size;
+    selectAll.checked = boxes.length > 0 && n === boxes.length;
+    selectAll.indeterminate = n > 0 && n < boxes.length;
+    toolbar.classList.toggle('has-selection', n > 0);
+    form.classList.toggle('d-none', n === 0);
+    count.textContent = n ? plural(n, 'category', 'categories') + ' selected' : plural(boxes.length, 'category', 'categories');
+    label.textContent = n === boxes.length && n > 1 ? 'Delete all' : (n === 1 ? 'Delete category' : 'Delete selected');
+    inputs.innerHTML = '';
+    selected.forEach(function (id) {
+      const input = document.createElement('input');
+      input.type = 'hidden'; input.name = 'category_ids'; input.value = id;
+      inputs.appendChild(input);
+    });
+    const names = boxes.filter(function (box) { return selected.has(box.value); })
+      .map(function (box) { return '"' + box.dataset.name + '"'; });
+    form.dataset.confirm = 'Delete ' + plural(n, 'category', 'categories') + ' (' + names.slice(0, 4).join(', ') +
+      (names.length > 4 ? ' and ' + (names.length - 4) + ' more' : '') + ')? The rubric weights will no longer add up to 100% until you add more. This cannot be undone.';
+  }
+
+  boxes.forEach(function (box) {
+    box.addEventListener('change', function () {
+      if (box.checked) selected.add(box.value); else selected.delete(box.value);
+      render();
+    });
+  });
+  selectAll.addEventListener('change', function () {
+    boxes.forEach(function (box) { if (selectAll.checked) selected.add(box.value); else selected.delete(box.value); });
+    render();
+  });
+  document.getElementById('rubric-clear').addEventListener('click', function () { selected.clear(); render(); });
+  render();
+})();
+</script>
+
+<script>
 // Rubric - edit a category in place, same reused-form pattern as roster.
 (function () {
   const form = document.getElementById('rubric-form');
@@ -1266,13 +1326,12 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
   const submitBtn = document.getElementById('rubric-form-submit');
   const cancelLink = document.getElementById('rubric-form-cancel');
   const banner = document.getElementById('rubric-form-mode-banner');
-  const createUrl = form.action;
+  const createUrl = form.dataset.createUrl;
 
   function enterEditMode(row) {
     document.getElementById('id_rubric_name').value = row.dataset.name;
     document.getElementById('id_rubric_description').value = row.dataset.description;
     document.getElementById('id_rubric_scope').value = row.dataset.scope;
-    document.getElementById('id_rubric_max_points').value = row.dataset.maxPoints;
     document.getElementById('id_rubric_weight').value = row.dataset.weight;
 
     form.action = row.dataset.editUrl;
@@ -1294,6 +1353,8 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
     cancelLink.classList.add('d-none');
     banner.classList.remove('is-active');
   }
+
+  if (banner.classList.contains('is-active')) form.scrollIntoView({ block: 'center' });
 
   document.querySelectorAll('.rubric-edit-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {

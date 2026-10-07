@@ -58,33 +58,41 @@ class RubricRuleTests(TestCase):
         self.session = AssessmentSession.objects.create(organization_id=1, name='Demo')
 
     def row(self, **over):
-        raw = {'name': 'Quality', 'description': '', 'scope': 'group', 'max_points': '10', 'weight': '60'}
+        raw = {'name': 'Quality', 'description': '', 'scope': 'group', 'weight': '60'}
         raw.update(over)
         return rubric_rules.normalise_row(raw, 2)
 
     def test_a_good_row_is_typed_and_cleaned(self):
-        row, errors = self.row(name='  Tech   depth ', scope='Team', weight='60%', max_points='7.5')
+        row, errors = self.row(name='  Tech   depth ', scope='Team', weight='60%')
         self.assertEqual(errors, [])
-        self.assertEqual((row['name'], row['scope'], row['weight'], row['max_points']),
-                         ('Tech depth', 'group', Decimal('60'), Decimal('7.5')))
+        self.assertEqual((row['name'], row['scope'], row['weight']),
+                         ('Tech depth', 'group', Decimal('60')))
+        self.assertNotIn('max_points', row)
+
+    def test_a_leftover_max_points_value_is_ignored(self):
+        row, errors = self.row(max_points='abc')
+        self.assertEqual(errors, [])
+        self.assertNotIn('max_points', row)
 
     def test_scope_defaults_to_group_and_individual_aliases_work(self):
         self.assertEqual(self.row(scope='')[0]['scope'], 'group')
         self.assertEqual(self.row(scope='Student')[0]['scope'], 'individual')
 
     def test_every_field_is_checked_with_a_message_that_names_it(self):
-        _, errors = self.row(name='', scope='nonsense', max_points='abc', weight='')
+        _, errors = self.row(name='', scope='nonsense', weight='abc')
         text = ' '.join(errors)
-        for part in ('Category name is empty', 'must be Group or Individual', '"abc" is not a number', 'Weight is empty'):
+        for part in ('Category name is empty', 'must be Group or Individual', '"abc" is not a number'):
             self.assertIn(part, text)
 
     def test_limits(self):
         self.assertIn('longer than 150', self.row(name='x' * 151)[1][0])
         self.assertIn('longer than 255', self.row(description='x' * 256)[1][0])
-        self.assertIn('more than 0', self.row(max_points='0')[1][0])
-        self.assertIn('more than 0', self.row(max_points='10000')[1][0])
-        self.assertIn('between 0 and 100', self.row(weight='101')[1][0])
-        self.assertIn('between 0 and 100', self.row(weight='-1')[1][0])
+        self.assertIn('Weight is empty', self.row(weight='')[1][0])
+        self.assertIn('more than 0 and at most 100', self.row(weight='101')[1][0])
+        self.assertIn('more than 0 and at most 100', self.row(weight='-1')[1][0])
+        self.assertIn('more than 0 and at most 100', self.row(weight='0')[1][0])
+        self.assertEqual(self.row(weight='100')[1], [])
+        self.assertEqual(self.row(weight='0.01')[1], [])
         self.assertIn('at most 2 decimal', self.row(weight='12.345')[1][0])
         self.assertIn('not a number', self.row(weight='nan')[1][0])
         self.assertIn('not a number', self.row(weight='inf')[1][0])
@@ -96,34 +104,42 @@ class RubricRuleTests(TestCase):
         return [self.row(name=f'C{i}', scope=scope, weight=str(weight))[0]
                 for i, (scope, weight) in enumerate(specs)]
 
-    def test_weights_must_add_up_to_each_scope_s_share_exactly_when_strict(self):
-        ok = rubric_rules.check_rubric(self.rows(('group', 30), ('group', 30), ('individual', 40)), self.session, strict=True)
-        self.assertEqual(ok['errors'], [])
-        short = rubric_rules.check_rubric(self.rows(('group', 50)), self.session, strict=True)
-        self.assertIn('must add up to 60% (short by 10%)', short['errors'][0][1])
-        over = rubric_rules.check_rubric(self.rows(('group', 50), ('group', 20)), self.session, strict=True)
-        self.assertIn('over this session\'s 60% group share by 10%', over['errors'][0][1])
+    def test_weights_must_add_up_to_exactly_100_combined_when_strict(self):
+        for specs in ((('group', 30), ('group', 30), ('individual', 40)),
+                      (('group', 87), ('individual', 13)),
+                      (('group', 100),), (('individual', 100),),
+                      (('group', 12.5), ('group', 37.5), ('individual', 50))):
+            with self.subTest(specs=specs):
+                ok = rubric_rules.check_rubric(self.rows(*specs), strict=True)
+                self.assertEqual(ok['errors'], [])
+                self.assertEqual(ok['total'], Decimal('100'))
+        short = rubric_rules.check_rubric(self.rows(('group', 50), ('individual', 40)), strict=True)
+        self.assertIn('must add up to 100% (short by 10%)', short['errors'][0][1])
+        over = rubric_rules.check_rubric(self.rows(('group', 50), ('individual', 51)), strict=True)
+        self.assertIn('Weights add up to 101%, which is over 100% by 1%', over['errors'][0][1])
 
     def test_a_draft_may_be_short_but_never_over(self):
-        self.assertEqual(rubric_rules.check_rubric(self.rows(('group', 20)), self.session, strict=False)['errors'], [])
-        over = rubric_rules.check_rubric(self.rows(('individual', 41)), self.session, strict=False)
-        self.assertIn('Individual weights add up to 41%', over['errors'][0][1])
+        self.assertEqual(rubric_rules.check_rubric(self.rows(('group', 20)), strict=False)['errors'], [])
+        self.assertEqual(rubric_rules.check_rubric(self.rows(('group', 60), ('individual', 40)), strict=False)['errors'], [])
+        over = rubric_rules.check_rubric(self.rows(('group', 60), ('individual', 41)), strict=False)
+        self.assertIn('Weights add up to 101%', over['errors'][0][1])
 
-    def test_a_scope_with_no_categories_is_not_judged(self):
-        verdict = rubric_rules.check_rubric(self.rows(('group', 60)), self.session, strict=True)
+    def test_one_scope_alone_may_use_all_100(self):
+        verdict = rubric_rules.check_rubric(self.rows(('group', 100)), strict=True)
         self.assertEqual(verdict['errors'], [])
         self.assertEqual(verdict['totals']['individual'], 0)
+        self.assertEqual(verdict['totals']['group'], 100)
 
     def test_duplicate_names_in_a_scope_and_too_many_rows_are_errors(self):
         rows = [self.row(name='Same', weight='30')[0], self.row(name='same', weight='30')[0]]
-        self.assertIn('appears twice', rubric_rules.check_rubric(rows, self.session, strict=True)['errors'][0][1])
+        self.assertIn('appears twice', rubric_rules.check_rubric(rows, strict=True)['errors'][0][1])
         many = [self.row(name=f'C{i}', weight='1')[0] for i in range(rubric_rules.MAX_ROWS + 1)]
-        self.assertIn('at most 50', rubric_rules.check_rubric(many, self.session, strict=False)['errors'][0][1])
+        self.assertIn('at most 50', rubric_rules.check_rubric(many, strict=False)['errors'][0][1])
 
     def test_the_same_name_in_two_scopes_is_fine(self):
         rows = [self.row(name='Teamwork', scope='group', weight='60')[0],
                 self.row(name='Teamwork', scope='individual', weight='40')[0]]
-        self.assertEqual(rubric_rules.check_rubric(rows, self.session, strict=True)['errors'], [])
+        self.assertEqual(rubric_rules.check_rubric(rows, strict=True)['errors'], [])
 
     def test_weights_print_without_trailing_zeros(self):
         self.assertEqual((rubric_rules.pct(Decimal('60.00')), rubric_rules.pct(Decimal('12.50')), rubric_rules.pct(Decimal('7'))),

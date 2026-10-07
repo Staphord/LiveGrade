@@ -20,6 +20,7 @@ urlpatterns = [
     path('<int:pk>/rubric/import/', views.rubric_import_view, name='assessment_rubric_import'),
     path('<int:pk>/rubric/import/preview/', views.rubric_import_preview, name='assessment_rubric_import_preview'),
     path('<int:pk>/rubric/import/sample/', views.rubric_import_sample, name='assessment_rubric_import_sample'),
+    path('<int:pk>/rubric/delete/', views.rubric_bulk_delete, name='assessment_rubric_bulk_delete'),
     path('<int:pk>/rubric/table/', views.rubric_table, name='assessment_rubric_table'),
     path('<int:pk>/rubric/<int:category_pk>/edit/', views.rubric_edit, name='assessment_rubric_edit'),
     path('<int:pk>/rubric/<int:category_pk>/delete/', views.rubric_delete, name='assessment_rubric_delete'),

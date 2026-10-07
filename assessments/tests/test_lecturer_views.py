@@ -19,7 +19,7 @@ class LecturerFlowTests(TestCase):
     def test_create_session(self):
         response = self.client.post('/assessments/new/', {
             'name': 'FYP 2026', 'identify_by': 'full_name',
-            'group_weight_percent': '60', 'individual_weight_percent': '40',
+            'ungraded_penalty': '1',
         })
         self.assertEqual(AssessmentSession.objects.count(), 1)
         session = AssessmentSession.objects.first()
@@ -54,7 +54,7 @@ class LecturerFlowTests(TestCase):
         # Rubric
         response = self.client.post(f'/assessments/{session.pk}/rubric/', {
             'name': 'Technical implementation', 'description': '', 'scope': 'group',
-            'max_points': '10', 'weight': '60',
+            'weight': '100',
         })
         self.assertEqual(response.status_code, 302)
         response = self.client.get(f'/assessments/{session.pk}/rubric/')

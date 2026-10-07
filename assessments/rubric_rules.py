@@ -3,11 +3,13 @@
 The spreadsheet import, the "edit as a table" form and the checks before going
 live all go through here, so a rubric is judged the same way however it arrives.
 Rows are plain dicts: ``row`` (the line it came from, or None), ``id`` (an existing
-category, or None), ``name``, ``description``, ``scope``, ``max_points``, ``weight``.
+category, or None), ``name``, ``description``, ``scope``, ``weight``. A weight is the category's share of the
+100-point final score, so a rubric's weights, group and individual together, are
+judged as one pool of ``TOTAL_WEIGHT``.
 """
 from decimal import Decimal, InvalidOperation
 
-from .models import RubricCategory
+from .models import TOTAL_WEIGHT, RubricCategory
 from .sheets import cell_text, clean, key
 
 MAX_ROWS = 50
@@ -21,7 +23,6 @@ SCOPE_ALIASES = {
 SCOPE_LABEL = {RubricCategory.Scope.GROUP: 'Group', RubricCategory.Scope.INDIVIDUAL: 'Individual'}
 
 NAME_MAX, DESCRIPTION_MAX = 150, 255
-POINTS_MAX = Decimal('9999.99')
 
 
 def pct(value):
@@ -63,38 +64,27 @@ def normalise_row(raw, row_number=None):
     if scope is None:
         errors.append(f'Scope "{clean(raw.get("scope"))}" must be Group or Individual.')
 
-    max_points, problem = _number(raw.get('max_points'), 'Max points')
-    if problem:
-        errors.append(problem)
-    elif max_points <= 0 or max_points > POINTS_MAX:
-        errors.append(f'Max points must be more than 0 and at most {POINTS_MAX}.')
-        max_points = None
-
     weight, problem = _number(raw.get('weight'), 'Weight')
     if problem:
         errors.append(problem)
-    elif weight < 0 or weight > 100:
-        errors.append('Weight must be between 0 and 100.')
+    elif weight <= 0 or weight > TOTAL_WEIGHT:
+        errors.append(f'Weight must be more than 0 and at most {pct(TOTAL_WEIGHT)}.')
         weight = None
 
     row = {'row': row_number, 'id': raw.get('id'), 'name': name, 'description': description,
-           'scope': scope, 'max_points': max_points, 'weight': weight}
+           'scope': scope, 'weight': weight}
     return row, errors
 
 
-def targets(session):
-    return {RubricCategory.Scope.GROUP: session.group_weight_percent,
-            RubricCategory.Scope.INDIVIDUAL: session.individual_weight_percent}
-
-
-def check_rubric(rows, session, strict):
+def check_rubric(rows, strict):
     """Judge a whole rubric.
 
     ``rows`` are already normalised and error-free field by field. ``strict`` is the
-    go-live standard: every scope that has categories must add up to its share
-    exactly. Not strict (a draft being built up) only forbids going over.
+    go-live standard: the weights of every category, group and individual together,
+    must add up to exactly ``TOTAL_WEIGHT``. Not strict (a draft being built up) only
+    forbids going over.
 
-    Returns ``{'errors': [(row, message)], 'totals': {scope: Decimal}}``.
+    Returns ``{'errors': [(row, message)], 'totals': {scope: Decimal}, 'total': Decimal}``.
     """
     errors = []
     if len(rows) > MAX_ROWS:
@@ -107,15 +97,11 @@ def check_rubric(rows, session, strict):
             errors.append((row['row'], f'"{row["name"]}" appears twice in {SCOPE_LABEL[row["scope"]].lower()} categories.'))
         seen[marker] = True
         totals[row['scope']] += row['weight']
-    for scope, goal in targets(session).items():
-        total = totals[scope]
-        if not any(r['scope'] == scope for r in rows):
-            continue
-        label = SCOPE_LABEL[scope]
-        if total > goal:
-            errors.append((None, f'{label} weights add up to {pct(total)}%, which is over this '
-                                 f'session\'s {pct(goal)}% {label.lower()} share by {pct(total - goal)}%.'))
-        elif strict and total < goal:
-            errors.append((None, f'{label} weights add up to {pct(total)}%; they must add up to '
-                                 f'{pct(goal)}% (short by {pct(goal - total)}%).'))
-    return {'errors': errors, 'totals': totals}
+    total = sum(totals.values(), Decimal('0'))
+    if total > TOTAL_WEIGHT:
+        errors.append((None, f'Weights add up to {pct(total)}%, which is over {pct(TOTAL_WEIGHT)}% '
+                             f'by {pct(total - TOTAL_WEIGHT)}%.'))
+    elif strict and total < TOTAL_WEIGHT:
+        errors.append((None, f'Weights add up to {pct(total)}%; they must add up to '
+                             f'{pct(TOTAL_WEIGHT)}% (short by {pct(TOTAL_WEIGHT - total)}%).'))
+    return {'errors': errors, 'totals': totals, 'total': total}

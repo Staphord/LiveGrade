@@ -16,13 +16,13 @@ from .. import group_import, rubric_import
 from ..pending_imports import GROUP_KEY, RUBRIC_KEY
 from ..forms import GroupImportForm, RubricImportForm
 from ..models import EvaluationScore
-from ..setup_rules import is_live, record_change, rubric_structure_lock
+from ..setup_rules import is_live, live_rubric_lock, record_change, rubric_structure_lock
 from .lecturer_views import _closed, _session, _setup_context, delete_groups
 
 __all__ = [
     'assessment_setup', 'group_import_view', 'group_import_preview', 'group_import_sample',
     'groups_bulk_delete', 'rubric_import_view', 'rubric_import_preview', 'rubric_import_sample',
-    'rubric_table',
+    'rubric_table', 'rubric_bulk_delete',
 ]
 
 XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -144,6 +144,37 @@ def _rubric_structure_blocked(request, session):
 
 @lecturer_required
 @require_POST
+def rubric_bulk_delete(request, pk):
+    """Remove the selected rubric categories in one go (one, several or all).
+
+    Held to the same rules as removing one: a live session's rubric is edited as a
+    table so its weights keep adding up to 100, and once votes exist no category may
+    be removed. All or nothing.
+    """
+    session = _session(request, pk)
+    blocked = _closed(request, session)
+    if blocked:
+        return blocked
+    lock = live_rubric_lock(session) or rubric_structure_lock(session)
+    if lock:
+        messages.error(request, lock)
+        return redirect('assessment_rubric', pk=session.pk)
+    ids = [int(value) for value in request.POST.getlist('category_ids') if value.isdigit()]
+    categories = list(session.rubric_categories.filter(pk__in=ids))
+    if not categories:
+        messages.error(request, 'Select at least one rubric category to delete.')
+        return redirect('assessment_rubric', pk=session.pk)
+    names = ', '.join(f'"{c.name}"' for c in categories[:5]) + (
+        f' and {len(categories) - 5} more' if len(categories) > 5 else '')
+    session.rubric_categories.filter(pk__in=[c.pk for c in categories]).delete()
+    record_change(session, request.user, f'Deleted {len(categories)} rubric categor'
+                  f'{"y" if len(categories) == 1 else "ies"}: {names}.', notify='rubric.changed')
+    messages.success(request, f'Deleted {len(categories)} rubric categor{"y" if len(categories) == 1 else "ies"}.')
+    return redirect('assessment_rubric', pk=session.pk)
+
+
+@lecturer_required
+@require_POST
 def rubric_import_view(request, pk):
     session = _session(request, pk)
     blocked = _closed(request, session) or _rubric_structure_blocked(request, session)
@@ -196,7 +227,7 @@ def rubric_import_sample(request, pk):
     return _download(rubric_import.sample_workbook(), 'rubric-sample.xlsx')
 
 
-FIELDS = ('id', 'name', 'description', 'scope', 'max_points', 'weight')
+FIELDS = ('id', 'name', 'description', 'scope', 'weight')
 
 
 def _table_rows_from_post(post):
@@ -247,7 +278,6 @@ def rubric_table(request, pk):
         errors = list(verdict['errors']) + ([(None, lock)] if lock else [])
     else:
         rows = [{'id': c.pk, 'name': c.name, 'description': c.description, 'scope': c.scope,
-                 'max_points': f'{c.max_points:f}'.rstrip('0').rstrip('.'),
                  'weight': f'{c.weight:f}'.rstrip('0').rstrip('.')}
                 for c in session.rubric_categories.all()]
         errors = []

@@ -189,7 +189,7 @@ class EvaluationSubmitBroadcastTests(TestCase):
             status=AssessmentSession.Status.LIVE)
         self.group_cat = RubricCategory.objects.create(
             assessment_session=self.session, name='Implementation',
-            scope=RubricCategory.Scope.GROUP, max_points=10, weight=100)
+            scope=RubricCategory.Scope.GROUP, weight=100)
         self.group1 = PresentationGroup.objects.create(assessment_session=self.session, name='Group 1')
         self.voter = Student.objects.create(assessment_session=self.session, student_id='C1', full_name='Voter')
         self.turn = PresentationTurn.objects.create(

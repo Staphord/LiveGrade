@@ -25,7 +25,7 @@
         </span>
       </div>
       {% if row.percent is not None %}
-      <div class="rank-bar"><div class="rank-bar-fill" style="width:{% widthratio row.percent session.group_weight_percent 100 %}%"></div></div>
+      <div class="rank-bar"><div class="rank-bar-fill" style="width:{% widthratio row.percent session.group_weight_total 100 %}%"></div></div>
       {% endif %}
     </div>
     <span class="rank-votes text-muted t-micro"><i class="bi bi-person-check me-1"></i>{{ row.votes }}</span>

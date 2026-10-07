@@ -95,6 +95,7 @@ def _write_scores(evaluation, scores, categories, expected_scope):
         category = categories.get(int(category_id))
         if category is None or category.scope != expected_scope:
             raise ValidationError('Unknown rubric category submitted.')
-        score = EvaluationScore(evaluation=evaluation, rubric_category=category, value=value)
+        score = EvaluationScore(evaluation=evaluation, rubric_category=category, value=value,
+                                max_value=category.weight)
         score.full_clean()
         score.save()

@@ -10,8 +10,8 @@ from assessments.tests.test_edges_lecturer_views import LecturerTestCase, _messa
 
 from .xlsx_helpers import XLSX, xlsx_buffer, xlsx_upload
 
-HEADERS = ['Category', 'Description', 'Scope', 'Max points', 'Weight %']
-GOOD = [['Technical', 'Quality', 'Group', 10, 30], ['Delivery', '', 'Group', 10, 30], ['Teamwork', 'Part', 'Individual', 5, 40]]
+HEADERS = ['Category', 'Description', 'Scope', 'Weight %']
+GOOD = [['Technical', 'Quality', 'Group', 30], ['Delivery', '', 'Group', 30], ['Teamwork', 'Part', 'Individual', 40]]
 
 
 def rubric_file(*rows, **kwargs):
@@ -28,11 +28,20 @@ class ParseRubricTests(LecturerTestCase):
         self.assertEqual(parsed['rows'][0]['weight'], '30')
 
     def test_unrecognised_empty_and_oversized_files_are_refused(self):
-        self.assertIn('Category, Max points, Weight %', rubric_import.parse_rubric(xlsx_buffer(['Colour'], ['red']))['fatal'])
-        self.assertIn('Weight %', rubric_import.parse_rubric(xlsx_buffer(['Category', 'Max points'], ['a', 1]))['fatal'])
+        self.assertIn('Category, Weight %', rubric_import.parse_rubric(xlsx_buffer(['Colour'], ['red']))['fatal'])
+        self.assertIn('Weight %', rubric_import.parse_rubric(xlsx_buffer(['Category', 'Description'], ['a', 1]))['fatal'])
         self.assertEqual(rubric_import.parse_rubric(xlsx_buffer())['fatal'], 'The file is empty.')
-        many = [HEADERS] + [[f'C{i}', '', 'Group', 1, 1] for i in range(51)]
+        many = [HEADERS] + [[f'C{i}', '', 'Group', 1] for i in range(51)]
         self.assertIn('at most 50', rubric_import.parse_rubric(xlsx_buffer(*many))['fatal'])
+
+    def test_an_old_file_with_a_max_points_column_still_imports_and_the_column_is_ignored(self):
+        legacy = ['Category', 'Description', 'Scope', 'Max points', 'Weight %']
+        parsed = rubric_import.parse_rubric(xlsx_buffer(
+            legacy, ['A', '', 'Group', 10, 60], ['B', '', 'Individual', 5, 40]))
+        self.assertIsNone(parsed['fatal'])
+        self.assertEqual([r['weight'] for r in parsed['rows']], ['60', '40'])
+        self.assertNotIn('max_points', parsed['rows'][0])
+        self.assertTrue(rubric_import.check_import(parsed['rows'], self.session, 'replace')['ok'])
 
     def test_the_downloadable_sample_is_itself_a_valid_rubric(self):
         parsed = rubric_import.parse_rubric(rubric_import.sample_workbook())
@@ -40,7 +49,7 @@ class ParseRubricTests(LecturerTestCase):
         self.assertTrue(verdict['ok'], verdict['errors'])
 
     def test_percentage_formatted_weights_mean_the_points_typed(self):
-        buffer = xlsx_buffer(HEADERS, ['A', '', 'Group', 10, 0.6], ['B', '', 'Individual', 5, 0.4], percent_columns=['E'])
+        buffer = xlsx_buffer(HEADERS, ['A', '', 'Group', 0.6], ['B', '', 'Individual', 0.4], percent_columns=['D'])
         verdict = rubric_import.check_import(rubric_import.parse_rubric(buffer)['rows'], self.session, 'replace')
         self.assertTrue(verdict['ok'], verdict['errors'])
 
@@ -48,7 +57,7 @@ class ParseRubricTests(LecturerTestCase):
 class CheckImportTests(LecturerTestCase):
 
     def check(self, *rows, mode='replace'):
-        raw = [{'row': n, 'name': r[0], 'description': r[1], 'scope': r[2], 'max_points': str(r[3]), 'weight': str(r[4])}
+        raw = [{'row': n, 'name': r[0], 'description': r[1], 'scope': r[2], 'weight': str(r[3])}
                for n, r in enumerate(rows, start=2)]
         return rubric_import.check_import(raw, self.session, mode)
 
@@ -56,35 +65,44 @@ class CheckImportTests(LecturerTestCase):
         self.assertTrue(self.check(*GOOD)['ok'])
 
     def test_field_problems_are_reported_by_row_before_any_total_is_judged(self):
-        verdict = self.check(['', '', 'Group', 10, 30], ['B', '', 'Sideways', 'x', 200])
+        verdict = self.check(['', '', 'Group', 30], ['B', '', 'Sideways', 200])
         self.assertFalse(verdict['ok'])
         self.assertEqual({row for row, _ in verdict['errors']}, {2, 3})
         self.assertEqual(verdict['totals'], {})
 
-    def test_totals_that_miss_the_split_are_named_with_the_gap(self):
-        verdict = self.check(['A', '', 'Group', 10, 50], ['B', '', 'Individual', 5, 40])
+    def test_a_total_that_misses_100_is_named_with_the_gap(self):
+        verdict = self.check(['A', '', 'Group', 50], ['B', '', 'Individual', 40])
         self.assertFalse(verdict['ok'])
         self.assertIn('short by 10%', verdict['errors'][0][1])
+        self.assertEqual(verdict['total'], Decimal('90'))
+
+    def test_any_split_that_adds_up_to_100_passes_and_over_100_does_not(self):
+        self.assertTrue(self.check(['A', '', 'Group', 87], ['B', '', 'Individual', 13])['ok'])
+        self.assertTrue(self.check(['A', '', 'Group', 100])['ok'])
+        self.assertTrue(self.check(['A', '', 'Individual', 100])['ok'])
+        over = self.check(['A', '', 'Group', 87], ['B', '', 'Individual', 14])
+        self.assertFalse(over['ok'])
+        self.assertIn('over 100% by 1%', over['errors'][0][1])
 
     def test_adding_is_judged_on_the_rubric_as_it_would_become(self):
-        self.assertFalse(self.check(['More', '', 'Group', 10, 5], mode='add')['ok'])
+        self.assertFalse(self.check(['More', '', 'Group', 5], mode='add')['ok'])
         RubricCategory.objects.filter(pk=self.quality.pk).update(weight=50)
-        self.assertTrue(self.check(['More', '', 'Group', 10, 10], mode='add')['ok'])
-        duplicate = self.check(['Quality', '', 'Group', 10, 10], mode='add')
+        self.assertTrue(self.check(['More', '', 'Group', 10], mode='add')['ok'])
+        duplicate = self.check(['Quality', '', 'Group', 10], mode='add')
         self.assertIn('appears twice', duplicate['errors'][0][1])
 
     def test_applying_a_rubric_that_no_longer_passes_is_refused(self):
-        raw = [{'row': 2, 'name': 'A', 'description': '', 'scope': 'Group', 'max_points': '10', 'weight': '5'}]
+        raw = [{'row': 2, 'name': 'A', 'description': '', 'scope': 'Group', 'weight': '5'}]
         with self.assertRaises(ValueError):
             rubric_import.apply_import(self.session, raw, 'replace')
 
     def test_replace_swaps_the_rubric_and_add_extends_it(self):
-        raw = [{'row': n, 'name': r[0], 'description': r[1], 'scope': r[2], 'max_points': str(r[3]), 'weight': str(r[4])}
+        raw = [{'row': n, 'name': r[0], 'description': r[1], 'scope': r[2], 'weight': str(r[3])}
                for n, r in enumerate(GOOD, start=2)]
         self.assertEqual(rubric_import.apply_import(self.session, raw, 'replace'), 3)
         self.assertEqual(sorted(RubricCategory.objects.values_list('name', flat=True)), ['Delivery', 'Teamwork', 'Technical'])
         RubricCategory.objects.filter(name='Delivery').update(weight=20)
-        added = [{'row': 2, 'name': 'Extra', 'description': '', 'scope': 'Group', 'max_points': '5', 'weight': '10'}]
+        added = [{'row': 2, 'name': 'Extra', 'description': '', 'scope': 'Group', 'weight': '10'}]
         self.assertEqual(rubric_import.apply_import(self.session, added, 'add'), 1)
         self.assertEqual(RubricCategory.objects.count(), 4)
         self.assertEqual(RubricCategory.objects.get(name='Extra').order, 4)
@@ -103,7 +121,7 @@ class RubricImportViewTests(LecturerTestCase):
         self.assertContains(page, 'Technical')
         self.assertContains(page, 'The rubric is valid')
         self.assertContains(page, '<strong>replace</strong>')
-        self.assertContains(page, 'of 60% group weight')
+        self.assertContains(page, 'of 100% total weight')
         self.assertTrue(RubricCategory.objects.filter(name='Quality').exists())
         done = self.client.post(self.url('assessment_rubric_import_preview'), {'action': 'apply'})
         self.assertRedirects(done, self.url('assessment_rubric'), fetch_redirect_response=False)
@@ -112,7 +130,7 @@ class RubricImportViewTests(LecturerTestCase):
 
     def test_adding_to_the_rubric_keeps_what_is_there(self):
         RubricCategory.objects.filter(pk=self.quality.pk).update(weight=50)
-        self.upload(['Extra', '', 'Group', 10, 10], mode='add')
+        self.upload(['Extra', '', 'Group', 10], mode='add')
         page = self.client.get(self.url('assessment_rubric'))
         self.assertContains(page, '<strong>add</strong>')
         self.client.post(self.url('assessment_rubric_import_preview'), {'action': 'apply'})
@@ -120,7 +138,7 @@ class RubricImportViewTests(LecturerTestCase):
         self.assertTrue(RubricCategory.objects.filter(name='Quality').exists())
 
     def test_a_rubric_with_a_weight_problem_shows_it_and_cannot_be_imported(self):
-        self.upload(['A', '', 'Group', 10, 50], ['B', '', 'Individual', 5, 40])
+        self.upload(['A', '', 'Group', 50], ['B', '', 'Individual', 40])
         page = self.client.get(self.url('assessment_rubric'))
         self.assertContains(page, 'short by 10%')
         html = page.content.decode()
@@ -131,7 +149,7 @@ class RubricImportViewTests(LecturerTestCase):
         self.assertTrue(RubricCategory.objects.filter(name='Quality').exists())
 
     def test_row_level_problems_are_shown_against_their_rows(self):
-        self.upload(['', '', 'Group', 10, 30])
+        self.upload(['', '', 'Group', 30])
         page = self.client.get(self.url('assessment_rubric'))
         self.assertContains(page, 'Row 2: Category name is empty.')
 
@@ -163,11 +181,13 @@ class RubricImportViewTests(LecturerTestCase):
         self.assertNotContains(page, 'id="rubric-import-modal"')
         self.assertNotIn('rubric_import', self.client.session)
 
-    def test_the_rubric_window_shows_each_scope_s_total_against_its_target(self):
+    def test_the_rubric_window_shows_the_total_against_100_and_each_scope_s_share(self):
         self.upload(*GOOD)
         page = self.client.get(self.url('assessment_rubric'))
-        self.assertEqual([(t['label'], t['ok']) for t in page.context['rubric_review']['totals']],
-                         [('Group', True), ('Individual', True)])
+        review = page.context['rubric_review']
+        self.assertEqual((review['total'], review['total_ok']), (Decimal('100'), True))
+        self.assertEqual([(t['label'], t['total']) for t in review['totals']],
+                         [('Group', Decimal('60')), ('Individual', Decimal('40'))])
         self.assertContains(page, 'dp-stat is-good')
 
     def test_the_preview_without_an_upload_goes_back(self):
@@ -205,7 +225,7 @@ class RubricImportViewTests(LecturerTestCase):
         self.assertContains(page, 'Import rubric')
         self.assertContains(page, 'Edit rubric as a table')
         self.assertContains(page, self.url('assessment_rubric_import_sample'))
-        self.assertContains(page, 'Weights must add up')
+        self.assertContains(page, 'add up to exactly')
 
 
 class RubricTableTests(LecturerTestCase):
@@ -213,25 +233,25 @@ class RubricTableTests(LecturerTestCase):
     def post(self, *rows, **kwargs):
         data = {'rows-total': str(len(rows))}
         for index, row in enumerate(rows):
-            for field in ('id', 'name', 'description', 'scope', 'max_points', 'weight'):
+            for field in ('id', 'name', 'description', 'scope', 'weight'):
                 data[f'rows-{index}-{field}'] = row.get(field, '')
         return self.client.post(self.url('assessment_rubric_table'), data, **kwargs)
 
     def existing(self):
         return [{'id': c.pk, 'name': c.name, 'description': c.description, 'scope': c.scope,
-                 'max_points': str(c.max_points), 'weight': str(c.weight)} for c in RubricCategory.objects.order_by('pk')]
+                 'weight': str(c.weight)} for c in RubricCategory.objects.order_by('pk')]
 
     def test_the_table_lists_the_current_rubric(self):
         page = self.client.get(self.url('assessment_rubric_table'))
         self.assertContains(page, 'Quality')
         self.assertContains(page, 'Teamwork')
-        self.assertContains(page, 'Group weights')
+        self.assertContains(page, 'Total weight')
 
     def test_edits_are_saved_together(self):
         rows = self.existing()
         rows[0].update(name='Quality of work', weight='55')
         rows[1].update(weight='40')
-        rows.append({'name': 'Extra', 'scope': 'group', 'max_points': '5', 'weight': '5'})
+        rows.append({'name': 'Extra', 'scope': 'group', 'weight': '5'})
         response = self.post(*rows)
         self.assertRedirects(response, self.url('assessment_rubric'), fetch_redirect_response=False)
         self.quality.refresh_from_db()
@@ -245,7 +265,7 @@ class RubricTableTests(LecturerTestCase):
         rows[0]['weight'] = '70'
         over = self.post(*rows)
         self.assertEqual(over.status_code, 200)
-        self.assertContains(over, 'over this session')
+        self.assertContains(over, 'over 100%')
         self.assertContains(over, 'value="70"')
 
     def test_a_live_session_must_keep_its_weights_exact(self):
@@ -280,28 +300,38 @@ class RubricTableTests(LecturerTestCase):
         rows[0]['id'] = 999999
         self.assertContains(self.post(*rows), 'no longer exists')
 
-    def test_scores_fix_a_category_s_scale_and_scope(self):
+    def test_scores_fix_a_category_s_scope_but_not_its_weight(self):
         turn = PresentationTurn.objects.create(assessment_session=self.session, group=self.red, status='closed')
         evaluation = Evaluation.objects.create(presentation_turn=turn, evaluator=self.cat)
         EvaluationScore.objects.create(evaluation=evaluation, rubric_category=self.quality, value=5)
         page = self.client.get(self.url('assessment_rubric_table'))
         self.assertContains(page, 'This category already has scores.')
         rows = self.existing()
-        rows[0]['max_points'] = '20'
+        rows[0]['scope'] = 'individual'
         self.assertContains(self.post(*rows), 'already has scores')
-        rows[0].update(max_points='10', weight='60')
-        rows[0]['name'] = 'Renamed'
-        self.assertEqual(self.post(*rows).status_code, 302)
-
-    def test_a_category_with_no_scores_yet_can_change_its_scale_and_scope(self):
-        rows = self.existing()
-        rows[0]['max_points'] = '20'
-        rows[1].update(scope='group', weight='0')
-        rows[0]['weight'] = '60'
+        rows[0].update(scope='group', weight='55')
+        rows[1]['weight'] = '45'
         self.assertEqual(self.post(*rows).status_code, 302)
         self.quality.refresh_from_db()
+        self.assertEqual(self.quality.weight, Decimal('55'))
+
+    def test_a_category_with_no_scores_yet_can_change_its_scope(self):
+        rows = self.existing()
+        rows[1].update(scope='group')
+        self.assertEqual(self.post(*rows).status_code, 302)
         self.teamwork.refresh_from_db()
-        self.assertEqual((self.quality.max_points, self.teamwork.scope), (20, 'group'))
+        self.assertEqual(self.teamwork.scope, 'group')
+
+    def test_a_weight_of_zero_is_refused_in_the_table(self):
+        rows = self.existing()
+        rows[1]['weight'] = '0'
+        rows[0]['weight'] = '100'
+        response = self.post(*rows)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'more than 0 and at most 100')
+        rows[1]['weight'] = '40'
+        rows[0]['weight'] = '60'
+        self.assertEqual(self.post(*rows).status_code, 302)
 
     def test_votes_stop_categories_being_added_or_removed(self):
         turn = PresentationTurn.objects.create(assessment_session=self.session, group=self.red, status='closed')

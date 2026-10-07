@@ -45,11 +45,13 @@ class SetupTabAndPageTests(LecturerTestCase):
         self.assertContains(page, 'Recent changes (1)')
         self.assertContains(page, 'Added group &quot;Green&quot;.')
 
-    def test_the_live_basics_can_only_be_renamed(self):
+    def test_the_live_basics_are_all_editable_and_have_no_weight_split(self):
         self.set_status('live')
         page = self.client.get(self.url('assessment_session_edit'))
-        self.assertContains(page, 'are fixed once a session is live')
-        self.assertNotContains(page, 'name="group_weight_percent"')
+        for field in ('name', 'identify_by', 'ungraded_penalty'):
+            self.assertContains(page, f'name="{field}"')
+        self.assertNotContains(page, 'are fixed once a session is live')
+        self.assertNotContains(page, 'weight_percent')
 
 
 class LiveStudentEditTests(LecturerTestCase):
@@ -143,7 +145,7 @@ class LiveRubricGuardTests(LecturerTestCase):
     def test_the_one_row_rubric_forms_are_refused_while_live_and_the_table_is_offered(self):
         self.set_status('live')
         for response in (
-                self.client.post(self.url('assessment_rubric'), {'name': 'X', 'scope': 'group', 'max_points': 5, 'weight': 1}),
+                self.client.post(self.url('assessment_rubric'), {'name': 'X', 'scope': 'group', 'weight': 1}),
                 self.client.post(self.url('assessment_rubric_edit', self.quality.pk), {'name': 'X'}),
                 self.client.post(self.url('assessment_rubric_delete', self.quality.pk))):
             self.assertRedirects(response, self.url('assessment_rubric'), fetch_redirect_response=False)
@@ -170,9 +172,10 @@ class ClosedSessionIsReadOnlyTests(LecturerTestCase):
             ('assessment_roster', [], {'full_name': 'N', 'student_id': 'N1'}),
             ('assessment_roster_edit', [self.ann.pk], {'full_name': 'Z', 'student_id': 'S1'}),
             ('assessment_roster_delete', [self.ann.pk], {}),
-            ('assessment_rubric', [], {'name': 'X', 'scope': 'group', 'max_points': 5, 'weight': 1}),
+            ('assessment_rubric', [], {'name': 'X', 'scope': 'group', 'weight': 1}),
             ('assessment_rubric_edit', [self.quality.pk], {'name': 'X'}),
             ('assessment_rubric_delete', [self.quality.pk], {}),
+            ('assessment_rubric_bulk_delete', [], {'category_ids': [self.quality.pk]}),
             ('assessment_groups', [], {'name': 'G', 'max_size': 2}),
             ('assessment_group_edit', [self.red.pk], {'name': 'G', 'max_size': 2}),
             ('assessment_group_delete', [self.red.pk], {}),

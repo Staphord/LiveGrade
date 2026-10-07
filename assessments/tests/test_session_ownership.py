@@ -82,7 +82,7 @@ class CreationTests(OwnershipTestCase):
         sign_in(self.client, self.ann, self.org)
         self.client.post(reverse('assessment_session_create'), {
             'name': 'Fresh', 'identify_by': 'full_name',
-            'group_weight_percent': '60', 'individual_weight_percent': '40'})
+            'ungraded_penalty': '1'})
         fresh = AssessmentSession.objects.get(name='Fresh')
         self.assertEqual(fresh.created_by, self.ann)
         self.assertIn(fresh, AssessmentSession.objects.owned_by(self.ann))

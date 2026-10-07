@@ -69,7 +69,7 @@
   <div class="card-body p-0">
     <div class="px-3 py-2 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
       <span class="text-muted t-body">
-        <strong>{{ total }}</strong> student{{ total|pluralize }} · final = group%×{{ session.group_weight_percent }}% + individual%×{{ session.individual_weight_percent }}% − 1% per other group not graded
+        <strong>{{ total }}</strong> student{{ total|pluralize }} · final = group points + individual points − {{ session.ungraded_penalty|floatformat:"-2" }} per other group not graded
       </span>
       {% if session.status == 'live' %}
       <span class="live-refresh-badge" id="results-live-badge"><span class="dot"></span>Live</span>
@@ -99,7 +99,7 @@
                 <span class="sort-icon">{% if sort == 'individual_percent' %}<i class="bi bi-caret-{% if dir == 'asc' %}up{% else %}down{% endif %}-fill"></i>{% else %}<i class="bi bi-arrow-down-up"></i>{% endif %}</span>
               </a>
             </th>
-            <th class="sort-th {% if sort == 'penalty' %}is-active{% endif %}" title="1% deducted per other group this student never graded">
+            <th class="sort-th {% if sort == 'penalty' %}is-active{% endif %}" title="{{ session.ungraded_penalty|floatformat:'-2' }} point{{ session.ungraded_penalty|pluralize }} deducted per other group this student never graded">
               <a href="?sort=penalty&dir={% if sort == 'penalty' and dir == 'asc' %}desc{% else %}asc{% endif %}">Penalty
                 <span class="sort-icon">{% if sort == 'penalty' %}<i class="bi bi-caret-{% if dir == 'asc' %}up{% else %}down{% endif %}-fill"></i>{% else %}<i class="bi bi-arrow-down-up"></i>{% endif %}</span>
               </a>
@@ -172,10 +172,10 @@ function renderGroupChart(labels, values) {
       // is anywhere over a bar's column, not only the exact pixels of the
       // bar itself, which is what made it feel like hovering "did nothing".
       interaction: { mode: 'index', intersect: false },
-      // Capped at the session's group weight, not a flat 100 - a
-      // category's weight is now its real share of the final score, so a
-      // group's score can never exceed the session's group_weight_percent.
-      scales: { y: { beginAtZero: true, max: {{ session.group_weight_percent }}, ticks: { callback: function (v) { return v + '%'; } } } },
+      // Capped at the group categories' combined weight, not a flat 100 - a
+      // category's weight is its real share of the final score, so a
+      // group's score can never exceed it.
+      scales: { y: { beginAtZero: true, max: {{ session.group_weight_total|default:100|stringformat:'f' }}, ticks: { callback: function (v) { return v + '%'; } } } },
       plugins: {
         legend: { display: false },
         tooltip: { callbacks: { label: function (item) { return item.parsed.y + '%'; } } },

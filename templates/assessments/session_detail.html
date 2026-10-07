@@ -325,7 +325,7 @@
 <div class="assess-hero assess-stagger" style="margin-bottom:var(--sp-3)">
   <div class="hero-icon"><i class="bi bi-rocket-takeoff"></i></div>
   <h2>Ready to go live?</h2>
-  <p>Add students, groups and a rubric first - weights must sum to 100% per scope before you can start.</p>
+  <p>Add students, groups and a rubric first - the rubric's weights must add up to exactly 100% before you can start.</p>
   <form method="post" action="{% url 'assessment_go_live' session.pk %}">
     {% csrf_token %}
     <button type="submit" class="btn btn-primary btn-lg" {% if not session.can_go_live %}disabled{% endif %}>
@@ -333,7 +333,7 @@
     </button>
   </form>
   {% if not session.can_go_live %}
-  <div class="text-danger t-sm mt-2">Needs at least one group and a rubric whose weights sum to 100% per scope.</div>
+  <div class="text-danger t-sm mt-2">Needs at least one group and a rubric whose weights add up to exactly 100%.</div>
   {% endif %}
 </div>
 <div class="row g-3">

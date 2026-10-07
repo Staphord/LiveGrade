@@ -34,7 +34,7 @@ class AddFormsMatchRealTemplatePayloadTests(TestCase):
         # Exactly the fields rubric.html renders — no 'order' input exists.
         response = self.client.post(f'/assessments/{self.session.pk}/rubric/', {
             'name': 'Problem Identification & Real-World Relevance',
-            'description': '', 'scope': 'group', 'max_points': '10', 'weight': '10',
+            'description': '', 'scope': 'group', 'weight': '10',
         })
         self.assertRedirects(response, f'/assessments/{self.session.pk}/rubric/')
         self.assertTrue(
@@ -51,7 +51,7 @@ class AddFormsMatchRealTemplatePayloadTests(TestCase):
 
     def test_rubric_form_error_is_visible_on_the_page(self):
         response = self.client.post(f'/assessments/{self.session.pk}/rubric/', {
-            'name': '', 'description': '', 'scope': 'group', 'max_points': '10', 'weight': '10',
+            'name': '', 'description': '', 'scope': 'group', 'weight': '10',
         })
         self.assertEqual(response.status_code, 200)  # re-rendered, not redirected
         self.assertContains(response, 'field-error')

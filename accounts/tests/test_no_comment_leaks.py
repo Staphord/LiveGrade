@@ -36,7 +36,7 @@ class NoCommentLeakTests(TestCase):
         self.student = Student.objects.create(assessment_session=self.session, full_name='Stu Dent', student_id='S1')
         group = PresentationGroup.objects.create(assessment_session=self.session, name='Red', order=1)
         GroupMembership.objects.create(group=group, student=self.student)
-        RubricCategory.objects.create(assessment_session=self.session, name='Q', scope='group', max_points=10, weight=60)
+        RubricCategory.objects.create(assessment_session=self.session, name='Q', scope='group', weight=60)
 
     def lecturer_pages(self):
         pk = self.session.pk

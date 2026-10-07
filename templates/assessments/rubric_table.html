@@ -28,7 +28,7 @@
 {% include 'partials/_page_header.html' with title=session.name subtitle='Change the whole rubric in one place. Weights are checked together before anything is saved.' %}
 
 {% if live_mode %}
-<div class="alert alert-info"><i class="bi bi-broadcast me-1"></i>This session is live. Saving applies to the results of every group, including ones that have already presented. Group weights must add up to {{ session.group_weight_percent|floatformat:"-2" }}% and individual weights to {{ session.individual_weight_percent|floatformat:"-2" }}%.</div>
+<div class="alert alert-info"><i class="bi bi-broadcast me-1"></i>This session is live. Saving applies to the results of every group, including ones that have already presented. All weights, group and individual together, must add up to exactly 100%.</div>
 {% endif %}
 {% if structure_lock %}
 <div class="alert alert-warning"><i class="bi bi-lock-fill me-1"></i>{{ structure_lock }}</div>
@@ -41,9 +41,10 @@
 </div>
 {% endif %}
 
-<div class="rt-totals" id="rt-totals" data-group-target="{{ session.group_weight_percent|floatformat:'-2' }}" data-individual-target="{{ session.individual_weight_percent|floatformat:'-2' }}" data-strict="{% if strict %}1{% else %}0{% endif %}">
-  <div class="rt-total" id="rt-total-group"><div class="lbl">Group weights</div><div class="val"><span class="sum">0</span>% <span class="text-muted t-body">of {{ session.group_weight_percent|floatformat:"-2" }}%</span></div><div class="hint"></div></div>
-  <div class="rt-total" id="rt-total-individual"><div class="lbl">Individual weights</div><div class="val"><span class="sum">0</span>% <span class="text-muted t-body">of {{ session.individual_weight_percent|floatformat:"-2" }}%</span></div><div class="hint"></div></div>
+<div class="rt-totals" id="rt-totals" data-target="100" data-strict="{% if strict %}1{% else %}0{% endif %}">
+  <div class="rt-total" id="rt-total-all"><div class="lbl">Total weight</div><div class="val"><span class="sum">0</span>% <span class="text-muted t-body">of 100%</span></div><div class="hint"></div></div>
+  <div class="rt-total" id="rt-total-group"><div class="lbl">Group categories</div><div class="val"><span class="sum">0</span>%</div></div>
+  <div class="rt-total" id="rt-total-individual"><div class="lbl">Individual categories</div><div class="val"><span class="sum">0</span>%</div></div>
 </div>
 
 <form method="post" id="rt-form">
@@ -52,7 +53,7 @@
   <div class="card mb-3">
     <div class="table-responsive">
       <table class="table table-sm align-middle mb-0 rt-table">
-        <thead><tr><th style="min-width:200px">Category</th><th style="min-width:220px">Description</th><th>Scope</th><th style="width:110px">Max points</th><th style="width:110px">Weight %</th><th style="width:44px"></th></tr></thead>
+        <thead><tr><th style="min-width:200px">Category</th><th style="min-width:220px">Description</th><th>Scope</th><th style="width:110px">Weight %</th><th style="width:44px"></th></tr></thead>
         <tbody id="rt-body">
           {% for row in rows %}
           <tr class="rt-row {% if row.problem %}has-problem{% endif %}" data-index="{{ forloop.counter0 }}">
@@ -72,8 +73,7 @@
               </select>
               {% endif %}
             </td>
-            <td><input type="number" class="form-control form-control-sm" name="rows-{{ forloop.counter0 }}-max_points" value="{{ row.max_points }}" step="0.01" min="0.01" max="9999.99" required {% if row.core_locked %}readonly title="This category already has scores."{% endif %}></td>
-            <td><input type="number" class="form-control form-control-sm rt-weight" name="rows-{{ forloop.counter0 }}-weight" value="{{ row.weight }}" step="0.01" min="0" max="100" required></td>
+            <td><input type="number" class="form-control form-control-sm rt-weight" name="rows-{{ forloop.counter0 }}-weight" value="{{ row.weight }}" step="0.01" min="0.01" max="100" required></td>
             <td>
               {% if structure_lock %}<span class="rt-lock" title="{{ structure_lock }}"><i class="bi bi-lock-fill"></i></span>
               {% else %}<button type="button" class="btn btn-sm btn-outline-danger py-0 rt-remove" title="Remove this category"><i class="bi bi-trash"></i></button>{% endif %}
@@ -97,8 +97,7 @@
     <td><input type="hidden" name="rows-__i__-id" value=""><input type="text" class="form-control form-control-sm" name="rows-__i__-name" maxlength="150" required></td>
     <td><input type="text" class="form-control form-control-sm" name="rows-__i__-description" maxlength="255"></td>
     <td><select class="form-select form-select-sm rt-scope" name="rows-__i__-scope"><option value="group">Group</option><option value="individual">Individual</option></select></td>
-    <td><input type="number" class="form-control form-control-sm" name="rows-__i__-max_points" value="10" step="0.01" min="0.01" max="9999.99" required></td>
-    <td><input type="number" class="form-control form-control-sm rt-weight" name="rows-__i__-weight" value="0" step="0.01" min="0" max="100" required></td>
+    <td><input type="number" class="form-control form-control-sm rt-weight" name="rows-__i__-weight" value="" placeholder="e.g. 30" step="0.01" min="0.01" max="100" required></td>
     <td><button type="button" class="btn btn-sm btn-outline-danger py-0 rt-remove" title="Remove this category"><i class="bi bi-trash"></i></button></td>
   </tr>
 </template>
@@ -110,33 +109,31 @@
   var body = document.getElementById('rt-body');
   var counter = document.getElementById('rt-count');
   var totals = document.getElementById('rt-totals');
-  var targets = {group: parseFloat(totals.dataset.groupTarget), individual: parseFloat(totals.dataset.individualTarget)};
+  var goal = parseFloat(totals.dataset.target);
   var strict = totals.dataset.strict === '1';
   var next = parseInt(counter.value, 10) || 0;
 
   function fmt(n) { return (Math.round(n * 100) / 100).toString(); }
 
   function recount() {
-    var sums = {group: 0, individual: 0}, present = {group: false, individual: false};
+    var sums = {group: 0, individual: 0};
     body.querySelectorAll('.rt-row').forEach(function (row) {
-      var scope = row.querySelector('.rt-scope').value || (row.querySelector('input[name$="-scope"]') || {}).value || 'group';
+      var scope = row.querySelector('.rt-scope').value || 'group';
       var hidden = row.querySelector('input[type=hidden][name$="-scope"]');
       if (hidden) scope = hidden.value;
       var weight = parseFloat(row.querySelector('.rt-weight').value);
-      present[scope] = true;
       sums[scope] += isNaN(weight) ? 0 : weight;
     });
-    ['group', 'individual'].forEach(function (scope) {
-      var box = document.getElementById('rt-total-' + scope);
-      var goal = targets[scope], sum = sums[scope];
-      box.querySelector('.sum').textContent = fmt(sum);
-      var hint = box.querySelector('.hint');
-      box.classList.remove('is-ok', 'is-bad');
-      if (!present[scope]) { hint.textContent = 'No ' + scope + ' categories.'; return; }
-      if (sum > goal + 0.0001) { box.classList.add('is-bad'); hint.textContent = 'Over by ' + fmt(sum - goal) + '%.'; }
-      else if (Math.abs(sum - goal) < 0.0001) { box.classList.add('is-ok'); hint.textContent = 'Adds up.'; }
-      else { if (strict) box.classList.add('is-bad'); hint.textContent = 'Short by ' + fmt(goal - sum) + '%.'; }
-    });
+    document.querySelector('#rt-total-group .sum').textContent = fmt(sums.group);
+    document.querySelector('#rt-total-individual .sum').textContent = fmt(sums.individual);
+    var sum = sums.group + sums.individual;
+    var box = document.getElementById('rt-total-all');
+    box.querySelector('.sum').textContent = fmt(sum);
+    var hint = box.querySelector('.hint');
+    box.classList.remove('is-ok', 'is-bad');
+    if (sum > goal + 0.0001) { box.classList.add('is-bad'); hint.textContent = 'Over by ' + fmt(sum - goal) + '%.'; }
+    else if (Math.abs(sum - goal) < 0.0001) { box.classList.add('is-ok'); hint.textContent = 'Adds up.'; }
+    else { if (strict) box.classList.add('is-bad'); hint.textContent = 'Short by ' + fmt(goal - sum) + '%.'; }
   }
 
   body.addEventListener('input', recount);

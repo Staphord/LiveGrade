@@ -20,9 +20,12 @@
       </div>
       <div class="dp-review-stats">
         <span class="dp-stat"><b>{{ rubric_review.rows|length }}</b> categor{{ rubric_review.rows|length|pluralize:"y,ies" }} in the file</span>
+        {% if rubric_review.total is not None %}
+        <span class="dp-stat {% if rubric_review.total_ok %}is-good{% else %}is-bad{% endif %}"><b>{{ rubric_review.total|floatformat:"-2" }}%</b> of 100% total weight {% if rubric_review.total_ok %}<i class="bi bi-check-circle-fill"></i>{% else %}<i class="bi bi-x-circle-fill"></i>{% endif %}</span>
         {% for total in rubric_review.totals %}
-        <span class="dp-stat {% if total.ok %}is-good{% else %}is-bad{% endif %}"><b>{{ total.total|floatformat:"-2" }}%</b> of {{ total.target|floatformat:"-2" }}% {{ total.label|lower }} weight {% if total.ok %}<i class="bi bi-check-circle-fill"></i>{% else %}<i class="bi bi-x-circle-fill"></i>{% endif %}</span>
+        <span class="dp-stat"><b>{{ total.total|floatformat:"-2" }}%</b> {{ total.label|lower }}</span>
         {% endfor %}
+        {% endif %}
       </div>
       <div class="modal-body">
         <div class="alert {% if rubric_review.replacing %}alert-warning{% else %}alert-info{% endif %} py-2 t-body">
@@ -34,7 +37,7 @@
         </div>
 
         {% if rubric_review.verdict.ok %}
-        <div class="alert alert-success py-2 t-body"><i class="bi bi-check-circle-fill me-1"></i>The rubric is valid: weights add up to this session's split.</div>
+        <div class="alert alert-success py-2 t-body"><i class="bi bi-check-circle-fill me-1"></i>The rubric is valid: weights add up to 100%.</div>
         {% else %}
         <div class="alert alert-danger py-2 t-body">
           <strong>Fix these in the file and upload it again:</strong>
@@ -48,14 +51,13 @@
         <div class="dp-table card">
           <div class="table-responsive">
             <table class="table table-sm align-middle mb-0">
-              <thead><tr><th>Row</th><th>Category</th><th>Scope</th><th class="text-end">Max points</th><th class="text-end">Weight %</th></tr></thead>
+              <thead><tr><th>Row</th><th>Category</th><th>Scope</th><th class="text-end">Weight %</th></tr></thead>
               <tbody>
                 {% for row in rubric_review.rows %}
                 <tr class="{% if row.problems %}table-danger{% endif %}">
                   <td class="text-muted">{{ row.row }}</td>
                   <td><div class="fw-600">{{ row.name }}</div>{% if row.description %}<div class="text-muted t-sm">{{ row.description }}</div>{% endif %}</td>
                   <td>{{ row.scope|default:"Group" }}</td>
-                  <td class="text-end">{{ row.max_points }}</td>
                   <td class="text-end">{{ row.weight }}</td>
                 </tr>
                 {% endfor %}

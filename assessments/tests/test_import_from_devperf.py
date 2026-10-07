@@ -50,7 +50,7 @@ class ImportTestCase(TestCase):
         GroupMembership.objects.using(db).create(id=1, group=self.group, student=self.ann)
         self.rubric = RubricCategory.objects.using(db).create(
             id=2, assessment_session=self.session, name='Quality',
-            scope=RubricCategory.Scope.GROUP, max_points=10, weight=60)
+            scope=RubricCategory.Scope.GROUP, weight=60)
         self.turn = PresentationTurn.objects.using(db).create(
             id=4, assessment_session=self.session, group=self.group)
         ParticipationRecord.objects.using(db).create(id=3, assessment_session=self.session, student=self.ann)

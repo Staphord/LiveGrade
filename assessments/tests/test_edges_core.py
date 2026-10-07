@@ -57,10 +57,10 @@ class SessionFixture(TestCase):
         self.blue = self.group('Blue', 2, self.cat, self.dan)
         self.quality = RubricCategory.objects.create(
             assessment_session=self.session, name='Quality',
-            scope=RubricCategory.Scope.GROUP, max_points=10, weight=60)
+            scope=RubricCategory.Scope.GROUP, weight=60)
         self.teamwork = RubricCategory.objects.create(
             assessment_session=self.session, name='Teamwork',
-            scope=RubricCategory.Scope.INDIVIDUAL, max_points=10, weight=40)
+            scope=RubricCategory.Scope.INDIVIDUAL, weight=40)
 
     def student(self, name, student_id, session=None):
         return Student.objects.create(
@@ -265,7 +265,7 @@ class ServiceTests(SessionFixture):
 
     def test_a_score_outside_the_rubrics_range_is_refused_and_nothing_is_kept(self):
         turn = self.active_turn(self.red)
-        for bad in (Decimal('11'), Decimal('-1')):
+        for bad in (Decimal('60.01'), Decimal('-1')):
             with self.subTest(score=bad):
                 with self.assertRaises(ValidationError):
                     services.submit_evaluation(turn, self.cat, {self.quality.pk: bad}, {})
@@ -305,9 +305,9 @@ class ScoringEdgeTests(SessionFixture):
     def test_a_category_nobody_scored_is_skipped_not_counted_as_zero(self):
         RubricCategory.objects.create(
             assessment_session=self.session, name='Extra',
-            scope=RubricCategory.Scope.GROUP, max_points=10, weight=0)
+            scope=RubricCategory.Scope.GROUP, weight=0)
         turn = self.active_turn(self.red)
-        services.submit_evaluation(turn, self.cat, {self.quality.pk: Decimal('10')}, {})
+        services.submit_evaluation(turn, self.cat, {self.quality.pk: Decimal('60')}, {})
         self.assertEqual(scoring.group_score_percent(self.red, self.session), Decimal('60.0'))
 
     def test_every_other_group_a_student_skipped_costs_a_point(self):
@@ -332,7 +332,7 @@ class ModelEdgeTests(SessionFixture):
 
     def test_names(self):
         self.assertEqual(str(self.session), 'Demo day')
-        self.assertEqual(str(self.quality), 'Quality (Group / project, /10)')
+        self.assertEqual(str(self.quality), 'Quality (Group / project, 60%)')
         self.assertEqual(str(self.red), 'Red')
         turn = self.active_turn(self.red)
         self.assertEqual(str(turn), 'Red — Active')
@@ -391,25 +391,35 @@ class ModelEdgeTests(SessionFixture):
         self.assertTrue(self.active_turn(
             self.blue, voting_ends_at=timezone.now() + timedelta(minutes=1)).is_voting_open)
 
-    def test_a_session_must_split_the_marks_into_exactly_one_hundred(self):
-        self.session.group_weight_percent = 70
-        with self.assertRaises(ValidationError):
-            self.session.clean()
+    def test_the_ungraded_penalty_must_be_between_zero_and_a_hundred(self):
+        for bad in (Decimal('-0.01'), Decimal('100.01')):
+            self.session.ungraded_penalty = bad
+            with self.assertRaises(ValidationError):
+                self.session.full_clean(exclude=['created_by'])
+        for good in (Decimal('0'), Decimal('2.5'), Decimal('100')):
+            self.session.ungraded_penalty = good
+            self.session.full_clean(exclude=['created_by'])
 
 
 class FormEdgeTests(SessionFixture):
 
-    def test_the_weights_must_add_up_to_a_hundred(self):
-        form = AssessmentSessionForm({
-            'name': 'x', 'identify_by': 'full_name',
-            'group_weight_percent': '70', 'individual_weight_percent': '40'})
-        self.assertFalse(form.is_valid())
-        self.assertIn('add up to 100%', form.non_field_errors()[0])
+    def test_the_penalty_form_accepts_zero_and_rejects_negative_or_over_a_hundred(self):
+        base = {'name': 'x', 'identify_by': 'full_name'}
+        self.assertTrue(AssessmentSessionForm({**base, 'ungraded_penalty': '0'}).is_valid())
+        self.assertTrue(AssessmentSessionForm({**base, 'ungraded_penalty': '2.5'}).is_valid())
+        self.assertFalse(AssessmentSessionForm({**base, 'ungraded_penalty': '-1'}).is_valid())
+        self.assertFalse(AssessmentSessionForm({**base, 'ungraded_penalty': '101'}).is_valid())
+        self.assertFalse(AssessmentSessionForm(base).is_valid())
 
     def test_a_category_form_with_no_session_has_no_budget_to_check(self):
-        form = RubricCategoryForm({'name': 'x', 'scope': 'group', 'max_points': '10',
-                                   'weight': '500'})
+        form = RubricCategoryForm({'name': 'x', 'scope': 'group', 'weight': '50'})
         self.assertTrue(form.is_valid(), form.errors)
+
+    def test_a_weight_must_be_more_than_zero_and_at_most_a_hundred(self):
+        for bad in ('0', '-5', '100.01', '500'):
+            form = RubricCategoryForm({'name': 'x', 'scope': 'group', 'weight': bad})
+            self.assertFalse(form.is_valid(), bad)
+            self.assertIn('weight', form.errors)
 
 
 class PaginationAndAdminTests(SimpleTestCase):
@@ -447,7 +457,7 @@ class ExportTests(SessionFixture):
                 {'student': self.ann, 'group': self.red, 'group_percent': Decimal('50.0'),
                  'individual_percent': None, 'final_percent': Decimal('50.0')},
                 {'student': self.bob, 'group': self.red, 'group_percent': None,
-                 'individual_percent': Decimal('10.0'), 'final_percent': None, 'penalty': 2},
+                 'individual_percent': Decimal('10.0'), 'final_percent': None, 'penalty': Decimal('2.5')},
             ],
             'group_rows': [{'group': self.red, 'percent': Decimal('50.0')},
                            {'group': self.blue, 'percent': None}],

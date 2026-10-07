@@ -28,13 +28,13 @@ class RandomSession(SessionFixture):
         self.rng = rng
         RubricCategory.objects.create(
             assessment_session=self.session, name='Delivery', scope=RubricCategory.Scope.GROUP,
-            max_points=7, weight=Decimal('13.5'))
+            weight=Decimal('13.5'))
         RubricCategory.objects.create(
             assessment_session=self.session, name='Effort', scope=RubricCategory.Scope.INDIVIDUAL,
-            max_points=3, weight=Decimal('9.5'))
+            weight=Decimal('9.5'))
         RubricCategory.objects.create(
             assessment_session=self.session, name='Unscored', scope=RubricCategory.Scope.GROUP,
-            max_points=5, weight=Decimal('1'))
+            weight=Decimal('1'))
         self.students = [self.ann, self.bob, self.cat, self.dan]
         for index in range(5, 24):
             self.students.append(self.student(f'Pupil {index}', f'P{index}'))
@@ -47,6 +47,8 @@ class RandomSession(SessionFixture):
             rest = rest[size:]
         self.empty = self.group('Empty', 9)
         self.groups.append(self.empty)
+        self.session.ungraded_penalty = Decimal('1.5')
+        self.session.save()
         self.grade()
 
     def grade(self):
@@ -65,7 +67,7 @@ class RandomSession(SessionFixture):
                 for category in group_cats[:2]:
                     EvaluationScore.objects.create(
                         evaluation=evaluation, rubric_category=category,
-                        value=Decimal(self.rng.randint(0, int(category.max_points) * 4)) / 4)
+                        value=Decimal(self.rng.randint(0, int(category.weight) * 4)) / 4)
                 for membership in group.memberships.all():
                     if self.rng.random() < 0.7:
                         target = Evaluation.objects.create(
@@ -73,7 +75,7 @@ class RandomSession(SessionFixture):
                         for category in individual_cats:
                             EvaluationScore.objects.create(
                                 evaluation=target, rubric_category=category,
-                                value=Decimal(self.rng.randint(0, int(category.max_points) * 4)) / 4)
+                                value=Decimal(self.rng.randint(0, int(category.weight) * 4)) / 4)
 
 
 class SessionResultsMatchTheOriginalsTests(RandomSession):
@@ -85,7 +87,9 @@ class SessionResultsMatchTheOriginalsTests(RandomSession):
             student, group = row['student'], row['group']
             self.assertEqual(row['group_percent'], scoring.group_score_percent(group, self.session))
             self.assertEqual(row['individual_percent'], scoring.individual_score_percent(student, self.session))
-            self.assertEqual(row['penalty'], scoring.ungraded_group_count(student, group, self.session))
+            ungraded = scoring.ungraded_group_count(student, group, self.session)
+            self.assertEqual(row['ungraded'], ungraded)
+            self.assertEqual(row['penalty'], ungraded * Decimal('1.5'))
             self.assertEqual(row['final_percent'], scoring.final_score_percent(student, group, self.session))
         for row in results['group_rows']:
             self.assertEqual(row['percent'], scoring.group_score_percent(row['group'], self.session))
@@ -99,16 +103,33 @@ class SessionResultsMatchTheOriginalsTests(RandomSession):
             self.assertEqual(row['final_percent'], scoring.final_score_percent(
                 row['student'], row['group'], self.session))
 
-    def test_a_category_with_no_points_is_skipped_like_the_original(self):
-        RubricCategory.objects.filter(pk=self.quality.pk).update(max_points=0)
+    def test_scores_with_no_scale_are_skipped_like_the_original(self):
+        EvaluationScore.objects.filter(rubric_category=self.quality).update(max_value=0)
         for row in scoring.session_results(self.session)['group_rows']:
             self.assertEqual(row['percent'], scoring.group_score_percent(row['group'], self.session))
+
+    def test_a_weight_edited_after_voting_gives_the_same_numbers_both_ways(self):
+        RubricCategory.objects.filter(name='Delivery').update(weight=Decimal('6.5'))
+        results = scoring.session_results(self.session)
+        for row in results['student_rows']:
+            self.assertEqual(row['group_percent'], scoring.group_score_percent(row['group'], self.session))
+            self.assertEqual(row['individual_percent'], scoring.individual_score_percent(row['student'], self.session))
+            self.assertEqual(row['final_percent'], scoring.final_score_percent(row['student'], row['group'], self.session))
+
+    def test_the_penalty_follows_the_sessions_setting(self):
+        for value in (Decimal('0'), Decimal('2'), Decimal('0.25')):
+            self.session.ungraded_penalty = value
+            for row in scoring.session_results(self.session)['student_rows']:
+                self.assertEqual(row['penalty'], row['ungraded'] * value)
+                self.assertEqual(row['final_percent'], scoring.final_score_percent(
+                    row['student'], row['group'], self.session))
 
     def test_a_single_group_session_has_no_penalty(self):
         PresentationGroup.objects.exclude(pk=self.red.pk).delete()
         rows = scoring.session_results(self.session)['student_rows']
         self.assertTrue(rows)
         self.assertEqual({row['penalty'] for row in rows}, {0})
+        self.assertEqual({row['ungraded'] for row in rows}, {0})
 
     def test_results_cost_a_handful_of_queries_however_big_the_session(self):
         with CaptureQueriesContext(connection) as queries:

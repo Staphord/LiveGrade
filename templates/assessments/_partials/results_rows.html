@@ -13,7 +13,7 @@
     <td>{% if row.group_percent is not None %}{{ row.group_percent }}%{% else %}<span class="text-muted">-</span>{% endif %}</td>
     <td>{% if row.individual_percent is not None %}{{ row.individual_percent }}%{% else %}<span class="text-muted">-</span>{% endif %}</td>
     <td>
-      {% if row.penalty %}<span class="badge bg-danger-subtle text-danger-emphasis" title="{{ row.penalty }} group{{ row.penalty|pluralize }} not graded">−{{ row.penalty }}%</span>
+      {% if row.penalty %}<span class="badge bg-danger-subtle text-danger-emphasis" title="{{ row.ungraded }} group{{ row.ungraded|pluralize }} not graded">−{{ row.penalty|floatformat:"-2" }}%</span>
       {% else %}<span class="text-muted">-</span>{% endif %}
     </td>
     <td class="pe-3 fw-700 text-primary">{{ row.final_percent }}%</td>

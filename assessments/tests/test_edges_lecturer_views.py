@@ -7,6 +7,7 @@ nothing here may need a broker, and what is checked is what the view stores
 and says.
 """
 import datetime
+from decimal import Decimal
 from io import BytesIO
 from unittest import mock
 
@@ -20,7 +21,7 @@ from django.utils import timezone
 from accounts.testing import make_user, sign_in
 from assessments.models import (AssessmentSession, Evaluation, GroupMembership,
                                 ParticipationRecord, PresentationGroup,
-                                PresentationTurn, RubricCategory, Student)
+                                PresentationTurn, RubricCategory, SessionChange, Student)
 from assessments.tests.test_edges_core import SessionFixture
 
 AJAX = {'HTTP_X_REQUESTED_WITH': 'XMLHttpRequest'}
@@ -77,7 +78,7 @@ class SessionPagesTests(LecturerTestCase):
     def test_a_new_session_is_created_in_the_lecturers_organization(self):
         response = self.client.post(reverse('assessment_session_create'), {
             'name': 'Fresh', 'identify_by': 'full_name',
-            'group_weight_percent': '60', 'individual_weight_percent': '40'})
+            'ungraded_penalty': '1'})
         created = AssessmentSession.objects.get(name='Fresh')
         self.assertRedirects(response, reverse('assessment_groups', args=[created.pk]),
                              fetch_redirect_response=False)
@@ -91,18 +92,54 @@ class SessionPagesTests(LecturerTestCase):
     def test_the_new_session_form_opens(self):
         self.assertEqual(self.client.get(reverse('assessment_session_create')).status_code, 200)
 
-    def test_a_live_session_can_be_renamed_but_not_have_its_settings_changed(self):
+    def test_a_live_session_can_change_all_of_its_basics(self):
         self.set_status('live')
         response = self.client.post(self.url('assessment_session_edit'), {
-            'name': 'Renamed live', 'identify_by': 'full_name',
-            'group_weight_percent': '10', 'individual_weight_percent': '90'})
+            'name': 'Renamed live', 'identify_by': 'full_name', 'ungraded_penalty': '2.5'})
         self.assertRedirects(response, self.url('assessment_session_detail'),
                              fetch_redirect_response=False)
         self.session.refresh_from_db()
-        self.assertEqual(self.session.name, 'Renamed live')
-        self.assertEqual((self.session.identify_by, self.session.group_weight_percent),
-                         ('student_id', 60))
-        self.assertEqual(self.client.get(self.url('assessment_session_edit')).status_code, 200)
+        self.assertEqual((self.session.name, self.session.identify_by, self.session.ungraded_penalty),
+                         ('Renamed live', 'full_name', Decimal('2.5')))
+        self.assertEqual(self.session.status, 'live')
+        summary = SessionChange.objects.get().summary
+        self.assertEqual(summary, 'Changed the name, how students join, penalty per group not graded.')
+        page = self.client.get(self.url('assessment_session_edit'))
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, 'name="ungraded_penalty"')
+        self.assertContains(page, 'name="identify_by"')
+        self.assertContains(page, 'recalculates everyone')
+
+    def test_a_live_save_that_changes_nothing_is_not_logged(self):
+        self.set_status('live')
+        self.client.post(self.url('assessment_session_edit'), {
+            'name': 'Demo day', 'identify_by': 'student_id', 'ungraded_penalty': '1'})
+        self.assertFalse(SessionChange.objects.exists())
+
+    def test_a_live_penalty_change_is_logged_by_name_and_rejects_bad_values(self):
+        self.set_status('live')
+        for bad in ('-1', '101', 'abc', ''):
+            response = self.client.post(self.url('assessment_session_edit'), {
+                'name': 'Demo day', 'identify_by': 'student_id', 'ungraded_penalty': bad})
+            self.assertEqual(response.status_code, 200, bad)
+        self.client.post(self.url('assessment_session_edit'), {
+            'name': 'Demo day', 'identify_by': 'student_id', 'ungraded_penalty': '0'})
+        self.session.refresh_from_db()
+        self.assertEqual(self.session.ungraded_penalty, 0)
+        self.assertEqual(SessionChange.objects.get().summary, 'Changed the penalty per group not graded.')
+
+    def test_students_already_in_stay_in_when_the_join_field_changes(self):
+        from assessments import services
+        self.set_status('live')
+        self.assertEqual(services.match_student(self.session, 'S1'), self.ann)
+        self.assertIsNone(services.match_student(self.session, 'Ann Able'))
+        record = ParticipationRecord.objects.create(assessment_session=self.session, student=self.ann)
+        self.client.post(self.url('assessment_session_edit'), {
+            'name': 'Demo day', 'identify_by': 'full_name', 'ungraded_penalty': '1'})
+        self.session.refresh_from_db()
+        self.assertIsNone(services.match_student(self.session, 'S1'))
+        self.assertEqual(services.match_student(self.session, 'Ann Able'), self.ann)
+        self.assertTrue(ParticipationRecord.objects.filter(pk=record.pk).exists())
 
     def test_a_closed_session_cannot_be_edited_at_all(self):
         self.set_status('closed')
@@ -119,7 +156,7 @@ class SessionPagesTests(LecturerTestCase):
         self.assertEqual(self.client.post(url, {'name': ''}).status_code, 200)
         response = self.client.post(url, {
             'name': 'Renamed', 'identify_by': 'student_id',
-            'group_weight_percent': '50', 'individual_weight_percent': '50'})
+            'ungraded_penalty': '1'})
         self.assertEqual(response.status_code, 302)
         self.session.refresh_from_db()
         self.assertEqual(self.session.name, 'Renamed')
@@ -194,8 +231,10 @@ class RubricViewTests(LecturerTestCase):
 
     def test_a_category_that_breaks_the_budget_reports_why(self):
         response = self.client.post(self.url('assessment_rubric_edit', self.quality.pk), {
-            'name': 'Quality', 'scope': 'group', 'max_points': '10', 'weight': '99'})
-        self.assertTrue(_messages(response))
+            'name': 'Quality', 'scope': 'group', 'weight': '99'})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Weights would total 139%, over 100%. At most 60% is available.')
+        self.assertFalse(_messages(response))
         self.quality.refresh_from_db()
         self.assertEqual(self.quality.weight, 60)
 
@@ -300,7 +339,7 @@ class LiveControlTests(LecturerTestCase):
         self.set_status('draft')
         RubricCategory.objects.all().delete()
         response = self.client.post(self.url('assessment_go_live'))
-        self.assertTrue(any('Add at least one rubric category' in m for m in _messages(response)))
+        self.assertTrue(any('add up to exactly 100%' in m for m in _messages(response)))
         self.session.refresh_from_db()
         self.assertEqual(self.session.status, 'draft')
 

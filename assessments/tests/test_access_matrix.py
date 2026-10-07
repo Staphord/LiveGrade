@@ -49,6 +49,7 @@ LECTURER_ROW_ROUTES = {
     'assessment_group_import_sample': GET, 'assessment_groups_bulk_delete': POST,
     'assessment_rubric_import': POST, 'assessment_rubric_import_preview': GET,
     'assessment_rubric_import_sample': GET, 'assessment_rubric_table': GET,
+    'assessment_rubric_bulk_delete': POST,
 }
 STUDENT_ROUTES = {
     # Reached by session link, no login: an unknown link is a 404 for everybody.

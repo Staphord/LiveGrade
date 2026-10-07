@@ -21,7 +21,7 @@ class StudentFlowTests(TestCase):
             status=AssessmentSession.Status.LIVE)
         self.group_cat = RubricCategory.objects.create(
             assessment_session=self.session, name='Implementation',
-            scope=RubricCategory.Scope.GROUP, max_points=Decimal('10'), weight=Decimal('100'))
+            scope=RubricCategory.Scope.GROUP, weight=Decimal('100'))
         self.group1 = PresentationGroup.objects.create(assessment_session=self.session, name='Group 1')
         self.student_a = Student.objects.create(assessment_session=self.session,
             full_name='Student A', student_id='A1')
