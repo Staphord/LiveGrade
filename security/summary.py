@@ -265,14 +265,25 @@ def section(tool, paths):
 
 # ---- the whole run ----------------------------------------------------------------------
 
+HEADLINE_OPEN, HEADLINE_CLOSE = '<!--headline: ', '-->'
+
+
+def split_headline(markdown):
+    """(headline text, the rest). A section always starts with its headline on the first line;
+    this reads that line directly instead of matching HTML comments with a pattern."""
+    first, _, rest = markdown.partition('\n')
+    if first.startswith(HEADLINE_OPEN) and first.endswith(HEADLINE_CLOSE):
+        return first[len(HEADLINE_OPEN):-len(HEADLINE_CLOSE)], rest
+    return '', markdown
+
+
 def find_headline(markdown):
-    found = re.search(r'<!--headline: (.*?)-->', markdown)
-    return found.group(1) if found else ''
+    return split_headline(markdown)[0]
 
 
 def verdict(markdown):
     """What the section's own first line says: failure, warning or success."""
-    body = re.sub(r'<!--.*?-->', '', markdown).strip()
+    body = split_headline(markdown)[1].strip()
     return {'❌': 'failure', '⚠': 'warning', '✅': 'success'}.get(body[:1], 'success')
 
 
@@ -325,7 +336,7 @@ def overview(directory, title):
         if not text:
             continue
         result = results[name]
-        body = re.sub(r'<!--headline:.*?-->\n?', '', text).strip()
+        body = split_headline(text)[1].strip()
         out += [f'<details{" open" if result in ("failure", "warning") else ""}>',
                 f'<summary><b>{ICON[result]} {TOOLS[name][1]}</b>: {find_headline(text)}</summary>', '', body, '', '</details>', '']
     run, repo = os.getenv('GITHUB_RUN_ID', ''), os.getenv('GITHUB_REPOSITORY', '')

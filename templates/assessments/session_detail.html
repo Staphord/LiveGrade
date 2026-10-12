@@ -658,7 +658,13 @@
     const row = document.querySelector('#live-roster [data-student-id="' + payload.student_id + '"]');
     if (!row) return;
     const status = row.querySelector('[data-roster-status]');
-    if (status) { status.className = 'roster-status roster-status-partial'; status.innerHTML = 'Grading<small>' + payload.answered + '/' + payload.total + '</small>'; }
+    if (status) {
+      status.className = 'roster-status roster-status-partial';
+      // Nodes, not markup: these numbers arrive in a socket message.
+      const progress = document.createElement('small');
+      progress.textContent = Number(payload.answered) + '/' + Number(payload.total);
+      status.replaceChildren('Grading', progress);
+    }
   }
   function reapplyLiveGradingState() {
     liveGradingState.forEach(applyLiveGradingProgress);

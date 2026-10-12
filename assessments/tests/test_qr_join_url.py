@@ -3,6 +3,7 @@ encode an address a phone on the same network can actually reach — not the
 loopback address, which only ever means "this device"."""
 
 from unittest.mock import patch
+from urllib.parse import urlparse
 
 from django.test import RequestFactory, TestCase
 
@@ -48,5 +49,6 @@ class JoinUrlLanRewriteTests(TestCase):
             request = self.factory.get('/', SERVER_NAME='abcd1234.ngrok-free.app', SERVER_PORT='443')
             request.META['wsgi.url_scheme'] = 'https'
             url = join_url(request, self.session)
-        self.assertTrue(url.startswith('https://abcd1234.ngrok-free.app'))
+        parts = urlparse(url)
+        self.assertEqual((parts.scheme, parts.hostname), ('https', 'abcd1234.ngrok-free.app'))
         mock_detect.assert_not_called()

@@ -97,7 +97,7 @@ class NonceTests(TestCase):
         response = Client().get(PAGE)
         nonce = response.wsgi_request.csp_nonce
         html = response.content.decode()
-        inline = re.findall(r'<script(?![^>]*\bsrc=)([^>]*)>', html)
+        inline = re.findall(r'<script(?![^>]*\bsrc=)([^>]*)>', html, re.IGNORECASE)
         self.assertTrue(inline, 'the landing page should have an inline script')
         for attributes in inline:
             self.assertIn(f'nonce="{nonce}"', attributes)
@@ -124,7 +124,7 @@ class TemplateRulesTests(SimpleTestCase):
         missing = []
         for path in self.templates():
             for number, line in enumerate(path.read_text().splitlines(), start=1):
-                for tag in re.findall(r'<script\b[^>]*>', line):
+                for tag in re.findall(r'<script\b[^>]*>', line, re.IGNORECASE):
                     if 'src=' not in tag and 'nonce="{{ csp_nonce }}"' not in tag:
                         missing.append(f'{path.relative_to(BASE)}:{number}')
         self.assertEqual(missing, [])
@@ -145,7 +145,7 @@ class TemplateRulesTests(SimpleTestCase):
     def test_every_file_loaded_from_the_cdn_is_pinned_with_an_integrity_hash(self):
         unpinned = []
         for path in self.templates():
-            for tag in re.findall(r'<(?:script|link)\b[^>]*cdn\.jsdelivr\.net[^>]*>', path.read_text()):
+            for tag in re.findall(r'<(?:script|link)\b[^>]*cdn\.jsdelivr\.net[^>]*>', path.read_text(), re.IGNORECASE):
                 if not re.search(r'integrity="sha384-[A-Za-z0-9+/]{64}"', tag) \
                         or 'crossorigin="anonymous"' not in tag \
                         or not re.search(r'@\d+\.\d+\.\d+/', tag):
@@ -156,7 +156,7 @@ class TemplateRulesTests(SimpleTestCase):
         allowed = ('https://cdn.jsdelivr.net', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com')
         outside = []
         for path in self.templates():
-            for tag in re.findall(r'<(?:script|link|img|iframe)\b[^>]*(?:src|href)="https?://[^"]+"[^>]*>', path.read_text()):
+            for tag in re.findall(r'<(?:script|link|img|iframe)\b[^>]*(?:src|href)="https?://[^"]+"[^>]*>', path.read_text(), re.IGNORECASE):
                 url = re.search(r'(?:src|href)="(https?://[^"]+)"', tag).group(1)
                 if not url.startswith(allowed):
                     outside.append(f'{path.relative_to(BASE)}: {url}')
