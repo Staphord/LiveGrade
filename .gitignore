@@ -18,3 +18,4 @@ security/.tools-venv/
 security/reports/
 security/.local/
 security/.tmp/
+docs*

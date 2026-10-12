@@ -49,6 +49,7 @@ jobs:
           curl -fs http://localhost:8001/healthz
       - name: Targeted checks (XSS, cross-org access, anonymous, student flow, WebSocket)
         run: |
+          set -o pipefail   # without it the pipe reports tee's exit code and a FAIL never fails the job
           pip install websockets
           mkdir -p security/reports
           python security/probe.py http://localhost:8001 | tee security/reports/probe.txt
@@ -69,6 +70,18 @@ jobs:
             -e ZAP_TARGET -e ORG_A_SESSION_PK -e ORG_A_SESSION_UUID \
             ghcr.io/zaproxy/zaproxy:stable \
             zap.sh -cmd -autorun /zap/wrk/security/zap/anonymous.yaml
+      # One table for the whole run on the summary page: the targeted checks, then ZAP.
+      - name: Summary
+        if: always()
+        env:
+          SUMMARY_TITLE: Authenticated and anonymous web scan
+          NEEDS_JSON: '{}'
+        run: |
+          mkdir -p out security/reports
+          python3 security/summary.py section probe security/reports/probe.txt > out/probe.md
+          python3 security/summary.py section zap security/reports/zap-authenticated.json \
+            security/reports/zap-anonymous.json > out/zap.md
+          python3 security/summary.py overview out >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

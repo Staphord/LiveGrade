@@ -24,3 +24,26 @@ jobs:
           languages: ${{ matrix.language }}
           queries: security-extended
       - uses: github/codeql-action/analyze@v3
+      # Values go through env, never straight into the script: a branch name is chosen by whoever
+      # pushes it and must not be able to become shell code.
+      - name: Summary
+        if: always()
+        env:
+          LANGUAGE: ${{ matrix.language }}
+          BRANCH: ${{ github.ref_name }}
+          STATUS: ${{ job.status }}
+          ALERTS: ${{ github.server_url }}/${{ github.repository }}/security/code-scanning
+        run: |
+          if [ "$STATUS" = success ]; then result='✅ Finished'; else result='❌ Did not finish'; fi
+          {
+            echo "## CodeQL: $LANGUAGE"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Analysis | $result |"
+            echo "| Queries | security-extended |"
+            echo "| Branch | \`$BRANCH\` |"
+            echo "| Commit | \`${GITHUB_SHA::7}\` |"
+            echo
+            echo "Alerts are listed under [Security → Code scanning]($ALERTS)."
+          } >> "$GITHUB_STEP_SUMMARY"

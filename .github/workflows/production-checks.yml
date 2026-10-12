@@ -30,7 +30,10 @@ jobs:
       - name: Require PROD_URL
         run: test -n "$PROD_URL" || { echo "Set the PROD_URL repository variable"; exit 1; }
       - name: Security headers and cookie flags
-        run: python security/check_headers.py "$PROD_URL"
+        run: |
+          set -o pipefail
+          mkdir -p out
+          python security/check_headers.py "$PROD_URL" | tee out/headers.txt
       - name: TLS configuration (testssl.sh)
         run: |
           host="${PROD_URL#https://}"; host="${host%%/*}"
@@ -47,6 +50,17 @@ jobs:
               print(f"{f['severity']:9} {f['id']}: {f['finding']}")
           sys.exit(1 if bad else 0)
           PY
+      # One table on the run's summary page: what the live site sends, and how it does TLS.
+      - name: Summary
+        if: always()
+        env:
+          SUMMARY_TITLE: Production site (${{ vars.PROD_URL }})
+          NEEDS_JSON: '{}'
+        run: |
+          mkdir -p out
+          python3 security/summary.py section headers out/headers.txt > out/headers.md
+          python3 security/summary.py section testssl tls-out/testssl.json > out/testssl.md
+          python3 security/summary.py overview out >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

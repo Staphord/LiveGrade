@@ -179,7 +179,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 // Delegated (survives the card grid being swapped outerHTML-style on every
 // silent refresh) — toggles one card's group breakdown open/closed.
 document.addEventListener('click', function (e) {
@@ -194,7 +194,7 @@ document.addEventListener('click', function (e) {
 });
 </script>
 {% if session.status == 'live' %}
-<script>
+<script nonce="{{ csp_nonce }}">
 // Silent-patch refresh of the card grid + stat strip — same idea as the
 // Live control tab. Driven primarily by the websocket below (near-instant);
 // the interval here is only a safety net for a dropped/slow socket, so

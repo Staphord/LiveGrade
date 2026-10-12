@@ -2,6 +2,10 @@ name: Security (static)
 
 # Fast static checks. Separate from CI/CD so a scanner outage never blocks a deploy,
 # but make these required status checks on main (branch protection) so they gate merges.
+#
+# Every job writes its result to out/<tool>.md (security/summary.py) and uploads it; the last
+# job, "report", puts them together on the run's summary page: one table with the status of
+# every check, then the details of each. Job ids match the tool names that table expects.
 on:
   push:
     branches: [main, ci/deploy-pipeline]
@@ -33,11 +37,18 @@ jobs:
             --exclude venv --exclude security --exclude '*/migrations/*' \
             --metrics=off --error --severity ERROR \
             --sarif-output=semgrep.sarif
+      - name: Summary
+        if: always()
+        run: |
+          mkdir -p out
+          python3 security/summary.py section semgrep semgrep.sarif > out/semgrep.md
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: semgrep-sarif
-          path: semgrep.sarif
+          name: result-semgrep
+          path: |
+            out/semgrep.md
+            semgrep.sarif
 
   bandit:
     runs-on: ubuntu-latest
@@ -47,10 +58,26 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install bandit
-      # -ll: medium severity and above. bandit exits 1 when it reports issues.
-      - run: bandit -r accounts assessments config -x '*/tests/*,*/migrations/*,*/testing.py' -ll
+      # -ll: medium severity and above. bandit exits 1 when it reports issues. The report is
+      # written as JSON for the summary; on failure the same scan is repeated as readable text
+      # so the job log still shows the findings.
+      - run: |
+          args=(-r accounts assessments config -x '*/tests/*,*/migrations/*,*/testing.py' -ll)
+          bandit "${args[@]}" -q -f json -o bandit.json || { bandit "${args[@]}"; exit 1; }
+      - name: Summary
+        if: always()
+        run: |
+          mkdir -p out
+          python3 security/summary.py section bandit bandit.json > out/bandit.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: result-bandit
+          path: |
+            out/bandit.md
+            bandit.json
 
-  dependencies:
+  pip-audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -59,20 +86,47 @@ jobs:
           python-version: '3.12'
       - run: pip install pip-audit
       # Exits non-zero when a pinned/resolved dependency has a known vulnerability.
-      - run: pip-audit -r requirements.txt --desc
+      - run: |
+          pip-audit -r requirements.txt -f json -o pip-audit.json || { pip-audit -r requirements.txt --desc; exit 1; }
+      - name: Summary
+        if: always()
+        run: |
+          mkdir -p out
+          python3 security/summary.py section pip-audit pip-audit.json > out/pip-audit.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: result-pip-audit
+          path: |
+            out/pip-audit.md
+            pip-audit.json
 
-  secrets:
+  gitleaks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # git-aware scan needs full history, not just the last commit
       # The CLI via its official image: no license key, unlike gitleaks-action for orgs.
+      # --redact keeps the secret itself out of the log and the report.
       - run: |
           docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest \
-            git /repo --config /repo/security/gitleaks.toml --redact -v
+            git /repo --config /repo/security/gitleaks.toml --redact -v \
+            --report-format json --report-path /repo/gitleaks.json
+      - name: Summary
+        if: always()
+        run: |
+          mkdir -p out
+          python3 security/summary.py section gitleaks gitleaks.json > out/gitleaks.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: result-gitleaks
+          path: |
+            out/gitleaks.md
+            gitleaks.json
 
-  workflow-config:
+  checkov:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -81,4 +135,39 @@ jobs:
           python-version: '3.12'
       - run: pip install checkov
       # Advisory for now (soft-fail): CI config findings need a human decision.
-      - run: checkov -d .github --framework github_actions --soft-fail
+      - run: |
+          checkov -d .github --framework github_actions --soft-fail
+          mkdir -p checkov-out
+          checkov -d .github --framework github_actions --soft-fail -q -o json --output-file-path checkov-out > /dev/null
+      - name: Summary
+        if: always()
+        run: |
+          mkdir -p out
+          python3 security/summary.py section checkov checkov-out/results_json.json > out/checkov.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: result-checkov
+          path: |
+            out/checkov.md
+            checkov-out
+
+  # Not a check: it reads what the jobs above uploaded and writes the run's summary page. It
+  # always runs, and fails nothing itself; the jobs above decide whether the run is red.
+  report:
+    if: always()
+    needs: [semgrep, bandit, pip-audit, gitleaks, checkov]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        continue-on-error: true   # none exist if every job died before uploading
+        with:
+          pattern: result-*
+          path: out
+          merge-multiple: true
+      - name: Summary
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          SUMMARY_TITLE: Static security checks
+        run: python3 security/summary.py overview out >> "$GITHUB_STEP_SUMMARY"

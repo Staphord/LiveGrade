@@ -337,7 +337,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 // Rotating, reassuring copy under the waiting-room illustration — keeps a
 // student engaged with something true and useful rather than a static
 // sentence (or, worse, a spinner implying a load that isn't happening).
@@ -361,7 +361,7 @@
   }, 4000);
 })();
 </script>
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   window.DevPerfAssessSocket('/ws/assessments/{{ session.uuid }}/', function (data) {
     if (data.type === 'turn.timer_adjusted') {

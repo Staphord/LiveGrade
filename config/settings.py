@@ -62,15 +62,30 @@ if not DEBUG and 'test' not in sys.argv:
 
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SESSION_COOKIE_HTTPONLY = True
-    SESSION_COOKIE_SAMESITE = 'Lax'
-    CSRF_COOKIE_SAMESITE = 'Lax'
     SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'True') == 'True'
     SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', str(30 * 24 * 60 * 60)))
+    # Both are off until every subdomain of the site is known to serve HTTPS: HSTS with
+    # includeSubDomains makes browsers refuse plain HTTP on all of them for SECURE_HSTS_SECONDS,
+    # and preload is very hard to undo. Set them to True in the environment once that is true.
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv('SECURE_HSTS_INCLUDE_SUBDOMAINS', 'False') == 'True'
+    SECURE_HSTS_PRELOAD = os.getenv('SECURE_HSTS_PRELOAD', 'False') == 'True'
     SECURE_CONTENT_TYPE_NOSNIFF = True
     SECURE_REFERRER_POLICY = 'same-origin'
     X_FRAME_OPTIONS = 'DENY'
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# Cookie flags that hold in every environment (the Secure flag is added in production above).
+# The session cookie is never readable by script. The CSRF cookie has to stay readable: the
+# student pages have no form to carry the token, so their script reads it from the cookie
+# (see evaluate.html) and sends it as X-CSRFToken. Its protection is SameSite plus Secure.
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_SAMESITE = 'Lax'
+
+# Content-Security-Policy (accounts/csp.py): report-only until the pages have been opened
+# with the browser console clear, then CSP_ENFORCE=True.
+CSP_ENFORCE = os.getenv('CSP_ENFORCE', 'False') == 'True'
 
 INSTALLED_APPS = [
     'daphne',
@@ -87,6 +102,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'accounts.csp.ContentSecurityPolicyMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',

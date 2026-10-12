@@ -13,6 +13,7 @@ Usage:  set -a; . security/.local/seed.env; set +a; python security/probe.py htt
 Exit 1 if any FAIL. Never run against production.
 """
 import http.cookiejar
+import json
 import os
 import sys
 import urllib.error
@@ -62,7 +63,28 @@ def report(ok, text, warn=False):
         print(f'FAIL  {text}')
 
 
+def html_parts(value):
+    """Every string inside a parsed JSON value that is HTML the page will inject (a key ending in
+    ``_html``). Other strings are data: the page's scripts put them in with textContent or hand
+    them to a chart, so a ``<script>`` in a group name is only text there, not markup."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key.endswith('_html') and isinstance(item, str):
+                yield item
+            else:
+                yield from html_parts(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from html_parts(item)
+
+
 def raw_hit(body):
+    try:
+        parsed = json.loads(body)
+    except ValueError:
+        parsed = None
+    if isinstance(parsed, (dict, list)):
+        body = '\n'.join(html_parts(parsed))
     return next((raw for raw in RAW if raw in body), None)
 
 
@@ -97,10 +119,40 @@ for page, param in ((f'/assessments/{A}/roster/search/', 'q'), (f'/assessments/{
 for page in (f'/assessments/{A}/', f'/assessments/{A}/setup/', f'/assessments/{A}/roster/',
              f'/assessments/{A}/results/', f'/assessments/{A}/results/export/',
              f'/assessments/{A}/live-state/', f'/assessments/{A}/qr.png',
-             f'/assessments/{A}/participation/', f'/assessments/{A}/groups/{GROUP_A}/members/',
-             f'/assessments/{A}/roster/{STUDENT_A}/edit/'):
+             f'/assessments/{A}/participation/'):
     status, _ = get(page, env['ORG_B_COOKIE'])
     report(status in (403, 404), f'cross-org B->A GET {page} -> {status} (want 403/404)')
+
+
+def post_as(cookie, path, fields):
+    """POST with a real CSRF token, so a refusal is the view's and not the CSRF check's."""
+    token_request = urllib.request.Request(BASE + '/assessments/new/', headers={'Cookie': f'{COOKIE}={cookie}'})
+    try:
+        response = urllib.request.build_opener(NoRedirect).open(token_request, timeout=30)
+    except urllib.error.HTTPError as err:
+        response = err
+    token = next((c.split(';')[0].split('=', 1)[1] for c in response.headers.get_all('Set-Cookie') or []
+                  if c.startswith('livegrade_csrftoken=')), '')
+    if not token:
+        return None
+    body = urllib.parse.urlencode({**fields, 'csrfmiddlewaretoken': token}).encode()
+    request = urllib.request.Request(
+        BASE + path, data=body, method='POST',
+        headers={'Cookie': f'{COOKIE}={cookie}; livegrade_csrftoken={token}', 'Referer': BASE + '/'})
+    try:
+        return urllib.request.build_opener(NoRedirect).open(request, timeout=30).status
+    except urllib.error.HTTPError as err:
+        return err.code
+
+
+# These two only accept POST, so a GET is always 405; the real question is a POST from org B.
+for page, fields in ((f'/assessments/{A}/groups/{GROUP_A}/members/', {'action': 'add', 'student_id': STUDENT_A}),
+                     (f'/assessments/{A}/roster/{STUDENT_A}/edit/', {'full_name': 'Hijacked', 'student_id': 'X'})):
+    status = post_as(env['ORG_B_COOKIE'], page, fields)
+    if status is None:
+        report(False, f'cross-org B->A POST {page}: could not get a CSRF token to test with', warn=True)
+    else:
+        report(status in (403, 404), f'cross-org B->A POST {page} -> {status} (want 403/404)')
 for page in (f'/assessments/{B}/', f'/assessments/{B}/results/'):
     status, _ = get(page, env['ORG_A_COOKIE'])
     report(status in (403, 404), f'cross-org A->B GET {page} -> {status} (want 403/404)')
@@ -113,7 +165,7 @@ for page in ('/assessments/', f'/assessments/{A}/', f'/assessments/{A}/results/e
 
 # 5. Student flow: no lecturer cookie. Join, then render pages that show teammates' data.
 jar = http.cookiejar.CookieJar()
-student = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+student = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar), NoRedirect)
 status, body = get(f'/assess/{UUID_A}/join/', opener=student)
 check_escaped('stored XSS student join page', body, status)
 token = next((c.value for c in jar if c.name == 'livegrade_csrftoken'), '')

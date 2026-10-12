@@ -1077,7 +1077,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 
 {% block scripts %}
 {% if session %}
-<script>
+<script nonce="{{ csp_nonce }}">
 // A file waiting for a decision opens its review window as soon as the page is ready.
 // The window can only be left with Cancel or Import, so a half-decided file is never left behind.
 (function () {
@@ -1088,7 +1088,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 })();
 </script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 // Step panels - only the section matching the current stepper item is
 // shown at a time. Every section is already rendered server-side (forms
 // keep their POST-validation state), so moving between steps - forward,
@@ -1128,7 +1128,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 })();
 </script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 // Roster - search-as-you-type against a dataset that may span many pages -
 // a short debounce, then a silent fetch that swaps just the table+count
 // fragments, so the search input never loses focus, cursor position or
@@ -1208,7 +1208,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 })();
 </script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 // Roster - edit a student in place: the "Add student" form flips into an
 // edit form instead of opening a separate modal.
 (function () {
@@ -1261,7 +1261,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 })();
 </script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 // Rubric - one "Select all" box, a box on every category, and a single bar that
 // deletes whatever is selected (one category, several, or all of them).
 (function () {
@@ -1316,7 +1316,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 })();
 </script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 // Rubric - edit a category in place, same reused-form pattern as roster.
 (function () {
   const form = document.getElementById('rubric-form');
@@ -1369,7 +1369,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 })();
 </script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 // Rubric import dropzone.
 (function () {
   const zone = document.getElementById('rubric-import-dropzone');
@@ -1395,7 +1395,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 })();
 </script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 // Groups import dropzone.
 (function () {
   const zone = document.getElementById('group-import-dropzone');
@@ -1424,7 +1424,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 })();
 </script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 // Groups - one "Select all" box, a box on every card, and a single bar that
 // deletes whatever is selected (one group, several, or all of them).
 (function () {
@@ -1489,7 +1489,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 })();
 </script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 // Groups - edit a group in place.
 (function () {
   const form = document.getElementById('group-form');
@@ -1548,7 +1548,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 })();
 </script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 // Groups - drag-and-drop member reassignment between group cards and the
 // unassigned pool. Delegated on the document since group cards get
 // swapped wholesale by the patcher below.
@@ -1668,7 +1668,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
   });
 })();
 </script>
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   const toggle = document.querySelector('.scope-info-toggle');
   const info = document.getElementById('rubric-scope-info');

@@ -26,7 +26,7 @@
 {% else %}
 <div class="qr-wrap" style="width:140px;height:140px">
   <img src="{% url 'assessment_qr' session.pk %}" alt="QR code to join" class="img-fluid rounded border p-2"
-       onload="this.classList.add('is-loaded')">
+       data-fade-in>
   <div class="qr-skeleton"></div>
 </div>
 <div class="t-micro text-muted mt-1">Scan to grade live</div>
