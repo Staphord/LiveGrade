@@ -87,7 +87,7 @@ jobs:
       - run: pip install pip-audit
       # Exits non-zero when a pinned/resolved dependency has a known vulnerability.
       - run: |
-          pip-audit -r requirements.txt -f json -o pip-audit.json || { pip-audit -r requirements.txt --desc; exit 1; }
+          pip-audit -r requirements.txt --desc -f json -o pip-audit.json || { pip-audit -r requirements.txt --desc; exit 1; }
       - name: Summary
         if: always()
         run: |
@@ -138,7 +138,7 @@ jobs:
       - run: |
           checkov -d .github --framework github_actions --soft-fail
           mkdir -p checkov-out
-          checkov -d .github --framework github_actions --soft-fail -q -o json --output-file-path checkov-out > /dev/null
+          checkov -d .github --framework github_actions --soft-fail -o json --output-file-path checkov-out > /dev/null
       - name: Summary
         if: always()
         run: |
