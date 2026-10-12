@@ -12,3 +12,9 @@ htmlcov/
 # Implementation plans stay local, as in devperf.
 plans/
 secrets/
+
+# Security tooling
+security/.tools-venv/
+security/reports/
+security/.local/
+security/.tmp/

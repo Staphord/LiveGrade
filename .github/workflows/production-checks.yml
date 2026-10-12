@@ -1,0 +1,54 @@
+name: Security (production TLS and headers)
+
+# Read-only checks of the DEPLOYED site. Set the repository variable PROD_URL
+# (Settings > Secrets and variables > Actions > Variables), e.g. https://livegrade.example.com
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/deploy-pipeline]
+  workflow_run:
+    workflows: ['CI/CD']   # re-check after every deploy
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: '0 5 * * *'    # daily: certificates expire and ciphers age without a deploy
+
+permissions:
+  contents: read
+
+jobs:
+  tls-and-headers:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      PROD_URL: ${{ vars.PROD_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Require PROD_URL
+        run: test -n "$PROD_URL" || { echo "Set the PROD_URL repository variable"; exit 1; }
+      - name: Security headers and cookie flags
+        run: python security/check_headers.py "$PROD_URL"
+      - name: TLS configuration (testssl.sh)
+        run: |
+          host="${PROD_URL#https://}"; host="${host%%/*}"
+          mkdir -p tls-out && chmod 777 tls-out
+          docker run --rm -v "$PWD/tls-out:/out" ghcr.io/testssl/testssl.sh \
+            --quiet --warnings batch --jsonfile /out/testssl.json "$host" || true
+      - name: Fail on HIGH or CRITICAL TLS findings
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          bad = [f for f in json.load(open('tls-out/testssl.json'))
+                 if f.get('severity') in ('HIGH', 'CRITICAL')]
+          for f in bad:
+              print(f"{f['severity']:9} {f['id']}: {f['finding']}")
+          sys.exit(1 if bad else 0)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: testssl
+          path: tls-out

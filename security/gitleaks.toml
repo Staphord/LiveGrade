@@ -1,0 +1,9 @@
+title = "LiveGrade gitleaks"
+
+[extend]
+useDefault = true
+
+# [[allowlists]] replaced [allowlist] in gitleaks v8.25.0.
+[[allowlists]]
+description = "Local tooling and generated output, never committed"
+paths = ['''venv/''', '''security/\.tools-venv/''', '''security/reports/''']

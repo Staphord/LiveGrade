@@ -1,0 +1,55 @@
+# ZAP Automation Framework plan: the anonymous attack surface.
+# Students never sign in, so their pages (/assess/<uuid>/...) and the public landing page
+# are reachable by anyone who has the unguessable URL. Run WITHOUT the ZAP_AUTH_HEADER*
+# variables so ZAP is genuinely unauthenticated.
+env:
+  contexts:
+    - name: livegrade-anonymous
+      urls:
+        - ${ZAP_TARGET}
+      includePaths:
+        - ${ZAP_TARGET}.*
+      excludePaths:
+        - .*/oidc/.*
+  parameters:
+    failOnError: true
+    failOnWarning: false
+    progressToStdout: true
+
+jobs:
+  - type: spider
+    parameters:
+      context: livegrade-anonymous
+      maxDuration: 5
+  - type: spider
+    parameters:
+      context: livegrade-anonymous
+      url: ${ZAP_TARGET}/assess/${ORG_A_SESSION_UUID}/join/
+      maxDuration: 5
+  - type: spider
+    parameters:
+      context: livegrade-anonymous
+      url: ${ZAP_TARGET}/assess/${ORG_A_SESSION_UUID}/join-screen/
+      maxDuration: 5
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 10
+  - type: activeScan
+    parameters:
+      context: livegrade-anonymous
+      maxScanDurationInMins: 20
+  - type: report
+    parameters:
+      template: traditional-html
+      reportDir: /zap/wrk/security/reports
+      reportFile: zap-anonymous
+      reportTitle: LiveGrade anonymous ZAP scan
+  - type: report
+    parameters:
+      template: sarif-json
+      reportDir: /zap/wrk/security/reports
+      reportFile: zap-anonymous
+  - type: exitStatus
+    parameters:
+      errorLevel: High
+      warnLevel: Medium

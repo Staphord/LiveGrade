@@ -1,0 +1,74 @@
+# ZAP Automation Framework plan: authenticated scan as a lecturer.
+# Run by .github/workflows/dast.yml:
+#   zap.sh -cmd -autorun /zap/wrk/security/zap/authenticated.yaml
+#
+# Authentication is "manual": the session cookie is supplied through the
+# ZAP_AUTH_HEADER / ZAP_AUTH_HEADER_VALUE environment variables, which ZAP only
+# honours when they are set at system level BEFORE it starts (docker run -e).
+# Vars below read system env vars as ${NAME}; ZAP_TARGET is set by the workflow.
+env:
+  contexts:
+    - name: livegrade-lecturer
+      urls:
+        - ${ZAP_TARGET}
+      includePaths:
+        - ${ZAP_TARGET}.*
+      excludePaths:
+        # Never follow sign-out, or the scan loses its session mid-run.
+        - .*/oidc/logout.*
+        - .*/switch-account.*
+      authentication:
+        method: manual
+        verification:
+          method: response
+          # Only rendered for a signed-in lecturer (templates/base.html).
+          loggedInRegex: .*sidebar-logout-link.*
+      sessionManagement:
+        method: cookie
+  parameters:
+    failOnError: true
+    failOnWarning: false
+    progressToStdout: true
+
+jobs:
+  - type: spider
+    parameters:
+      context: livegrade-lecturer
+      maxDuration: 10
+  # Start from the seeded org A session too, so every lecturer page for it is crawled even if
+  # the list page does not link to one. ORG_A_SESSION_PK is set by security/seed_session.py;
+  # job parameters read ${ENV} the way the env section does (verify on the first run: the
+  # spider's "URLs found" count in the log should include /assessments/<pk>/setup/).
+  - type: spider
+    parameters:
+      context: livegrade-lecturer
+      url: ${ZAP_TARGET}/assessments/${ORG_A_SESSION_PK}/setup/
+      maxDuration: 10
+  - type: spider
+    parameters:
+      context: livegrade-lecturer
+      url: ${ZAP_TARGET}/assessments/${ORG_A_SESSION_PK}/results/
+      maxDuration: 5
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 10
+  - type: activeScan
+    parameters:
+      context: livegrade-lecturer
+      maxScanDurationInMins: 30
+  - type: report
+    parameters:
+      template: traditional-html
+      reportDir: /zap/wrk/security/reports
+      reportFile: zap-authenticated
+      reportTitle: LiveGrade authenticated ZAP scan
+  - type: report
+    parameters:
+      template: sarif-json
+      reportDir: /zap/wrk/security/reports
+      reportFile: zap-authenticated
+  # Last job: exit 1 on any High alert, exit 2 on Medium. Lower levels only report.
+  - type: exitStatus
+    parameters:
+      errorLevel: High
+      warnLevel: Medium

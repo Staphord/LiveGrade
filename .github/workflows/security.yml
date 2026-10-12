@@ -1,0 +1,84 @@
+name: Security (static)
+
+# Fast static checks. Separate from CI/CD so a scanner outage never blocks a deploy,
+# but make these required status checks on main (branch protection) so they gate merges.
+on:
+  push:
+    branches: [main, ci/deploy-pipeline]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 4 * * 1'   # weekly: new CVEs appear without any code change
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      # --error: exit 1 on findings. --severity ERROR gates on high-confidence rules only;
+      # lower severities are still in the SARIF/log for triage. --metrics=off: no telemetry.
+      - run: |
+          semgrep scan \
+            --config p/django --config p/python --config p/owasp-top-ten \
+            --config p/security-audit --config p/javascript --config p/secrets \
+            --exclude venv --exclude security --exclude '*/migrations/*' \
+            --metrics=off --error --severity ERROR \
+            --sarif-output=semgrep.sarif
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: semgrep-sarif
+          path: semgrep.sarif
+
+  bandit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install bandit
+      # -ll: medium severity and above. bandit exits 1 when it reports issues.
+      - run: bandit -r accounts assessments config -x '*/tests/*,*/migrations/*,*/testing.py' -ll
+
+  dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pip-audit
+      # Exits non-zero when a pinned/resolved dependency has a known vulnerability.
+      - run: pip-audit -r requirements.txt --desc
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # git-aware scan needs full history, not just the last commit
+      # The CLI via its official image: no license key, unlike gitleaks-action for orgs.
+      - run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest \
+            git /repo --config /repo/security/gitleaks.toml --redact -v
+
+  workflow-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install checkov
+      # Advisory for now (soft-fail): CI config findings need a human decision.
+      - run: checkov -d .github --framework github_actions --soft-fail

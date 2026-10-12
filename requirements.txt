@@ -1,4 +1,4 @@
-Django>=4.2,<5.0
+Django>=5.2.17,<5.3
 mozilla-django-oidc>=4.0
 python-dotenv>=1.0
 psycopg2-binary>=2.9
@@ -10,5 +10,6 @@ redis>=5.0
 qrcode>=8.0
 Pillow>=10.0
 openpyxl>=3.1
-# Newest releases have no wheel on some platforms and fail to build.
-cbor2>=5.6,<5.7
+# Required by autobahn (daphne). 5.9.0+ fixes PYSEC-2025-90, PYSEC-2025-238 and PYSEC-2026-2123.
+# Stay below 6: those releases ship no wheel for macOS Intel and need a Rust compiler to build.
+cbor2>=5.9.0,<6
