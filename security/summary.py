@@ -557,7 +557,8 @@ def outcome(job_result, markdown):
     return job_result
 
 
-def overview(directory, title):
+def build_overview(directory, title):
+    """(markdown, number of checks that failed)."""
     try:
         needs = json.loads(os.getenv('NEEDS_JSON', '{}'))
     except ValueError:
@@ -608,7 +609,11 @@ def overview(directory, title):
     if len(text.encode('utf-8')) > MAX_BYTES:
         text = text.encode('utf-8')[:MAX_BYTES].decode('utf-8', 'ignore').rsplit('\n', 1)[0] + \
             '\n\n_The summary was cut to fit GitHub\'s size limit. The raw reports hold the rest._\n'
-    return text
+    return text, failed
+
+
+def overview(directory, title):
+    return build_overview(directory, title)[0]
 
 
 if __name__ == '__main__':
@@ -616,6 +621,11 @@ if __name__ == '__main__':
     if len(args) >= 3 and args[0] == 'section':
         print(section(args[1], args[2:]))
     elif len(args) == 2 and args[0] == 'overview':
-        print(overview(args[1], os.getenv('SUMMARY_TITLE', 'Security run')))
+        summary, failed_checks = build_overview(args[1], os.getenv('SUMMARY_TITLE', 'Security run'))
+        print(summary)
+        # SUMMARY_GATE=1 turns the summary job into one status that is red when any check failed,
+        # so a branch rule can require this single check instead of one per tool.
+        if os.getenv('SUMMARY_GATE') == '1' and failed_checks:
+            sys.exit(1)
     else:
         sys.exit(__doc__)

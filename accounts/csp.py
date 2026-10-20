@@ -6,24 +6,25 @@ response's nonce, refuses scripts from hosts that are not listed, and refuses to
 or to send a form anywhere unexpected.
 
 Inline scripts in the templates carry ``nonce="{{ csp_nonce }}"`` (a test enforces it).
-Inline *styles* are still allowed (``style-src 'unsafe-inline'``): the templates use style
-attributes in many places and those cannot carry a nonce. Styles cannot run code, so this is
-the usual trade-off.
+Style *blocks* carry the nonce too (``style-src-elem``). Style *attributes* (``style="..."``,
+about fifty in the templates) cannot carry a nonce, so only ``style-src-attr`` allows them
+inline; that is the narrowest way to keep them without letting ``<style>`` blocks in from
+anywhere. Styles cannot run code, so this is the usual trade-off. ``style-src`` repeats the
+element rule for browsers that predate the two newer directives.
 
-``CSP_ENFORCE`` (settings) switches between ``Content-Security-Policy-Report-Only``, where the
-browser only logs violations to its console, and enforcement. It defaults to report-only so a
-page that was missed is visible in the console instead of broken in front of a class; turn
-enforcement on once the pages have been opened with the console clear.
+``CSP_ENFORCE`` (settings) switches between ``Content-Security-Policy``, which the browser obeys, and
+``Content-Security-Policy-Report-Only``, where it only logs violations to its console. It is on whenever
+DEBUG is off and off while developing; setting it to False in production is the emergency way back to
+report-only if a page is ever found to depend on something the policy forbids.
 """
 import secrets
 
 from django.conf import settings
 from django.core.exceptions import DisallowedHost
 
-#: Where scripts, styles and fonts may come from besides this site. Matches base.html.
+#: Where scripts, styles and fonts may come from besides this site. Matches base.html. The Inter
+#: font is served from static/fonts, so no font host is needed.
 CDN = 'https://cdn.jsdelivr.net'
-FONT_STYLES = 'https://fonts.googleapis.com'
-FONT_FILES = 'https://fonts.gstatic.com'
 
 PERMISSIONS_POLICY = ('accelerometer=(), camera=(), geolocation=(), gyroscope=(), '
                       'magnetometer=(), microphone=(), payment=(), usb=()')
@@ -39,8 +40,10 @@ def build_policy(nonce, host, secure):
     directives = [
         ("default-src", "'self'"),
         ("script-src", f"'self' 'nonce-{nonce}' {CDN}"),
-        ("style-src", f"'self' 'unsafe-inline' {CDN} {FONT_STYLES}"),
-        ("font-src", f"'self' {CDN} {FONT_FILES}"),
+        ("style-src", f"'self' 'nonce-{nonce}' {CDN}"),
+        ("style-src-elem", f"'self' 'nonce-{nonce}' {CDN}"),
+        ("style-src-attr", "'unsafe-inline'"),
+        ("font-src", f"'self' {CDN}"),
         ("img-src", "'self' data: blob:"),
         ("connect-src", f"'self' {socket}".rstrip()),
         # Signing out is a form post that is redirected on to DevPerf; Chrome applies

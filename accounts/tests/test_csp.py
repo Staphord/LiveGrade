@@ -48,6 +48,21 @@ class PolicyHeaderTests(TestCase):
         self.assertNotIn("'unsafe-inline'", directive(policy, 'script-src'))
         self.assertNotIn("'unsafe-inline'", directive(policy, 'default-src'))
 
+    def test_style_blocks_need_the_nonce_and_only_style_attributes_may_be_inline(self):
+        response = Client().get(PAGE)
+        nonce = response.wsgi_request.csp_nonce
+        policy = response[REPORT_ONLY]
+        for name in ('style-src', 'style-src-elem'):
+            with self.subTest(directive=name):
+                self.assertNotIn("'unsafe-inline'", directive(policy, name))
+                self.assertIn(f"'nonce-{nonce}'", directive(policy, name))
+        self.assertEqual(directive(policy, 'style-src-attr'), "'unsafe-inline'")
+
+    def test_no_font_or_style_host_is_allowed_beyond_the_cdn(self):
+        policy = Client().get(PAGE)[REPORT_ONLY]
+        self.assertNotIn('google', policy)
+        self.assertEqual(directive(policy, 'font-src'), "'self' https://cdn.jsdelivr.net")
+
     def test_the_page_cannot_be_framed_or_given_a_plugin_or_a_new_base(self):
         policy = Client().get(PAGE)[REPORT_ONLY]
         self.assertEqual(directive(policy, 'frame-ancestors'), "'none'")
@@ -129,6 +144,14 @@ class TemplateRulesTests(SimpleTestCase):
                         missing.append(f'{path.relative_to(BASE)}:{number}')
         self.assertEqual(missing, [])
 
+    def test_every_style_block_has_the_nonce(self):
+        missing = [f'{path.relative_to(BASE)}:{number}'
+                   for path in self.templates()
+                   for number, line in enumerate(path.read_text().splitlines(), start=1)
+                   for tag in re.findall(r'<style\b[^>]*>', line, re.IGNORECASE)
+                   if 'nonce="{{ csp_nonce }}"' not in tag]
+        self.assertEqual(missing, [])
+
     def test_no_template_uses_an_inline_event_handler(self):
         # onclick="..." and friends are inline script; the policy would refuse them.
         used = [f'{path.relative_to(BASE)}:{number}'
@@ -152,8 +175,8 @@ class TemplateRulesTests(SimpleTestCase):
                     unpinned.append(f'{path.relative_to(BASE)}: {tag}')
         self.assertEqual(unpinned, [])
 
-    def test_only_the_cdn_and_google_fonts_are_ever_loaded_from_elsewhere(self):
-        allowed = ('https://cdn.jsdelivr.net', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com')
+    def test_only_the_cdn_is_ever_loaded_from_elsewhere(self):
+        allowed = ('https://cdn.jsdelivr.net',)
         outside = []
         for path in self.templates():
             for tag in re.findall(r'<(?:script|link|img|iframe)\b[^>]*(?:src|href)="https?://[^"]+"[^>]*>', path.read_text(), re.IGNORECASE):

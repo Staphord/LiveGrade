@@ -41,8 +41,9 @@ zap)
   load_seed; chmod -R a+rwx security
   run_zap() {  # $1 plan, remaining args: extra docker -e flags. ZAP reaches the host via host.docker.internal.
     plan=$1; shift
-    docker run --rm -v "$PWD:/zap/wrk/:rw" -e ZAP_TARGET=http://host.docker.internal:$PORT \
-      -e ORG_A_SESSION_PK -e ORG_A_SESSION_UUID "$@" ghcr.io/zaproxy/zaproxy:stable \
+    # --memory: without a limit the signed-in scan was killed (exit 137) in earlier local runs; with one it completes
+    docker run --rm --memory=6g -v "$PWD:/zap/wrk/:rw" -e ZAP_TARGET=http://host.docker.internal:$PORT \
+      -e ORG_A_SESSION_PK -e ORG_A_SESSION_UUID "$@" ghcr.io/zaproxy/zaproxy@sha256:5ccfff9a411743ab2615136a2edd7416bec9ce41572fa94e935df38c14adb2b6 \
       zap.sh -cmd -autorun "/zap/wrk/security/zap/$plan"
   }
   # ZAP_AUTH_HEADER* must be real environment variables before ZAP starts (docker run -e).

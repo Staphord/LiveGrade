@@ -16,6 +16,7 @@
   </div>
   <h5 class="fw-700 mb-2">This page has expired</h5>
   <p class="text-muted t-body">For your security the form could not be checked. This usually happens when a page was left open for a while, or you signed in or out in another tab. Nothing was changed.</p>
+  {# nosemgrep: generic.html-templates.security.var-in-href.var-in-href (reload_url is request.get_full_path(), a path on this site) #}
   <a href="{{ reload_url }}" class="btn btn-primary mt-2">Reload and try again</a>
 </div>
 </body>

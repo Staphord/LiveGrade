@@ -1,7 +1,6 @@
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-<style>
+{% load static %}
+<link rel="stylesheet" href="{% static 'css/fonts.css' %}">
+<style nonce="{{ csp_nonce }}">
 :root{
 --font-ui:'Inter','Segoe UI',system-ui,sans-serif;
 --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;

@@ -12,7 +12,7 @@
 {% endblock %}
 
 {% block extra_css %}
-<style>
+<style nonce="{{ csp_nonce }}">
 /* Small entrance choreography + a liveness badge for the control panel —
    scoped here rather than added to base.html's global CSS. */
 @keyframes assess-fade-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
@@ -1148,8 +1148,8 @@
   function durationCsrfHeaders() {
     const el = document.querySelector('[name=csrfmiddlewaretoken]');
     if (el) return { 'X-CSRFToken': el.value };
-    const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
-    return match ? { 'X-CSRFToken': decodeURIComponent(match[1]) } : {};
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta && meta.content ? { 'X-CSRFToken': meta.content } : {};
   }
 
   // The voting timer isn't just a value bundled into the next "activate
@@ -1222,8 +1222,8 @@
   function gapCsrfHeaders() {
     const el = document.querySelector('[name=csrfmiddlewaretoken]');
     if (el) return { 'X-CSRFToken': el.value };
-    const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
-    return match ? { 'X-CSRFToken': decodeURIComponent(match[1]) } : {};
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta && meta.content ? { 'X-CSRFToken': meta.content } : {};
   }
 
   function selectGapSeconds(seconds, persist) {
@@ -1285,8 +1285,8 @@
   function presCsrfHeaders() {
     const el = document.querySelector('[name=csrfmiddlewaretoken]');
     if (el) return { 'X-CSRFToken': el.value };
-    const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
-    return match ? { 'X-CSRFToken': decodeURIComponent(match[1]) } : {};
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta && meta.content ? { 'X-CSRFToken': meta.content } : {};
   }
 
   function selectPresSeconds(seconds, persist) {

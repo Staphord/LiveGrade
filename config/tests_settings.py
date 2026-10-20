@@ -61,13 +61,31 @@ class DevelopmentTests(SimpleTestCase):
                 self.assertEqual(namespace['SESSION_COOKIE_SAMESITE'], 'Lax')
                 self.assertEqual(namespace['CSRF_COOKIE_SAMESITE'], 'Lax')
 
-    def test_the_csrf_cookie_stays_readable_because_the_student_pages_send_it_from_script(self):
-        self.assertFalse(load({})['CSRF_COOKIE_HTTPONLY'])
-        self.assertIn('csrftoken=', (BASE_DIR / 'templates/assessments/student/evaluate.html').read_text())
+    def test_the_csrf_cookie_is_hidden_from_script_too(self):
+        for env in ({}, production()):
+            with self.subTest(debug=env.get('DEBUG', 'True')):
+                self.assertTrue(load(env)['CSRF_COOKIE_HTTPONLY'])
 
-    def test_content_security_policy_is_report_only_until_switched_to_enforcing(self):
+    def test_no_page_script_reads_a_cookie(self):
+        # With the CSRF cookie hidden, a script that read document.cookie would find nothing.
+        reading = [str(path.relative_to(BASE_DIR)) for path in (BASE_DIR / 'templates').rglob('*.html')
+                   if 'document.cookie' in path.read_text()]
+        reading += [str(path.relative_to(BASE_DIR)) for path in (BASE_DIR / 'static').rglob('*.js')
+                    if 'document.cookie' in path.read_text()]
+        self.assertEqual(reading, [])
+
+    def test_the_pages_that_send_the_token_from_script_carry_it_in_a_meta_tag(self):
+        for name in ('templates/base.html', 'templates/assessments/student/_student_base.html'):
+            with self.subTest(template=name):
+                self.assertIn('<meta name="csrf-token" content="{{ csrf_token }}">', (BASE_DIR / name).read_text())
+
+    def test_content_security_policy_is_report_only_while_developing_and_can_be_forced(self):
         self.assertFalse(load({})['CSP_ENFORCE'])
         self.assertTrue(load({'CSP_ENFORCE': 'True'})['CSP_ENFORCE'])
+
+    def test_content_security_policy_is_enforced_in_production_unless_switched_off(self):
+        self.assertTrue(load(production())['CSP_ENFORCE'])
+        self.assertFalse(load(production(CSP_ENFORCE='False'))['CSP_ENFORCE'])
 
     def test_development_does_not_force_https(self):
         namespace = load({})

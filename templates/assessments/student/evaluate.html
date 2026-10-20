@@ -2,7 +2,7 @@
 {% block title %}Evaluate - {{ session.name }}{% endblock %}
 
 {% block extra_css %}
-<style>
+<style nonce="{{ csp_nonce }}">
 /* Locked the instant the countdown hits zero - dimmed and inert while the
    page waits the brief moment for the server's real turn-closed reload. */
 #eval-form.is-locked{opacity:.55;pointer-events:none;filter:grayscale(.3)}
@@ -390,11 +390,12 @@
 // Both countdowns below need a CSRF token to ping `check-expiry`, but the
 // waiting-room state (where the transition countdown lives) has no form —
 // and so no `csrfmiddlewaretoken` input — on the page at all. Read it from
-// the cookie Django's CSRF middleware always sets instead, which works on
-// every page regardless of whether a form happens to be present.
+// the <meta name="csrf-token"> in the page head instead, which is there on
+// every page regardless of whether a form happens to be present. (The cookie
+// itself is hidden from scripts, so this is the only way in.)
 function csrfHeaders() {
-  const match = document.cookie.match(/csrftoken=([^;]+)/);
-  return match ? { 'X-CSRFToken': match[1] } : {};
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  return meta && meta.content ? { 'X-CSRFToken': meta.content } : {};
 }
 
 // Live "voting closes in mm:ss" — purely a display; the actual close and

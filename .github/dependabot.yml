@@ -3,6 +3,14 @@ updates:
   - package-ecosystem: pip
     directory: /
     schedule: {interval: weekly}
+    # A release must be a week old before a pull request proposes it: brand-new releases are
+    # the ones most likely to be withdrawn, broken or malicious.
+    cooldown: {default-days: 7}
+  - package-ecosystem: pip
+    directory: /security
+    schedule: {interval: weekly}
+    cooldown: {default-days: 7}
   - package-ecosystem: github-actions
     directory: /
     schedule: {interval: weekly}
+    cooldown: {default-days: 7}

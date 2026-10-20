@@ -14,20 +14,26 @@ run() { # sast: Semgrep rules for Django, Python, OWASP Top 10, secrets, JS
     $T/semgrep scan --config p/django --config p/python --config p/owasp-top-ten \
       --config p/security-audit --config p/javascript --config p/secrets \
       --exclude venv --exclude security --exclude '*/migrations/*' \
-      --sarif -o $R/semgrep.sarif --text . | tee $R/semgrep.txt ;;
+      --metrics=off --sarif-output=$R/semgrep.sarif --text-output=$R/semgrep.txt . ; cat $R/semgrep.txt ;;
   bandit)  # Python-specific security linter
     $T/bandit -r accounts assessments config -x '*/tests/*,*/migrations/*' \
       -f txt -o $R/bandit.txt; cat $R/bandit.txt ;;
   deps)    # known-vulnerable dependencies (PyPI advisory DB + OSV)
-    $T/pip-audit -r requirements.txt --desc | tee $R/pip-audit.txt
+    # The one ignored advisory is explained in security/accepted-risks.md (and a test enforces that).
+    $T/pip-audit -r requirements.txt --desc --ignore-vuln CVE-2026-106454 | tee $R/pip-audit.txt
     # OSV-Scanner v2 syntax is `osv-scanner scan source -r <dir>`; pointing it at the
     # repo root would also walk venv/, so it is left out of the default run.
     ;;
   secrets) # working tree
-    gitleaks dir . -c security/gitleaks.toml -r $R/gitleaks-tree.json --redact -v ;;
+    gitleaks dir . -c security/gitleaks-local.toml -r $R/gitleaks-tree.json --redact -v ;;
   history) # every commit ever pushed (a deleted secret is still a leaked secret)
     gitleaks git . -c security/gitleaks.toml -r $R/gitleaks-history.json --redact -v
-    trufflehog git file://"$PWD" --only-verified | tee $R/trufflehog.txt ;;
+    # --no-update: the updater needs to replace its own binary, which fails when it is installed
+    # somewhere the current user cannot write, and that failure used to leave an empty report.
+    # 2>&1 keeps the "finished scanning ... verified_secrets" line in the report, so an empty
+    # result reads as "scanned, nothing found" and not as "never ran". --fail: exit 183 on a verified secret.
+    trufflehog git file://"$PWD" --only-verified --no-update --fail 2>&1 | tee $R/trufflehog.txt
+    grep -q "finished scanning" $R/trufflehog.txt || { echo "trufflehog did not finish"; exit 1; } ;;
   iac)     # GitHub Actions workflow + any Docker/Terraform
     $T/checkov -d .github --framework github_actions | tee $R/checkov-actions.txt ;;
   django-deploy) # Django's own production-config audit, using production-like settings
@@ -40,7 +46,12 @@ run() { # sast: Semgrep rules for Django, Python, OWASP Top 10, secrets, JS
     grep -rnE "\|safe|mark_safe|autoescape off|innerHTML|document\.write|eval\(" templates static assessments accounts \
       --include=*.html --include=*.js --include=*.py | grep -v tests | tee $R/xss-grep.txt ;;
   fs)      # trivy: vulns + misconfig + secrets in one pass
-    trivy fs --scanners vuln,misconfig,secret --skip-dirs venv,security . | tee $R/trivy.txt ;;
+    # Trivy only reads requirements.txt when every version is pinned with ==, and ours are ranges, so it
+    # would report "not scanned". The versions actually installed are written out and scanned instead.
+    mkdir -p security/.tmp/frozen && venv/bin/pip freeze --exclude-editable | grep -E '^[A-Za-z0-9_.-]+==' > security/.tmp/frozen/requirements.txt
+    { trivy fs --scanners vuln --exit-code 1 --severity HIGH,CRITICAL --quiet security/.tmp/frozen
+      trivy fs --scanners secret,misconfig --exit-code 1 --skip-dirs venv,security --quiet .; } | tee $R/trivy.txt
+    [ "${PIPESTATUS[0]}" = 0 ] ;;
   dast)    # dynamic: start the app first (python manage.py runserver 8001), then:
     echo "ZAP:    zap-baseline.py -t http://localhost:8001 -r $R/zap.html   (docker: ghcr.io/zaproxy/zaproxy:stable)"
     echo "nuclei: nuclei -u http://localhost:8001 -o $R/nuclei.txt"

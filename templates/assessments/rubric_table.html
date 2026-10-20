@@ -8,7 +8,7 @@
 {% endblock %}
 
 {% block extra_css %}
-<style>
+<style nonce="{{ csp_nonce }}">
 .rt-totals{display:flex;flex-wrap:wrap;gap:var(--sp-3);margin-bottom:var(--sp-3)}
 .rt-total{flex:1 1 220px;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);padding:var(--sp-3) var(--sp-4)}
 .rt-total .lbl{color:var(--text-muted);font-size:var(--fs-sm)}

@@ -60,8 +60,8 @@ def main(base):
             if flag not in flags:
                 print(f'FAIL  cookie {cookie.split("=")[0]} lacks {flag}')
                 failures += 1
-        if cookie.lower().startswith('livegrade_sessionid') and 'httponly' not in flags:
-            print('FAIL  session cookie lacks HttpOnly')
+        if cookie.lower().startswith(('livegrade_sessionid', 'livegrade_csrftoken')) and 'httponly' not in flags:
+            print(f'FAIL  cookie {cookie.split("=")[0]} lacks HttpOnly')
             failures += 1
     return 1 if failures else 0
 

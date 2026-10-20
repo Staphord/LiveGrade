@@ -164,22 +164,38 @@ for page in ('/assessments/', f'/assessments/{A}/', f'/assessments/{A}/results/e
     report(status in (302, 403), f'anonymous GET {page} -> {status} (want redirect/403)')
 
 # 5. Student flow: no lecturer cookie. Join, then render pages that show teammates' data.
-jar = http.cookiejar.CookieJar()
+# The app under test runs with DEBUG off, so its cookies are marked Secure, and Python's cookie jar
+# refuses to send a Secure cookie over plain http: the student would never "join". Allowing http
+# here is what makes the checks below test the real flow instead of the join page every time.
+jar = http.cookiejar.CookieJar(http.cookiejar.DefaultCookiePolicy(secure_protocols=('http', 'https')))
 student = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar), NoRedirect)
 status, body = get(f'/assess/{UUID_A}/join/', opener=student)
 check_escaped('stored XSS student join page', body, status)
 token = next((c.value for c in jar if c.name == 'livegrade_csrftoken'), '')
 join = urllib.parse.urlencode({'identifier': env['ORG_A_GRADER_NAME'],
                                'csrfmiddlewaretoken': token}).encode()
-get(f'/assess/{UUID_A}/join/', method='POST', data=join, opener=student)
+status, _ = get(f'/assess/{UUID_A}/join/', method='POST', data=join, opener=student)
+report(status == 302, f'student can join the session [{status}] (want a redirect to the evaluate page)')
 status, body = get(f'/assess/{UUID_A}/evaluate/', opener=student)
-report(status == 200, f'student joined and can open evaluate page [{status}]', warn=True)
+report(status == 200, f'student who joined can open the evaluate page [{status}]')
 check_escaped('stored XSS student evaluate page (teammate names, topic, location)', body, status)
-hostile = urllib.parse.urlencode({'identifier': PAYLOAD, 'csrfmiddlewaretoken': token}).encode()
-status, body = get(f'/assess/{UUID_A}/join/', method='POST', data=hostile, opener=student)
+# A second, new visitor: one who already joined is redirected before the form is read.
+fresh_jar = http.cookiejar.CookieJar(http.cookiejar.DefaultCookiePolicy(secure_protocols=('http', 'https')))
+fresh = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(fresh_jar), NoRedirect)
+get(f'/assess/{UUID_A}/join/', opener=fresh)
+fresh_token = next((c.value for c in fresh_jar if c.name == 'livegrade_csrftoken'), '')
+hostile = urllib.parse.urlencode({'identifier': PAYLOAD, 'csrfmiddlewaretoken': fresh_token}).encode()
+status, body = get(f'/assess/{UUID_A}/join/', method='POST', data=hostile, opener=fresh)
+report(status == 200, f'hostile join attempt gets the join form back [{status}] (a 403 or 302 would mean the check never ran)')
 check_escaped('reflected XSS student join identifier', body, status)
-status, _ = get(f'/assess/{UUID_B}/evaluate/', opener=student)
-report(status in (302, 403, 404), f'student session cookie on another session -> {status} (want redirect/403/404)')
+request = urllib.request.Request(BASE + f'/assess/{UUID_B}/evaluate/')
+try:
+    response = student.open(request, timeout=30)
+    status, where = response.status, ''
+except urllib.error.HTTPError as err:
+    status, where = err.code, err.headers.get('Location', '')
+report((status == 302 and f'/assess/{UUID_B}/join/' in where) or status in (403, 404),
+       f'student pass from session A used on session B -> {status} {where} (want the join page, 403 or 404)')
 
 # 6. WebSocket origin handling.
 try:

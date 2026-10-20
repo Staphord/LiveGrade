@@ -75,17 +75,18 @@ if not DEBUG and 'test' not in sys.argv:
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # Cookie flags that hold in every environment (the Secure flag is added in production above).
-# The session cookie is never readable by script. The CSRF cookie has to stay readable: the
-# student pages have no form to carry the token, so their script reads it from the cookie
-# (see evaluate.html) and sends it as X-CSRFToken. Its protection is SameSite plus Secure.
+# Neither cookie is readable by script. Pages that send the token from script (the student
+# pages have no form to carry it) read it from <meta name="csrf-token"> in the page head and
+# send it as X-CSRFToken; they never touch the cookie.
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
-CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_HTTPONLY = True
 CSRF_COOKIE_SAMESITE = 'Lax'
 
-# Content-Security-Policy (accounts/csp.py): report-only until the pages have been opened
-# with the browser console clear, then CSP_ENFORCE=True.
-CSP_ENFORCE = os.getenv('CSP_ENFORCE', 'False') == 'True'
+# Content-Security-Policy (accounts/csp.py): enforced wherever DEBUG is off, report-only while
+# developing (so a page you are editing is not blocked halfway). CSP_ENFORCE=False is the
+# emergency switch back to report-only; it is not meant to stay off.
+CSP_ENFORCE = os.getenv('CSP_ENFORCE', 'False' if DEBUG else 'True') == 'True'
 
 INSTALLED_APPS = [
     'daphne',

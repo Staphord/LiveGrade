@@ -1,0 +1,3 @@
+# Pinned so a new release can never change what the workflow check reports overnight.
+# Dependabot proposes updates as pull requests, which run this job.
+checkov==3.3.28

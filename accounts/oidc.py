@@ -86,4 +86,5 @@ def devperf_logout_url(request, state=None):
     }
     if state:
         query['state'] = state
+    # nosemgrep: python.flask.security.audit.directly-returned-format-string.directly-returned-format-string (Django, not Flask: a URL built from a setting and urlencode())
     return f'{settings.OIDC_OP_LOGOUT_ENDPOINT}?{urlencode(query)}'

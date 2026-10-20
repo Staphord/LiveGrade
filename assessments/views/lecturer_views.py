@@ -185,6 +185,7 @@ def assessment_session_edit(request, pk):
                 record_change(session, request.user,
                               'Changed the ' + ', '.join(BASICS_LABELS[f] for f in changed) + '.')
             messages.success(request, f'"{session.name}" updated.')
+            # nosemgrep: python.django.security.django-using-request-post-after-is-valid.django-using-request-post-after-is-valid (compared with a fixed word, never used as an address)
             if request.POST.get('next') == 'setup':
                 return redirect(reverse('assessment_setup', args=[session.pk]) + '?step=basics')
             return redirect('assessment_session_detail', pk=session.pk)

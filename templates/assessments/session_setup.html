@@ -7,7 +7,7 @@
 {% endblock %}
 
 {% block extra_css %}
-<style>
+<style nonce="{{ csp_nonce }}">
 /* ---------------------------------------------------------- Stepper nav --
    Left-column vertical progress tracker for the draft setup journey
    (basics → roster → rubric → groups → go live). Evolves the old static
@@ -824,6 +824,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                     </div>
                   </div>
                 </div>
+                {# nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token (the csrf_token tag is the next line) #}
                 <form method="post" action="{% url 'assessment_rubric_import' session.pk %}" enctype="multipart/form-data" id="rubric-import-form">
                   {% csrf_token %}
                   <div class="import-dropzone" id="rubric-import-dropzone">

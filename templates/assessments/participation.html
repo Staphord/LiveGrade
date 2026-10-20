@@ -6,7 +6,7 @@
 {% endblock %}
 
 {% block extra_css %}
-<style>
+<style nonce="{{ csp_nonce }}">
 .live-refresh-badge{display:inline-flex;align-items:center;gap:5px;font-size:var(--fs-micro);font-weight:700;
      padding:.2rem .55rem;border-radius:999px;background:var(--tone-success-bg);color:var(--tone-success-fg)}
 .live-refresh-badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:participation-pulse 1.4s ease-in-out infinite}

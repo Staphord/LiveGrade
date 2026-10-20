@@ -11,7 +11,7 @@
 {% endblock %}
 
 {% block extra_css %}
-<style>
+<style nonce="{{ csp_nonce }}">
 .sort-th a{color:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .sort-th a:hover{color:var(--accent)}
 .sort-th .sort-icon{font-size:.7rem;opacity:.4}

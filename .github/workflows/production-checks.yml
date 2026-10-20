@@ -20,11 +20,12 @@ jobs:
   tls-and-headers:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       PROD_URL: ${{ vars.PROD_URL }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
       - name: Require PROD_URL
@@ -38,7 +39,7 @@ jobs:
         run: |
           host="${PROD_URL#https://}"; host="${host%%/*}"
           mkdir -p tls-out && chmod 777 tls-out
-          docker run --rm -v "$PWD/tls-out:/out" ghcr.io/testssl/testssl.sh \
+          docker run --rm -v "$PWD/tls-out:/out" ghcr.io/testssl/testssl.sh@sha256:0bad1e6effc8d2fb52ec92f9819d2726269878c54f3911a18c302c6fe6358754 \
             --quiet --warnings batch --jsonfile /out/testssl.json "$host" || true
       - name: Fail on HIGH or CRITICAL TLS findings
         run: |
@@ -61,7 +62,7 @@ jobs:
           python3 security/summary.py section headers out/headers.txt > out/headers.md
           python3 security/summary.py section testssl tls-out/testssl.json > out/testssl.md
           python3 security/summary.py overview out >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: testssl

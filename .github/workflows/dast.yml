@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 60
     services:
       redis:
-        image: redis:7
+        image: redis@sha256:4fa24486b8bcca8eec45ee0eb166edc674795e53a2b53d1a9ef263eecebaac85   # redis:7, pinned
         ports: ['6379:6379']
     env:
       # Production-like: DEBUG off so the real security settings are active.
@@ -33,8 +33,8 @@ jobs:
       REDIS_URL: redis://127.0.0.1:6379/1
       ZAP_TARGET: http://localhost:8001
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
           cache: pip
@@ -61,14 +61,14 @@ jobs:
             -e ZAP_TARGET -e ORG_A_SESSION_PK -e ORG_A_SESSION_UUID \
             -e ZAP_AUTH_HEADER=Cookie \
             -e ZAP_AUTH_HEADER_VALUE="livegrade_sessionid=${ORG_A_COOKIE}" \
-            ghcr.io/zaproxy/zaproxy:stable \
+            ghcr.io/zaproxy/zaproxy@sha256:5ccfff9a411743ab2615136a2edd7416bec9ce41572fa94e935df38c14adb2b6 \
             zap.sh -cmd -autorun /zap/wrk/security/zap/authenticated.yaml
       - name: ZAP anonymous scan (students and public pages)
         if: always()
         run: |
           docker run --rm --network host -v "$PWD:/zap/wrk/:rw" \
             -e ZAP_TARGET -e ORG_A_SESSION_PK -e ORG_A_SESSION_UUID \
-            ghcr.io/zaproxy/zaproxy:stable \
+            ghcr.io/zaproxy/zaproxy@sha256:5ccfff9a411743ab2615136a2edd7416bec9ce41572fa94e935df38c14adb2b6 \
             zap.sh -cmd -autorun /zap/wrk/security/zap/anonymous.yaml
       # One table for the whole run on the summary page: the targeted checks, then ZAP.
       - name: Summary
@@ -82,7 +82,7 @@ jobs:
           python3 security/summary.py section zap security/reports/zap-authenticated.json \
             security/reports/zap-anonymous.json > out/zap.md
           python3 security/summary.py overview out >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: zap-reports

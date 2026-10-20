@@ -8,3 +8,6 @@ urlpatterns = [
     path('assess/', include('assessments.student_urls')),
     path('', include('accounts.urls')),
 ]
+
+# Django would use its own 500 view, which renders with no request and so no CSP nonce.
+handler500 = 'accounts.error_pages.server_error'

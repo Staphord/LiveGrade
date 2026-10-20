@@ -31,6 +31,14 @@ env:
     progressToStdout: true
 
 jobs:
+  # Alerts that are true of the scan setup, not of LiveGrade. Each one is recorded here with its
+  # reason, so a real alert of the same kind on a real page is never hidden by accident.
+  - type: alertFilter
+    alertFilters:
+      # The scan runs against a throwaway copy on plain http. The live site is https-only, and
+      # that is checked separately by the production workflow (HSTS, redirect, TLS).
+      - ruleId: 10106
+        newRisk: "False Positive"
   - type: spider
     parameters:
       context: livegrade-lecturer

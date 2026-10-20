@@ -1,0 +1,11 @@
+title = "LiveGrade gitleaks (working-tree scan on a developer machine)"
+
+# Everything in the main config, plus: the developer's own .env is read here on purpose. It is git-ignored
+# (a test checks that), so it can only leave the machine by being committed, and the history scan and the CI
+# scan, which use the strict config and do not allow it, would catch that.
+[extend]
+path = "security/gitleaks.toml"   # relative to the repository root, where scan.sh runs
+
+[[allowlists]]
+description = "The developer's own, git-ignored .env"
+paths = ['''(^|/)\.env$''']

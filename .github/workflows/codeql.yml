@@ -8,9 +8,14 @@ on:
   schedule:
     - cron: '0 3 * * 1'
 
+# Nothing here needs to write to the repository; the jobs below ask for exactly what they use.
+permissions:
+  contents: read
+
 jobs:
   analyze:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       security-events: write
       contents: read
@@ -18,12 +23,12 @@ jobs:
       matrix:
         language: [python, javascript-typescript]
     steps:
-      - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: github/codeql-action/init@ce5e7eeac396d720fe2d802714996c8ce561e311 # v3.39.0
         with:
           languages: ${{ matrix.language }}
           queries: security-extended
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@ce5e7eeac396d720fe2d802714996c8ce561e311 # v3.39.0
 
   # Not a check: one summary for the whole run, listing the open alerts of this branch with what
   # each means and where it is (analyze waits for GitHub to process its results, so they are current).
@@ -31,11 +36,12 @@ jobs:
     if: always()
     needs: analyze
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       security-events: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Read this branch's open alerts
         env:
           GH_TOKEN: ${{ github.token }}
