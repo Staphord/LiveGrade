@@ -69,7 +69,7 @@
     <button type="button" class="group-tile group-btn not-next-tile w-100"
             title="Set this group as Next before activating it"
             data-group-name="{{ group.name }}"
-            onclick="showSetNextFirst(this)">
+            data-set-next-first>
       <span class="tile-num">#{{ forloop.counter }}</span>
       <span class="tile-name">{{ group.name }}</span>
       <span class="tile-status"><i class="bi bi-circle"></i></span>
@@ -108,7 +108,7 @@
     </div>
   </div>
 </div>
-<script>
+<script nonce="{{ csp_nonce }}">
 function showSetNextFirst(el) {
   var name = el.dataset.groupName || 'this group';
   var modal = document.getElementById('setNextFirstModal');

@@ -1,0 +1,193 @@
+name: Security (static)
+
+# Fast static checks. Separate from CI/CD so a scanner outage never blocks a deploy,
+# but make these required status checks on main (branch protection) so they gate merges.
+#
+# Every job writes its result to out/<tool>.md (security/summary.py) and uploads it; the last
+# job, "report", puts them together on the run's summary page: one table with the status of
+# every check, then the details of each. Job ids match the tool names that table expects.
+on:
+  push:
+    branches: [main, ci/deploy-pipeline]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 4 * * 1'   # weekly: new CVEs appear without any code change
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: semgrep/semgrep@sha256:529ee8a277ec8adc5b534d7c74eea0a47e9de21d62852b6ba7ac6ba9566845c3   # pinned; refresh monthly
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # --error: exit 1 on findings. --severity ERROR gates on high-confidence rules only;
+      # lower severities are still in the SARIF/log for triage. --metrics=off: no telemetry.
+      - run: |
+          semgrep scan \
+            --config p/django --config p/python --config p/owasp-top-ten \
+            --config p/security-audit --config p/javascript --config p/secrets \
+            --exclude venv --exclude security --exclude '*/migrations/*' \
+            --metrics=off --error --severity ERROR \
+            --sarif-output=semgrep.sarif
+      - name: Summary
+        if: always()
+        run: |
+          mkdir -p out
+          python3 security/summary.py section semgrep semgrep.sarif > out/semgrep.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: result-semgrep
+          path: |
+            out/semgrep.md
+            semgrep.sarif
+
+  bandit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - run: pip install -r security/requirements-bandit.txt
+      # -ll: medium severity and above. bandit exits 1 when it reports issues. The report is
+      # written as JSON for the summary; on failure the same scan is repeated as readable text
+      # so the job log still shows the findings.
+      - run: |
+          args=(-r accounts assessments config -x '*/tests/*,*/migrations/*,*/testing.py' -ll)
+          bandit "${args[@]}" -q -f json -o bandit.json || { bandit "${args[@]}"; exit 1; }
+      - name: Summary
+        if: always()
+        run: |
+          mkdir -p out
+          python3 security/summary.py section bandit bandit.json > out/bandit.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: result-bandit
+          path: |
+            out/bandit.md
+            bandit.json
+
+  pip-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - run: pip install -r security/requirements-pip-audit.txt
+      # Exits non-zero when a pinned/resolved dependency has a known vulnerability.
+      - run: |
+          # The one ignored advisory is explained in security/accepted-risks.md; a test keeps the two in step.
+          ignore=(--ignore-vuln CVE-2026-106454)
+          pip-audit -r requirements.txt --desc "${ignore[@]}" -f json -o pip-audit.json || { pip-audit -r requirements.txt --desc "${ignore[@]}"; exit 1; }
+      - name: Summary
+        if: always()
+        run: |
+          mkdir -p out
+          python3 security/summary.py section pip-audit pip-audit.json > out/pip-audit.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: result-pip-audit
+          path: |
+            out/pip-audit.md
+            pip-audit.json
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0   # git-aware scan needs full history, not just the last commit
+      # The CLI via its official image (pinned by digest; refresh monthly): no license key, unlike gitleaks-action for orgs.
+      # --redact keeps the secret itself out of the log and the report.
+      - run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
+            git /repo --config /repo/security/gitleaks.toml --redact -v \
+            --report-format json --report-path /repo/gitleaks.json
+      - name: Summary
+        if: always()
+        run: |
+          mkdir -p out
+          python3 security/summary.py section gitleaks gitleaks.json > out/gitleaks.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: result-gitleaks
+          path: |
+            out/gitleaks.md
+            gitleaks.json
+
+  checkov:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - run: pip install -r security/requirements-checkov.txt
+      # Advisory for now (soft-fail): CI config findings need a human decision.
+      - run: |
+          checkov -d .github --framework github_actions --soft-fail
+          mkdir -p checkov-out
+          checkov -d .github --framework github_actions --soft-fail -o json --output-file-path checkov-out > /dev/null
+      - name: Summary
+        if: always()
+        run: |
+          mkdir -p out
+          python3 security/summary.py section checkov checkov-out/results_json.json > out/checkov.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: result-checkov
+          path: |
+            out/checkov.md
+            checkov-out
+
+  # The reporting code is part of the shield: if it breaks, results silently stop being shown.
+  tooling-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - run: python3 -m unittest discover -s security/tests -v
+
+  # Not a check: it reads what the jobs above uploaded and writes the run's summary page. It
+  # always runs, and fails nothing itself; the jobs above decide whether the run is red.
+  report:
+    if: always()
+    needs: [semgrep, bandit, pip-audit, gitleaks, checkov, tooling-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        continue-on-error: true   # none exist if every job died before uploading
+        with:
+          pattern: result-*
+          path: out
+          merge-multiple: true
+      - name: Summary
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          SUMMARY_TITLE: Static security checks
+          SUMMARY_GATE: '1'   # this job is the one status to require: red when any check above failed
+        run: python3 security/summary.py overview out >> "$GITHUB_STEP_SUMMARY"

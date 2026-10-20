@@ -1,0 +1,91 @@
+name: Security (authenticated DAST)
+
+# Starts LiveGrade in the runner against a throwaway database, signs in as two
+# lecturers (security/seed_session.py), and attacks it with ZAP. NEVER point this at
+# production: the active scan submits forms and creates data.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/deploy-pipeline]
+  schedule:
+    - cron: '0 2 * * 0'   # weekly, Sunday night
+
+permissions:
+  contents: read
+
+jobs:
+  zap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      redis:
+        image: redis@sha256:4fa24486b8bcca8eec45ee0eb166edc674795e53a2b53d1a9ef263eecebaac85   # redis:7, pinned
+        ports: ['6379:6379']
+    env:
+      # Production-like: DEBUG off so the real security settings are active.
+      DEBUG: 'False'
+      SECRET_KEY: ci-dast-only-secret-key-0123456789-abcdefghijklmnop
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      SECURE_SSL_REDIRECT: 'False'   # the runner serves plain http
+      OIDC_RP_CLIENT_ID: ci
+      OIDC_RP_CLIENT_SECRET: ci
+      DEVPERF_URL: http://localhost:9
+      REDIS_URL: redis://127.0.0.1:6379/1
+      ZAP_TARGET: http://localhost:8001
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python manage.py migrate --noinput
+      - name: Create two signed-in lecturers (different organizations)
+        run: python security/seed_session.py >> "$GITHUB_ENV"
+      - name: Start LiveGrade (ASGI, as in production)
+        run: |
+          nohup daphne -b 127.0.0.1 -p 8001 config.asgi:application > server.log 2>&1 &
+          for i in $(seq 1 30); do curl -fs http://localhost:8001/healthz && break; sleep 1; done
+          curl -fs http://localhost:8001/healthz
+      - name: Targeted checks (XSS, cross-org access, anonymous, student flow, WebSocket)
+        run: |
+          set -o pipefail   # without it the pipe reports tee's exit code and a FAIL never fails the job
+          pip install websockets
+          mkdir -p security/reports
+          python security/probe.py http://localhost:8001 | tee security/reports/probe.txt
+      - name: ZAP authenticated scan (lecturer)
+        run: |
+          chmod -R a+rwx security
+          # ZAP_AUTH_HEADER* must be real environment variables before ZAP starts.
+          docker run --rm --network host -v "$PWD:/zap/wrk/:rw" \
+            -e ZAP_TARGET -e ORG_A_SESSION_PK -e ORG_A_SESSION_UUID \
+            -e ZAP_AUTH_HEADER=Cookie \
+            -e ZAP_AUTH_HEADER_VALUE="livegrade_sessionid=${ORG_A_COOKIE}" \
+            ghcr.io/zaproxy/zaproxy@sha256:5ccfff9a411743ab2615136a2edd7416bec9ce41572fa94e935df38c14adb2b6 \
+            zap.sh -cmd -autorun /zap/wrk/security/zap/authenticated.yaml
+      - name: ZAP anonymous scan (students and public pages)
+        if: always()
+        run: |
+          docker run --rm --network host -v "$PWD:/zap/wrk/:rw" \
+            -e ZAP_TARGET -e ORG_A_SESSION_PK -e ORG_A_SESSION_UUID \
+            ghcr.io/zaproxy/zaproxy@sha256:5ccfff9a411743ab2615136a2edd7416bec9ce41572fa94e935df38c14adb2b6 \
+            zap.sh -cmd -autorun /zap/wrk/security/zap/anonymous.yaml
+      # One table for the whole run on the summary page: the targeted checks, then ZAP.
+      - name: Summary
+        if: always()
+        env:
+          SUMMARY_TITLE: Authenticated and anonymous web scan
+          NEEDS_JSON: '{}'
+        run: |
+          mkdir -p out security/reports
+          python3 security/summary.py section probe security/reports/probe.txt > out/probe.md
+          python3 security/summary.py section zap security/reports/zap-authenticated.json \
+            security/reports/zap-anonymous.json > out/zap.md
+          python3 security/summary.py overview out >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: zap-reports
+          path: |
+            security/reports
+            server.log

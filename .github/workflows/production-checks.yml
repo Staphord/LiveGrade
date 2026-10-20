@@ -1,0 +1,69 @@
+name: Security (production TLS and headers)
+
+# Read-only checks of the DEPLOYED site. Set the repository variable PROD_URL
+# (Settings > Secrets and variables > Actions > Variables), e.g. https://livegrade.example.com
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/deploy-pipeline]
+  workflow_run:
+    workflows: ['CI/CD']   # re-check after every deploy
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: '0 5 * * *'    # daily: certificates expire and ciphers age without a deploy
+
+permissions:
+  contents: read
+
+jobs:
+  tls-and-headers:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PROD_URL: ${{ vars.PROD_URL }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Require PROD_URL
+        run: test -n "$PROD_URL" || { echo "Set the PROD_URL repository variable"; exit 1; }
+      - name: Security headers and cookie flags
+        run: |
+          set -o pipefail
+          mkdir -p out
+          python security/check_headers.py "$PROD_URL" | tee out/headers.txt
+      - name: TLS configuration (testssl.sh)
+        run: |
+          host="${PROD_URL#https://}"; host="${host%%/*}"
+          mkdir -p tls-out && chmod 777 tls-out
+          docker run --rm -v "$PWD/tls-out:/out" ghcr.io/testssl/testssl.sh@sha256:0bad1e6effc8d2fb52ec92f9819d2726269878c54f3911a18c302c6fe6358754 \
+            --quiet --warnings batch --jsonfile /out/testssl.json "$host" || true
+      - name: Fail on HIGH or CRITICAL TLS findings
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          bad = [f for f in json.load(open('tls-out/testssl.json'))
+                 if f.get('severity') in ('HIGH', 'CRITICAL')]
+          for f in bad:
+              print(f"{f['severity']:9} {f['id']}: {f['finding']}")
+          sys.exit(1 if bad else 0)
+          PY
+      # One table on the run's summary page: what the live site sends, and how it does TLS.
+      - name: Summary
+        if: always()
+        env:
+          SUMMARY_TITLE: Production site (${{ vars.PROD_URL }})
+          NEEDS_JSON: '{}'
+        run: |
+          mkdir -p out
+          python3 security/summary.py section headers out/headers.txt > out/headers.md
+          python3 security/summary.py section testssl tls-out/testssl.json > out/testssl.md
+          python3 security/summary.py overview out >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: testssl
+          path: tls-out

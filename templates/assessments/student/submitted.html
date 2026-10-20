@@ -23,7 +23,7 @@
 </div>
 {% endblock %}
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   const fill = document.getElementById('countdown-fill');
   const seconds = 8;

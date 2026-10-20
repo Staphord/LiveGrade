@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LiveGrade - live peer assessment for presentations</title>
 <meta name="description" content="Run live, QR-joined peer assessment in your classroom. Students join from their phones; you watch the grades arrive.">
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" integrity="sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM" crossorigin="anonymous" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" integrity="sha384-QuGBSgV5Im3DzL2z+8Ko9/hqNy/N0O7zwvXAtfd1MvPKWa/UbeLV65cfm4BV5Wgq" crossorigin="anonymous" rel="stylesheet">
 {% include 'partials/_design_system.html' %}
-<style>
+<style nonce="{{ csp_nonce }}">
 :root{
 --lp-night:#0f2a4d;
 --lp-deep:#123c6e;
@@ -282,7 +282,7 @@ body{background:var(--surface);color:var(--text);font-size:1rem;overflow-x:hidde
 </footer>
 
 </div>
-<script>
+<script nonce="{{ csp_nonce }}">
 (function () {
   var links = document.querySelectorAll('a.btn[href]');
   function reset() {

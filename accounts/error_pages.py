@@ -10,12 +10,23 @@ the time the response is built, so the terminal still shows what went wrong.
 Turn it off (``FRIENDLY_ERROR_PAGES=False``) to get Django's technical pages back
 while debugging.
 """
+from django.http import HttpResponseServerError
+from django.template import loader
 from django.views import debug
-from django.views.defaults import page_not_found, server_error
+from django.views.defaults import page_not_found
 
 
 def friendly_404(request, exception):
     return page_not_found(request, exception)
+
+
+def server_error(request):
+    """The 500 page. Django renders it with no request, so it would have no nonce and the browser,
+    enforcing the Content-Security-Policy, would refuse its inline styles. The nonce is passed in by hand;
+    nothing else from the request is used, because a 500 may come from the very things (the session,
+    the database) that a full request context would need."""
+    html = loader.get_template('500.html').render({'csp_nonce': getattr(request, 'csp_nonce', '')})
+    return HttpResponseServerError(html)
 
 
 def friendly_500(request, exc_type, exc_value, tb):

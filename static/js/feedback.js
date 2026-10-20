@@ -146,7 +146,8 @@
       const link = e.target.closest ? e.target.closest('a[href]') : null;
       if (!link) return;
       const href = link.getAttribute('href');
-      if (!href || href.charAt(0) === '#' || href.indexOf('javascript:') === 0) return;
+      // Not a page change: an anchor, or a link that runs code or opens another program.
+      if (!href || href.charAt(0) === '#' || /^\s*(?:javascript|data|vbscript|mailto|tel):/i.test(href)) return;
       if (link.target === '_blank' || link.hasAttribute('download')) return;
       if (link.getAttribute('data-bs-toggle')) return;
       bar.classList.add('active');

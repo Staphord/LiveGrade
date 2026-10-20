@@ -2,7 +2,9 @@
   <div class="page-header-main">
     {% if parent %}
     <nav class="crumbs" aria-label="Breadcrumb">
+      {# nosemgrep: generic.html-templates.security.var-in-href.var-in-href (grandparent_url is never set by a view; it stays #) #}
       {% if grandparent %}<a href="{{ grandparent_url|default:'#' }}">{{ grandparent }}</a><span class="crumb-sep" aria-hidden="true">/</span>{% endif %}
+      {# nosemgrep: generic.html-templates.security.var-in-href.var-in-href (parent_url is never set by a view; it stays #) #}
       <a href="{{ parent_url|default:'#' }}">{{ parent }}</a>
     </nav>
     {% endif %}

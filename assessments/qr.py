@@ -9,7 +9,8 @@ from config.netutils import detect_lan_ip
 
 # Addresses that only ever mean "this device" — useless to a phone scanning
 # a QR code, which needs an address reachable over the room's Wi-Fi instead.
-LOCAL_HOSTNAMES = {'localhost', '127.0.0.1', '0.0.0.0'}
+# These are addresses to REPLACE in a QR link; nothing is ever bound to them.
+LOCAL_HOSTNAMES = {'localhost', '127.0.0.1', '0.0.0.0'}  # nosec B104
 
 
 def join_url(request, assessment_session):

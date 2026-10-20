@@ -6,7 +6,7 @@
 {% endblock %}
 
 {% block extra_css %}
-<style>
+<style nonce="{{ csp_nonce }}">
 .live-refresh-badge{display:inline-flex;align-items:center;gap:5px;font-size:var(--fs-micro);font-weight:700;
      padding:.2rem .55rem;border-radius:999px;background:var(--tone-success-bg);color:var(--tone-success-fg)}
 .live-refresh-badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:participation-pulse 1.4s ease-in-out infinite}
@@ -179,7 +179,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 // Delegated (survives the card grid being swapped outerHTML-style on every
 // silent refresh) — toggles one card's group breakdown open/closed.
 document.addEventListener('click', function (e) {
@@ -194,13 +194,21 @@ document.addEventListener('click', function (e) {
 });
 </script>
 {% if session.status == 'live' %}
-<script>
+<script nonce="{{ csp_nonce }}">
 // Silent-patch refresh of the card grid + stat strip — same idea as the
 // Live control tab. Driven primarily by the websocket below (near-instant);
 // the interval here is only a safety net for a dropped/slow socket, so
 // it's deliberately much longer than a pure-polling version would need.
 (function () {
-  const REFRESH_URL = '{% url "assessment_participation_refresh" session.pk %}' + window.location.search;
+  const REFRESH_URL = (function () {
+    // Only the filters the page itself understands are passed on, never the raw address-bar text.
+    const current = new URLSearchParams(window.location.search);
+    const kept = new URLSearchParams();
+    ['status', 'page', 'per_page'].forEach(function (key) {
+      if (current.has(key)) kept.set(key, current.get(key));
+    });
+    return '{% url "assessment_participation_refresh" session.pk %}' + '?' + kept.toString();
+  })();
   let refreshing = false;
 
   function cardSignature(card) {
@@ -305,8 +313,11 @@ function applyGradingProgress(payload) {
     const note = card.querySelector('.live-status-note.is-grading');
     if (note) {
       note.hidden = false;
-      note.innerHTML = '<span class="live-dot"></span>Grading now' +
-        (payload.total ? ' - ' + payload.answered + '/' + payload.total : '');
+      // Built as nodes: the numbers come from a socket message, and are text, never markup.
+      const dot = document.createElement('span');
+      dot.className = 'live-dot';
+      note.replaceChildren(dot, 'Grading now' +
+        (payload.total ? ' - ' + Number(payload.answered) + '/' + Number(payload.total) : ''));
     }
     const chip = card.querySelector('.group-chip[data-group-id="' + payload.group_id + '"]');
     if (chip) chip.classList.add('is-grading-now');

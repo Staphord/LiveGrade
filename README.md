@@ -92,6 +92,8 @@ coverage combine && coverage report
 | `REDIS_URL` | Channels and Celery. Defaults to database 1 so DevPerf's is never shared. |
 | `DB_ENGINE`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | Database (default: local SQLite). |
 | `SESSION_COOKIE_AGE` | Seconds a sign-in lasts (default 8 hours). It is also the longest a withdrawn permission can linger. |
+| `CSP_ENFORCE` | Content-Security-Policy. Enforced by default when `DEBUG` is off; report-only (the console lists what it would block) while developing. `CSP_ENFORCE=False` is the emergency switch back to report-only. |
+| `SECURE_HSTS_SECONDS`, `SECURE_HSTS_INCLUDE_SUBDOMAINS`, `SECURE_HSTS_PRELOAD` | HSTS lifetime (default 30 days) and, once every subdomain serves HTTPS, whether it covers them and may be preloaded. Both flags default to `False`. |
 | `DEVPERF_DB_*` | Only for the one-off data copy below. |
 
 Production also needs HTTPS, a Celery worker, and a web server that serves `static/`.

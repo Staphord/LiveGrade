@@ -40,6 +40,19 @@ MODELS = (AssessmentSession, RubricCategory, Student, PresentationGroup,
           EvaluationScore)
 
 
+def select_sql(src, columns, model, tail=''):
+    """``SELECT <columns> FROM <the model's table> <tail>`` for the DevPerf database.
+
+    The one place this command builds SQL from text, so the scanner's "SQL built from strings"
+    warning is answered once and with the reason: the table name comes from Django's own model
+    metadata and is quoted by the database backend, ``columns`` are quoted by the caller the same
+    way, and ``tail`` is fixed text written in this file. No value that anyone typed is ever
+    part of the text; the one query that takes a value (below) passes it as a parameter.
+    """
+    table = src.ops.quote_name(model._meta.db_table)
+    return f'SELECT {columns} FROM {table} {tail}'.strip()  # nosec B608
+
+
 class Command(BaseCommand):
     help = "Copy LiveGrade's sessions and grades from DevPerf's database into this one."
 
@@ -86,9 +99,8 @@ class Command(BaseCommand):
     def copy_lecturers(self, src):
         """DevPerf user id -> the local user, created from DevPerf's own record."""
         with src.cursor() as cursor:
-            cursor.execute(
-                f'SELECT DISTINCT created_by_id FROM {AssessmentSession._meta.db_table} '
-                'WHERE created_by_id IS NOT NULL')
+            cursor.execute(select_sql(
+                src, 'DISTINCT created_by_id', AssessmentSession, 'WHERE created_by_id IS NOT NULL'))
             ids = [row[0] for row in cursor.fetchall()]
         users = {}
         for devperf_id in ids:
@@ -111,9 +123,8 @@ class Command(BaseCommand):
         fields = list(model._meta.concrete_fields)
         columns = ', '.join(src.ops.quote_name(f.column) for f in fields)
         with src.cursor() as cursor:
-            cursor.execute(
-                f'SELECT {columns} FROM {src.ops.quote_name(model._meta.db_table)} '
-                f'ORDER BY {src.ops.quote_name(model._meta.pk.column)}')
+            cursor.execute(select_sql(
+                src, columns, model, f'ORDER BY {src.ops.quote_name(model._meta.pk.column)}'))
             rows = cursor.fetchall()
         objects = []
         for row in rows:
@@ -141,18 +152,18 @@ class Command(BaseCommand):
         for model in MODELS:
             pk = model._meta.pk.column
             with src.cursor() as cursor:
-                cursor.execute(f'SELECT {src.ops.quote_name(pk)} FROM {src.ops.quote_name(model._meta.db_table)}')
+                cursor.execute(select_sql(src, src.ops.quote_name(pk), model))
                 wanted = {row[0] for row in cursor.fetchall()}
             have = set(model.objects.filter(pk__in=wanted).values_list('pk', flat=True))
             if wanted - have:
                 problems.append(f'{model._meta.label}: {len(wanted - have)} of {len(wanted)} rows missing')
         with src.cursor() as cursor:
-            cursor.execute(f'SELECT COALESCE(SUM(value), 0) FROM {EvaluationScore._meta.db_table}')
+            cursor.execute(select_sql(src, 'COALESCE(SUM(value), 0)', EvaluationScore))
             source_total = Decimal(str(cursor.fetchone()[0]))
         # Compared over the rows that came from the source (same ids), so grades
         # entered here before the copy do not make a correct copy look wrong.
         with src.cursor() as cursor:
-            cursor.execute(f'SELECT id FROM {EvaluationScore._meta.db_table}')
+            cursor.execute(select_sql(src, 'id', EvaluationScore))
             ids = [row[0] for row in cursor.fetchall()]
         local_total = (EvaluationScore.objects.filter(pk__in=ids)
                        .aggregate(total=Sum('value'))['total'] or Decimal('0'))

@@ -48,6 +48,24 @@ class FriendlyPagesTests(TestCase):
             self.assertNotContains(response, 'RuntimeError', status_code=500)
             self.assertIn('boom', '\n'.join(logs.output))
 
+    def test_the_404_and_expired_form_pages_keep_their_styles_under_the_content_security_policy(self):
+        for response in (self.get(),
+                         Client(enforce_csrf_checks=True).post('/switch-organization/', {'organization': '1'})):
+            nonce = response.wsgi_request.csp_nonce
+            self.assertContains(response, f'<style nonce="{nonce}">', status_code=response.status_code)
+            self.assertIn(f"'nonce-{nonce}'", response['Content-Security-Policy-Report-Only'])
+
+    def test_the_500_page_keeps_its_styles_under_the_content_security_policy(self):
+        # The page's inline <style> only runs if it carries this response's nonce.
+        for debug_flag in (False, True):
+            with self.subTest(debug=debug_flag), override_settings(DEBUG=debug_flag), \
+                    mock.patch('accounts.views.HttpResponse', side_effect=RuntimeError('boom')), \
+                    self.assertLogs('django.request', level='ERROR'):
+                response = self.get('/healthz')
+            nonce = response.wsgi_request.csp_nonce
+            self.assertContains(response, f'<style nonce="{nonce}">', status_code=500)
+            self.assertIn(f"'nonce-{nonce}'", response['Content-Security-Policy-Report-Only'])
+
     def test_a_refused_page_gets_the_friendly_403(self):
         with override_settings(DEBUG=False), mock.patch('accounts.views.HttpResponse', side_effect=PermissionDenied):
             response = self.get('/healthz')

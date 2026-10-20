@@ -12,7 +12,7 @@
 {% endblock %}
 
 {% block extra_css %}
-<style>
+<style nonce="{{ csp_nonce }}">
 /* Small entrance choreography + a liveness badge for the control panel —
    scoped here rather than added to base.html's global CSS. */
 @keyframes assess-fade-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
@@ -430,7 +430,7 @@
         <span class="icon-badge"><i class="bi bi-collection-play"></i></span>
         <span class="title">Select next group</span>
       </div>
-      <button type="button" class="btn btn-outline-secondary btn-sm turn-settings-toggle" id="turn-settings-toggle" aria-expanded="false" aria-controls="turn-settings-panel" onclick="(function(button){var panel=document.getElementById('turn-settings-panel');if(!panel)return;var open=panel.classList.toggle('is-collapsed')===false;button.setAttribute('aria-expanded',open?'true':'false');})(this)">
+      <button type="button" class="btn btn-outline-secondary btn-sm turn-settings-toggle" id="turn-settings-toggle" aria-expanded="false" aria-controls="turn-settings-panel" data-toggle-panel="turn-settings-panel">
         <i class="bi bi-sliders"></i>
         <span id="turn-settings-summary">{% if session.default_presentation_seconds %}{{ session.default_presentation_seconds }}s pres.{% else %}No pres. timer{% endif %} · {% if session.default_turn_seconds %}{{ session.default_turn_seconds }}s vote{% else %}no vote timer{% endif %} · {% if session.transition_gap_seconds %}{{ session.transition_gap_seconds }}s gap{% else %}no gap{% endif %}</span>
         <i class="bi bi-chevron-down toggle-caret"></i>
@@ -636,7 +636,7 @@
 
 {% block scripts %}
 {% if session.status == 'live' %}
-<script>
+<script nonce="{{ csp_nonce }}">
 // The live control panel updates itself in place — a websocket push (or a
 // lecturer's own click) triggers a small JSON fetch, and only the specific
 // fragments that changed get swapped in. No full-page reload for anything
@@ -658,7 +658,13 @@
     const row = document.querySelector('#live-roster [data-student-id="' + payload.student_id + '"]');
     if (!row) return;
     const status = row.querySelector('[data-roster-status]');
-    if (status) { status.className = 'roster-status roster-status-partial'; status.innerHTML = 'Grading<small>' + payload.answered + '/' + payload.total + '</small>'; }
+    if (status) {
+      status.className = 'roster-status roster-status-partial';
+      // Nodes, not markup: these numbers arrive in a socket message.
+      const progress = document.createElement('small');
+      progress.textContent = Number(payload.answered) + '/' + Number(payload.total);
+      status.replaceChildren('Grading', progress);
+    }
   }
   function reapplyLiveGradingState() {
     liveGradingState.forEach(applyLiveGradingProgress);
@@ -1111,7 +1117,7 @@
 })();
 </script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 // Voting-timer duration picker: one shared control that feeds whichever
 // group's "activate" form actually gets submitted.
 (function () {
@@ -1142,8 +1148,8 @@
   function durationCsrfHeaders() {
     const el = document.querySelector('[name=csrfmiddlewaretoken]');
     if (el) return { 'X-CSRFToken': el.value };
-    const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
-    return match ? { 'X-CSRFToken': decodeURIComponent(match[1]) } : {};
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta && meta.content ? { 'X-CSRFToken': meta.content } : {};
   }
 
   // The voting timer isn't just a value bundled into the next "activate
@@ -1216,8 +1222,8 @@
   function gapCsrfHeaders() {
     const el = document.querySelector('[name=csrfmiddlewaretoken]');
     if (el) return { 'X-CSRFToken': el.value };
-    const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
-    return match ? { 'X-CSRFToken': decodeURIComponent(match[1]) } : {};
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta && meta.content ? { 'X-CSRFToken': meta.content } : {};
   }
 
   function selectGapSeconds(seconds, persist) {
@@ -1279,8 +1285,8 @@
   function presCsrfHeaders() {
     const el = document.querySelector('[name=csrfmiddlewaretoken]');
     if (el) return { 'X-CSRFToken': el.value };
-    const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
-    return match ? { 'X-CSRFToken': decodeURIComponent(match[1]) } : {};
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta && meta.content ? { 'X-CSRFToken': meta.content } : {};
   }
 
   function selectPresSeconds(seconds, persist) {

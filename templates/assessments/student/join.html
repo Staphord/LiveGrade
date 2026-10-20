@@ -41,7 +41,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 document.getElementById('join-form').addEventListener('submit', function () {
   document.getElementById('join-btn').classList.add('btn-loading');
 });

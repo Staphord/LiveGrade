@@ -11,7 +11,7 @@
 {% endblock %}
 
 {% block extra_css %}
-<style>
+<style nonce="{{ csp_nonce }}">
 .sort-th a{color:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .sort-th a:hover{color:var(--accent)}
 .sort-th .sort-icon{font-size:.7rem;opacity:.4}
@@ -141,7 +141,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 let groupChart = null;
 let distributionChart = null;
 const bucketLabels = ['0–9', '10–19', '20–29', '30–39', '40–49', '50–59', '60–69', '70–79', '80–89', '90–100'];
@@ -213,12 +213,20 @@ renderGroupChart(
 renderDistributionChart([{% for n in distribution_buckets %}{{ n }}{% if not forloop.last %},{% endif %}{% endfor %}]);
 </script>
 {% if session.status == 'live' %}
-<script>
+<script nonce="{{ csp_nonce }}">
 // Silent-patch refresh of the table rows + both charts — same idea as
 // Participation. Driven primarily by the websocket (near-instant); the
 // interval is only a safety net for a dropped/slow socket.
 (function () {
-  const REFRESH_URL = '{% url "assessment_results_refresh" session.pk %}' + window.location.search;
+  const REFRESH_URL = (function () {
+    // Only the filters the page itself understands are passed on, never the raw address-bar text.
+    const current = new URLSearchParams(window.location.search);
+    const kept = new URLSearchParams();
+    ['sort', 'dir', 'status', 'page', 'per_page'].forEach(function (key) {
+      if (current.has(key)) kept.set(key, current.get(key));
+    });
+    return '{% url "assessment_results_refresh" session.pk %}' + '?' + kept.toString();
+  })();
   let refreshing = false;
 
   function rowSignature(row) {

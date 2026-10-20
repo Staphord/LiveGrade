@@ -15,9 +15,12 @@ def livegrade(request):
     """
     organizations = request.session.get(ORGS_KEY) or []
     return {
+        # The nonce that lets this response's inline scripts run under the CSP.
+        'csp_nonce': getattr(request, 'csp_nonce', ''),
         'devperf_url': settings.DEVPERF_URL,
         'active_org': active_organization(request),
         'my_orgs': [{**org, 'display_name': PERSONAL if org.get('public') else org['name']}
                     for org in organizations],
+        # nosemgrep: python.django.security.nan-injection.nan-injection (bool() of a list, not a number cast)
         'only_personal': bool(organizations) and all(org.get('public') for org in organizations),
     }

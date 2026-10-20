@@ -21,6 +21,9 @@ from config.asgi import application
 
 QUIET = 0.2
 
+#: What a browser sends when the page that opens the socket came from this site.
+OWN_ORIGIN = [(b'origin', b'http://localhost')]
+
 
 class AssessmentSocketTests(TransactionTestCase):
 
@@ -33,7 +36,7 @@ class AssessmentSocketTests(TransactionTestCase):
         return f'/ws/assessments/{session.uuid}/'
 
     async def open(self, path):
-        communicator = WebsocketCommunicator(application, path)
+        communicator = WebsocketCommunicator(application, path, headers=OWN_ORIGIN)
         connected, _ = await communicator.connect()
         return communicator, connected
 
@@ -74,6 +77,18 @@ class AssessmentSocketTests(TransactionTestCase):
         self.assertIsNone(await AssessmentSessionConsumer().disconnect(1000))
 
     async def test_any_other_path_is_not_a_socket(self):
-        communicator = WebsocketCommunicator(application, '/ws/anything-else/')
+        communicator = WebsocketCommunicator(application, '/ws/anything-else/', headers=OWN_ORIGIN)
         with self.assertRaises(ValueError):
             await communicator.connect()
+
+    async def test_a_page_from_another_site_cannot_open_the_socket(self):
+        communicator = WebsocketCommunicator(
+            application, self.path(self.session), headers=[(b'origin', b'https://evil.example')])
+        connected, _ = await communicator.connect()
+        self.assertFalse(connected)
+
+    async def test_a_connection_that_names_no_origin_is_refused(self):
+        # Browsers always send one; a missing header is a script, not a student's phone.
+        communicator = WebsocketCommunicator(application, self.path(self.session))
+        connected, _ = await communicator.connect()
+        self.assertFalse(connected)

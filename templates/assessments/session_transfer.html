@@ -2,6 +2,7 @@
 {% block title %}Transfer {{ session.name }} - LiveGrade{% endblock %}
 {% block page_title %}Transfer ownership{% endblock %}
 {% block topbar_actions %}
+{# nosemgrep: generic.html-templates.security.var-in-href.var-in-href (back is built with reverse() in the view) #}
 <a href="{{ back }}" class="btn btn-outline-secondary btn-sm">
   <i class="bi bi-arrow-left me-1"></i>All sessions
 </a>
@@ -30,6 +31,7 @@
         {% endif %}
 
         {% if recipients %}
+        {# nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token (the csrf_token tag is the next line) #}
         <form method="post">
           {% csrf_token %}
           <div class="mb-3">
@@ -44,6 +46,7 @@
           </div>
           <div class="d-flex gap-2">
             <button type="submit" class="btn btn-primary">Transfer session</button>
+            {# nosemgrep: generic.html-templates.security.var-in-href.var-in-href (back is built with reverse() in the view) #}
             <a href="{{ back }}" class="btn btn-outline-secondary">Cancel</a>
           </div>
         </form>
