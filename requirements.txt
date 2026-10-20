@@ -12,4 +12,4 @@ Pillow>=10.0
 openpyxl>=3.1
 # Required by autobahn (daphne). 5.9.0+ fixes PYSEC-2025-90, PYSEC-2025-238 and PYSEC-2026-2123.
 # Stay below 6: those releases ship no wheel for macOS Intel and need a Rust compiler to build.
-cbor2>=5.9.0,<6
+cbor2>=6.1.5,<7
