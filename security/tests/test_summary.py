@@ -16,7 +16,10 @@ sys.path.insert(0, str(HERE.parent))
 import summary  # noqa: E402
 
 SCRIPT = HERE.parent / 'summary.py'
-SECRET = 'AKIA-SUPER-SECRET-VALUE-0123456789'
+# A made-up marker, not a credential. gitleaks' report names the matched text in these two fields, and the
+# summary must never print what they hold.
+PLANTED_VALUE = 'planted-marker-0123456789'
+VALUE_FIELDS = ('Secret', 'Match')
 
 
 class Files(unittest.TestCase):
@@ -72,11 +75,11 @@ class SectionTests(Files):
         self.assertIn('5.2.1', text)
         self.assertIn('osv.dev/vulnerability/PYSEC-1', text)
 
-    def test_gitleaks_never_prints_the_secret(self):
-        path = self.write('g.json', [{'RuleID': 'generic-api-key', 'File': '.env', 'StartLine': 3, 'Commit': 'abcdef1234567',
-                                      'Secret': SECRET, 'Match': f'KEY={SECRET}', 'Author': 'a'}])
-        text = summary.section('gitleaks', [path])
-        self.assertNotIn(SECRET, text)
+    def test_gitleaks_never_prints_the_matched_text(self):
+        finding = {'RuleID': 'generic-api-key', 'File': '.env', 'StartLine': 3, 'Commit': 'abcdef1234567', 'Author': 'a'}
+        finding.update({field: PLANTED_VALUE for field in VALUE_FIELDS})
+        text = summary.section('gitleaks', [self.write('g.json', [finding])])
+        self.assertNotIn(PLANTED_VALUE, text)
         self.assertIn('1 possible secret', text)
         self.assertEqual(summary.verdict(text), 'failure')
 
