@@ -1,16 +1,49 @@
 version: 2
 updates:
+  # --- The application's Python packages -------------------------------------------------------
   - package-ecosystem: pip
     directory: /
     schedule: {interval: weekly}
     # A release must be a week old before a pull request proposes it: brand-new releases are
     # the ones most likely to be withdrawn, broken or malicious.
     cooldown: {default-days: 7}
+    groups:
+      # Routine updates (minor and patch) arrive as ONE pull request a week. Major versions are not
+      # grouped: each one gets its own pull request, so it can be read and tested on its own.
+      python-routine:
+        update-types: [minor, patch]
+    ignore:
+      # The security tools live in /security and are updated there. Listing them here as well is
+      # what produced two identical Checkov pull requests.
+      - dependency-name: checkov
+      # cbor2 6.x has no ready-made package for macOS on Intel and needs a Rust compiler to build;
+      # requirements.txt keeps it below 6 on purpose. Remove this when that stops being true.
+      - dependency-name: cbor2
+        versions: [">=6"]
+
+  # --- The security tools (Bandit, pip-audit, Checkov) --------------------------------------------
   - package-ecosystem: pip
     directory: /security
     schedule: {interval: weekly}
     cooldown: {default-days: 7}
+    groups:
+      security-tools:
+        patterns: ["*"]
+
+  # --- The GitHub Actions used by the workflows ---------------------------------------------------
   - package-ecosystem: github-actions
     directory: /
     schedule: {interval: weekly}
     cooldown: {default-days: 7}
+    # A dependency joins the FIRST group it matches, so the order below matters.
+    groups:
+      # CodeQL's init and analyze steps must run the same version; separate pull requests broke the
+      # run ("Loaded a configuration file for version X, but running version Y").
+      codeql:
+        patterns: ["github/codeql-action/*"]
+      # Artifacts uploaded by one version are read by the other, so they move together.
+      artifacts:
+        patterns: ["actions/upload-artifact", "actions/download-artifact"]
+      # Everything else in the workflows: one pull request.
+      actions-other:
+        patterns: ["*"]
