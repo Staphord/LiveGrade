@@ -28,7 +28,7 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           queries: security-extended
-      - uses: github/codeql-action/analyze@ce5e7eeac396d720fe2d802714996c8ce561e311 # v3.39.0
+      - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
 
   # Not a check: one summary for the whole run, listing the open alerts of this branch with what
   # each means and where it is (analyze waits for GitHub to process its results, so they are current).
