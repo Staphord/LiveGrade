@@ -1,0 +1,36 @@
+<section class="border rounded-3 p-3 mt-4" aria-labelledby="poll-import-heading">
+  <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
+    <div>
+      <h3 class="h5 mb-1" id="poll-import-heading"><i class="bi bi-file-earmark-excel me-1" aria-hidden="true"></i>Import questions from Excel</h3>
+      <p class="text-muted mb-2">{% if pending_question_import and pending_question_import.target_poll %}Review the questions to add to this draft.{% elif poll %}Upload questions to add to this poll draft.{% else %}Upload questions to create a poll draft.{% endif %} Nothing is saved until you confirm the preview.</p>
+    </div>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ poll_question_sample_url }}"><i class="bi bi-download me-1" aria-hidden="true"></i>Download sample file</a>
+  </div>
+  <details class="mb-3">
+    <summary class="small">See the spreadsheet format</summary>
+    <p class="small text-muted mt-2 mb-1">Use one row for each answer option. Repeat the question and question type for every option.</p>
+    <div class="table-responsive"><table class="table table-sm table-bordered mb-2"><thead><tr><th scope="col">Question</th><th scope="col">Question Type</th><th scope="col">Answer Option</th></tr></thead><tbody>
+      <tr><td>When should we meet?</td><td>Single choice</td><td>Monday</td></tr><tr><td>When should we meet?</td><td>Single choice</td><td>Wednesday</td></tr><tr><td>Which topics?</td><td>Multiple choice</td><td>Progress</td></tr><tr><td>Which topics?</td><td>Multiple choice</td><td>Next steps</td></tr>
+    </tbody></table></div>
+    <p class="small text-muted mb-0">Supported question types: Single choice and Multiple choice. Every question needs at least two different options.</p>
+  </details>
+  <form method="post" enctype="multipart/form-data" class="mb-3">
+    {% csrf_token %}{% if poll %}<input type="hidden" name="poll" value="{{ poll.uuid }}">{% endif %}
+    {% include 'assessments/_partials/import_dropzone.html' with file_field=question_import_form.file dropzone_id='poll-question-import-dropzone' filename_id='poll-question-import-filename' %}
+    <button class="btn btn-outline-primary btn-sm mt-2" name="action" value="upload-questions"><i class="bi bi-eye me-1" aria-hidden="true"></i>Preview questions</button>
+  </form>
+  {% if pending_question_import %}
+  <section class="border rounded-3 p-3" aria-labelledby="poll-import-preview-heading" aria-live="polite">
+    <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+      <div><h4 class="h6 mb-1" id="poll-import-preview-heading">Review import</h4><p class="small text-muted mb-2">{{ pending_question_import.questions|length }} question{{ pending_question_import.questions|length|pluralize }} found. Review the detected types and options before anything is saved.</p></div>
+      {% if pending_question_import.questions and not pending_question_import.errors %}<span class="badge text-bg-success">Ready to import</span>{% endif %}
+    </div>
+    {% if pending_question_import.errors %}<div class="alert alert-warning py-2" role="alert"><strong>Fix these spreadsheet rows, then upload the corrected file:</strong><ul class="mb-0 mt-1">{% for row, message in pending_question_import.errors %}<li>Row {{ row }}: {{ message }}</li>{% endfor %}</ul></div>{% endif %}
+    {% if pending_question_import.questions %}<div class="table-responsive"><table class="table table-sm table-striped align-middle"><caption>Question import preview; no questions are saved until you confirm.</caption><thead><tr><th scope="col">Question</th><th scope="col">Type</th><th scope="col">Answer options</th></tr></thead><tbody>{% for item in pending_question_import.questions %}<tr><th scope="row">{{ item.question }}</th><td>{{ item.type }}</td><td>{{ item.options|join:', ' }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="small text-muted">No valid questions were found. Correct the file and upload it again.</p>{% endif %}
+    <div class="d-flex flex-wrap gap-2">
+      {% if pending_question_import.questions and not pending_question_import.errors %}<form method="post">{% csrf_token %}{% if poll %}<input type="hidden" name="poll" value="{{ poll.uuid }}">{% endif %}<button class="btn btn-success btn-sm" name="action" value="apply-question-import">{% if pending_question_import.target_poll %}Add {{ pending_question_import.questions|length }} question{{ pending_question_import.questions|length|pluralize }} to draft{% else %}Create poll with these questions{% endif %}</button></form>{% endif %}
+      <form method="post">{% csrf_token %}{% if poll %}<input type="hidden" name="poll" value="{{ poll.uuid }}">{% endif %}<button class="btn btn-outline-secondary btn-sm" name="action" value="cancel-question-import">Cancel preview</button></form>
+    </div>
+  </section>
+  {% endif %}
+</section>

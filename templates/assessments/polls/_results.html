@@ -1,0 +1,17 @@
+<div id="poll-results" aria-live="polite" aria-atomic="true">
+  {% if public_results or poll.standalone %}<p><strong>{{ responded }}</strong> total response{{ responded|pluralize }}</p>{% else %}<p><strong>{{ responded }}</strong> responded · {{ invited }} invited · {{ unanswered }} unanswered</p>{% endif %}
+  <p class="text-muted">{% if poll.status == 'confirmed' %}All decisions confirmed{% elif poll.status == 'cancelled' %}Poll cancelled{% elif poll.accepting_responses %}Voting open{% else %}Voting closed{% endif %}</p>
+  {% for item in questions %}
+  <section class="border rounded-3 p-3 mb-3" aria-labelledby="poll-question-{{ item.question.pk }}">
+    <div class="d-flex align-items-start justify-content-between gap-2 mb-3"><div><h3 class="h6 mb-1" id="poll-question-{{ item.question.pk }}">{{ forloop.counter }}. {{ item.question.prompt }}</h3><p class="small text-muted mb-0">{% if public_results or poll.standalone %}{{ item.responded }} response{{ item.responded|pluralize }}{% else %}{{ item.responded }} of {{ invited }} answered{% endif %}</p></div>
+      {% if item.confirmed_option %}<span class="badge text-bg-success">Decision confirmed</span>{% endif %}</div>
+    {% if item.confirmed_option %}<div class="alert alert-success py-2"><strong>Decision: {{ item.confirmed_option.label }}</strong>{% if item.decision_note %}<p class="mb-0">{{ item.decision_note|linebreaksbr }}</p>{% endif %}</div>{% endif %}
+    <div class="table-responsive"><table class="table table-sm mb-0">
+      <caption>Response counts for this question{% if item.question.allow_multiple %}; multiple answers can produce more selections than respondents{% endif %}.</caption>
+      <thead><tr><th scope="col">Option</th><th scope="col">Responses</th></tr></thead>
+      <tbody>{% for option in item.options %}<tr><th scope="row">{{ option.label }}</th><td>{{ option.vote_count }}</td></tr>{% endfor %}
+      {% if poll.allow_abstain %}<tr><th scope="row">None of these options</th><td>{{ item.abstained_count }}</td></tr>{% endif %}</tbody>
+    </table></div>
+  </section>
+  {% endfor %}
+</div>

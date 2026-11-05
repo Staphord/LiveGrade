@@ -1,0 +1,27 @@
+<script nonce="{{ csp_nonce }}">
+(function () {
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (zone) {
+    document.querySelectorAll('[data-poll-deadline-form] input[name="timezone_name"]')
+      .forEach(function (input) { input.value = zone; });
+  }
+
+  document.querySelectorAll('[data-local-deadline]').forEach(function (element) {
+    const instant = new Date(element.dateTime);
+    if (Number.isNaN(instant.getTime())) return;
+    element.textContent = new Intl.DateTimeFormat(undefined, {
+      day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    }).format(instant);
+  });
+
+  document.querySelectorAll('[data-poll-deadline-form] input[name="deadline_local"]').forEach(function (input) {
+    const utc = input.dataset.deadlineUtc;
+    if (!utc) return;
+    const instant = new Date(utc);
+    if (Number.isNaN(instant.getTime())) return;
+    const pad = function (value) { return String(value).padStart(2, '0'); };
+    input.value = instant.getFullYear() + '-' + pad(instant.getMonth() + 1) + '-' +
+      pad(instant.getDate()) + 'T' + pad(instant.getHours()) + ':' + pad(instant.getMinutes());
+  });
+})();
+</script>

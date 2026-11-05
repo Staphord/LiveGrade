@@ -1,0 +1,52 @@
+<script nonce="{{ csp_nonce }}">
+(function () {
+  let refreshing = false;
+  const originalStatus = '{{ poll.status|escapejs }}';
+  const originallyAccepting = {{ poll.accepting_responses|yesno:'true,false' }};
+  const status = document.getElementById('poll-connection');
+  async function refresh() {
+    if (refreshing) return;
+    refreshing = true;
+    try {
+      const url = new URL(location.href);
+      url.searchParams.delete('saved');
+      url.searchParams.set('state', '1');
+      const result = await fetch(url, {cache: 'no-store'});
+      if (!result.ok) throw new Error('Refresh failed');
+      const state = await result.json();
+      if (state.status !== originalStatus || state.accepting !== originallyAccepting) {
+        location.reload(); return;
+      }
+      const el = document.getElementById('poll-results');
+      if (el) el.outerHTML = state.html;
+      if (state.responded_voters) {
+        const responded = new Set(state.responded_voters.map(String));
+        document.querySelectorAll('[data-voter-status]').forEach(function (el) {
+          el.textContent = responded.has(el.dataset.voterStatus) ? 'Responded' : 'Awaiting response';
+        });
+      }
+      if (status) status.textContent = 'Results update automatically.';
+    } catch (_) {
+      if (status) status.textContent = 'Connection interrupted. Displayed results may be out of date; retrying…';
+    } finally { refreshing = false; }
+  }
+  function connect() {
+    if (!window.WebSocket) return;
+    const socket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/assessments/{{ session.uuid }}/');
+    socket.onmessage = function(event) {
+      try { if (JSON.parse(event.data).type === 'poll.changed') refresh(); } catch (_) {}
+    };
+    socket.onopen = refresh;
+    socket.onclose = function () { setTimeout(connect, 3000); };
+  }
+  connect();
+  setInterval(refresh, 5000);
+  document.querySelectorAll('[data-question-vote]').forEach(function (fieldset) {
+    const abstain = fieldset.querySelector('input[type="checkbox"][name^="abstain-"]');
+    const choices = fieldset.querySelectorAll('[name^="question-"]');
+    if (!abstain) return;
+    abstain.addEventListener('change', function () { if (abstain.checked) choices.forEach(function (choice) { choice.checked = false; }); });
+    choices.forEach(function (choice) { choice.addEventListener('change', function () { if (choice.checked) abstain.checked = false; }); });
+  });
+})();
+</script>
