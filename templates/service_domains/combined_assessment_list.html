@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block title %}Combined assessments · LiveGrade{% endblock %}
+{% block page_title %}Combined assessments{% endblock %}
+{% block content %}
+{% include 'service_domains/_workspace_styles.html' %}
+{% include 'service_domains/_panel_ui_styles.html' %}
+<main id="main-content" class="container-fluid py-4 service-workspace panel-page">
+  <header class="panel-hero mb-4"><div class="panel-hero__copy"><p class="panel-eyebrow">Classroom + Panel</p><h1 class="page-title">Combined assessments</h1><p class="page-subtitle mt-2">Link peer and examiner reviews for the same candidates.</p></div><div class="panel-hero__actions"><a class="btn btn-primary" href="{% url 'combined_assessment_create' %}">Link assessments</a><a class="btn btn-outline-secondary" href="{% url 'panel_hearing_list' %}">Panel assessments</a></div></header>
+  {% if assessments %}<section class="row g-3" aria-label="Combined assessment list">{% for assessment in assessments %}<div class="col-12 col-lg-6"><a class="panel-card d-block text-decoration-none h-100" href="{% url 'combined_assessment_detail' assessment.pk %}"><div class="panel-card__top"><div><p class="panel-eyebrow">{{ assessment.get_status_display }}</p><h2 class="h5 mb-2">{{ assessment.name }}</h2></div><span class="panel-state panel-state--done">{{ assessment.get_result_policy_display }}</span></div><div class="d-flex flex-wrap gap-2 small panel-muted"><span>Classroom: {{ assessment.classroom_session.name }}</span><span aria-hidden="true">·</span><span>Panel: {{ assessment.panel_hearing.name }}</span></div><span class="btn btn-sm btn-outline-primary mt-3">Open combined assessment <span aria-hidden="true">→</span></span></a></div>{% endfor %}</section>
+  {% else %}<section class="panel-empty"><h2 class="h5">No combined assessments yet</h2><p class="panel-muted">Link an existing Classroom session with a Panel assessment.</p><a class="btn btn-primary" href="{% url 'combined_assessment_create' %}">Link assessments</a></section>{% endif %}
+</main>
+{% endblock %}

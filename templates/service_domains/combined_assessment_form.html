@@ -1,0 +1,134 @@
+{% extends 'base.html' %}
+{% block title %}Set up combined grading · LiveGrade{% endblock %}
+{% block page_title %}Combined grading{% endblock %}
+{% block content %}
+{% include 'service_domains/_workspace_styles.html' %}
+{% include 'service_domains/_panel_ui_styles.html' %}
+<main id="main-content" class="container-fluid py-4 service-workspace panel-page">
+  <header class="panel-hero mb-4">
+    <div class="page-header-main">
+      <p class="panel-eyebrow">Classroom + Panel</p>
+      <h1 class="page-title">Link assessments</h1>
+      <p class="page-subtitle mt-2">Choose the existing assessments and decide how their results will be used.</p>
+    </div>
+    <div class="page-header-actions">
+      <a class="btn btn-outline-secondary" href="{% url 'panel_hearing_list' %}">Cancel</a>
+    </div>
+  </header>
+
+  {% if form.non_field_errors %}
+  <div class="alert alert-danger" role="alert" aria-labelledby="form-errors-heading">
+    <h2 id="form-errors-heading" class="h6">Review these settings</h2>{{ form.non_field_errors }}
+  </div>
+  {% endif %}
+
+  <div class="row g-4 align-items-start">
+    <section class="col-12 col-xl-8" aria-labelledby="combined-setup-heading">
+      <div class="panel-card">
+        <form method="post">
+          {% csrf_token %}
+
+          <fieldset class="mb-4 pb-4 border-bottom">
+            <legend class="h5" id="combined-setup-heading">1. Choose assessments</legend>
+              <p class="text-muted">The Classroom groups and Panel candidates must represent the same entries.</p>
+            {% include 'service_domains/_combined_form_field.html' with field=form.name %}
+            <div class="row g-3">
+              <div class="col-12 col-lg-6">{% include 'service_domains/_combined_form_field.html' with field=form.classroom_session %}</div>
+              <div class="col-12 col-lg-6">{% include 'service_domains/_combined_form_field.html' with field=form.panel_hearing %}</div>
+            </div>
+            <div class="alert alert-info mb-0" role="note">Entries are matched by saved links, not by similar names. You can check and confirm each match in the draft.</div>
+          </fieldset>
+
+          <fieldset class="mb-4 pb-4 border-bottom">
+            <legend class="h5">2. Choose how results are combined</legend>
+            {% include 'service_domains/_combined_form_field.html' with field=form.result_policy %}
+            <div class="alert alert-light border mb-3" data-separate-policy>
+              <strong>Keep results separate:</strong> Peer and examiner results remain distinct.
+            </div>
+            <div class="row g-3" data-weighted-policy aria-labelledby="weight-settings-heading">
+              <div class="col-12"><h3 class="h6 mb-0" id="weight-settings-heading">Set result weights</h3></div>
+              <div class="col-12 col-md-6">{% include 'service_domains/_combined_form_field.html' with field=form.peer_weight %}</div>
+              <div class="col-12 col-md-6">{% include 'service_domains/_combined_form_field.html' with field=form.panel_weight %}</div>
+              <div class="col-12"><p class="small mb-0" id="weight-total" role="status" aria-live="polite">Together, the weights must total 100%.</p></div>
+              <div class="col-12">{% include 'service_domains/_combined_form_field.html' with field=form.moderation_threshold %}</div>
+              <div class="col-12"><div class="alert alert-warning mb-0" role="note">Weighted results need numeric Panel scores. Large differences need a review before release.</div></div>
+            </div>
+          </fieldset>
+
+          <fieldset class="mb-4">
+            <legend class="h5">3. Set response minimums</legend>
+            <p class="text-muted">A combined mark stays pending until each assessment meets its minimum.</p>
+            <div class="row g-3">
+              <div class="col-12 col-md-6">{% include 'service_domains/_combined_form_field.html' with field=form.minimum_peer_ratings %}</div>
+              <div class="col-12 col-md-6">{% include 'service_domains/_combined_form_field.html' with field=form.minimum_panel_raters %}</div>
+            </div>
+          </fieldset>
+
+          <div class="d-flex flex-wrap align-items-center gap-2 pt-3 border-top">
+            <button class="btn btn-primary btn-lg" type="submit">Create draft and review matches</button>
+            <a class="btn btn-outline-secondary" href="{% url 'panel_hearing_list' %}">Cancel</a>
+            <span class="small text-muted ms-lg-auto">You can review every match before publishing.</span>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <aside class="col-12 col-xl-4" aria-label="Combined grading guidance">
+      <section class="panel-card mb-4" aria-labelledby="link-process-heading">
+        <h2 class="h5" id="link-process-heading">Next steps</h2>
+        <ol class="ps-3 mb-0">
+          <li class="mb-2">Review and confirm each entry match.</li>
+          <li class="mb-2">Publish the result policy.</li>
+          <li>Start peer and Panel scoring together.</li>
+        </ol>
+      </section>
+
+      <section class="panel-card" aria-labelledby="policy-guide-heading">
+        <h2 class="h5" id="policy-guide-heading">Check before publishing</h2>
+        <ul class="mb-0 ps-3">
+          <li class="mb-2">Names alone do not confirm a match.</li>
+          <li class="mb-2">Weighted results need numeric Panel scores and weights totaling 100%.</li>
+          <li>Set minimum response counts for both assessments.</li>
+        </ul>
+      </section>
+    </aside>
+  </div>
+</main>
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const policy = document.getElementById('id_result_policy');
+  const weightedFields = document.querySelector('[data-weighted-policy]');
+  const separateHelp = document.querySelector('[data-separate-policy]');
+  const peerWeight = document.getElementById('id_peer_weight');
+  const panelWeight = document.getElementById('id_panel_weight');
+  const total = document.getElementById('weight-total');
+  if (!policy || !weightedFields || !separateHelp) return;
+
+  function updatePolicyFields() {
+    const weighted = policy.value === 'weighted';
+    weightedFields.classList.toggle('d-none', !weighted);
+    separateHelp.classList.toggle('d-none', weighted);
+  }
+
+  function updateWeightTotal() {
+    const peer = Number.parseFloat(peerWeight && peerWeight.value);
+    const panel = Number.parseFloat(panelWeight && panelWeight.value);
+    const sum = peer + panel;
+    if (!Number.isFinite(sum)) {
+      total.textContent = 'Enter both weights; together they must total 100%.';
+      total.className = 'small mb-0 text-muted';
+      return;
+    }
+    const valid = Math.abs(sum - 100) < 0.001;
+    total.textContent = `Weights total ${sum.toFixed(2)}%. ${valid ? 'That meets the 100% requirement.' : 'Adjust them to total 100% before submitting.'}`;
+    total.className = `small mb-0 ${valid ? 'text-success' : 'text-danger'}`;
+  }
+
+  policy.addEventListener('change', updatePolicyFields);
+  if (peerWeight) peerWeight.addEventListener('input', updateWeightTotal);
+  if (panelWeight) panelWeight.addEventListener('input', updateWeightTotal);
+  updatePolicyFields();
+  updateWeightTotal();
+})();
+</script>
+{% endblock %}
