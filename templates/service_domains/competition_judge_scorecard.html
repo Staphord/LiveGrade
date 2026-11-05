@@ -1,0 +1,62 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% block title %}Competition judge scorecard{% endblock %}
+{% block service_name %}Competition judge workspace{% endblock %}
+{% block content %}
+{% load static %}
+{% include 'service_domains/_team_competition_styles.html' %}
+<main id="public-main" class="public-service-content narrow">
+  <div id="competition-transport" hidden
+       data-endpoint="{% url 'competition_judge_scorecard' token=invitation_token %}"
+       data-competition="{{ invitation.competition.public_id }}"
+       data-invitation="{{ invitation.pk }}"
+       data-round="{{ invitation.round_id }}"></div>
+  <header class="tc-public-head rounded-4 mb-3"><h1>{{ invitation.competition.name }}</h1><p>{{ invitation.round.name }} · {{ invitation.track.name }}</p></header>
+  <p>Score each entry from 0 to 100 using the criteria shown. Your scores are private. Submit once when every entry is complete.</p>
+  {% if submitted %}
+    <div class="tc-result-state" role="status"><span aria-hidden="true">✓</span><div><strong>Scorecard submitted</strong>Your scores were received. This receipt remains available if you reopen the link before it expires.</div></div>
+  {% else %}
+    {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+    <section id="competition-submission-state" class="alert alert-info" hidden>
+      <p id="competition-submission-status" role="status" aria-live="polite"></p>
+      <button id="competition-retry-submission" class="btn btn-primary" type="button" hidden>Retry scorecard submission</button>
+      <p class="mb-0">An unsent scorecard is kept only in this browser tab and removed after confirmation or when the tab closes.</p>
+    </section>
+    <form id="competition-scorecard-form" method="post" novalidate>{% csrf_token %}
+      <p class="tc-chip mb-3">{{ score_rows|length }} entr{{ score_rows|length|pluralize:'y,ies' }} to score</p>
+      {% for row in score_rows %}<details class="tc-judge-entry" {% if forloop.first %}open{% endif %} data-score-entry>
+        <summary><span>{{ forloop.counter }}. {{ row.entry.name }}</span><span class="tc-outcome is-pending" data-entry-status>Not scored</span></summary>
+        <fieldset class="border-0 tc-judge-entry-body">
+          <legend class="visually-hidden">Scores for {{ row.entry.name }}</legend>
+          {% for item in row.score_fields %}<div class="mb-3 tc-score-input">
+            {{ item.field.label_tag }}
+            {{ item.field }}
+            {% if item.criterion.description %}<div class="form-text">{{ item.criterion.description }}</div>{% endif %}
+            {% if item.field.help_text %}<div class="form-text">{{ item.field.help_text }}</div>{% endif %}
+            {% for field_error in item.field.errors %}<div class="text-danger" role="alert">{{ field_error }}</div>{% endfor %}
+          </div>{% endfor %}
+        </fieldset>
+      </details>{% endfor %}
+      <div class="tc-sticky-action mt-3"><p class="small text-muted mb-2">Check each entry before submitting. An identical retry confirms receipt if your connection is interrupted.</p><button class="btn btn-primary btn-lg w-100" type="submit">Submit all scores</button></div>
+    </form>
+  {% endif %}
+</main>
+<script src="{% static 'js/assessment_submission.js' %}" defer></script>
+<script src="{% static 'js/competition_submission.js' %}" defer></script>
+<script nonce="{{ csp_nonce }}">
+document.addEventListener('DOMContentLoaded',function(){
+  var entries=document.querySelectorAll('[data-score-entry]');
+  entries.forEach(function(entry){
+    var status=entry.querySelector('[data-entry-status]');
+    var inputs=Array.from(entry.querySelectorAll('input[type="number"]'));
+    function update(){
+      var complete=inputs.length>0&&inputs.every(function(input){return input.value!==''&&input.checkValidity();});
+      status.textContent=complete?'Scores entered':'Not scored';
+      status.classList.toggle('is-pass',complete);
+      status.classList.toggle('is-pending',!complete);
+    }
+    inputs.forEach(function(input){input.addEventListener('input',update);});
+    update();
+  });
+});
+</script>
+{% endblock %}

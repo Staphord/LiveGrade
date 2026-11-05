@@ -1,0 +1,44 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% block title %}Audience vote · {{ competition.name }}{% endblock %}
+{% block service_name %}Competition audience vote{% endblock %}
+{% block content %}
+{% include 'service_domains/_team_competition_styles.html' %}
+<main id="public-main" class="public-service-content narrow">
+  <section class="tc-public-card">
+    <header class="tc-public-head"><h1>Rank the entries</h1><p>{{ competition.name }} · {{ round.name }} · {{ track.name }}</p></header>
+    <div class="tc-public-body">
+      {% if competition.effective_audience_weight > 0 %}<p>Rank every entry. Your audience score is combined with judge scores using the shares set for this event.</p>
+      {% else %}<p>Rank the entries in your preference order. This audience result is separate from judge scores.</p>{% endif %}
+      <p class="small text-muted">Your ballot is anonymous. This browser can submit once for this round and track.</p>
+      {% if submitted %}
+        <div class="tc-result-state" role="status"><span aria-hidden="true">✓</span><div><strong>Vote received</strong>Your ranked ballot has been recorded.</div></div>
+      {% elif already_submitted %}
+        <div class="alert alert-info" role="status"><strong>Vote already recorded.</strong> This browser has already voted in this round and track.</div>
+      {% else %}
+        {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+        <form method="post" novalidate>
+          {% csrf_token %}
+          {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+          <ol class="tc-ballot-list">
+          {% for field in form %}<li class="tc-ballot-entry"><div><h2>{{ field.label|slice:'6:' }}</h2>{% if field.help_text %}<p class="form-text">{{ field.help_text }}</p>{% endif %}</div>
+            <div class="tc-rank-input">{{ field.label_tag }}{{ field }}{% for field_error in field.errors %}<div class="text-danger small" role="alert">{{ field_error }}</div>{% endfor %}</div>
+          </li>{% endfor %}
+          </ol>
+          <p class="small text-muted">Use each rank once. Rank 1 is your first choice. Review the numbers before submitting.</p>
+          <button class="btn btn-primary btn-lg w-100" type="submit">Submit ranked ballot</button>
+        </form>
+      {% endif %}
+    </div>
+  </section>
+</main>
+<style nonce="{{ csp_nonce }}">
+  .tc-ballot-list{display:grid;gap:.65rem;margin:1.25rem 0;padding:0;list-style:none;counter-reset:ballot-entry}
+  .tc-ballot-entry{display:grid;grid-template-columns:minmax(0,1fr) minmax(8rem,.35fr);align-items:center;gap:1rem;padding:.9rem;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+  .tc-ballot-entry h2{margin:0;font-size:1rem;color:var(--ink)}
+  .tc-ballot-entry p{margin:.25rem 0 0}
+  .tc-rank-input label{display:block;margin-bottom:.25rem;font-size:var(--fs-sm);font-weight:700}
+  .tc-rank-input input{width:100%;min-height:2.75rem;padding:.5rem .65rem;border:1px solid var(--border-strong);border-radius:var(--radius-control);background:var(--surface);color:var(--text);font:inherit}
+  .tc-rank-input input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+  @media(max-width:575.98px){.tc-ballot-entry{grid-template-columns:1fr}.tc-rank-input{max-width:10rem}}
+</style>
+{% endblock %}

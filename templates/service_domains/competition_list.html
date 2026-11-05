@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}Competition · LiveGrade{% endblock %}
+{% block page_title %}Competition{% endblock %}
+{% block content %}
+{% include 'service_domains/_workspace_styles.html' %}
+{% include 'service_domains/_team_competition_styles.html' %}
+<main id="main-content" class="container-fluid py-4 service-workspace tc-workspace">
+  <header class="tc-hero"><div><h1>Competition</h1><p>Set up an event, collect judge or audience results, and choose when to publish the leaderboard.</p><div class="tc-context"><span class="tc-chip"><strong>{{ competitions|length }}</strong> competitions</span></div></div>
+    <a class="btn btn-primary" href="#create-competition">Create competition</a>
+  </header>
+  {% include 'service_domains/_onboarding.html' with onboarding=onboarding %}
+
+  <section class="tc-panel mb-3" aria-labelledby="competition-list-heading">
+    <header><div><h2 id="competition-list-heading">Your competitions</h2><p>Choose an event to continue setup, scoring or results.</p></div></header>
+    {% if competitions %}<div class="tc-list">{% for competition in competitions %}
+      <a class="tc-list-card" href="{% url 'competition_manage' competition_id=competition.pk %}">
+        <span><h3>{{ competition.name }}</h3>
+          <span class="tc-context"><span class="tc-chip">{{ competition.track_count }} track{{ competition.track_count|pluralize }}</span><span class="tc-chip">{{ competition.round_count }} round{{ competition.round_count|pluralize }}</span>
+            {% if competition.status == 'draft' %}<span class="tc-chip">Next: finish setup</span>{% elif competition.status == 'active' %}<span class="tc-chip">Next: manage live event</span>{% elif competition.status == 'complete' %}<span class="tc-chip">Next: review and reveal results</span>{% else %}<span class="tc-chip">Next: manage public display</span>{% endif %}
+          </span>
+        </span>
+        <span class="tc-status {% if competition.status == 'active' %}is-active{% elif competition.status == 'revealed' %}is-success{% elif competition.status == 'complete' %}is-warn{% endif %}">{{ competition.get_status_display }}</span>
+      </a>
+    {% endfor %}</div>
+    {% else %}<div class="tc-empty" role="status"><h3>No competitions yet</h3><p>Create a draft event to set up tracks, entries and scoring.</p></div>{% endif %}
+  </section>
+
+  <details class="tc-disclosure" id="create-competition" {% if form.errors or not competitions %}open{% endif %}>
+    <summary>Create a competition</summary><div class="tc-disclosure-body">
+      <p class="text-muted mt-2">Choose how judges and audience votes contribute before the event starts. These scoring rules are then fixed for the event.</p>
+      <form method="post" class="service-flow-form" novalidate>{% csrf_token %}{{ form.as_p }}<button class="btn btn-primary" type="submit">Create draft</button></form>
+    </div>
+  </details>
+</main>
+{% endblock %}
