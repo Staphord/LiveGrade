@@ -29,6 +29,9 @@ same line. Do not use a pragma to skip a path that merely lacks a test.
 - Never decide who may do what in this service. DevPerf's token says which
   organizations a lecturer may run LiveGrade for (`orgs` claim); trust that and
   scope every query to the active organization.
+- Every owner query is scoped by service as well as organization and owner: chain
+  `.for_service(request.service)` (set by `portal.middleware.ServiceMiddleware` from the address,
+  never from input). A session of one service must never be reachable from another.
 - Cookie names are LiveGrade's own (`livegrade_sessionid`, `livegrade_csrftoken`)
   so `localhost:8000` and `localhost:8001` do not log each other out. Never set
   `SESSION_COOKIE_DOMAIN`.
