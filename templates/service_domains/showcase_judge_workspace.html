@@ -1,0 +1,75 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% block title %}Judge exhibits · {{ invitation.event.name }}{% endblock %}
+{% block service_name %}Showcase judge workspace{% endblock %}
+{% block extra_css %}<style nonce="{{ csp_nonce }}">
+.judge-workspace{--judge-accent:{{ invitation.event.brand_accent_color }};max-width:70rem!important}
+.judge-hero{padding:clamp(1.1rem,4vw,2rem);border:1px solid var(--border);border-top:.35rem solid var(--judge-accent);border-radius:var(--radius-card);background:var(--surface);box-shadow:var(--elev-1)}
+.judge-hero h1{font-size:clamp(1.5rem,4vw,2.15rem);margin:.2rem 0 .5rem}.judge-progress{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.65rem;margin:1.2rem 0}.judge-stat{padding:.8rem;border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface-hover)}.judge-stat strong{display:block;font-size:1.25rem;color:var(--ink)}
+.judge-nav{display:flex;gap:.5rem;overflow-x:auto;padding:.7rem 0}.judge-nav a{flex:0 0 auto;padding:.55rem .75rem;border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface);color:var(--ink);text-decoration:none;font-weight:650;font-size:var(--fs-sm)}.judge-nav a:hover,.judge-nav a:focus-visible{border-color:var(--accent);background:var(--accent-soft)}
+.judge-card{padding:clamp(1rem,3vw,1.5rem);margin:0 0 1rem;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);box-shadow:var(--elev-1);scroll-margin-top:1rem}.judge-card:target{border-color:var(--accent)}.judge-card[hidden]{display:none!important}.judge-card:focus{outline:3px solid var(--accent);outline-offset:3px}.judge-nav a[aria-current="location"]{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}.judge-queue-help{font-size:var(--fs-sm);color:var(--text-muted)}.judge-card h2{font-size:1.2rem;color:var(--ink)}.judge-scale{padding:0;border:0;min-width:0}.judge-scale legend{font-size:1.05rem;font-weight:700;color:var(--ink)}.judge-scale form p{margin-bottom:1rem}.judge-scale form label{display:block;font-weight:650;margin-bottom:.3rem}.judge-score-form fieldset[disabled]{opacity:.68}.judge-connection{font-size:var(--fs-sm)}.judge-alert{border-radius:var(--radius-control)}
+@media(max-width:575px){.judge-progress{grid-template-columns:1fr 1fr}.judge-progress .judge-stat:last-child{grid-column:1/-1}}
+</style>{% endblock %}
+{% block content %}
+<main id="public-main" class="public-service-content judge-workspace" data-judge-live-url="{{ request.path }}" data-refresh-seconds="20">
+  <div data-judge-live-content>
+    <header class="judge-hero">
+      <p class="text-uppercase small fw-bold text-primary mb-1">Private judge workspace</p><h1>{{ invitation.event.name }}</h1>
+      <p class="mb-0">Score each assigned exhibit using the same criteria. A submitted scorecard cannot be changed.</p>
+      <div class="judge-progress" aria-label="Your scorecard progress"><div class="judge-stat"><span class="small text-muted">Submitted</span><strong>{{ submitted_count }} / {{ cards|length }}</strong></div><div class="judge-stat"><span class="small text-muted">Still to review</span><strong>{{ remaining_count }}</strong></div><div class="judge-stat"><span class="small text-muted">Conflicts declared</span><strong>{{ conflict_count }}</strong></div></div>
+      <p class="judge-connection mb-0"><span class="badge {% if scoring_available and invitation.event.status == 'open' %}text-bg-success{% elif waiting_for_open %}text-bg-warning{% else %}text-bg-secondary{% endif %}">{% if invitation.event.status == 'open' and scoring_available %}Scoring is open{% elif invitation.event.status == 'closed' and scoring_available %}Event closed · scorecards still accepted{% elif waiting_for_open %}Waiting for event to open{% else %}Scoring unavailable{% endif %}</span> <span id="judge-live-updated" class="text-muted">This page checks for updates automatically.</span></p>
+    </header>
+    {% if waiting_for_open %}<p class="alert alert-info judge-alert mt-3" role="status">Your assignment is ready. Scoring will be available when the organizer opens the event.</p>{% endif %}
+    {% if not criteria %}<p class="alert alert-warning judge-alert mt-3" role="status">The organizer has not set up the judging criteria yet. This page will update when they are ready.</p>{% endif %}
+    {% if error %}<p class="alert alert-danger judge-alert mt-3" role="alert">{{ error }}</p>{% endif %}
+    <div id="judge-live-change" class="alert alert-info judge-alert mt-3" role="status" hidden>New event information is available. Your unsent scorecard is still on this page. Finish it or choose to discard your unsent changes and update.<button class="btn btn-sm btn-outline-primary d-block mt-2" id="judge-discard-and-update" type="button">Discard my unsent changes and update</button></div>
+    {% if cards %}<p class="judge-queue-help mb-1">Choose an exhibit to focus on one scorecard at a time. Any unsent changes will be confirmed before you leave that scorecard.</p><nav class="judge-nav" aria-label="Your assigned exhibits">{% for card in cards %}<a href="#judge-exhibit-{{ card.assignment.exhibit.public_id }}">{{ forloop.counter }}. {{ card.assignment.exhibit.name }}{% if card.evaluation %} · Submitted{% elif card.conflict %} · Conflict{% else %} · To review{% endif %}</a>{% endfor %}</nav>{% else %}<section class="judge-card" role="status"><h2>No exhibits assigned</h2><p class="mb-0">There are no active exhibits on this judge link. The page will check for assignment changes automatically.</p></section>{% endif %}
+    <div id="judge-cards">
+      {% for card in cards %}<section class="judge-card" data-judge-card id="judge-exhibit-{{ card.assignment.exhibit.public_id }}" aria-labelledby="heading-{{ card.assignment.exhibit.public_id }}">
+        <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap"><div><p class="small text-uppercase text-muted fw-bold mb-1">Exhibit {{ forloop.counter }} of {{ cards|length }}{% if card.assignment.exhibit.category %} · {{ card.assignment.exhibit.category.name }}{% endif %}</p><h2 id="heading-{{ card.assignment.exhibit.public_id }}">{{ card.assignment.exhibit.name }}</h2></div>{% if card.evaluation %}<span class="badge text-bg-success">Submitted</span>{% elif card.conflict %}<span class="badge text-bg-warning">Conflict declared</span>{% else %}<span class="badge text-bg-light border">To review</span>{% endif %}</div>
+        {% if card.assignment.exhibit.description %}<p>{{ card.assignment.exhibit.description }}</p>{% endif %}
+        {% if card.evaluation %}<div class="alert alert-success judge-alert" role="status"><strong>Scorecard submitted.</strong> Your score was {{ card.evaluation.score }} out of 100. It cannot be changed.</div>
+        {% elif card.conflict %}<div class="alert alert-warning judge-alert" role="status"><strong>You declared a conflict for this exhibit.</strong> You cannot score it. The organizer was notified and needs to assign another judge.</div>
+        {% elif card.form %}<form method="post" class="judge-score-form" novalidate onsubmit="return confirm('Submit this scorecard? You cannot change it after submission.');">{% csrf_token %}<input type="hidden" name="exhibit_id" value="{{ card.assignment.exhibit.public_id }}">{% if card.form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ card.form.non_field_errors }}</div>{% endif %}<fieldset class="judge-scale" {% if waiting_for_open %}disabled{% endif %}><legend>Score this exhibit</legend><p class="text-muted">Choose one score for each judging criterion. Review your choices before submitting; a submitted scorecard cannot be changed.</p>{{ card.form.as_p }}<button class="btn btn-primary" type="submit">Submit this exhibit scorecard</button></fieldset></form>
+        {% else %}<p class="alert alert-secondary judge-alert">Scoring is unavailable because the event has not opened or its criteria are not ready.</p>{% endif %}
+        {% if card.conflict_form %}<details class="mt-3"><summary class="fw-semibold">I need to declare a conflict</summary><p class="text-muted mt-2">If a personal, professional, or other relationship could affect your fairness, tell the organizer here before scoring this exhibit.</p><form method="post" novalidate>{% csrf_token %}<input type="hidden" name="action" value="declare_conflict"><input type="hidden" name="exhibit_id" value="{{ card.assignment.exhibit.public_id }}">{{ card.conflict_form.as_p }}<button class="btn btn-outline-secondary" type="submit">Declare conflict and skip</button></form></details>{% endif %}
+      </section>{% endfor %}
+    </div>
+  </div>
+</main>
+{% endblock %}
+{% block scripts %}<script nonce="{{ csp_nonce }}">
+(() => {
+  let refreshing=false;
+  let selectedId='';
+  const isEdited=main=>Boolean(main.querySelector('form[data-judge-edited="true"]'));
+  const selectCard=(id,scroll=true)=>{
+    const main=document.querySelector('[data-judge-live-url]');if(!main)return;
+    const cards=[...main.querySelectorAll('[data-judge-card]')],links=[...main.querySelectorAll('.judge-nav a')];
+    const next=cards.find(card=>card.id===id);if(!next)return;
+    const current=cards.find(card=>!card.hidden);
+    if(current&&current!==next&&current.querySelector('form[data-judge-edited="true"]')&&!window.confirm('Leave this scorecard? Your unsent answers will be lost.'))return false;
+    selectedId=id;cards.forEach(card=>card.hidden=card!==next);links.forEach(link=>{if(link.hash==='#'+id)link.setAttribute('aria-current','location');else link.removeAttribute('aria-current')});
+    if(scroll){next.scrollIntoView({block:'start',behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});const heading=next.querySelector('h2');if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true})}}
+    return true;
+  };
+  const chooseInitialCard=()=>{const cards=[...document.querySelectorAll('[data-judge-card]')];if(!cards.length)return;const pending=cards.find(card=>!card.querySelector('.badge.text-bg-success, .badge.text-bg-warning'));const initial=cards.find(card=>card.id===decodeURIComponent(location.hash.slice(1)))||pending||cards[0];selectCard(initial.id,false)};
+  chooseInitialCard();
+  document.addEventListener('click',event=>{const link=event.target.closest('.judge-nav a');if(!link)return;event.preventDefault();if(selectCard(link.hash.slice(1)))history.replaceState(null,'',link.hash)});
+  window.addEventListener('hashchange',()=>{if(location.hash.startsWith('#judge-exhibit-'))selectCard(decodeURIComponent(location.hash.slice(1)),false)});
+  document.addEventListener('input',event=>{const form=event.target.closest('form');if(form)form.dataset.judgeEdited='true'});
+  document.addEventListener('change',event=>{const form=event.target.closest('form');if(form)form.dataset.judgeEdited='true'});
+  const refresh=async(force=false)=>{
+    if(document.visibilityState==='hidden'||refreshing)return;const main=document.querySelector('[data-judge-live-url]');if(!main)return;refreshing=true;
+    try{
+      const response=await fetch(main.dataset.judgeLiveUrl,{credentials:'same-origin',headers:{'Accept':'text/html'},cache:'no-store'});
+      if(response.status===404){main.innerHTML='<div class="alert alert-warning" role="status">This private judge link is no longer available. Contact the event organizer if you need help.</div>';main.removeAttribute('data-judge-live-url');return}
+      if(!response.ok)throw new Error('refresh failed');
+      const html=await response.text();const freshDoc=new DOMParser().parseFromString(html,'text/html');const fresh=freshDoc.querySelector('[data-judge-live-content]');const current=main.querySelector('[data-judge-live-content]');if(!fresh||!current)return;
+      if(fresh.innerHTML!==current.innerHTML){const active=document.activeElement;const editing=isEdited(main)||(active&&current.contains(active)&&active.closest('form'));if(editing&&!force){const banner=document.getElementById('judge-live-change');if(banner)banner.hidden=false;return}current.replaceWith(document.importNode(fresh,true));selectCard(selectedId,false);}
+      const currentStatus=document.getElementById('judge-live-updated');if(currentStatus)currentStatus.textContent=`Updated ${new Date().toLocaleTimeString()}`;
+    }catch(_){const currentStatus=document.getElementById('judge-live-updated');if(currentStatus)currentStatus.textContent='Connection interrupted. We’ll try again shortly.'}finally{refreshing=false}
+  };
+  document.addEventListener('click',event=>{if(event.target.closest('#judge-discard-and-update')&&window.confirm('Discard the unsent scorecard changes on this page and load the latest event information?'))refresh(true)});
+  window.setInterval(refresh,20000);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refresh()});document.addEventListener('focusout',event=>{if(event.target.closest('form'))window.setTimeout(refresh,250)});
+})();
+</script>{% endblock %}

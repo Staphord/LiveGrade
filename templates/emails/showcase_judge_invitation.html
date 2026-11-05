@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <body style="margin:0;padding:28px 12px;background:#f4f6f9;color:#212529;font-family:Inter,'Segoe UI',Arial,sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td align="center">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;background:#fff;border:1px solid #e9ecef;border-radius:12px;overflow:hidden;">
+        <tr><td style="padding:20px 24px;background:#e7f1ff;border-bottom:1px solid #d7e7fa;"><div style="font-size:18px;font-weight:700;color:#1a1a2e;">LiveGrade</div><div style="margin-top:3px;font-size:13px;color:#495057;">Showcase judging</div></td></tr>
+        <tr><td style="padding:26px 24px;">
+          <p style="margin:0 0 7px;color:#6c757d;font-size:13px;font-weight:600;">You’re invited to judge</p>
+          <h1 style="margin:0 0 18px;color:#1a1a2e;font-size:25px;line-height:1.25;">{{ event.name }}</h1>
+          {% if event.brand_tagline %}<p style="margin:0 0 18px;color:#495057;line-height:1.55;">{{ event.brand_tagline }}</p>{% endif %}
+          <p style="margin:0 0 18px;color:#212529;line-height:1.6;">Review the exhibits assigned to you and score each one using the event’s judging criteria. Once submitted, a scorecard cannot be changed.</p>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 22px;background:#f8f9fa;border:1px solid #e9ecef;border-radius:9px;"><tr><td style="padding:14px 16px;color:#212529;font-size:14px;line-height:1.6;"><strong>Assigned exhibits</strong><br>{{ assignment_count }} exhibit{{ assignment_count|pluralize }}<br><strong>Judge link expires</strong><br>{{ expires_at|date:'j M Y, H:i T' }}</td></tr></table>
+          <p style="margin:0 0 22px;text-align:center;"><a href="{{ invitation_url }}" style="display:inline-block;padding:13px 20px;border-radius:9px;background:#0d6efd;color:#fff;font-size:15px;font-weight:700;text-decoration:none;">Open judge workspace</a></p>
+          <p style="margin:0 0 8px;color:#495057;font-size:13px;line-height:1.6;">If you have a personal or professional connection to an exhibit, declare a conflict in the workspace before scoring it.</p>
+          <p style="margin:0;color:#6c757d;font-size:12px;line-height:1.6;">If the button does not open, copy this private address into your browser:<br><a href="{{ invitation_url }}" style="color:#0d6efd;word-break:break-all;">{{ invitation_url }}</a></p>
+        </td></tr>
+        <tr><td style="padding:15px 24px;background:#f8f9fa;border-top:1px solid #e9ecef;color:#6c757d;font-size:12px;line-height:1.5;">This private link is for you. Please do not forward it. If you were not expecting this invitation, contact the event organizer.</td></tr>
+      </table>
+    </td></tr></table>
+  </body>
+</html>

@@ -1,0 +1,11 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% block title %}QR label · {{ exhibit.name }}{% endblock %}
+{% block service_name %}Showcase exhibit label{% endblock %}
+{% block extra_css %}<style nonce="{{ csp_nonce }}">
+.showcase-label{--showcase-accent:{{ event.brand_accent_color }};box-sizing:border-box;width:100%;max-width:34rem;margin:0 auto;text-align:center;border:1px solid var(--border);border-top:.45rem solid var(--showcase-accent);border-radius:var(--radius-card);padding:clamp(1.25rem,5vw,2.5rem);box-shadow:var(--elev-1)}.showcase-label img{display:block;width:min(100%,18rem);height:auto;margin:1.25rem auto}.showcase-label .category{color:var(--text-muted)}.showcase-label .label-url{overflow-wrap:anywhere;font-size:var(--fs-sm)}
+@media print{@page{size:100mm 140mm;margin:6mm}body{background:#fff!important}.showcase-label{width:100%;max-width:none;min-height:125mm;border:1.5px solid #222;border-top-width:2mm;border-radius:0;box-shadow:none;padding:8mm}.showcase-label img{width:62mm;height:62mm;margin:8mm auto}.showcase-label .label-url{font-size:8pt}}
+</style>{% endblock %}
+{% block content %}
+<main id="public-main" class="public-service-content narrow"><article class="card card-body showcase-label"><p class="text-uppercase small fw-bold text-primary mb-1">{{ event.name }}</p>{% if category %}<p class="category mb-1">{{ category.name }}</p>{% endif %}<h1 class="h2">{{ exhibit.name }}</h1><img src="{{ qr_url }}" width="288" height="288" alt="QR code for rating {{ exhibit.name }}"><p class="fw-semibold">Scan to rate this exhibit</p><p class="text-muted small">If scanning does not work, open this address:</p><p class="label-url mb-0"><a href="{{ rating_url }}">{{ rating_url }}</a></p><p class="small text-muted no-print mt-3 mb-0">Use the Print button or your browser’s Print command.</p><button class="btn btn-primary mt-2 no-print" id="print-showcase-label" type="button">Print this label</button></article></main>
+{% endblock %}
+{% block scripts %}<script nonce="{{ csp_nonce }}">(()=>{const button=document.getElementById('print-showcase-label');if(button)button.addEventListener('click',()=>window.print())})();</script>{% endblock %}
