@@ -1,0 +1,25 @@
+from django.urls import path
+
+from .views import (training_anonymous_feedback, training_series_list,
+                    training_series_manage, training_series_trends,
+                    training_series_export, training_certificate_verify,
+                    training_series_roster_import, training_series_roster_preview,
+                    training_series_roster_sample)
+
+urlpatterns = [
+    path('certificates/<uuid:public_id>/', training_certificate_verify,
+         name='training_certificate_verify'),
+    path('feedback/<uuid:feedback_public_id>/', training_anonymous_feedback,
+         name='training_anonymous_feedback'),
+    path('series/', training_series_list, name='training_series_list'),
+    path('series/<int:series_id>/', training_series_manage, name='training_series_manage'),
+    path('series/<int:series_id>/trends/', training_series_trends, name='training_series_trends'),
+    path('series/<int:series_id>/outcomes.csv', training_series_export,
+         name='training_series_export'),
+    path('series/<int:series_id>/roster/import/', training_series_roster_import,
+         name='training_series_roster_import'),
+    path('series/<int:series_id>/roster/preview/', training_series_roster_preview,
+         name='training_series_roster_preview'),
+    path('series/<int:series_id>/roster/sample.xlsx', training_series_roster_sample,
+         name='training_series_roster_sample'),
+]

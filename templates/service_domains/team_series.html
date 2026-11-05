@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+{% block title %}Team and Training · LiveGrade{% endblock %}
+{% block page_title %}Team and Training{% endblock %}
+{% block content %}
+{% include 'service_domains/_workspace_styles.html' %}
+{% include 'service_domains/_team_competition_styles.html' %}
+<main id="main-content" class="container-fluid py-4 service-workspace tc-workspace">
+  <header class="tc-hero">
+    <div><h1>Team and Training</h1>
+      <p>Build a reusable team roster, run a series of demos, and follow competency progress.</p>
+      <div class="tc-context"><span class="tc-chip"><strong>{{ series|length }}</strong> active series</span></div>
+    </div>
+    <span class="tc-status is-active">Training workspace</span>
+  </header>
+
+  {% include 'service_domains/_onboarding.html' with onboarding=onboarding %}
+
+  <section class="tc-panel" aria-labelledby="series-list-heading">
+    <header><div><h2 id="series-list-heading">Your training series</h2><p>Open a series to manage its team, competencies and demos.</p></div>
+      <a class="btn btn-primary" href="#create-series">Create a series</a>
+    </header>
+    {% if series %}
+      <div class="tc-list">
+        {% for item in series %}
+          <a class="tc-list-card" href="{% url 'training_series_manage' series_id=item.pk %}">
+            <span><h3>{{ item.name }}</h3>
+              {% if item.description %}<p>{{ item.description }}</p>{% endif %}
+              {% if item.cadence_note %}<p>Usual rhythm: {{ item.cadence_note }}</p>{% endif %}
+              <span class="tc-context">
+                <span class="tc-chip">{{ item.participants.count }} team members</span>
+                <span class="tc-chip">{{ item.competencies.count }} competencies</span>
+                <span class="tc-chip">{{ item.series_sessions.count }} demos</span>
+              </span>
+            </span>
+            <span class="tc-status is-active">Active</span>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="tc-empty" role="status"><h3>Start your first series</h3><p>Add a purpose and create a series. You can add the team and criteria next.</p></div>
+    {% endif %}
+  </section>
+
+  <details class="tc-disclosure mt-3" id="create-series" {% if form.errors %}open{% endif %}>
+    <summary>Create a training series</summary>
+    <div class="tc-disclosure-body">
+      <p class="text-muted">Each demo in the series can reuse its team and competencies.</p>
+      <form method="post" class="service-flow-form" novalidate>
+        {% csrf_token %}{{ form.as_p }}
+        <button class="btn btn-primary" type="submit">Create series</button>
+      </form>
+    </div>
+  </details>
+</main>
+{% endblock %}

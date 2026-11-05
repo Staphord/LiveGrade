@@ -1,0 +1,23 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% block title %}Team competency certificate verification{% endblock %}
+{% block service_name %}Certificate verification{% endblock %}
+{% block content %}
+<main id="public-main" class="public-service-content narrow">
+  <section class="tc-public-card">
+  <header class="tc-public-head"><h1>Certificate verification</h1><p>{{ certificate.competency_name }}</p></header>
+  <div class="tc-public-body">
+  {% if current %}<div class="tc-result-state" role="status"><span aria-hidden="true">✓</span><div><strong>Verified and current</strong>This certificate matches the learner’s latest competency decision.</div></div>
+  {% else %}<div class="tc-result-state is-warning" role="status"><span aria-hidden="true">!</span><div><strong>Verified, but superseded</strong>This is a real issued result. A later decision is now on record; contact the issuer for the learner’s current status.</div></div>{% endif %}
+  <dl class="tc-credential-grid">
+    <div class="tc-credential"><dt>Learner</dt><dd>{{ certificate.learner_name }}</dd></div>
+    {% if certificate.learner_reference %}<div class="tc-credential"><dt>Learner reference</dt><dd>{{ certificate.learner_reference }}</dd></div>{% endif %}
+    <div class="tc-credential"><dt>Competency</dt><dd>{{ certificate.competency_name }}</dd></div>
+    <div class="tc-credential"><dt>Training series</dt><dd>{{ certificate.series_name }}</dd></div>
+    <div class="tc-credential"><dt>Demo</dt><dd>{{ certificate.session_name }}</dd></div>
+    <div class="tc-credential"><dt>Issued</dt><dd>{{ certificate.issued_at|date:'j M Y H:i' }}</dd></div>
+  </dl>
+  <details class="tc-disclosure"><summary>Score and certificate reference</summary><div class="tc-disclosure-body"><dl class="row mb-0 mt-2"><dt class="col-sm-4">Score</dt><dd class="col-sm-8">{{ certificate.score }} (pass score {{ certificate.passing_score }})</dd><dt class="col-sm-4">Certificate reference</dt><dd class="col-sm-8"><code>{{ certificate.public_id }}</code></dd></dl></div></details>
+  </div>
+  </section>
+</main>
+{% endblock %}

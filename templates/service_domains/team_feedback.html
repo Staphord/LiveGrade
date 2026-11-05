@@ -1,0 +1,36 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% block title %}Anonymous demo feedback · Team and Training{% endblock %}
+{% block service_name %}Team demo feedback{% endblock %}
+{% block content %}
+<main id="public-main" class="public-service-content narrow">
+  <section class="tc-public-card">
+  <header class="tc-public-head"><h1>How useful was this demo?</h1><p>{{ series_link.assessment_session.name }}</p></header>
+  <div class="tc-public-body">
+  <p>Your rating is anonymous. The presenter sees only an anonymous summary after enough responses are received.</p>
+  {% if submitted %}
+    <div class="tc-result-state" role="status"><div><strong>Thank you</strong>Your anonymous rating has been recorded.</div></div>
+  {% elif already_submitted %}
+    <div class="alert alert-info" role="status"><strong>Response already recorded.</strong> This browser has already submitted feedback for this demo.</div>
+  {% else %}
+    {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+    <form method="post" novalidate>
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+      <fieldset class="border rounded-3 p-3">
+        <legend>{{ form.score.label }}</legend>
+        <div class="d-grid gap-2">{% for radio in form.score %}<label class="tc-rating-choice">{{ radio.tag }} <span>{{ radio.choice_label }}</span></label>{% endfor %}</div>
+        {% for error in form.score.errors %}<p class="text-danger" role="alert">{{ error }}</p>{% endfor %}
+      </fieldset>
+      <button class="btn btn-primary btn-lg w-100 mt-3" type="submit">Send anonymous rating</button>
+    </form>
+  {% endif %}
+  </div>
+  </section>
+</main>
+<style nonce="{{ csp_nonce }}">
+  .tc-rating-choice{display:flex;align-items:center;gap:.75rem;min-height:3rem;margin:0;padding:.65rem .8rem;border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface);cursor:pointer}
+  .tc-rating-choice input{width:1.2rem;height:1.2rem;accent-color:var(--accent)}
+  .tc-rating-choice:has(input:checked){border-color:var(--accent);background:var(--accent-soft);font-weight:700}
+  .tc-rating-choice:focus-within{outline:3px solid var(--accent);outline-offset:2px}
+</style>
+{% endblock %}

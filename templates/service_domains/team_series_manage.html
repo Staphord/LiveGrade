@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+{% block title %}{{ series.name }} · Team and Training{% endblock %}
+{% block page_title %}{{ series.name }}{% endblock %}
+{% block content %}
+{% include 'service_domains/_workspace_styles.html' %}
+{% include 'service_domains/_team_competition_styles.html' %}
+<main id="main-content" class="container-fluid py-4 service-workspace tc-workspace">
+  <p><a href="{% url 'training_series_list' %}">← All series</a></p>
+  <header class="tc-hero">
+    <div><h1>{{ series.name }}</h1>
+      {% if series.description %}<p>{{ series.description }}</p>{% else %}<p>Manage the team, competency criteria and demos for this series.</p>{% endif %}
+      <div class="tc-context">
+        {% if series.cadence_note %}<span class="tc-chip">Usual rhythm: {{ series.cadence_note }}</span>{% endif %}
+        <span class="tc-chip"><strong>{{ participants|length }}</strong> team members</span>
+        <span class="tc-chip"><strong>{{ competencies|length }}</strong> competencies</span>
+        <span class="tc-chip"><strong>{{ sessions|length }}</strong> demos</span>
+      </div>
+    </div>
+    <span class="tc-status is-active">Active series</span>
+  </header>
+
+  {% if messages %}<div aria-live="polite">{% for message in messages %}<p class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'warning' %}alert-warning{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %}">{{ message }}</p>{% endfor %}</div>{% endif %}
+  {% if roster_import_pending %}<div class="alert alert-info" role="status">Your roster is ready to review. <a href="{% url 'training_series_roster_preview' series_id=series.pk %}">Continue to import review</a>.</div>{% endif %}
+
+  <nav aria-label="Series workspace">
+    <ol class="tc-step-nav">
+      <li><a href="#team-roster"><span class="tc-step-number">1</span>Team · {{ participants|length }}</a></li>
+      <li><a href="#competency-criteria"><span class="tc-step-number">2</span>Competencies · {{ competencies|length }}</a></li>
+      <li><a href="#series-demos"><span class="tc-step-number">3</span>Demos · {{ sessions|length }}</a></li>
+      <li><a href="#feedback-privacy"><span class="tc-step-number">4</span>Feedback privacy</a></li>
+    </ol>
+  </nav>
+
+  <details class="tc-disclosure mb-3" {% if details_form.errors %}open{% endif %}>
+    <summary>Edit series details</summary>
+    <div class="tc-disclosure-body">
+      <form method="post" class="service-flow-form mt-2" novalidate>{% csrf_token %}<input type="hidden" name="action" value="series_details">{{ details_form.as_p }}<button class="btn btn-outline-secondary" type="submit">Save details</button></form>
+    </div>
+  </details>
+
+  <section id="team-roster" class="tc-panel mb-3" aria-labelledby="team-roster-heading">
+    <header><div><h2 id="team-roster-heading">Team roster</h2><p>Add people one at a time or review a spreadsheet before importing.</p></div><span class="tc-status {% if participants %}is-success{% else %}is-warn{% endif %}">{% if participants %}{{ participants|length }} added{% else %}Needs team members{% endif %}</span></header>
+    {% if participants %}
+      <div class="table-responsive mb-3"><table class="table tc-table align-middle"><caption>People in this reusable series roster</caption><thead><tr><th scope="col">Name</th><th scope="col">Reference</th><th scope="col">Team</th></tr></thead><tbody>
+        {% for participant in participants %}<tr><th scope="row">{{ participant.display_name }}</th><td>{{ participant.reference|default:'—' }}</td><td>{{ participant.group_name }}</td></tr>{% endfor %}
+      </tbody></table></div>
+    {% else %}<div class="tc-empty mb-3"><h3>No team members yet</h3><p>Add a person or import a roster. The roster is reused for each demo in this series.</p></div>{% endif %}
+    <details class="tc-disclosure mb-3" {% if participant_form.errors or not participants %}open{% endif %}>
+      <summary>Add one team member</summary><div class="tc-disclosure-body"><form method="post" class="service-flow-form mt-2" novalidate>{% csrf_token %}<input type="hidden" name="action" value="participant">{{ participant_form.as_p }}<button class="btn btn-secondary" type="submit">Add team member</button></form></div>
+    </details>
+    <section aria-labelledby="roster-import-heading">
+      <h3 class="h5" id="roster-import-heading">Import a roster</h3>
+      <p class="text-muted">Use one learner per row. Include names, optional learner references and team names only. Do not include email addresses or sensitive HR details.</p>
+      <form method="post" action="{% url 'training_series_roster_import' series_id=series.pk %}" enctype="multipart/form-data" class="service-flow-form">
+        {% csrf_token %}{% include 'assessments/_partials/import_dropzone.html' with file_field=roster_import_form.file dropzone_id='team-roster-dropzone' filename_id='team-roster-filename' %}
+        <div class="d-flex flex-wrap gap-2 mt-3"><button class="btn btn-primary" type="submit">Review roster</button><a class="btn btn-outline-secondary" href="{% url 'training_series_roster_sample' series_id=series.pk %}">Download sample file</a></div>
+      </form>
+    </section>
+  </section>
+
+  <section id="competency-criteria" class="tc-panel mb-3" aria-labelledby="competency-criteria-heading">
+    <header><div><h2 id="competency-criteria-heading">Competency criteria</h2><p>Track work outcomes separately from the peer feedback rubric used during a demo. Set a pass score for each competency.</p></div><span class="tc-status {% if competencies %}is-success{% else %}is-warn{% endif %}">{% if competencies %}{{ competencies|length }} set{% else %}Needs criteria{% endif %}</span></header>
+    {% if competencies %}<div class="tc-list mb-3">{% for competency in competencies %}<article class="tc-list-card"><span><h3>{{ competency.name }}</h3>{% if competency.description %}<p>{{ competency.description }}</p>{% endif %}</span><span class="tc-chip">Pass score {{ competency.passing_score }}</span></article>{% endfor %}</div>
+    {% else %}<div class="tc-empty mb-3"><h3>No criteria yet</h3><p>Add a competency and pass score before recording outcomes.</p></div>{% endif %}
+    <details class="tc-disclosure" {% if competency_form.errors or not competencies %}open{% endif %}>
+      <summary>Add a competency</summary><div class="tc-disclosure-body"><form method="post" class="service-flow-form mt-2" novalidate>{% csrf_token %}<input type="hidden" name="action" value="competency">{{ competency_form.as_p }}<button class="btn btn-secondary" type="submit">Add competency</button></form></div>
+    </details>
+  </section>
+
+  <section id="series-demos" class="tc-panel mb-3" aria-labelledby="series-demos-heading">
+    <header><div><h2 id="series-demos-heading">Demos</h2><p>Each new demo starts with this roster and a selected Team rubric.</p></div>
+      {% if sessions %}<a class="btn btn-outline-primary" href="{% url 'training_series_trends' series_id=series.pk %}">View progress</a>{% endif %}
+    </header>
+    {% if sessions %}<div class="tc-list mb-3">{% for link in sessions %}<article class="tc-list-card">
+      <span><h3>{{ forloop.counter }}. {{ link.assessment_session.name }}</h3>
+        <p>{% if link.scheduled_for %}Planned {{ link.scheduled_for|date:'j M Y, H:i' }} · {% endif %}{{ link.assessment_session.get_status_display }}</p>
+        <span class="tc-context"><a class="tc-chip" href="{% url 'assessment_session_detail' pk=link.assessment_session_id %}">Open demo</a><a class="tc-chip" href="{% url 'training_session_competencies' pk=link.assessment_session_id %}">Record outcomes</a>{% if link.assessment_session.status == 'closed' and series.feedback_minimum_responses %}<a class="tc-chip" href="{% url 'training_anonymous_feedback' feedback_public_id=link.feedback_public_id %}">Feedback link</a>{% endif %}</span>
+      </span><span class="tc-status {% if link.assessment_session.status == 'closed' %}is-success{% else %}is-active{% endif %}">{{ link.assessment_session.get_status_display }}</span>
+    </article>{% endfor %}</div>{% else %}<div class="tc-empty mb-3"><h3>No demos yet</h3><p>Create the first demo when the roster is ready. You can reuse a built-in or saved Team rubric.</p></div>{% endif %}
+    <details class="tc-disclosure" {% if launch_form.errors or not sessions %}open{% endif %}>
+      <summary>Create the next demo</summary><div class="tc-disclosure-body">
+        <p class="text-muted mt-2">The planned date is shown here only; it does not send invitations or reminders. Use Student ID when learner names may repeat.</p>
+        <details class="mb-3"><summary class="fw-semibold">What the built-in rubrics cover</summary><ul class="mt-2">{% for starter in team_starters %}<li><strong>{{ starter.name }}:</strong> {{ starter.description }}</li>{% endfor %}</ul></details>
+        <form method="post" class="service-flow-form" novalidate>{% csrf_token %}<input type="hidden" name="action" value="create_session">{{ launch_form.as_p }}<button class="btn btn-primary" type="submit" {% if not participants %}disabled{% endif %}>Create demo session</button>{% if not participants %}<p class="form-text">Add at least one team member to enable demo creation.</p>{% endif %}</form>
+      </div>
+    </details>
+  </section>
+
+  <section id="feedback-privacy" class="tc-panel" aria-labelledby="feedback-privacy-heading">
+    <header><div><h2 id="feedback-privacy-heading">Anonymous feedback privacy</h2><p>Only an aggregate usefulness rating is collected. Names, learner accounts and written comments are not collected.</p></div>
+      {% if series.feedback_minimum_responses %}<span class="tc-status is-success">Enabled</span>{% else %}<span class="tc-status is-warn">Disabled</span>{% endif %}
+    </header>
+    {% if series.feedback_minimum_responses %}<p>Results stay hidden until at least <strong>{{ series.feedback_minimum_responses }}</strong> responses are received.</p>{% else %}<p>Choose a response minimum to enable feedback collection. Leave it blank to keep feedback disabled.</p>{% endif %}
+    <details class="tc-disclosure" {% if privacy_form.errors %}open{% endif %}><summary>Change response minimum</summary><div class="tc-disclosure-body"><form method="post" class="service-flow-form mt-2" novalidate>{% csrf_token %}<input type="hidden" name="action" value="feedback_privacy">{{ privacy_form.as_p }}<button class="btn btn-outline-secondary" type="submit">Save privacy setting</button></form></div></details>
+  </section>
+</main>
+{% endblock %}

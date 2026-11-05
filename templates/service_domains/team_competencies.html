@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block title %}Competency outcomes · {{ session.name }}{% endblock %}
+{% block page_title %}Competency outcomes{% endblock %}
+{% block content %}
+{% include 'service_domains/_workspace_styles.html' %}
+{% include 'service_domains/_team_competition_styles.html' %}
+<main id="main-content" class="container-fluid py-4 service-workspace tc-workspace">
+  <p><a href="{% url 'assessment_session_detail' session.pk %}">← {{ session.name }}</a></p>
+  <header class="tc-hero"><div><h1>Competency outcomes</h1><p>{{ session.name }} · Record a score and work-related evidence for each learner.</p>
+      <div class="tc-context"><span class="tc-chip"><strong>{{ criteria|length }}</strong> competencies</span><span class="tc-chip"><strong>{{ session.students.count }}</strong> learners</span></div>
+    </div><span class="tc-status {% if session.status == 'closed' %}is-success{% else %}is-active{% endif %}">{{ session.get_status_display }}</span>
+  </header>
+  <p class="text-muted">A score at or above the pass score is a pass. Corrections create a new revision and preserve the earlier decision.</p>
+  {% if messages %}<div aria-live="polite">{% for message in messages %}<p class="alert alert-success" role="status">{{ message }}</p>{% endfor %}</div>{% endif %}
+  {% if certificate_error %}<div class="alert alert-danger" role="alert">{{ certificate_error }}</div>{% endif %}
+
+  {% if session.status == 'closed' %}<section class="tc-panel mb-3" aria-labelledby="certificate-action-heading">
+    <header><div><h2 id="certificate-action-heading">Certificates</h2><p>Issue certificates for current passing outcomes. Existing certificates are not duplicated.</p></div></header>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="issue_certificates"><button class="btn btn-primary" type="submit">Issue eligible certificates</button></form>
+  </section>{% else %}<p class="alert alert-info" role="status">Certificates can be issued after this demo closes.</p>{% endif %}
+
+  {% if criteria and rows %}
+    {% regroup rows by criterion as criterion_groups %}
+    {% for group in criterion_groups %}{% with criterion=group.grouper %}
+      <section class="tc-panel mb-3" aria-labelledby="criterion-{{ criterion.pk }}">
+        <header><div><h2 id="criterion-{{ criterion.pk }}">{{ criterion.name }}</h2>{% if criterion.description %}<p>{{ criterion.description }}</p>{% endif %}</div><span class="tc-chip">Pass score {{ criterion.passing_score }}</span></header>
+        <div class="tc-list">
+          {% for row in group.list %}
+            <details class="tc-disclosure" {% if row.form.errors %}open{% endif %}>
+              <summary class="d-flex justify-content-between align-items-center gap-3"><span>{{ row.student.full_name }}</span>
+                {% if row.result %}<span class="tc-outcome {% if row.result.passed %}is-pass{% else %}is-pending{% endif %}">{% if row.result.passed %}Pass{% else %}Not yet passed{% endif %} · {{ row.result.score }}</span>{% else %}<span class="tc-outcome">No outcome yet</span>{% endif %}
+              </summary>
+              <div class="tc-disclosure-body">
+                {% if row.result %}<div class="tc-record mt-2"><h3 class="h6">Current decision</h3><p><strong>{{ row.result.score }}</strong> · {{ row.result.evidence }}</p><p class="small text-muted">Revision {{ row.result.revision }} · {{ row.result.assessed_at|date:'j M Y, H:i' }}{% if row.result.correction_reason %} · Correction: {{ row.result.correction_reason }}{% endif %}</p>{% if row.certificate %}<p><a href="{% url 'training_certificate_verify' public_id=row.certificate.public_id %}">View certificate verification</a></p>{% endif %}</div>
+                {% else %}<p class="text-muted mt-2">No decision has been recorded for this learner.</p>{% endif %}
+                <form method="post" class="service-flow-form tc-record-form mt-3" novalidate>
+                  {% csrf_token %}<input type="hidden" name="criterion_id" value="{{ criterion.pk }}"><input type="hidden" name="student_id" value="{{ row.student.pk }}">
+                  {{ row.form.as_p }}<button class="btn btn-secondary" type="submit">{% if row.result %}Save correction{% else %}Record outcome{% endif %}</button>
+                </form>
+              </div>
+            </details>
+          {% endfor %}
+        </div>
+      </section>
+    {% endwith %}{% endfor %}
+  {% elif not criteria %}<div class="tc-empty"><h2>No competency criteria</h2><p>Add criteria to this series before creating a new demo that uses them.</p></div>
+  {% else %}<div class="tc-empty"><h2>No learners in this demo</h2><p>Add learners to the series roster and create a new demo to assess them.</p></div>{% endif %}
+</main>
+{% endblock %}
