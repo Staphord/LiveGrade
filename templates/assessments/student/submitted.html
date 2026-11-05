@@ -2,6 +2,7 @@
 {% block title %}Submitted - {{ session.name }}{% endblock %}
 {% block hero_sub %}Evaluation received{% endblock %}
 {% block content %}
+{% include 'assessments/student/_submission_transport.html' with page='submitted' %}
 <div class="s-center-viewport">
   <div class="s-card fade-in text-center py-5">
     <svg class="success-check" viewBox="0 0 52 52">
@@ -9,6 +10,7 @@
       <path d="M15 27l7 7 15-15"></path>
     </svg>
     <h2 class="fw-800 mt-3 s-h2">Thanks - evaluation submitted!</h2>
+    {% if is_practice %}<p class="alert alert-info">Practice submission received. It does not count towards results or participation penalties.</p>{% endif %}
     <p class="text-muted s-text">
       Your grading is recorded anonymously. This page returns to the waiting
       room automatically when the next group starts presenting.

@@ -6,13 +6,14 @@ Imports are two steps - upload shows a preview, a second press applies it - so a
 file never changes a session without being looked at first.
 """
 from django.contrib import messages
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, render
-from django.views.decorators.http import require_http_methods, require_POST
+from django.views.decorators.http import require_http_methods, require_POST, require_safe
 
 from accounts.access import lecturer_required
 
 from .. import group_import, rubric_import
+from ..level_descriptors import format_descriptors
 from ..pending_imports import GROUP_KEY, RUBRIC_KEY
 from ..forms import GroupImportForm, RubricImportForm
 from ..models import EvaluationScore
@@ -22,7 +23,7 @@ from .lecturer_views import _closed, _session, _setup_context, delete_groups
 __all__ = [
     'assessment_setup', 'group_import_view', 'group_import_preview', 'group_import_sample',
     'groups_bulk_delete', 'rubric_import_view', 'rubric_import_preview', 'rubric_import_sample',
-    'rubric_table', 'rubric_bulk_delete',
+    'rubric_table', 'rubric_bulk_delete', 'onboarding_sample',
 ]
 
 XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -33,6 +34,17 @@ def _download(buffer, filename):
     response = HttpResponse(buffer.getvalue(), content_type=XLSX)
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
+
+
+@lecturer_required
+@require_safe
+def onboarding_sample(request, kind):
+    """Synthetic examples an owner can download before creating their first session."""
+    if getattr(request, 'service', None) != 'classroom':
+        raise Http404
+    if kind == 'groups':
+        return _download(group_import.sample_workbook(), 'groups-and-students-sample.xlsx')
+    return _download(rubric_import.sample_workbook(), 'rubric-sample.xlsx')
 
 
 def _upload_errors(request, form):
@@ -227,7 +239,7 @@ def rubric_import_sample(request, pk):
     return _download(rubric_import.sample_workbook(), 'rubric-sample.xlsx')
 
 
-FIELDS = ('id', 'name', 'description', 'scope', 'weight')
+FIELDS = ('id', 'name', 'description', 'scope', 'weight', 'level_descriptors')
 
 
 def _table_rows_from_post(post):
@@ -243,6 +255,8 @@ def _table_rows_from_post(post):
     rows = []
     for index in range(total):
         row = {field: (post.get(f'rows-{index}-{field}') or '').strip() for field in FIELDS}
+        if f'rows-{index}-level_descriptors' not in post:
+            row['level_descriptors'] = None
         if not any(row[f] for f in FIELDS if f != 'scope') and not row['id']:
             continue
         row['id'] = int(row['id']) if row['id'].isdigit() else None
@@ -278,8 +292,9 @@ def rubric_table(request, pk):
         errors = list(verdict['errors']) + ([(None, lock)] if lock else [])
     else:
         rows = [{'id': c.pk, 'name': c.name, 'description': c.description, 'scope': c.scope,
-                 'weight': f'{c.weight:f}'.rstrip('0').rstrip('.')}
-                for c in session.rubric_categories.all()]
+                 'weight': f'{c.weight:f}'.rstrip('0').rstrip('.'),
+                 'level_descriptors': format_descriptors(c.level_descriptors.all())}
+                for c in session.rubric_categories.prefetch_related('level_descriptors')]
         errors = []
     scored = set(EvaluationScore.objects.filter(
         rubric_category__assessment_session=session).values_list('rubric_category_id', flat=True))

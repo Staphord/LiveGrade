@@ -1,5 +1,7 @@
 """Result calculation — the only code allowed to read EvaluationScore for
-lecturer-facing output. Every query here aggregates; none joins an
+lecturer-facing output. Practice entries are excluded from every counted
+outcome, including the shared fraction aggregation. Every query here
+aggregates; none joins an
 evaluator identity to a raw score in the same row (see models.py docstring).
 """
 
@@ -20,7 +22,7 @@ def fraction_averages(score_qs, *keys):
     dividing two decimal columns in SQL is integer division on SQLite.
     """
     totals = {}
-    for row in (score_qs.filter(max_value__gt=0)
+    for row in (score_qs.filter(max_value__gt=0, evaluation__presentation_turn__group__is_practice=False)
                 .values(*keys, 'max_value')
                 .annotate(total=Sum('value'), n=Count('pk'))):
         key = tuple(row[k] for k in keys)
@@ -47,7 +49,7 @@ def group_score_percent(group, assessment_session):
         scope=RubricCategory.Scope.GROUP))
     if not categories:
         return None
-    evaluations = Evaluation.objects.filter(
+    evaluations = Evaluation.objects.filter(presentation_turn__group__is_practice=False,
         presentation_turn__group=group,
         presentation_turn__assessment_session=assessment_session,
         target_student__isnull=True)
@@ -73,7 +75,7 @@ def individual_score_percent(student, assessment_session):
         scope=RubricCategory.Scope.INDIVIDUAL))
     if not categories:
         return None
-    evaluations = Evaluation.objects.filter(
+    evaluations = Evaluation.objects.filter(presentation_turn__group__is_practice=False,
         target_student=student,
         presentation_turn__assessment_session=assessment_session)
     weighted_sum = Decimal('0')
@@ -96,11 +98,11 @@ def ungraded_group_count(student, group, assessment_session):
     it in the first place (see services.eligible_to_evaluate)."""
     from .models import Evaluation
 
-    other_group_ids = set(assessment_session.groups.exclude(
+    other_group_ids = set(assessment_session.groups.filter(is_practice=False).exclude(
         pk=group.pk if group else None).values_list('pk', flat=True))
     if not other_group_ids:
         return 0
-    voted_group_ids = set(Evaluation.objects.filter(
+    voted_group_ids = set(Evaluation.objects.filter(presentation_turn__group__is_practice=False,
         presentation_turn__assessment_session=assessment_session,
         evaluator=student, target_student__isnull=True,
     ).values_list('presentation_turn__group_id', flat=True))
@@ -113,6 +115,8 @@ def final_score_percent(student, group, assessment_session):
     `individual_score_percent` are already in points of the 100-point final
     score (each category's weight is its real share of it), so there's
     nothing left to recombine - just add them."""
+    if group is not None and group.is_practice:
+        return None
     group_pct = group_score_percent(group, assessment_session) or Decimal('0')
     individual_pct = individual_score_percent(student, assessment_session) or Decimal('0')
     combined = group_pct + individual_pct
@@ -160,7 +164,7 @@ def group_vote_counts(assessment_session):
     """``{group_id: distinct students who submitted a group-scope evaluation}``."""
     from .models import Evaluation
 
-    return {row['presentation_turn__group_id']: row['n'] for row in Evaluation.objects.filter(
+    return {row['presentation_turn__group_id']: row['n'] for row in Evaluation.objects.filter(presentation_turn__group__is_practice=False,
         presentation_turn__assessment_session=assessment_session, target_student__isnull=True
     ).values('presentation_turn__group_id').annotate(n=Count('evaluator', distinct=True))}
 
@@ -169,7 +173,7 @@ def turn_vote_counts(turn_ids):
     """``{turn_id: distinct students who submitted a group-scope evaluation}``."""
     from .models import Evaluation
 
-    return {row['presentation_turn_id']: row['n'] for row in Evaluation.objects.filter(
+    return {row['presentation_turn_id']: row['n'] for row in Evaluation.objects.filter(presentation_turn__group__is_practice=False,
         presentation_turn_id__in=turn_ids, target_student__isnull=True
     ).values('presentation_turn_id').annotate(n=Count('evaluator', distinct=True))}
 
@@ -182,7 +186,7 @@ def session_results(assessment_session):
     but read in a handful of grouped queries instead of hundreds."""
     from .models import Evaluation
 
-    groups = list(assessment_session.groups.prefetch_related('memberships__student'))
+    groups = list(assessment_session.groups.filter(is_practice=False).prefetch_related('memberships__student'))
     individual_cats = list(assessment_session.rubric_categories.filter(
         scope=RubricCategory.Scope.INDIVIDUAL))
 
@@ -198,7 +202,7 @@ def session_results(assessment_session):
 
     all_group_ids = {group.pk for group in groups}
     voted_by_student = {}
-    for evaluator_id, group_id in Evaluation.objects.filter(
+    for evaluator_id, group_id in Evaluation.objects.filter(presentation_turn__group__is_practice=False,
             presentation_turn__assessment_session=assessment_session, target_student__isnull=True,
     ).values_list('evaluator_id', 'presentation_turn__group_id'):
         voted_by_student.setdefault(evaluator_id, set()).add(group_id)

@@ -234,7 +234,7 @@ class ActivateGroupViewTests(TestCase):
     @patch('assessments.tasks.close_voting_window.apply_async')
     def test_activate_with_duration_sets_deadline(self, mock_apply_async):
         response = self.client.post(
-            f'/assessments/{self.session.pk}/activate/{self.group.pk}/',
+            f'/classroom/app/{self.session.pk}/activate/{self.group.pk}/',
             {'duration_seconds': '120'})
         self.assertEqual(response.status_code, 302)
         turn = self.session.active_turn()
@@ -243,7 +243,7 @@ class ActivateGroupViewTests(TestCase):
 
     @patch('assessments.tasks.auto_advance_turn.apply_async')
     def test_activate_without_duration_leaves_no_deadline(self, mock_apply_async):
-        response = self.client.post(f'/assessments/{self.session.pk}/activate/{self.group.pk}/')
+        response = self.client.post(f'/classroom/app/{self.session.pk}/activate/{self.group.pk}/')
         self.assertEqual(response.status_code, 302)
         turn = self.session.active_turn()
         self.assertIsNone(turn.voting_ends_at)
@@ -251,7 +251,7 @@ class ActivateGroupViewTests(TestCase):
 
     def test_invalid_duration_is_ignored_not_rejected(self):
         response = self.client.post(
-            f'/assessments/{self.session.pk}/activate/{self.group.pk}/',
+            f'/classroom/app/{self.session.pk}/activate/{self.group.pk}/',
             {'duration_seconds': 'not-a-number'})
         self.assertEqual(response.status_code, 302)
         turn = self.session.active_turn()

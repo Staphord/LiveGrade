@@ -13,7 +13,7 @@
 .assess-stagger:nth-child(5){animation-delay:.23s}
 .assess-stagger:nth-child(6){animation-delay:.28s}
 
-/* Centered in the page's own content area, not pinned under the header —
+/* Centered in the page's own content area, not pinned under the header -
    the empty state IS the page when there's nothing yet, so it gets the
    same visual weight a populated grid would have, vertically balanced
    rather than stacked flush against the top. */
@@ -35,7 +35,7 @@
 .session-mini-stat{display:flex;align-items:center;gap:4px;font-size:var(--fs-sm);color:var(--text-muted)}
 
 /* A session actually running in a room right now outranks everything
-   else on this page — permanent elevation and a live accent border, not
+   else on this page - permanent elevation and a live accent border, not
    just a hover state, so it visually leads the grid at a glance instead
    of blending in until the cursor happens to land on it. */
 .session-card.is-live{box-shadow:var(--elev-3);border-color:color-mix(in srgb,var(--success) 35%,var(--border))}
@@ -55,6 +55,7 @@
 {% endblock %}
 
 {% block topbar_actions %}
+<a href="{% url 'assessment_template_list' %}" class="btn btn-outline-secondary btn-sm">Session templates</a>
 <a href="{% url 'assessment_session_create' %}" class="btn btn-primary btn-sm">
   <i class="bi bi-plus-lg me-1"></i>New session
 </a>
@@ -92,6 +93,17 @@
   <a href="{% url 'assessment_session_create' %}" class="btn btn-primary btn-lg">
     <i class="bi bi-plus-lg me-1"></i>Create your first session
   </a>
+  <form method="post" action="{% url 'assessment_walkthrough_start' %}" class="mt-2">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-outline-primary">
+      <i class="bi bi-signpost-split me-1" aria-hidden="true"></i>Start interactive walkthrough
+    </button>
+  </form>
+  <p class="mt-3">Start with these example files, then replace the sample names and criteria with your own.</p>
+  <div class="d-flex flex-wrap gap-2 justify-content-center">
+    <a href="{% url 'assessment_group_onboarding_sample' %}" class="btn btn-outline-secondary">Groups and students sample</a>
+    <a href="{% url 'assessment_rubric_onboarding_sample' %}" class="btn btn-outline-secondary">Rubric sample</a>
+  </div>
 </div>
 {% else %}
 <div class="row g-3">
@@ -148,6 +160,8 @@
         {% else %}
         <li><a class="dropdown-item" href="{% url 'assessment_results' session.pk %}"><i class="bi bi-bar-chart me-2"></i>View results</a></li>
         {% endif %}
+        <li><a class="dropdown-item" href="{% url 'assessment_template_save' session.pk %}"><i class="bi bi-bookmark-plus me-2"></i>Save as template</a></li>
+        <li><a class="dropdown-item" href="{% url 'assessment_session_duplicate' session.pk %}"><i class="bi bi-copy me-2"></i>Duplicate session</a></li>
         {% if not active_org.public %}<li><a class="dropdown-item" href="{% url 'assessment_transfer' session.pk %}"><i class="bi bi-arrow-left-right me-2"></i>Transfer ownership</a></li>{% endif %}
         <li><hr class="dropdown-divider"></li>
         <li><form method="post" action="{% url 'assessment_session_delete' session.pk %}" data-confirm="Delete &quot;{{ session.name }}&quot;? This permanently removes all roster, rubric, and grade data." data-confirm-label="Delete session" data-confirm-tone="danger">

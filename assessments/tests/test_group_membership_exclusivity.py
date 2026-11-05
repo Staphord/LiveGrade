@@ -57,7 +57,7 @@ class ManualGroupViewsExclusivityTests(TestCase):
     def test_adding_to_second_group_is_rejected(self):
         GroupMembership.objects.create(group=self.group1, student=self.student)
         self.client.post(
-            f'/assessments/{self.session.pk}/groups/{self.group2.pk}/members/',
+            f'/classroom/app/{self.session.pk}/groups/{self.group2.pk}/members/',
             {'action': 'add', 'student_id': self.student.pk})
         self.assertFalse(GroupMembership.objects.filter(group=self.group2, student=self.student).exists())
         self.assertTrue(GroupMembership.objects.filter(group=self.group1, student=self.student).exists())
@@ -67,12 +67,12 @@ class ManualGroupViewsExclusivityTests(TestCase):
         # carries their pk (value="N") — what must NOT appear is an
         # <option> offering them for a group they're not in.
         GroupMembership.objects.create(group=self.group1, student=self.student)
-        response = self.client.get(f'/assessments/{self.session.pk}/groups/')
+        response = self.client.get(f'/classroom/app/{self.session.pk}/groups/')
         self.assertNotContains(response, f'<option value="{self.student.pk}">')
 
     def test_create_group_with_selected_members(self):
         other = Student.objects.create(assessment_session=self.session, full_name='Bob Otieno')
-        response = self.client.post(f'/assessments/{self.session.pk}/groups/', {
+        response = self.client.post(f'/classroom/app/{self.session.pk}/groups/', {
             'name': 'Group 3', 'max_size': '3', 'members': [str(other.pk)],
         })
         self.assertEqual(response.status_code, 302)
@@ -81,7 +81,7 @@ class ManualGroupViewsExclusivityTests(TestCase):
 
     def test_create_group_rejects_already_assigned_member(self):
         GroupMembership.objects.create(group=self.group1, student=self.student)
-        response = self.client.post(f'/assessments/{self.session.pk}/groups/', {
+        response = self.client.post(f'/classroom/app/{self.session.pk}/groups/', {
             'name': 'Group 4', 'members': [str(self.student.pk)],
         })
         self.assertEqual(response.status_code, 200)  # re-rendered with an error, not redirected

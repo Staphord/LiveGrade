@@ -40,12 +40,12 @@
 {% if turn and eligible and not already_done and not session.voting_paused %}
       <span class="status-badge status-live"><i class="bi bi-broadcast"></i>Grading now</span>
       {% if turn.voting_ends_at %}
-      <span class="status-badge on-hero" id="turn-countdown" data-ends-at="{{ turn.voting_ends_at|date:'c' }}">
+      <span class="status-badge on-hero" id="turn-countdown" role="timer" aria-label="Voting closes in" aria-live="off" data-ends-at="{{ turn.voting_ends_at|date:'c' }}">
         <i class="bi bi-hourglass-split"></i><span id="turn-countdown-text">--:--</span>
       </span>
       {% endif %}
       {% if turn and not turn.is_voting_open and turn.presentation_ends_at %}
-      <span class="status-badge on-hero" id="presentation-countdown" data-opens-at="{{ turn.opened_at|date:'c' }}" data-presentation-ends-at="{{ turn.presentation_ends_at|date:'c' }}"><i class="bi bi-mic"></i><span id="presentation-countdown-text">Voting opens soon</span></span>
+      <span class="status-badge on-hero" id="presentation-countdown" role="timer" aria-label="Voting opens in" aria-live="off" data-opens-at="{{ turn.opened_at|date:'c' }}" data-presentation-ends-at="{{ turn.presentation_ends_at|date:'c' }}"><i class="bi bi-mic"></i><span id="presentation-countdown-text">Voting opens soon</span></span>
       {% endif %}
     {% endif %}
   </div>
@@ -58,9 +58,13 @@
 {% endblock %}
 
 {% block content %}
+{% include 'assessments/student/_submission_transport.html' %}
+<div id="timer-live-status" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+{% include 'assessments/student/_evaluator_notice.html' %}
+{% if turn.group.is_practice %}<div class="alert alert-info" role="note"><strong>Practice - does not count.</strong> Try the rubric. These scores do not affect results, rankings or participation penalties.</div>{% endif %}
 
 {% if error %}
-<div class="alert alert-danger fade-in s-text">
+      <div class="alert alert-danger fade-in s-text" role="alert" aria-live="assertive">
   <i class="bi bi-exclamation-circle me-1"></i>{{ error }}
 </div>
 {% endif %}
@@ -78,7 +82,7 @@
     {% if pending_transition_at %}
     <h2 class="fw-800 s-h2">Next group starting soon</h2>
     <p class="text-muted s-text mb-2">
-      <span class="status-badge status-wait" id="next-group-countdown" data-resumes-at="{{ pending_transition_at|date:'c' }}">
+      <span class="status-badge status-wait" id="next-group-countdown" role="timer" aria-label="Next group starts in" aria-live="off" data-resumes-at="{{ pending_transition_at|date:'c' }}">
         <i class="bi bi-hourglass-split me-1"></i><span id="next-group-countdown-text">--:--</span>
       </span>
     </p>
@@ -117,13 +121,13 @@
     {% if turn.group.topic or turn.group.location %}<p class="text-muted s-text-sm mb-0">{{ turn.group.topic }}{% if turn.group.topic and turn.group.location %} &middot; {% endif %}{{ turn.group.location }}</p>{% endif %}
     {% if not turn.voting_opened_at %}<p class="text-muted s-text mb-3">Listen along - voting opens automatically during the presentation.</p>{% else %}<p class="text-muted s-text mb-3">Voting has closed for this group. The presentation is still in progress.</p>{% endif %}
     {% if turn.presentation_ends_at and not turn.voting_opened_at %}
-    <span class="status-badge status-wait" id="presentation-countdown" data-opens-at="{{ turn.opened_at|date:'c' }}" data-presentation-ends-at="{{ turn.presentation_ends_at|date:'c' }}"><i class="bi bi-hourglass-split me-1"></i><span id="presentation-countdown-text">Calculating countdown…</span></span>
+      <span class="status-badge status-wait" id="presentation-countdown" role="timer" aria-label="Voting opens in" aria-live="off" data-opens-at="{{ turn.opened_at|date:'c' }}" data-presentation-ends-at="{{ turn.presentation_ends_at|date:'c' }}"><i class="bi bi-hourglass-split me-1"></i><span id="presentation-countdown-text">Calculating countdown…</span></span>
     {% else %}<span class="status-badge status-wait"><i class="bi bi-pause-circle me-1"></i>Voting is closed</span>{% endif %}
     {% if group_categories %}
     <div class="criteria-preview mt-4">
       <div class="fw-bold mb-2"><i class="bi bi-list-check me-1"></i>Criteria to listen for</div>
-      {% for cat in group_categories %}<div class="small text-muted py-1">{{ cat.name }}{% if cat.description %} — {{ cat.description }}{% endif %}</div>{% endfor %}
-      {% if individual_categories %}<div class="fw-bold mb-2 mt-2"><i class="bi bi-person-check me-1"></i>Individual criteria</div>{% for cat in individual_categories %}<div class="small text-muted py-1">{{ cat.name }}{% if cat.description %} — {{ cat.description }}{% endif %}</div>{% endfor %}{% endif %}
+      {% for cat in group_categories %}<div class="small text-muted py-1">{{ cat.name }}{% if cat.description %} - {{ cat.description }}{% endif %}</div>{% endfor %}
+      {% if individual_categories %}<div class="fw-bold mb-2 mt-2"><i class="bi bi-person-check me-1"></i>Individual criteria</div>{% for cat in individual_categories %}<div class="small text-muted py-1">{{ cat.name }}{% if cat.description %} - {{ cat.description }}{% endif %}</div>{% endfor %}{% endif %}
     </div>
     {% endif %}
   </div>
@@ -195,12 +199,13 @@
     <span id="progress-label">0 scored</span>
     <span id="progress-pct">0%</span>
   </div>
-  <div class="eval-progress-track"><div class="eval-progress-fill" id="progress-fill"></div></div>
+  <div class="eval-progress-track" id="evaluation-progress" role="progressbar" aria-label="Scoring progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0 percent complete"><div class="eval-progress-fill" id="progress-fill"></div></div>
 </div>
 
 <form method="post" id="eval-form" class="fade-in" data-turn-id="{{ turn.pk }}">
   {% csrf_token %}
   <input type="hidden" name="turn_id" value="{{ turn.pk }}">
+  <input type="hidden" name="submission_key" value="{{ submission_key }}">
 
   {% if group_categories %}
   <div class="s-card stagger-in">
@@ -213,18 +218,23 @@
     {% for cat in group_categories %}
     <div class="category-block" data-answer-block>
       <div class="d-flex align-items-center justify-content-between">
-        <div class="category-name">{{ cat.name }}</div>
+        <label class="category-name" for="group_{{ cat.pk }}"><span class="visually-hidden">Score for {{ turn.group.name }}: </span>{{ cat.name }}</label>
         <i class="bi bi-check-circle-fill category-check"></i>
       </div>
       {% if cat.description %}<div class="category-desc">{{ cat.description }}</div>{% endif %}
       <div class="score-input-row">
-        <input type="range" min="0" max="{{ cat.weight|stringformat:'f' }}" step="0.5" value="0"
-               data-score-slider data-pair="group_{{ cat.pk }}">
+        <input type="range" id="group-slider-{{ cat.pk }}" min="0" max="{{ cat.weight|stringformat:'f' }}" step="0.5" value="0"
+               aria-label="Adjust {{ cat.name }} score for {{ turn.group.name }} with slider" {% if cat.level_descriptors.all %}aria-describedby="group-levels-{{ cat.pk }}"{% endif %} data-score-slider data-pair="group_{{ cat.pk }}">
         <input type="number" class="score-num" min="0" max="{{ cat.weight|stringformat:'f' }}" step="0.01" value="0"
-               name="group_{{ cat.pk }}" data-score-num id="group_{{ cat.pk }}">
+               name="group_{{ cat.pk }}" data-score-num id="group_{{ cat.pk }}" {% if cat.level_descriptors.all %}aria-describedby="group-levels-{{ cat.pk }}"{% endif %}>
       </div>
+      {% if cat.level_descriptors.all %}
+      <ul class="score-level-guidance" id="group-levels-{{ cat.pk }}" aria-label="Score level guidance for {{ cat.name }}">
+        {% for level in cat.level_descriptors.all %}<li><strong>{{ level.score|floatformat:"-2" }} points</strong><span>{{ level.description }}</span></li>{% endfor %}
+      </ul>
+      {% endif %}
       <div class="d-flex align-items-center justify-content-between s-text-xs mt-1">
-        <span class="category-error"><i class="bi bi-exclamation-circle-fill"></i>Grade this category</span>
+        <span class="category-error" id="group-error-{{ cat.pk }}" role="status" aria-live="polite"><i class="bi bi-exclamation-circle-fill"></i>Grade this category</span>
         <span class="text-muted ms-auto">out of {{ cat.weight|floatformat:"-2" }}</span>
       </div>
     </div>
@@ -240,6 +250,17 @@
     </div>
     <p class="text-muted mb-3 s-text-sm">Rate each teammate's own contribution.</p>
 
+    {% for cat in individual_categories %}
+    {% if cat.level_descriptors.all %}
+    <div class="individual-level-guidance mb-3">
+      <div class="category-name s-text">{{ cat.name }} score guidance</div>
+      <ul class="score-level-guidance" id="individual-levels-{{ cat.pk }}" aria-label="Score level guidance for {{ cat.name }}">
+        {% for level in cat.level_descriptors.all %}<li><strong>{{ level.score|floatformat:"-2" }} points</strong><span>{{ level.description }}</span></li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {% endfor %}
+
     {% for membership in teammates %}
     <div class="mb-3 pb-2 {% if not forloop.last %}border-bottom{% endif %}">
       <div class="d-flex align-items-center gap-2 mb-2">
@@ -249,18 +270,18 @@
       {% for cat in individual_categories %}
       <div class="category-block py-2" data-answer-block>
         <div class="d-flex align-items-center justify-content-between">
-          <div class="category-name s-text">{{ cat.name }}</div>
+        <label class="category-name s-text" for="ind_{{ membership.student.pk }}_{{ cat.pk }}"><span class="visually-hidden">Score for {{ membership.student.full_name|default:membership.student.student_id }}: </span>{{ cat.name }}</label>
           <i class="bi bi-check-circle-fill category-check"></i>
         </div>
         <div class="score-input-row">
-          <input type="range" min="0" max="{{ cat.weight|stringformat:'f' }}" step="0.5" value="0"
-                 data-score-slider data-pair="ind_{{ membership.student.pk }}_{{ cat.pk }}">
+          <input type="range" id="ind-slider-{{ membership.student.pk }}-{{ cat.pk }}" min="0" max="{{ cat.weight|stringformat:'f' }}" step="0.5" value="0"
+                 aria-label="Adjust {{ cat.name }} score for {{ membership.student.full_name|default:membership.student.student_id }} with slider" {% if cat.level_descriptors.all %}aria-describedby="individual-levels-{{ cat.pk }}"{% endif %} data-score-slider data-pair="ind_{{ membership.student.pk }}_{{ cat.pk }}">
           <input type="number" class="score-num" min="0" max="{{ cat.weight|stringformat:'f' }}" step="0.01" value="0"
                  name="ind_{{ membership.student.pk }}_{{ cat.pk }}" data-score-num
-                 id="ind_{{ membership.student.pk }}_{{ cat.pk }}">
+                 id="ind_{{ membership.student.pk }}_{{ cat.pk }}" {% if cat.level_descriptors.all %}aria-describedby="individual-levels-{{ cat.pk }}"{% endif %}>
         </div>
         <div class="d-flex align-items-center justify-content-between s-text-xs mt-1">
-          <span class="category-error"><i class="bi bi-exclamation-circle-fill"></i>Grade this category</span>
+          <span class="category-error" id="ind-error-{{ membership.student.pk }}-{{ cat.pk }}" role="status" aria-live="polite"><i class="bi bi-exclamation-circle-fill"></i>Grade this category</span>
           <span class="text-muted ms-auto">out of {{ cat.weight|floatformat:"-2" }}</span>
         </div>
       </div>
@@ -270,7 +291,7 @@
   </div>
   {% endif %}
 
-  <div class="eval-validation-msg" id="eval-validation-msg">
+  <div class="eval-validation-msg" id="eval-validation-msg" role="alert" aria-live="assertive" tabindex="-1">
     <i class="bi bi-exclamation-circle-fill"></i>
     <span id="eval-validation-text">Please score every category before submitting - jumping you to the first one you missed.</span>
   </div>
@@ -338,7 +359,7 @@
 
 {% block scripts %}
 <script nonce="{{ csp_nonce }}">
-// Rotating, reassuring copy under the waiting-room illustration — keeps a
+// Rotating, reassuring copy under the waiting-room illustration - keeps a
 // student engaged with something true and useful rather than a static
 // sentence (or, worse, a spinner implying a load that isn't happening).
 (function () {
@@ -365,7 +386,7 @@
 (function () {
   window.DevPerfAssessSocket('/ws/assessments/{{ session.uuid }}/', function (data) {
     if (data.type === 'turn.timer_adjusted') {
-      // The lecturer nudged the countdown — update the display in place.
+      // The lecturer nudged the countdown - update the display in place.
       // Reloading here would wipe out whatever the student had already
       // scored, for a change that doesn't touch the form at all.
       const countdown = document.getElementById('turn-countdown');
@@ -378,18 +399,19 @@
     if (['turn.activated', 'voting.opened', 'turn.closed', 'voting.closed', 'voting.paused', 'session.closed', 'transition.scheduled', 'rubric.changed'].includes(data.type)) {
       // These genuinely change what should be on screen (a different
       // group, grading stopped entirely, or a gap now counting down before
-      // the next group) — a reload is the correct, expected transition
+      // the next group) - a reload is the correct, expected transition
       // here, same as clicking through to a new page. Nothing is lost by
       // it: a student only ever sees `transition.scheduled` while there's
       // no form on screen to lose in the first place.
-      window.location.reload();
+      if (window.LiveGradeCurrentSubmission) window.LiveGradeCurrentSubmission.requestReload();
+      else window.location.reload();
     }
   });
 })();
 
 // Both countdowns below need a CSRF token to ping `check-expiry`, but the
-// waiting-room state (where the transition countdown lives) has no form —
-// and so no `csrfmiddlewaretoken` input — on the page at all. Read it from
+// waiting-room state (where the transition countdown lives) has no form -
+// and so no `csrfmiddlewaretoken` input - on the page at all. Read it from
 // the <meta name="csrf-token"> in the page head instead, which is there on
 // every page regardless of whether a form happens to be present. (The cookie
 // itself is hidden from scripts, so this is the only way in.)
@@ -398,12 +420,22 @@ function csrfHeaders() {
   return meta && meta.content ? { 'X-CSRFToken': meta.content } : {};
 }
 
-// Live "voting closes in mm:ss" — purely a display; the actual close and
+// Live "voting closes in mm:ss" - purely a display; the actual close and
 // move to the next group happens server-side. As a safety net for when no
 // Celery worker is running to catch the scheduled deadline, this client
 // also pings the server the instant its own countdown hits zero, so the
 // transition happens right away rather than only on the next reload.
 let countdownTimer = null;
+function announceTimer(key, label, remaining) {
+  if (![60, 30, 10, 0].includes(remaining)) return;
+  const status = document.getElementById('timer-live-status');
+  if (!status) return;
+  const message = remaining ? `${label} in ${remaining} seconds.` : `${label} now.`;
+  if (status.dataset.lastMessage !== `${key}:${message}`) {
+    status.dataset.lastMessage = `${key}:${message}`;
+    status.textContent = message;
+  }
+}
 function startCountdown() {
   const countdown = document.getElementById('turn-countdown');
   const countdownText = document.getElementById('turn-countdown-text');
@@ -413,12 +445,13 @@ function startCountdown() {
   let notified = false;
   function tick() {
     const remaining = Math.max(0, Math.round((endsAt - Date.now()) / 1000));
+    announceTimer('turn', 'Voting closes', remaining);
     const mins = Math.floor(remaining / 60);
     const secs = remaining % 60;
     countdownText.textContent = remaining > 0
       ? `Closes in ${mins}:${String(secs).padStart(2, '0')}`
       : 'Closing…';
-    // Under 15 seconds left, the badge turns urgent-red — a clear, final
+    // Under 15 seconds left, the badge turns urgent-red - a clear, final
     // nudge to finish scoring before voting closes on its own.
     countdown.classList.toggle('is-urgent', remaining > 0 && remaining <= 15);
     if (remaining > 0) {
@@ -426,7 +459,7 @@ function startCountdown() {
     } else if (!notified) {
       notified = true;
       // Lock the form immediately, client-side, the instant the countdown
-      // hits zero — don't wait for the server's `turn.closed` broadcast to
+      // hits zero - don't wait for the server's `turn.closed` broadcast to
       // reload the page. Without this there's a brief window where a
       // last-second click could still fire a submit that arrives after
       // the deadline (the server rejects it too, per evaluate() in
@@ -441,7 +474,12 @@ function startCountdown() {
       }
       if (submitHint) submitHint.textContent = "Voting has closed. Your completed evaluation, if submitted, was recorded.";
       fetch('{% url "student_check_expiry" session.uuid %}', { method: 'POST', headers: csrfHeaders() })
-        .then(function () { window.location.reload(); });
+        .then(function () {
+          if (window.LiveGradeCurrentSubmission) window.LiveGradeCurrentSubmission.requestReload();
+          else window.location.reload();
+        }).catch(function () {
+          if (window.LiveGradeCurrentSubmission) window.LiveGradeCurrentSubmission.synchronize();
+        });
     }
   }
   tick();
@@ -457,12 +495,18 @@ startCountdown();
   const openAt = opened + (end - opened) * .4;
   function tick() {
     const left = Math.max(0, Math.ceil((openAt - Date.now()) / 1000));
+    announceTimer('presentation', 'Voting opens', left);
     if (left) {
       text.textContent = `Voting opens in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
       setTimeout(tick, 1000);
     } else {
       fetch('{% url "student_check_expiry" session.uuid %}', { method: 'POST', headers: csrfHeaders() })
-        .then(function () { window.location.reload(); });
+        .then(function () {
+          if (window.LiveGradeCurrentSubmission) window.LiveGradeCurrentSubmission.requestReload();
+          else window.location.reload();
+        }).catch(function () {
+          if (window.LiveGradeCurrentSubmission) window.LiveGradeCurrentSubmission.synchronize();
+        });
     }
   }
   tick();
@@ -479,6 +523,7 @@ startCountdown();
   let notified = false;
   function tick() {
     const remaining = Math.max(0, Math.round((resumesAt - Date.now()) / 1000));
+    announceTimer('transition', 'The next group starts', remaining);
     countdownText.textContent = remaining > 0 ? `Starts in ${remaining}s` : 'Starting…';
     if (remaining > 0) {
       setTimeout(tick, 1000);
@@ -492,60 +537,30 @@ startCountdown();
 
 // Paired slider + numeric input, live per-category "answered" state, an
 // overall progress bar, and a submit button that only unlocks once every
-// category has actually been touched — an untouched slider defaulting to 0
+// category has actually been touched - an untouched slider defaulting to 0
 // no longer counts as a real score.
 (function () {
   const blocks = document.querySelectorAll('[data-answer-block]');
   if (!blocks.length) return;
 
   const fill = document.getElementById('progress-fill');
+  const progressBar = document.getElementById('evaluation-progress');
   const pctLabel = document.getElementById('progress-pct');
   const countLabel = document.getElementById('progress-label');
   const submitBtn = document.getElementById('submit-btn');
   const submitHint = document.getElementById('submit-hint');
   const total = blocks.length;
 
-  // Scores in progress are drafted to localStorage keyed by turn, so a
-  // lecturer pausing mid-vote doesn't wipe out what a student already
-  // scored: pausing/resuming freezes the same turn rather than creating a
-  // new one (see `pause_timer`/`resume_timer`), but the page still does a
-  // full reload on both the pause and resume websocket events — which
-  // would otherwise reset every slider back to blank. Keyed by turn id, so
-  // a genuinely new group (a new turn) never inherits a stale draft.
   const form = document.getElementById('eval-form');
-  const draftKey = form && form.dataset.turnId ? 'devperf-eval-draft-' + form.dataset.turnId : null;
-
-  function loadDraft() {
-    if (!draftKey) return {};
-    try { return JSON.parse(localStorage.getItem(draftKey) || '{}'); } catch (e) { return {}; }
-  }
+  const transport = window.LiveGradeCurrentSubmission;
+  const draft = transport ? transport.scores : {};
   function saveDraft() {
-    if (!draftKey) return;
     const data = {};
-    // Only blocks actually marked answered — every category's number input
-    // sits at a real "0" by default whether touched or not, so dumping
-    // every input regardless would make an untouched category
-    // indistinguishable from someone genuinely scoring it 0, and restore it
-    // as "answered" the same way.
     document.querySelectorAll('[data-answer-block].is-answered [data-score-num]').forEach(function (input) {
       data[input.name] = input.value;
     });
-    try { localStorage.setItem(draftKey, JSON.stringify(data)); } catch (e) { /* private mode, quota, etc. */ }
+    if (transport) transport.saveScores(data);
   }
-  function clearDraft() {
-    if (!draftKey) return;
-    try { localStorage.removeItem(draftKey); } catch (e) {}
-  }
-  // Tidy up drafts left behind by earlier turns on this device — nothing
-  // reads them again once their turn has moved on, so they'd just
-  // accumulate in this browser's storage across a whole session otherwise.
-  try {
-    Object.keys(localStorage).forEach(function (key) {
-      if (key.indexOf('devperf-eval-draft-') === 0 && key !== draftKey) localStorage.removeItem(key);
-    });
-  } catch (e) {}
-
-  const draft = loadDraft();
 
   function updateProgress() {
     const answered = document.querySelectorAll('[data-answer-block].is-answered').length;
@@ -556,6 +571,10 @@ startCountdown();
     }
     if (pctLabel) pctLabel.textContent = pct + '%';
     if (countLabel) countLabel.textContent = answered + ' of ' + total + ' scored';
+    if (progressBar) {
+      progressBar.setAttribute('aria-valuenow', String(pct));
+      progressBar.setAttribute('aria-valuetext', answered + ' of ' + total + ' criteria scored');
+    }
     if (submitHint) submitHint.textContent = answered < total
       ? 'Complete all fields before submitting'
       : "All set - you're ready to submit";
@@ -580,6 +599,15 @@ startCountdown();
     function markAnswered() {
       block.classList.add('is-answered');
       block.classList.remove('is-flagged');
+      const errorId = block.querySelector('.category-error')?.id;
+      [slider, num].forEach(function (control) {
+        control.removeAttribute('aria-invalid');
+        if (errorId) {
+          const ids = (control.getAttribute('aria-describedby') || '').split(/\s+/).filter(id => id && id !== errorId);
+          if (ids.length) control.setAttribute('aria-describedby', ids.join(' '));
+          else control.removeAttribute('aria-describedby');
+        }
+      });
       updateProgress();
       saveDraft();
     }
@@ -598,7 +626,7 @@ startCountdown();
       markAnswered();
     });
     num.addEventListener('input', function () {
-      // Clamp live while typing — a manual "15" on a /10 category never
+      // Clamp live while typing - a manual "15" on a /10 category never
       // reaches the slider (or the server) as an out-of-range value.
       const value = clampToRange(num);
       if (value === null) return;
@@ -616,7 +644,7 @@ startCountdown();
   // A number input that still has logical focus after its on-screen
   // keyboard was dismissed (tapping elsewhere doesn't blur it on some mobile
   // browsers) pops the keyboard right back up the next time any other
-  // control on the page is touched — including a different category's
+  // control on the page is touched - including a different category's
   // slider. Explicitly blur it as soon as a touch/click lands anywhere else.
   document.addEventListener('pointerdown', function (e) {
     const active = document.activeElement;
@@ -633,7 +661,7 @@ startCountdown();
       // button above: re-verify every category on the actual submit
       // attempt (covers any edge case where the button's state and
       // reality have drifted), and if something's still unscored, fail
-      // gracefully instead of silently doing nothing — flag it, scroll to
+      // gracefully instead of silently doing nothing - flag it, scroll to
       // it, and say so, rather than just leaving the button disabled with
       // no feedback.
       const unanswered = Array.prototype.filter.call(blocks, function (block) {
@@ -655,19 +683,32 @@ startCountdown();
           // failed attempt.
           void block.offsetWidth;
           block.classList.add('is-flagged');
+          const errorId = block.querySelector('.category-error')?.id;
+          block.querySelectorAll('[data-score-slider], [data-score-num]').forEach(function (control) {
+            control.setAttribute('aria-invalid', 'true');
+            if (errorId) {
+              const ids = new Set((control.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean));
+              ids.add(errorId);
+              control.setAttribute('aria-describedby', Array.from(ids).join(' '));
+            }
+          });
         });
-        unanswered[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        unanswered[0].scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' });
         return;
       }
       if (validationMsg) validationMsg.classList.remove('is-visible');
       if (submitBtn) submitBtn.classList.add('btn-loading');
       stopGradingHeartbeat();
-      clearDraft(); // submitted — nothing left to resume into on a future reload
+      if (transport) {
+        e.preventDefault();
+        transport.submit(Array.from(new FormData(form).entries()));
+      }
     });
   }
 
-  // Lets the lecturer's Participation tab show "grading now" — and how far
-  // along — before this student ever hits submit. Fire once immediately so
+  // Lets the lecturer's Participation tab show "grading now" - and how far
+  // along - before this student ever hits submit. Fire once immediately so
   // it shows up right away, then every 6s while the form stays open; a
   // student who navigates away or finishes just stops pinging and the
   // lecturer's UI ages the indicator out a few seconds later on its own.

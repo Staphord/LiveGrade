@@ -12,7 +12,7 @@
     <span class="rank-badge rank-{{ row.rank }}">
       {% if row.rank == 1 %}<i class="bi bi-trophy-fill"></i>
       {% elif row.rank == 2 or row.rank == 3 %}<i class="bi bi-award-fill"></i>
-      {% else %}{{ row.rank }}{% endif %}
+      {% else %}{{ row.rank|default_if_none:'-' }}{% endif %}
     </span>
     <div class="rank-body">
       <div class="rank-top">
@@ -21,11 +21,11 @@
           {% if row.is_active %}<span class="rank-live-tag"><span class="pulse-dot"></span>Presenting</span>{% endif %}
         </span>
         <span class="rank-score">
-          {% if row.percent is not None %}{{ row.percent }}%{% else %}<span class="text-muted t-micro">no votes yet</span>{% endif %}
+          {% if row.percent is not None %}{{ row.percent }} / {{ group_points_max }}{% else %}<span class="text-muted t-micro">no votes yet</span>{% endif %}
         </span>
       </div>
       {% if row.percent is not None %}
-      <div class="rank-bar"><div class="rank-bar-fill" style="width:{% widthratio row.percent session.group_weight_total 100 %}%"></div></div>
+      <div class="rank-bar"><div class="rank-bar-fill" style="width:{% widthratio row.percent group_points_max 100 %}%"></div></div>
       {% endif %}
     </div>
     <span class="rank-votes text-muted t-micro"><i class="bi bi-person-check me-1"></i>{{ row.votes }}</span>

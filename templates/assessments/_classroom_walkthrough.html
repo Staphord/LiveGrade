@@ -1,0 +1,55 @@
+<section class="card border-primary-subtle mb-4" aria-labelledby="classroom-walkthrough-title"
+         data-classroom-walkthrough>
+  <div class="card-body">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+      <div class="flex-grow-1">
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <i class="bi bi-signpost-split text-primary" aria-hidden="true"></i>
+          <h2 class="h5 mb-0" id="classroom-walkthrough-title">Your first Classroom session</h2>
+        </div>
+        {% if classroom_walkthrough.completed %}
+        <p class="mb-2" role="status">Walkthrough complete. Your first session is live; share its QR code with learners.</p>
+        {% else %}
+        <p class="text-muted mb-2">Follow these steps on the real session pages. Your progress is saved as you work.</p>
+        {% endif %}
+        <div class="progress mb-3" role="progressbar" aria-label="First session setup progress"
+             aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ classroom_walkthrough.progress_percent }}">
+          <div class="progress-bar" style="width:{{ classroom_walkthrough.progress_percent }}%"></div>
+        </div>
+        <ol class="list-group list-group-numbered mb-3">
+          {% for step in classroom_walkthrough.steps %}
+          <li class="list-group-item d-flex align-items-center gap-2 {% if step.number == classroom_walkthrough.current_step and not classroom_walkthrough.completed %}list-group-item-primary{% endif %}"
+              {% if step.number == classroom_walkthrough.current_step and not classroom_walkthrough.completed %}aria-current="step"{% endif %}>
+            {% if step.done %}<i class="bi bi-check-circle-fill text-success" aria-label="Complete"></i>{% endif %}
+            <span>{{ step.title }}</span>
+          </li>
+          {% endfor %}
+        </ol>
+        {% if classroom_walkthrough.session_missing %}
+        <p class="alert alert-info mb-2" role="status">The draft linked to this walkthrough is no longer available in your current Classroom workspace. You can start a fresh session to continue.</p>
+        {% endif %}
+        {% if not classroom_walkthrough.completed %}
+        <p class="fw-semibold mb-2">Step {{ classroom_walkthrough.current_step }} of 4: {{ classroom_walkthrough.current_title }}</p>
+        <p class="text-muted mb-3">
+          {% if classroom_walkthrough.current_step == 1 %}Give the session a name and choose how learners will identify themselves.
+          {% elif classroom_walkthrough.current_step == 2 %}Add learners and create their presentation groups. Review the import preview before applying a roster.
+          {% elif classroom_walkthrough.current_step == 3 %}Add scoring criteria and make their weights total 100 points.
+          {% else %}Review the setup, then use the session page to confirm when you are ready to go live.{% endif %}
+        </p>
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+          <a class="btn btn-primary" href="{{ classroom_walkthrough.current_action_url }}">{{ classroom_walkthrough.current_action }}</a>
+          {% if classroom_walkthrough.session and classroom_walkthrough.current_step == 2 %}
+          <a class="btn btn-outline-secondary" href="{% url 'assessment_group_onboarding_sample' %}">Download group and learner sample</a>
+          {% elif classroom_walkthrough.session and classroom_walkthrough.current_step == 3 %}
+          <a class="btn btn-outline-secondary" href="{% url 'assessment_rubric_onboarding_sample' %}">Download rubric sample</a>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+      <form method="post" action="{% url 'assessment_walkthrough_dismiss' %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-sm btn-outline-secondary">{% if classroom_walkthrough.completed %}Dismiss{% else %}End walkthrough{% endif %}</button>
+      </form>
+    </div>
+  </div>
+</section>

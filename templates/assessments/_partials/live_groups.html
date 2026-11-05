@@ -1,6 +1,6 @@
 <div class="group-grid" id="live-groups">
   {% if groups|length > 0 and presented_group_ids|length == groups|length and not active_turn %}
-  {# All groups have presented — single-line clean completion notice #}
+  {# All groups have presented - single-line clean completion notice #}
   <div class="w-100">
     <span class="d-inline-flex align-items-center gap-2 px-3 py-2 rounded-pill bg-success-subtle text-success-emphasis fw-700 t-sm">
       <i class="bi bi-check-circle-fill"></i>All groups have presented
@@ -10,17 +10,17 @@
   {% for group in groups %}
   <div class="group-tile-wrapper position-relative">
     {% if group.pk in presented_group_ids %}
-    {# Already presented — non-interactive, shown greyed out #}
+    {# Already presented - non-interactive, shown greyed out #}
     <div class="group-tile is-presented"
          title="{{ group.name }} has already presented"
          style="cursor:default">
       <span class="tile-num">#{{ forloop.counter }}</span>
-      <span class="tile-name">{{ group.name }}</span>
+      <span class="tile-name">{{ group.name }}{% if group.is_practice %} · Practice{% endif %}</span>
       <span class="tile-status"><i class="bi bi-check-circle-fill"></i></span>
     </div>
 
     {% elif active_turn and active_turn.group_id == group.pk %}
-    {# Currently presenting — disable the tile (already active) #}
+    {# Currently presenting - disable the tile (already active) #}
     <form method="post" action="{% url 'assessment_activate_group' session.pk group.pk %}">
       {% csrf_token %}
       <input type="hidden" name="duration_seconds" class="duration-input" value="{{ session.default_turn_seconds|default:'' }}">
@@ -29,13 +29,13 @@
       <button type="submit" class="group-tile is-active" disabled
               title="Currently presenting">
         <span class="tile-num">#{{ forloop.counter }}</span>
-        <span class="tile-name">{{ group.name }}</span>
+        <span class="tile-name">{{ group.name }}{% if group.is_practice %} · Practice{% endif %}</span>
         <span class="tile-status"><i class="bi bi-broadcast"></i></span>
       </button>
     </form>
 
     {% elif next_up_group and next_up_group.pk == group.pk %}
-    {# Designated as next — fully clickable to start #}
+    {# Designated as next - fully clickable to start #}
     <form method="post" action="{% url 'assessment_activate_group' session.pk group.pk %}" class="activate-group-form"
           {% if active_turn %}
           data-confirm="A group is already presenting. Starting &quot;{{ group.name }}&quot; now will end the current presentation and discard its remaining voting time. Do you want to switch?"
@@ -46,9 +46,9 @@
       <input type="hidden" name="gap_seconds" class="gap-input" value="{{ session.transition_gap_seconds|default:'0' }}">
       <input type="hidden" name="presentation_seconds" class="presentation-input" value="{{ session.default_presentation_seconds|default:'' }}">
       <button type="submit" class="group-tile is-next"
-              title="Up next — click to start presenting">
+              title="Up next - click to start presenting">
         <span class="tile-num">#{{ forloop.counter }}</span>
-        <span class="tile-name">{{ group.name }}</span>
+        <span class="tile-name">{{ group.name }}{% if group.is_practice %} · Practice{% endif %}</span>
         <span class="tile-status"><i class="bi bi-arrow-right-circle-fill"></i></span>
       </button>
     </form>
@@ -59,22 +59,22 @@
       <input type="hidden" name="group_id" value="">
       <button type="submit" class="btn btn-sm p-0 px-1 btn-primary text-white"
               style="font-size:0.7rem;line-height:1.2;border-radius:4px"
-              title="Designated next — click to clear and reset queue order">
+              title="Designated next - click to clear and reset queue order">
         <i class="bi bi-star-fill"></i> Next
       </button>
     </form>
 
     {% else %}
-    {# Not yet presented, not set as next — show a "set as next" prompt only; clicking the tile shows a tooltip #}
+    {# Not yet presented, not set as next - show a "set as next" prompt only; clicking the tile shows a tooltip #}
     <button type="button" class="group-tile group-btn not-next-tile w-100"
             title="Set this group as Next before activating it"
             data-group-name="{{ group.name }}"
             data-set-next-first>
       <span class="tile-num">#{{ forloop.counter }}</span>
-      <span class="tile-name">{{ group.name }}</span>
+      <span class="tile-name">{{ group.name }}{% if group.is_practice %} · Practice{% endif %}</span>
       <span class="tile-status"><i class="bi bi-circle"></i></span>
     </button>
-    {# "Set as next" button — the only action available for groups not yet in line #}
+    {# "Set as next" button - the only action available for groups not yet in line #}
     <form method="post" action="{% url 'assessment_set_next_group' session.pk %}" class="set-next-group-form live-ajax-form"
           style="position:absolute;top:4px;right:4px;z-index:2">
       {% csrf_token %}

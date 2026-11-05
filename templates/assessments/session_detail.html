@@ -3,6 +3,11 @@
 {% block page_title %}{{ session.name }}{% endblock %}
 
 {% block topbar_actions %}
+{% if session and session.service == 'classroom' %}<a href="{% url 'assessment_polls' session.pk %}" class="btn btn-outline-primary btn-sm">Classroom polls</a>{% endif %}
+{% if session and session.service == 'classroom' %}<a href="{% url 'combined_assessment_create' %}?classroom_session={{ session.pk }}" class="btn btn-outline-primary btn-sm">Add Panel grading</a>{% endif %}
+{% if request.service == 'team' %}<a href="{% url 'training_session_competencies' session.pk %}" class="btn btn-outline-secondary btn-sm">Competency outcomes</a>{% endif %}
+{% if session %}<a href="{% url 'assessment_template_save' session.pk %}" class="btn btn-outline-secondary btn-sm">Save as template</a>{% endif %}
+{% if session %}<a href="{% url 'assessment_session_duplicate' session.pk %}" class="btn btn-outline-secondary btn-sm">Duplicate session</a>{% endif %}
 {% if not active_org.public %}<a href="{% url 'assessment_transfer' session.pk %}" class="btn btn-outline-secondary btn-sm">
   <i class="bi bi-arrow-left-right me-1"></i>Transfer ownership
 </a>{% endif %}
@@ -13,7 +18,7 @@
 
 {% block extra_css %}
 <style nonce="{{ csp_nonce }}">
-/* Small entrance choreography + a liveness badge for the control panel —
+/* Small entrance choreography + a liveness badge for the control panel -
    scoped here rather than added to base.html's global CSS. */
 @keyframes assess-fade-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .assess-stagger{opacity:0;animation:assess-fade-in var(--motion,.35s) var(--ease,ease) forwards}
@@ -40,11 +45,11 @@
 .group-btn:active{transform:scale(.96)}
 .group-btn:disabled{cursor:default}
 .presenting-panel{transition:background .2s ease}
-/* Small, out-of-the-way confirmation that a silent update just landed —
+/* Small, out-of-the-way confirmation that a silent update just landed -
    bottom corner, low-key, never on top of anything the lecturer is reading
    or about to click, unlike a page-reload's unmistakable full flash. */
 
-/* Presenting hero — a single, unmistakable "what's happening right now"
+/* Presenting hero - a single, unmistakable "what's happening right now"
    band, the way Kahoot/Slido keep one console screen as the source of
    truth instead of splitting live state across equal-weight cards. */
 .presenting-hero{border-radius:var(--radius-card-lg);padding:var(--sp-5);position:relative;overflow:hidden;
@@ -59,7 +64,7 @@
 .hero-kicker{display:inline-flex;align-items:center;gap:.45rem;padding:.35rem .7rem;border-radius:999px;background:rgba(255,255,255,.16);font-size:var(--fs-micro);font-weight:800;text-transform:uppercase;letter-spacing:.07em;margin-bottom:.7rem}
 .phase-chip{display:inline-flex;align-items:center;padding:.3rem .6rem;border-radius:999px;background:rgba(255,255,255,.16);font-weight:800}.phase-chip.is-voting{background:rgba(255,255,255,.28)}
 
-/* Dominant "joined" metric — top-left priority per standard dashboard
+/* Dominant "joined" metric - top-left priority per standard dashboard
    hierarchy: the number a lecturer glances at most goes largest. */
 .metric-hero{display:flex;align-items:center;gap:var(--sp-4)}
 .metric-ring{width:104px;height:104px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;
@@ -73,7 +78,7 @@
 .metric-ring-label span{font-size:var(--fs-micro);color:var(--text-muted);margin-top:.1rem}
 
 /* Shared header used by every card in the participation/invite/controls
-   row — an icon badge + title, the same "labeled section" language the
+   row - an icon badge + title, the same "labeled section" language the
    Live rankings and Live activity cards already use below this row, so
    the whole panel reads as one system instead of this row alone using
    a plain, icon-less ".lbl" text style. */
@@ -83,7 +88,7 @@
      justify-content:center;background:var(--accent-soft);color:var(--accent);font-size:1rem;flex-shrink:0}
 .card-icon-head .title{font-weight:700;font-size:var(--fs-sm);color:var(--ink)}
 
-/* Participation card — the ring carries the headline number, a compact
+/* Participation card - the ring carries the headline number, a compact
    meta row underneath gives it context without competing for attention,
    and "View grid" becomes a real affordance (pill button) instead of a
    plain text link floating under the numbers. */
@@ -95,19 +100,19 @@
      text-decoration:none;transition:background .15s ease,transform .15s ease}
 .pill-link:hover{background:color-mix(in srgb,var(--accent) 20%,var(--accent-soft));transform:translateX(1px);color:var(--accent)}
 
-/* Invite card — the CTA gets real button weight (it's the one action this
+/* Invite card - the CTA gets real button weight (it's the one action this
    card exists for), and the two meta facts collapse into a single tidy
    stat row with a divider instead of stacking as disconnected text lines. */
 .invite-cta{font-weight:600}
 /* A medium-emphasis button (tinted, not outline, not fully solid) for the
-   one action each of these cards exists to offer — "Show QR / link" and
-   "copy" — so it reads as the thing to click rather than blending into
+   one action each of these cards exists to offer - "Show QR / link" and
+   "copy" - so it reads as the thing to click rather than blending into
    the plain outline-secondary buttons used for lower-stakes utility. */
 .btn-accent-soft{background:var(--accent-soft);color:var(--accent);border:1px solid transparent}
 .btn-accent-soft:hover{background:color-mix(in srgb,var(--accent) 22%,var(--accent-soft));color:var(--accent)}
 
 /* Three distinct invite actions (show / copy link / copy image) sit as an
-   equal-width row rather than stacked full-width buttons — Show QR carries
+   equal-width row rather than stacked full-width buttons - Show QR carries
    the medium-emphasis tint since it's the one most people reach for, the
    two copy actions stay as plain outline utility buttons beside it. */
 .invite-btn-row{display:flex;gap:.4rem}
@@ -118,10 +123,10 @@
 .invite-meta-row .sep{width:3px;height:3px;border-radius:50%;background:var(--text-subtle)}
 .invite-meta-row strong{color:var(--ink);font-weight:700}
 
-/* Session controls — pause is the button someone reaches for constantly
+/* Session controls - pause is the button someone reaches for constantly
    through a session, so it gets real (solid) button weight; closing the
    session is irreversible, so per destructive-action guidance it's set
-   apart in its own "danger zone" — a divider, a muted label, and enough
+   apart in its own "danger zone" - a divider, a muted label, and enough
    spacing that a Tab-through or a fast click can't land on it by accident. */
 .control-primary{margin-bottom:var(--sp-3)}
 .live-roster-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.5rem;max-height:13rem;overflow:auto;padding-right:.15rem}
@@ -136,7 +141,7 @@
 
 .group-chip{border-radius:999px!important;padding:.4rem 1rem!important;font-weight:600}
 
-/* Countdown as a shrinking ring, not just digits — same conic-gradient
+/* Countdown as a shrinking ring, not just digits - same conic-gradient
    language as the participation ring (metric-ring), so "time left" and
    "how full is this" read as the same visual system. Readable at a
    glance from the back of a projected room, which plain text isn't. */
@@ -155,12 +160,12 @@
 @keyframes activity-glow{0%{background:var(--accent-soft)}100%{background:transparent}}
 .activity-feed li.is-new{animation:activity-glow 1.6s ease-out}
 
-/* Live rankings — a Kahoot-style "who's winning so far" leaderboard, built
+/* Live rankings - a Kahoot-style "who's winning so far" leaderboard, built
    from whatever's been voted on so far rather than only appearing once
    results are final. Rank badge gets medal treatment for the top 3; every
    other position is just a number, matching Kahoot's own choice to keep
    the mass of the list simple and let the top handful carry the drama. */
-/* Column labels above the rank list — same column widths as .rank-row
+/* Column labels above the rank list - same column widths as .rank-row
    below (30px badge, flexible name/score body, votes column) so the
    header lines up with the rows it's labeling instead of just floating
    above them. */
@@ -192,7 +197,7 @@
 .rank-row.is-active .rank-bar-fill{background:var(--brand-bright)}
 .rank-votes{flex-shrink:0;min-width:4.5rem;text-align:right}
 
-/* A rank that just moved since the last patch gets a brief highlight —
+/* A rank that just moved since the last patch gets a brief highlight -
    the same "just happened" glow language used elsewhere, applied to the
    one place on this panel where movement is the whole point. */
 @keyframes rank-glow{0%{background:var(--accent-soft)}100%{background:transparent}}
@@ -207,7 +212,7 @@
 .custom-duration{display:flex;align-items:center;gap:.35rem}
 .custom-duration input{width:4.5rem}
 
-/* Select-next-group card — the two timer settings collapse into one
+/* Select-next-group card - the two timer settings collapse into one
    bordered panel (icon-labeled, divided, each with its own helper line
    and a "Saved" confirmation) instead of floating text+buttons with no
    description of what they actually do. The explanatory paragraph below
@@ -244,7 +249,7 @@
 .group-picker-legend .legend-dot.next{background:var(--accent)}
 
 /* Card header carries a collapsible settings toggle instead of always-on
-   controls — the one thing this card exists for (picking who presents
+   controls - the one thing this card exists for (picking who presents
    next) gets full visual priority; timer/gap configuration is occasional
    and now reads as a one-line summary until someone opens it. */
 .turn-card-head{display:flex;align-items:center;justify-content:space-between;gap:.6rem;flex-wrap:wrap;margin-bottom:var(--sp-3)}
@@ -253,7 +258,7 @@
 .turn-settings-toggle[aria-expanded="true"] .toggle-caret{transform:rotate(180deg)}
 .turn-settings-strip.is-collapsed{display:none}
 
-/* Progress toward "everyone has presented" — the single number a
+/* Progress toward "everyone has presented" - the single number a
    lecturer actually tracks across a session, given its own slim bar
    instead of being left implicit in a legend dot count. */
 .group-progress{display:flex;align-items:center;gap:.65rem;margin-bottom:.75rem}
@@ -262,7 +267,7 @@
      transition:width .5s var(--ease,ease)}
 .group-progress-label{font-size:var(--fs-micro);font-weight:700;color:var(--text-muted);white-space:nowrap}
 
-/* Groups as a real tile grid — Kahoot's own "pick a team" screen gives
+/* Groups as a real tile grid - Kahoot's own "pick a team" screen gives
    each state (already went / up next / presenting now) a genuinely
    different tile treatment rather than one pill shape with a small icon
    swap, so the room's status reads at a glance from across a projector. */
@@ -287,7 +292,7 @@
 .group-tile.is-next{animation:tile-next-pulse 1.8s ease-in-out infinite}
 #setNextFirstModal{z-index:1090}#setNextFirstModal + .modal-backdrop{z-index:1080}
 
-/* Live activity feed — a compact timeline of what's actually happened in
+/* Live activity feed - a compact timeline of what's actually happened in
    this room so far, the same "recent events" pattern used elsewhere in the
    app (integrations/health.html), scaled down for a sidebar card. */
 .activity-feed{list-style:none;margin:0;padding:0}
@@ -347,7 +352,7 @@
 {% if session.status == 'live' %}
 <!-- The one console: what's happening right now, always the first thing seen.
      Each numbered block below is also its own partial template, fetched as
-     JSON and patched in place after a websocket event — see the scripts
+     JSON and patched in place after a websocket event - see the scripts
      block. Nothing here reloads the page for a routine update any more. -->
 {% include 'assessments/_partials/live_hero.html' %}
 {% include 'assessments/_partials/live_stats.html' %}
@@ -391,6 +396,15 @@
             <span class="title">Session controls</span>
           </div>
         </div>
+        {% if session.service == 'classroom' %}
+        <form method="post" action="{% url 'assessment_leaderboard_scores' session.pk %}" id="public-score-control" class="mb-3">
+          {% csrf_token %}
+          <p class="small mb-2">Public rankings update after each group finishes. Numeric scores are hidden by default.</p>
+          <input type="hidden" name="action" value="{% if session.public_leaderboard_show_scores %}hide{% else %}show{% endif %}">
+          <button class="btn btn-outline-primary w-100" type="submit" aria-pressed="{{ session.public_leaderboard_show_scores|yesno:'true,false' }}">{% if session.public_leaderboard_show_scores %}Hide public scores{% else %}Show public scores{% endif %}</button>
+          <span id="public-score-feedback" class="small" role="status"></span>
+        </form>
+        {% endif %}
         <div class="control-primary">
           {% include 'assessments/_partials/live_pause_button.html' %}
         </div>
@@ -443,7 +457,7 @@
       <div class="turn-setting-field">
         <div class="turn-setting-head">
           <span class="turn-setting-label"><i class="bi bi-camera-video"></i>Presentation time</span>
-          <span class="turn-setting-sub">Target duration for the group's actual presentation — shown as an on-screen countdown. Does not auto-close anything.</span>
+          <span class="turn-setting-sub">Target duration for the group's actual presentation - shown as an on-screen countdown. Does not auto-close anything.</span>
         </div>
         <div class="turn-setting-controls">
           <div class="btn-group btn-group-sm" role="group" id="pres-picker">
@@ -533,7 +547,7 @@
 <div class="row g-3 mb-3">
   <div class="col-lg-7">
     <!-- Provisional standings, computed off whatever votes are in right
-         now — the "who's winning so far" a Kahoot-style leaderboard gives
+         now - the "who's winning so far" a Kahoot-style leaderboard gives
          between rounds, kept live via the same silent patch as everything
          else on this panel rather than only ever appearing in Results. -->
     <div class="card assess-stagger h-100">
@@ -548,7 +562,7 @@
   </div>
 
   <div class="col-lg-5">
-    <!-- Live activity — real history from this room, not a placeholder
+    <!-- Live activity - real history from this room, not a placeholder
          widget: each row is an actual closed turn, so the panel earns its
          "live" label instead of just echoing the setup counters above. -->
     <div class="card assess-stagger h-100">
@@ -571,7 +585,7 @@
   </a>
 </div>
 
-<!-- Session summary — the same stat strip, leaderboard and activity feed
+<!-- Session summary - the same stat strip, leaderboard and activity feed
      already built for the live control panel above, just handed the
      session's final numbers instead of a mid-session snapshot, so closing
      a session doesn't drop a lecturer onto a screen with nothing on it but
@@ -637,7 +651,7 @@
 {% block scripts %}
 {% if session.status == 'live' %}
 <script nonce="{{ csp_nonce }}">
-// The live control panel updates itself in place — a websocket push (or a
+// The live control panel updates itself in place - a websocket push (or a
 // lecturer's own click) triggers a small JSON fetch, and only the specific
 // fragments that changed get swapped in. No full-page reload for anything
 // short of the session actually closing, so scroll position, the duration
@@ -681,7 +695,7 @@
   }
 
   // Re-attach the pieces of behaviour that live inside a fragment every
-  // time that fragment's DOM is replaced — event listeners on the old
+  // time that fragment's DOM is replaced - event listeners on the old
   // nodes are gone the moment outerHTML swaps them out.
   function initCountdown() {
     const countdown = document.getElementById('turn-countdown');
@@ -697,14 +711,14 @@
       countdownText.textContent = remaining > 0
         ? `Voting closes in ${mins}:${String(secs).padStart(2, '0')}`
         : 'Closing…';
-      // Under 15 seconds left, the countdown turns urgent-red — a clear
+      // Under 15 seconds left, the countdown turns urgent-red - a clear
       // signal on the control panel too, not just for students.
       countdown.classList.toggle('is-urgent', remaining > 0 && remaining <= 15);
       if (remaining > 0) {
         setTimeout(tick, 1000);
       } else if (!notifiedExpiry) {
         // Nudge the transition to happen right now instead of waiting on a
-        // Celery worker that might not be running — harmless if one beats
+        // Celery worker that might not be running - harmless if one beats
         // us to it, this is just a defensive, idempotent check.
         notifiedExpiry = true;
         fetch('{% url "student_check_expiry" session.uuid %}', { method: 'POST', headers: csrfHeaders() })
@@ -732,7 +746,7 @@
         setTimeout(tick, 1000);
       } else if (!notified) {
         // Same self-heal nudge as `initCountdown`/`initTransitionCountdown`
-        // below — without it this phase change only ever happens via the
+        // below - without it this phase change only ever happens via the
         // `open_scheduled_voting` Celery task (if a worker is up) or the
         // next full page load, and the badge just sits on "Opening
         // voting…" forever in between.
@@ -760,7 +774,7 @@
         setTimeout(tick, 1000);
       } else if (!notified) {
         // Voting closes at the 80% mark but the presentation itself runs
-        // to 100% — nothing else on the page was watching that final
+        // to 100% - nothing else on the page was watching that final
         // stretch, so without this ping the turn just sat there "finished"
         // until someone reloaded (`finish_presentation` only fires if a
         // Celery worker is up).
@@ -772,7 +786,7 @@
     tick();
   }
 
-  // Drives the shrinking conic-gradient ring next to the presenting hero —
+  // Drives the shrinking conic-gradient ring next to the presenting hero -
   // the same countdown `initCountdown` renders as text, read as a shape
   // instead, which is legible from across a projected room where digits
   // at this size are not.
@@ -821,7 +835,7 @@
     // Both the voting timer and the gap are saved to the server the
     // instant they're picked, so after a silent patch the highlighted
     // choice should reflect whatever the server just confirmed is
-    // actually saved — not a locally-remembered value that might now be
+    // actually saved - not a locally-remembered value that might now be
     // stale (e.g. another tab, or the lecturer's own save, changed it).
     const freshDurationInput = document.querySelector('.duration-input');
     if (freshDurationInput && window.DevPerfSyncDurationPicker) {
@@ -852,7 +866,7 @@
 
   // Remembers each group's rank from the previous patch, so a swap can
   // tell "this group moved" apart from "the list just re-rendered the
-  // same order" and only flash + arrow the rows that actually changed —
+  // same order" and only flash + arrow the rows that actually changed -
   // the leaderboard-movement cue Kahoot uses to make a live ranking read
   // as alive rather than a static, if-frequently-refreshed, report.
   let lastRanks = null;
@@ -888,6 +902,29 @@
     });
   }
 
+  function applyPublicScores(show) {
+    const form = document.getElementById('public-score-control');
+    if (!form) return;
+    form.elements.action.value = show ? 'hide' : 'show';
+    const button = form.querySelector('button');
+    button.textContent = show ? 'Hide public scores' : 'Show public scores';
+    button.setAttribute('aria-pressed', String(show));
+  }
+  const publicScoreControl = document.getElementById('public-score-control');
+  if (publicScoreControl) publicScoreControl.addEventListener('submit', async function (event) {
+    event.preventDefault();
+    const button = publicScoreControl.querySelector('button');
+    const feedback = document.getElementById('public-score-feedback');
+    button.disabled = true;
+    try {
+      const result = await fetch(publicScoreControl.getAttribute('action'), {method: 'POST', body: new FormData(publicScoreControl), headers: {'X-Requested-With': 'XMLHttpRequest'}});
+      if (!result.ok) throw new Error('Update failed');
+      applyPublicScores((await result.json()).public_show_scores);
+      feedback.textContent = 'Public screen updated.';
+    } catch (_) { feedback.textContent = 'Could not update. Please try again.'; }
+    finally { button.disabled = false; }
+  });
+
   function refreshLiveState() {
     if (refreshing) return;
     refreshing = true;
@@ -895,7 +932,7 @@
       .then(function (res) { return res.json(); })
       .then(function (data) {
         if (data.status !== 'live') {
-          // A structural change (session closed) — the only case still
+          // A structural change (session closed) - the only case still
           // worth a full reload, since the whole layout changes.
           window.location.reload();
           return;
@@ -905,6 +942,7 @@
           const html = data[FRAGMENTS[id]];
           if (el && html !== undefined) el.outerHTML = html;
         });
+        applyPublicScores(data.public_show_scores);
         reapplyLiveGradingState();
         reapplyDurationSelection();
         initCountdown();
@@ -917,7 +955,7 @@
         initPopovers();
         document.body.dispatchEvent(new Event('assess:patched'));
       })
-      .catch(function () { /* transient network hiccup — next event retries */ })
+      .catch(function () { /* transient network hiccup - next event retries */ })
       .finally(function () { refreshing = false; });
   }
 
@@ -934,7 +972,7 @@
     const form = e.target;
     if (!form.matches('.live-ajax-form, .activate-group-form')) return;
     // A form carrying `data-confirm` (e.g. switching the presenting group)
-    // needs overlay.js's confirm dialog to run and resolve first — without
+    // needs overlay.js's confirm dialog to run and resolve first - without
     // this check, this listener fired the AJAX switch immediately on the
     // very first 'submit' event, before Cancel/Switch was ever answered,
     // since preventDefault() in the *other* listener only blocks the
@@ -948,7 +986,7 @@
   });
 
   // Briefly swaps a button's icon+label for a checkmark confirmation, then
-  // restores it — the same feedback shape regardless of which clipboard
+  // restores it - the same feedback shape regardless of which clipboard
   // write actually happened underneath.
   function flashCopied(btn) {
     const original = btn.innerHTML;
@@ -968,7 +1006,7 @@
 
   // Draws the fetched QR PNG onto a canvas with the caption baked in
   // underneath, so a QR pasted into a chat still tells whoever receives it
-  // what to do — a bare QR image alone doesn't carry that context once it's
+  // what to do - a bare QR image alone doesn't carry that context once it's
   // out of this page. Colors are read from the live design tokens rather
   // than hard-coded, so the composited caption follows the same palette
   // as everything else instead of drifting from it in light vs dark mode.
@@ -1012,7 +1050,7 @@
     const qrBtn = e.target.closest('.copy-qr-btn');
     if (qrBtn) {
       // Copying the QR as an actual image (not just its URL) needs the
-      // async Clipboard API with a real image blob — fall back to opening
+      // async Clipboard API with a real image blob - fall back to opening
       // it in a new tab for browsers/contexts that don't support that
       // (e.g. no ClipboardItem, or a non-secure context).
       fetch(qrBtn.dataset.qrUrl)
@@ -1061,7 +1099,7 @@
 
   if (window.WebSocket) {
     const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const url = `${scheme}://${window.location.host}/ws/assessments/{{ session.uuid }}/`;
+    const url = `${scheme}://${window.location.host}/ws/assessments/{{ session.uuid }}/staff/`;
     let retryTimer = null;
     function connect() {
       const socket = new WebSocket(url);
@@ -1093,7 +1131,7 @@
   initTransitionCountdown();
   initPopovers();
 
-  // Spacebar as a presenter-clicker shortcut — Kahoot/Slido host views
+  // Spacebar as a presenter-clicker shortcut - Kahoot/Slido host views
   // support exactly this so a lecturer running the session from the front
   // of the room doesn't have to walk back to the laptop and aim a cursor.
   // Ends the current turn if one is active, otherwise starts whichever
@@ -1123,8 +1161,8 @@
 (function () {
   const picker = document.getElementById('duration-picker');
 
-  // Settings panel starts collapsed so the card opens on the groups —
-  // the thing actually being decided — with the timer/gap config summed
+  // Settings panel starts collapsed so the card opens on the groups -
+  // the thing actually being decided - with the timer/gap config summed
   // up in one line until someone taps it open to change something.
   const settingsToggle = document.getElementById('turn-settings-toggle');
   const settingsPanel = document.getElementById('turn-settings-panel');
@@ -1153,7 +1191,7 @@
   }
 
   // The voting timer isn't just a value bundled into the next "activate
-  // group" submit — it's the session default, saved the instant it's
+  // group" submit - it's the session default, saved the instant it's
   // chosen (same pattern as the gap picker below), so it sticks for
   // every group activated from here on, not just whichever one happens
   // to be next.
@@ -1184,12 +1222,12 @@
       btn.addEventListener('click', function () { selectSeconds(btn.dataset.seconds, true); });
     });
     // Called after a silent patch to reflect whatever the server confirms
-    // is actually saved — never re-saves, just updates the highlighted
+    // is actually saved - never re-saves, just updates the highlighted
     // choice, so it can't loop back into another fetch.
     window.DevPerfSyncDurationPicker = function (seconds) { selectSeconds(seconds ? String(seconds) : '', false); };
   }
 
-  // Custom minutes — any whole number, not just the five presets. "Set"
+  // Custom minutes - any whole number, not just the five presets. "Set"
   // applies it the same way a preset button does, including deselecting
   // the presets so the picker never shows two conflicting selections.
   const customInput = document.getElementById('custom-duration-minutes');
@@ -1209,11 +1247,11 @@
     });
   }
 
-  // Gap-between-groups picker — same shared-control pattern as the voting
+  // Gap-between-groups picker - same shared-control pattern as the voting
   // timer, but unlike the timer (which only matters for the *next* group
   // someone activates), the gap governs a transition that might already be
   // in flight. So a click here isn't just a local UI preview waiting to be
-  // bundled into the next "activate group" submit — it's saved to the
+  // bundled into the next "activate group" submit - it's saved to the
   // server immediately, via its own small endpoint, so it takes effect on
   // the very next automatic transition even if one is already running.
   const gapPicker = document.getElementById('gap-picker');
@@ -1253,7 +1291,7 @@
       btn.addEventListener('click', function () { selectGapSeconds(btn.dataset.seconds, true); });
     });
     // Called after a silent patch to reflect whatever the server confirms
-    // is actually saved — never re-saves, just updates the highlighted
+    // is actually saved - never re-saves, just updates the highlighted
     // choice, so it can't loop back into another fetch.
     window.DevPerfSyncGapPicker = function (seconds) { selectGapSeconds(String(seconds), false); };
   }
@@ -1275,7 +1313,7 @@
     });
   }
 
-  // Presentation timer picker — informational countdown the group sees on
+  // Presentation timer picker - informational countdown the group sees on
   // the control panel and the public screen. Same instant-save pattern as
   // the voting timer and gap, so a mid-session change takes effect for the
   // group currently presenting without needing a page reload.
@@ -1334,7 +1372,7 @@
     });
   }
 
-  // "Session running for Xm Ys" — a real live clock, not a static number
+  // "Session running for Xm Ys" - a real live clock, not a static number
   // frozen at page load, so the control panel feels alive between updates
   // too. Re-reads the live-stats fragment's data attribute if it was ever
   // replaced, so it never resets to 0 after a silent patch.
@@ -1354,7 +1392,7 @@
   }
   initElapsed();
   // A silent patch replaces #session-elapsed with a fresh element carrying
-  // an up-to-date starting offset from the server — restart the tick for it.
+  // an up-to-date starting offset from the server - restart the tick for it.
   document.body.addEventListener('assess:patched', initElapsed);
 })();
 </script>

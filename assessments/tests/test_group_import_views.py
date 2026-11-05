@@ -34,6 +34,25 @@ class GroupImportFlowTests(LecturerTestCase):
         self.assertEqual(page.context['import_plan']['summary']['new_students'], 2)
         self.assertContains(page, 'Import 1 group')
 
+    def test_two_hundred_roster_rows_preview_row_errors_without_saving_anything(self):
+        rows = [
+            [f'Team {number:03}', f'Learner {number:03}', f'ID-{number:03}', '', '']
+            for number in range(200)
+        ]
+        rows.append(['', 'Learner without a group', 'ID-200', '', ''])
+        before = (PresentationGroup.objects.count(), Student.objects.count(), GroupMembership.objects.count())
+
+        self.upload(*rows)
+        page = self.client.get(self.url('assessment_groups'))
+
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.context['import_plan']['summary']['new_students'], 200)
+        self.assertEqual(page.context['import_plan']['problems'], [
+            [202, 'Members are listed but the group name is empty.']])
+        self.assertContains(page, 'Row 202: Members are listed but the group name is empty.')
+        self.assertEqual((PresentationGroup.objects.count(), Student.objects.count(), GroupMembership.objects.count()),
+                         before)
+
     def test_the_buttons_are_in_the_window_s_header_above_everything_that_scrolls(self):
         self.upload(['Green', 'Eve Fox', 'E1'])
         html = self.client.get(self.url('assessment_groups')).content.decode()
@@ -168,12 +187,12 @@ class LandingPageMatchesTheFlowTests(LecturerTestCase):
         super().setUp()
         self.html = self.client_class().get('/').content.decode()
 
-    def test_the_first_step_imports_groups_and_students_with_no_separate_roster(self):
-        self.assertIn('Create a session and import groups and students.', self.html)
+    def test_the_first_step_helps_people_choose_the_right_workspace(self):
+        self.assertIn('Choose the workspace that matches your activity.', self.html)
         self.assertNotIn('class roster', self.html)
 
-    def test_the_second_step_offers_creating_or_importing_the_rubric(self):
-        self.assertIn('Create or import your rubric.', self.html)
+    def test_the_second_step_explains_setup_at_a_general_level(self):
+        self.assertIn('Set up your entries, participants, criteria, and rules.', self.html)
         self.assertNotIn('Add your rubric and presentation groups', self.html)
 
     def test_there_are_still_four_steps_in_order(self):

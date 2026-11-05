@@ -153,6 +153,23 @@ class RubricImportViewTests(LecturerTestCase):
         page = self.client.get(self.url('assessment_rubric'))
         self.assertContains(page, 'Row 2: Category name is empty.')
 
+    def test_maximum_size_rubric_preview_reports_row_errors_without_saving(self):
+        rows = [[f'Criterion {number:02}', '', 'Group', 1] for number in range(1, 50)]
+        rows.append(['', '', 'Group', 51])
+        before = list(RubricCategory.objects.order_by('pk').values_list(
+            'pk', 'name', 'description', 'scope', 'weight', 'order'))
+        before_count = RubricCategory.objects.count()
+
+        self.upload(*rows)
+        page = self.client.get(self.url('assessment_rubric'))
+
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, 'Row 51: Category name is empty.')
+        self.assertContains(page, '50')
+        self.assertEqual(RubricCategory.objects.count(), before_count)
+        self.assertEqual(list(RubricCategory.objects.order_by('pk').values_list(
+            'pk', 'name', 'description', 'scope', 'weight', 'order')), before)
+
     def test_cancelling_changes_nothing(self):
         self.upload(*GOOD)
         self.client.post(self.url('assessment_rubric_import_preview'), {'action': 'cancel'})

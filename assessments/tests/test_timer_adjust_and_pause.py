@@ -192,27 +192,27 @@ class TimerViewsTests(TestCase):
         original_end = turn.voting_ends_at
 
         response = self.client.post(
-            f'/assessments/{self.session.pk}/adjust-timer/', {'delta_seconds': '30'})
+            f'/classroom/app/{self.session.pk}/adjust-timer/', {'delta_seconds': '30'})
 
-        self.assertRedirects(response, f'/assessments/{self.session.pk}/')
+        self.assertRedirects(response, f'/classroom/app/{self.session.pk}/')
         turn.refresh_from_db()
         self.assertEqual(turn.voting_ends_at, original_end + timedelta(seconds=30))
 
     def test_adjust_timer_view_with_no_active_turn_errors_gracefully(self):
         response = self.client.post(
-            f'/assessments/{self.session.pk}/adjust-timer/', {'delta_seconds': '30'})
+            f'/classroom/app/{self.session.pk}/adjust-timer/', {'delta_seconds': '30'})
         self.assertEqual(response.status_code, 302)  # redirects with an error message, no crash
 
     @patch('assessments.tasks.auto_advance_turn.apply_async')
     def test_pause_then_resume_via_views_preserves_remaining_time(self, mock_apply_async):
         turn = activate_turn(self.session, self.group1, duration_seconds=100)
 
-        self.client.post(f'/assessments/{self.session.pk}/pause/')
+        self.client.post(f'/classroom/app/{self.session.pk}/pause/')
         turn.refresh_from_db()
         self.assertIsNone(turn.voting_ends_at)
         self.assertIsNotNone(turn.paused_remaining_seconds)
 
-        self.client.post(f'/assessments/{self.session.pk}/pause/')  # toggle back = resume
+        self.client.post(f'/classroom/app/{self.session.pk}/pause/')  # toggle back = resume
         turn.refresh_from_db()
         self.assertIsNotNone(turn.voting_ends_at)
         self.assertIsNone(turn.paused_remaining_seconds)

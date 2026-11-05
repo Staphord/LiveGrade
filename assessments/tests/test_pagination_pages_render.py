@@ -39,21 +39,21 @@ class MultiPageRenderTests(TestCase):
             scope=RubricCategory.Scope.GROUP, weight=Decimal('100'))
 
     def test_roster_page_one_renders_with_more_than_one_page(self):
-        response = self.client.get(f'/assessments/{self.session.pk}/roster/')
+        response = self.client.get(f'/classroom/app/{self.session.pk}/roster/')
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Student 00')
 
     def test_participation_page_one_renders_with_more_than_one_page(self):
-        response = self.client.get(f'/assessments/{self.session.pk}/participation/')
+        response = self.client.get(f'/classroom/app/{self.session.pk}/participation/')
         self.assertEqual(response.status_code, 200)
 
     def test_results_page_one_renders_with_more_than_one_page(self):
         for student in self.session.students.all():
             GroupMembership.objects.get_or_create(group=self.group, student=student)
-        response = self.client.get(f'/assessments/{self.session.pk}/results/')
+        response = self.client.get(f'/classroom/app/{self.session.pk}/results/')
         self.assertEqual(response.status_code, 200)
 
     def test_roster_last_page_next_link_does_not_crash(self):
-        response = self.client.get(f'/assessments/{self.session.pk}/roster/?page=2')
+        response = self.client.get(f'/classroom/app/{self.session.pk}/roster/?page=2')
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Student 29')

@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block title %}Session templates - LiveGrade{% endblock %}
+{% block page_title %}Session templates{% endblock %}
+{% block topbar_actions %}<a href="{% url 'assessment_session_create' %}" class="btn btn-primary btn-sm">New session</a>{% endblock %}
+{% block content %}
+<h1 class="h4">Session templates</h1>
+<p>Reuse a rubric and session settings. Every use creates a new draft; add its groups and students before going live.</p>
+<h2 class="h5 mt-4">Your saved templates</h2>
+<div class="row g-3">
+{% for item in saved_templates %}
+  <div class="col-md-6"><article class="card h-100"><div class="card-body">
+    <h3 class="h5">{{ item.name }}</h3><p>{{ item.description }}</p>
+    <ul>{% for category in item.rubric_categories.all %}<li>{{ category.name }} - {{ category.weight|floatformat:'-2' }}% ({{ category.get_scope_display }}){% for level in category.level_descriptors.all %}<div class="text-muted small">{{ level.score|floatformat:'-2' }} points: {{ level.description }}</div>{% endfor %}</li>{% empty %}<li>No criteria saved yet.</li>{% endfor %}</ul>
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-primary" href="{% url 'assessment_session_create' %}?template=saved:{{ item.pk }}">Use template</a>
+      <form method="post" action="{% url 'assessment_template_delete' item.pk %}" data-confirm="Delete this template? Sessions already created from it will be kept." data-confirm-label="Delete template" data-confirm-tone="danger">
+        {% csrf_token %}<button class="btn btn-outline-danger" type="submit">Delete template</button>
+      </form>
+    </div>
+  </div></article></div>
+{% empty %}
+  <p>No saved templates yet. Open one of your sessions and choose Save as template.</p>
+{% endfor %}
+</div>
+{% if starter_templates %}
+<h2 class="h5 mt-4">Classroom starters</h2>
+<p>Example rubrics to adapt to your course. Review the criteria, settings and notice before using them.</p>
+<div class="row g-3">
+{% for item in starter_templates %}
+  <div class="col-md-6"><article class="card h-100"><div class="card-body">
+    <h3 class="h5">{{ item.name }}</h3><p>{{ item.description }}</p>
+    <ul>{% for category in item.categories %}<li>{{ category.name }} - {{ category.weight|floatformat:'-2' }}% ({{ category.scope }})</li>{% endfor %}</ul>
+    <a class="btn btn-outline-primary" href="{% url 'assessment_session_create' %}?template=starter:{{ item.key }}">Use starter</a>
+  </div></article></div>
+{% endfor %}
+</div>
+{% endif %}
+{% endblock %}

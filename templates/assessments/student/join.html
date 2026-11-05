@@ -1,40 +1,44 @@
 {% extends 'assessments/student/_student_base.html' %}
 {% block title %}Join - {{ session.name }}{% endblock %}
-{% block hero_sub %}<span class="pulse-dot"></span>Scan complete - join to grade{% endblock %}
+{% block hero_sub %}{% if joining_closed %}<i class="bi bi-lock-fill" aria-hidden="true"></i>Session is locked{% else %}<span class="pulse-dot"></span>Scan complete - join to grade{% endif %}{% endblock %}
 
 {% block content %}
 <div class="s-center-viewport">
   <div>
     <div class="s-card fade-in text-center">
       <i class="bi bi-qr-code-scan text-primary s-icon-xxl"></i>
+      {% if joining_closed %}
+      <h2 class="fw-800 mt-2 s-h2">Joining is closed</h2>
+      <p class="text-muted mb-4 s-text" id="identifier-help">
+        Joining is closed for this session. Please ask the person running it for help.
+      </p>
+      {% else %}
       <h2 class="fw-800 mt-2 s-h2">You're in!</h2>
-      <p class="text-muted mb-4 s-text">
+      <p class="text-muted mb-4 s-text" id="identifier-help">
         Type {{ field_label }} exactly as it appears on the class roster so we can
         match you and track your participation.
       </p>
 
-      {% if error %}
-      <div class="alert alert-danger py-2 px-3 text-start s-text">
-        <i class="bi bi-exclamation-circle me-1"></i>{{ error }}
-      </div>
-      {% endif %}
+      {% include 'assessments/student/_evaluator_notice.html' %}
 
       <form method="post" class="text-start" id="join-form">
         {% csrf_token %}
-        <label class="form-label fw-600 s-label">{{ field_label|capfirst }}</label>
+        <label class="form-label fw-600 s-label" for="id_identifier">{{ field_label|capfirst }}</label>
         {{ form.identifier }}
-        {% if form.identifier.errors %}
-        <div class="text-danger mt-1 s-text-sm">{{ form.identifier.errors|join:", " }}</div>
+        {% if error or form.identifier.errors %}
+        <div class="text-danger mt-1 s-text-sm" id="identifier-errors" role="alert" aria-live="assertive">
+          {% if form.identifier.errors %}{{ form.identifier.errors|join:", " }}{% else %}{{ error }}{% endif %}
+        </div>
         {% endif %}
         <button type="submit" class="btn btn-primary big-btn w-100 mt-3" id="join-btn" {% if session.joining_locked %}disabled{% endif %}>
           <i class="bi bi-box-arrow-in-right me-1"></i>Join session
         </button>
       </form>
+      {% endif %}
     </div>
 
     <div class="text-center text-muted s-text-xs stagger-in mt-2">
-      <i class="bi bi-shield-check me-1"></i>Your identity is used only to track
-      participation. Your grading stays anonymous.
+      <i class="bi bi-shield-check me-1" aria-hidden="true"></i>This session checks your {% if session.identify_by == 'student_id' %}student ID{% else %}full name{% endif %} against the class roster. The session owner sees participation information and score results without seeing which learner submitted each score.
     </div>
   </div>
 </div>

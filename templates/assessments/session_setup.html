@@ -1,7 +1,11 @@
 {% extends 'base.html' %}
-{% block title %}{% if session %}{{ session.name }} - Setup{% else %}New assessment session{% endif %} - LiveGrade{% endblock %}
-{% block page_title %}{% if session %}{{ session.name }}{% else %}New assessment session{% endif %}{% endblock %}
+{% block title %}{% if session %}{{ session.name }} - Setup{% elif request.service == 'team' %}New Team demo setup{% else %}New assessment session{% endif %} - LiveGrade{% endblock %}
+{% block page_title %}{% if session %}{{ session.name }}{% elif request.service == 'team' %}New Team demo setup{% else %}New assessment session{% endif %}{% endblock %}
 {% block topbar_actions %}
+{% if session and session.service == 'classroom' %}<a href="{% url 'assessment_polls' session.pk %}" class="btn btn-outline-primary btn-sm">Classroom polls</a>{% endif %}
+{% if session and request.service == 'team' and session.training_series_link %}<a href="{% url 'training_session_competencies' session.pk %}" class="btn btn-outline-secondary btn-sm">Competency outcomes</a>{% endif %}
+{% if session %}<a href="{% url 'assessment_template_save' session.pk %}" class="btn btn-outline-secondary btn-sm">Save as template</a>{% endif %}
+{% if session %}<a href="{% url 'assessment_session_duplicate' session.pk %}" class="btn btn-outline-secondary btn-sm">Duplicate session</a>{% endif %}
 {% if session and not active_org.public %}<a href="{% url 'assessment_transfer' session.pk %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left-right me-1"></i>Transfer ownership</a>{% endif %}
 <a href="{% url 'assessment_session_list' %}" class="btn btn-outline-secondary btn-sm">All sessions</a>
 {% endblock %}
@@ -70,16 +74,6 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
      justify-content:center;background:var(--accent-soft);color:var(--accent);font-size:1rem;flex-shrink:0}
 .card-icon-head .title{font-weight:700;font-size:var(--fs-sm);color:var(--ink)}
 .card-icon-head .sub{font-size:var(--fs-micro);color:var(--text-muted)}
-
-/* Import dropzone - reused by the Roster and Groups import cards. */
-.import-dropzone{border:1.5px dashed var(--border-strong);border-radius:var(--radius-card);
-     padding:1.1rem .9rem;text-align:center;transition:border-color .15s ease,background .15s ease;
-     background:var(--surface-sunken);position:relative}
-.import-dropzone.is-dragover{border-color:var(--accent);background:var(--accent-soft)}
-.import-dropzone i.bi-cloud-arrow-up{font-size:1.6rem;color:var(--accent);display:block;margin-bottom:.3rem}
-.import-dropzone .dz-text{font-size:var(--fs-sm);font-weight:600;color:var(--ink)}
-.import-dropzone .dz-filename{font-size:var(--fs-micro);color:var(--text-muted);margin-top:.25rem;min-height:1.1em}
-.import-dropzone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
 
 /* --------------------------------------------------------------- Roster --
    .roster-avatar/.roster-name-cell live in the shared _design_kit.html. */
@@ -288,11 +282,12 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 .dp-notes .warn{color:var(--tone-warn-fg)}
 .dp-table{margin-top:var(--sp-3)}
 </style>
+{% include 'assessments/_partials/import_dropzone_styles.html' %}
 {% endblock %}
 
 {% block content %}
 <a href="{% url 'assessment_session_list' %}" class="back-link">
-  <i class="bi bi-chevron-left"></i>All sessions
+  <i class="bi bi-chevron-left"></i>{% if request.service == 'team' %}Team demos{% else %}All sessions{% endif %}
 </a>
 
 <div class="row g-4">
@@ -310,7 +305,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
            class="stepper-item {% if not session %}is-locked{% elif step_groups_done %}is-done{% elif active_step == 'groups' %}is-current{% endif %}">
           <span class="stepper-dot">{% if step_groups_done %}<i class="bi bi-check-lg"></i>{% else %}2{% endif %}</span>
           <span class="stepper-label">
-            <span class="stepper-title">Groups &amp; students</span>
+            <span class="stepper-title">Groups &amp; {% if request.service == 'team' %}team members{% else %}students{% endif %}</span>
             <span class="stepper-desc">Import or build groups</span>
           </span>
         </a>
@@ -337,6 +332,15 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
   </div>
 
   <div class="col-lg-9">
+    {% if request.service == 'team' and not session %}
+    <div class="alert alert-info" role="note">
+      <strong>Create a reusable Team demo setup.</strong> Add its groups and rubric, then choose <em>Save as template</em> on the session page. Your series will use that template for each demo.
+    </div>
+    {% elif request.service == 'team' and session and not session.training_series_link %}
+    <div class="alert alert-info" role="note">
+      <strong>This session can become your Team template.</strong> Finish its groups and rubric, then choose <em>Save as template</em> in the top actions. Return to your series to create demos from it.
+    </div>
+    {% endif %}
     {% if session and live_mode %}
     <div class="live-edit-banner">
       <div class="d-flex flex-wrap align-items-center gap-2">
@@ -356,23 +360,42 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
           <div class="head-left">
             <span class="icon-badge"><i class="bi bi-signpost-split"></i></span>
             <div>
-              <div class="title">Session basics</div>
-              <div class="sub">Set up the basics, then add your groups and students, then a rubric</div>
+              <div class="title">{% if request.service == 'team' %}Team demo basics{% else %}Session basics{% endif %}</div>
+              <div class="sub">{% if request.service == 'team' %}Name this reusable setup, add your team members, then define the demo rubric.{% else %}Set up the basics, then add your groups and students, then a rubric{% endif %}</div>
             </div>
           </div>
         </div>
-        <form method="post">
+        <form method="get" class="mb-4" id="template-picker-form">
+          <label class="form-label fw-600" for="{{ template_picker.template.id_for_label }}">{{ template_picker.template.label }}</label>
+          <div class="d-flex flex-wrap gap-2 align-items-start">
+            {{ template_picker.template }}
+            <button type="submit" class="btn btn-outline-primary">Load setup</button>
+            <a href="{% url 'assessment_template_list' %}" class="btn btn-link">Manage templates</a>
+          </div>
+          {% for error in template_picker.template.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}
+          <div class="form-text">Loading a template replaces the values below. You can edit them before creating the draft.</div>
+        </form>
+        {% if selected_template %}
+        <section class="mb-4" aria-label="Selected template">
+          <h3 class="h6">{{ selected_template.name }}</h3>
+          <p>{{ selected_template.description }}</p>
+          <ul>{% for category in template_categories %}<li>{{ category.name }} - {{ category.weight|floatformat:'-2' }}% ({{ category.scope }}){% for level in category.level_descriptors %}<div class="text-muted t-micro">{{ level.score|floatformat:'-2' }} points: {{ level.description }}</div>{% endfor %}</li>{% empty %}<li>No rubric criteria saved yet.</li>{% endfor %}</ul>
+        </section>
+        {% endif %}
+        <form method="post" id="new-session-form">
           {% csrf_token %}
+          <input type="hidden" name="template" value="{{ template_selection }}">
+          {% for error in form.non_field_errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}
           <div class="mb-4">
-            <label class="form-label fw-600 t-body">Session name</label>
+            <label class="form-label fw-600 t-body">{% if request.service == 'team' %}Demo setup name{% else %}Session name{% endif %}</label>
             {{ form.name }}
             {% if form.name.errors %}<div class="field-error">{{ form.name.errors|join:", " }}</div>{% endif %}
             <div class="text-muted t-micro mt-1">e.g. "Sprint Demo - Q1 2026" or "Final-Year Project Presentations"</div>
           </div>
           <div class="mb-4">
-            <label class="form-label fw-600 t-body">Identify students by</label>
+            <label class="form-label fw-600 t-body">Identify {% if request.service == 'team' %}team members{% else %}students{% endif %} by</label>
             {{ form.identify_by }}
-            <div class="text-muted t-micro mt-1">Whichever field students type in on their phone to join - pick whatever's on your roster.</div>
+            <div class="text-muted t-micro mt-1">Whichever field {% if request.service == 'team' %}team members{% else %}students{% endif %} type in on their phone to join - pick whatever's on your roster.</div>
           </div>
           <div class="mb-2">
             <label class="form-label fw-600 t-body">{{ form.ungraded_penalty.label }}</label>
@@ -383,8 +406,9 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
             {% if form.ungraded_penalty.errors %}<div class="field-error">{{ form.ungraded_penalty.errors|join:", " }}</div>{% endif %}
             <div class="text-muted t-micro mt-1">Taken off a student's final score for every other group they did not grade. Use 0 for no penalty.{% if live_mode %} Changing it now recalculates everyone's results, including groups that have already presented.{% endif %}</div>
           </div>
+          {% include 'assessments/_partials/instructions_field.html' with field=form.instructions %}
           <div class="d-flex gap-2 mt-4">
-            <button type="submit" class="btn btn-primary"><i class="bi bi-arrow-right-circle me-1"></i>Create session and add groups</button>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-arrow-right-circle me-1"></i>{% if request.service == 'team' %}Create setup and add team members{% else %}Create session and add groups{% endif %}</button>
             <a href="{% url 'assessment_session_list' %}" class="btn btn-outline-secondary">Cancel</a>
           </div>
         </form>
@@ -420,6 +444,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
             {% if form.ungraded_penalty.errors %}<div class="field-error">{{ form.ungraded_penalty.errors|join:", " }}</div>{% endif %}
             <div class="text-muted t-micro mt-1">Taken off a student's final score for every other group they did not grade. Use 0 for no penalty.{% if live_mode %} Changing it now recalculates everyone's results, including groups that have already presented.{% endif %}</div>
           </div>
+          {% include 'assessments/_partials/instructions_field.html' with field=form.instructions %}
           <div class="d-flex gap-2 mt-4">
             <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-1"></i>Save changes</button>
             <a href="{% url 'assessment_session_detail' session.pk %}" class="btn btn-outline-secondary">Cancel</a>
@@ -457,6 +482,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
               <div class="text-muted t-micro mt-1">Taken off a student's final score for every other group they did not grade. Use 0 for no penalty.{% if live_mode %} Changing it now recalculates everyone's results, including groups that have already presented.{% endif %}</div>
             </div>
           </div>
+          {% include 'assessments/_partials/instructions_field.html' with field=basics_form.instructions %}
           <div class="d-flex flex-wrap justify-content-between gap-2 mt-3">
             <button type="submit" class="btn btn-outline-primary btn-sm"><i class="bi bi-check-circle me-1"></i>Save basics</button>
             <a href="#groups-section" data-step="groups" class="btn btn-primary btn-sm step-nav-next">Next: Groups &amp; students</a>
@@ -495,12 +521,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                 </div>
                 <form method="post" action="{% url 'assessment_group_import' session.pk %}" enctype="multipart/form-data" id="group-import-form">
                   {% csrf_token %}
-                  <div class="import-dropzone" id="group-import-dropzone">
-                    <i class="bi bi-cloud-arrow-up"></i>
-                    <div class="dz-text">Choose a file or drag it here</div>
-                    <div class="dz-filename" id="group-import-filename"></div>
-                    {{ group_import_form.file }}
-                  </div>
+                  {% include 'assessments/_partials/import_dropzone.html' with file_field=group_import_form.file dropzone_id='group-import-dropzone' filename_id='group-import-filename' %}
                   <button type="submit" class="btn btn-outline-primary btn-sm mt-2 w-100"><i class="bi bi-eye me-1"></i>Preview import</button>
                 </form>
                 <details class="import-format mt-3" {% if not groups %}open{% endif %}>
@@ -570,6 +591,12 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                       {{ group_form.location }}
                       {% if group_form.location.errors %}<div class="field-error">{{ group_form.location.errors|join:", " }}</div>{% endif %}
                     </div>
+                  </div>
+                  <div class="form-check mt-3">
+                    {{ group_form.is_practice }}
+                    <label class="form-check-label" for="{{ group_form.is_practice.id_for_label }}">Practice presentation</label>
+                    <div class="form-text" id="{{ group_form.is_practice.auto_id }}_helptext">{{ group_form.is_practice.help_text }}</div>
+                    {% for error in group_form.is_practice.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}
                   </div>
                   {% if ungrouped_students %}
                   <label class="form-label t-sm fw-600 mt-3 mb-1" id="group-members-label">Members (optional - add now or later)</label>
@@ -827,12 +854,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                 {# nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token (the csrf_token tag is the next line) #}
                 <form method="post" action="{% url 'assessment_rubric_import' session.pk %}" enctype="multipart/form-data" id="rubric-import-form">
                   {% csrf_token %}
-                  <div class="import-dropzone" id="rubric-import-dropzone">
-                    <i class="bi bi-cloud-arrow-up"></i>
-                    <div class="dz-text">Choose a file or drag it here</div>
-                    <div class="dz-filename" id="rubric-import-filename"></div>
-                    {{ rubric_import_form.file }}
-                  </div>
+                  {% include 'assessments/_partials/import_dropzone.html' with file_field=rubric_import_form.file dropzone_id='rubric-import-dropzone' filename_id='rubric-import-filename' %}
                   <div class="rubric-import-modes mt-2">
                     {% for radio in rubric_import_form.mode %}
                     <label class="form-check t-sm">{{ radio.tag }} <span class="form-check-label">{{ radio.choice_label }}</span></label>
@@ -844,10 +866,10 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                   <summary>What should the file look like?</summary>
                   <div class="table-responsive mt-2">
                     <table class="table table-sm import-format-table mb-2">
-                      <thead><tr><th>Category</th><th>Description</th><th>Scope</th><th>Weight %</th></tr></thead>
+                      <thead><tr><th>Category</th><th>Description</th><th>Scope</th><th>Weight %</th><th>Level descriptors</th></tr></thead>
                       <tbody>
-                        <tr><td>Technical depth</td><td>Quality of the solution</td><td>Group</td><td>30</td></tr>
-                        <tr><td>Teamwork</td><td>This student's part</td><td>Individual</td><td>40</td></tr>
+                        <tr><td>Technical depth</td><td>Quality of the solution</td><td>Group</td><td>30</td><td>0 | Not demonstrated<br>15 | Partly demonstrated<br>30 | Fully demonstrated</td></tr>
+                        <tr><td>Teamwork</td><td>This student's part</td><td>Individual</td><td>40</td><td>0 | No clear contribution<br>40 | Strong individual contribution</td></tr>
                       </tbody>
                     </table>
                   </div>
@@ -855,6 +877,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                     <li><strong>Scope</strong> is Group or Individual.</li>
                     <li>Weights add up to exactly <strong>100%</strong> across all categories. Split them between group and individual however you like (87 and 13, for example).</li>
                     <li>A student scores each category from 0 up to its weight. Description is optional.</li>
+                    <li>Optional level descriptors use one line per anchor: <code>point value | guidance</code>. Point values must be unique and within that category’s score range.</li>
                     <li>You review everything, and any weight problem, before it is saved.</li>
                   </ul>
                   <a href="{% url 'assessment_rubric_import_sample' session.pk %}" class="btn btn-sm btn-link p-0"><i class="bi bi-download me-1"></i>Download a sample file</a>
@@ -919,6 +942,12 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                     <div class="text-muted t-micro mt-1">{{ weight_remaining|floatformat:"-2" }}% of the 100% is still free.</div>
                     {% if rubric_form.weight.errors %}<div class="field-error">{{ rubric_form.weight.errors|join:", " }}</div>{% endif %}
                   </div>
+                  <div class="mb-3">
+                    <label class="form-label t-sm fw-600" for="id_rubric_level_descriptors">Score level guidance (optional)</label>
+                    {{ rubric_form.level_descriptors }}
+                    <div class="text-muted t-micro mt-1">Up to 12 owner-defined point values, one per line, from 0 to this category’s weight. Example: 15 | Partly demonstrated</div>
+                    {% if rubric_form.level_descriptors.errors %}<div class="field-error">{{ rubric_form.level_descriptors.errors|join:", " }}</div>{% endif %}
+                  </div>
                   <button type="submit" class="btn btn-primary btn-sm w-100" id="rubric-form-submit">
                     {% if editing_category %}<i class="bi bi-check-lg me-1"></i>Update category{% else %}<i class="bi bi-plus-lg me-1"></i>Add category{% endif %}
                   </button>
@@ -961,6 +990,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                   <div class="rubric-cat-card" data-id="{{ cat.pk }}" data-name="{{ cat.name }}" data-description="{{ cat.description }}"
                        data-scope="{{ cat.scope }}" data-weight="{{ cat.weight }}"
                        data-edit-url="{% url 'assessment_rubric_edit' session.pk cat.pk %}">
+                    <textarea class="d-none rubric-level-descriptors-source">{{ cat.level_descriptors_text }}</textarea>
                     {% if not live_mode %}<input type="checkbox" class="form-check-input rubric-select-box me-2 flex-shrink-0" value="{{ cat.pk }}" data-name="{{ cat.name }}" aria-label="Select {{ cat.name }}">{% endif %}
                     <span class="cat-icon"><i class="bi bi-clipboard-check"></i></span>
                     <div class="cat-body">
@@ -1008,6 +1038,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                   <div class="rubric-cat-card is-individual" data-id="{{ cat.pk }}" data-name="{{ cat.name }}" data-description="{{ cat.description }}"
                        data-scope="{{ cat.scope }}" data-weight="{{ cat.weight }}"
                        data-edit-url="{% url 'assessment_rubric_edit' session.pk cat.pk %}">
+                    <textarea class="d-none rubric-level-descriptors-source">{{ cat.level_descriptors_text }}</textarea>
                     {% if not live_mode %}<input type="checkbox" class="form-check-input rubric-select-box me-2 flex-shrink-0" value="{{ cat.pk }}" data-name="{{ cat.name }}" aria-label="Select {{ cat.name }}">{% endif %}
                     <span class="cat-icon"><i class="bi bi-person-lines-fill"></i></span>
                     <div class="cat-body">
@@ -1334,6 +1365,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
     document.getElementById('id_rubric_description').value = row.dataset.description;
     document.getElementById('id_rubric_scope').value = row.dataset.scope;
     document.getElementById('id_rubric_weight').value = row.dataset.weight;
+    document.getElementById('id_rubric_level_descriptors').value = row.querySelector('.rubric-level-descriptors-source').value;
 
     form.action = row.dataset.editUrl;
     icon.innerHTML = '<i class="bi bi-pencil-square"></i>';
@@ -1347,6 +1379,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 
   function exitEditMode() {
     form.reset();
+    document.getElementById('id_rubric_level_descriptors').value = '';
     form.action = createUrl;
     icon.innerHTML = '<i class="bi bi-plus-square"></i>';
     title.textContent = 'Add rubric category';
@@ -1366,61 +1399,6 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
   cancelLink.addEventListener('click', function (e) {
     e.preventDefault();
     exitEditMode();
-  });
-})();
-</script>
-
-<script nonce="{{ csp_nonce }}">
-// Rubric import dropzone.
-(function () {
-  const zone = document.getElementById('rubric-import-dropzone');
-  if (!zone) return;
-  const input = zone.querySelector('input[type=file]');
-  const filenameEl = document.getElementById('rubric-import-filename');
-  function showFilename() {
-    if (filenameEl) filenameEl.textContent = input.files && input.files.length ? input.files[0].name : '';
-  }
-  input.addEventListener('change', showFilename);
-  ['dragenter', 'dragover'].forEach(function (evt) {
-    zone.addEventListener(evt, function (e) { e.preventDefault(); zone.classList.add('is-dragover'); });
-  });
-  ['dragleave', 'drop'].forEach(function (evt) {
-    zone.addEventListener(evt, function (e) { e.preventDefault(); zone.classList.remove('is-dragover'); });
-  });
-  zone.addEventListener('drop', function (e) {
-    if (e.dataTransfer && e.dataTransfer.files.length) {
-      input.files = e.dataTransfer.files;
-      showFilename();
-    }
-  });
-})();
-</script>
-
-<script nonce="{{ csp_nonce }}">
-// Groups import dropzone.
-(function () {
-  const zone = document.getElementById('group-import-dropzone');
-  if (!zone) return;
-  const input = zone.querySelector('input[type=file]');
-  const filenameEl = document.getElementById('group-import-filename');
-
-  function showFilename() {
-    if (!filenameEl) return;
-    filenameEl.textContent = input.files && input.files.length ? input.files[0].name : '';
-  }
-  input.addEventListener('change', showFilename);
-
-  ['dragenter', 'dragover'].forEach(function (evt) {
-    zone.addEventListener(evt, function (e) { e.preventDefault(); zone.classList.add('is-dragover'); });
-  });
-  ['dragleave', 'drop'].forEach(function (evt) {
-    zone.addEventListener(evt, function (e) { e.preventDefault(); zone.classList.remove('is-dragover'); });
-  });
-  zone.addEventListener('drop', function (e) {
-    if (e.dataTransfer && e.dataTransfer.files.length) {
-      input.files = e.dataTransfer.files;
-      showFilename();
-    }
   });
 })();
 </script>
@@ -1510,6 +1488,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
     document.getElementById('id_group_max_size').value = btn.dataset.maxSize;
     document.getElementById('id_group_topic').value = btn.dataset.topic || '';
     document.getElementById('id_group_location').value = btn.dataset.location || '';
+    document.getElementById('id_group_is_practice').checked = btn.dataset.isPractice === 'true';
 
     form.action = btn.dataset.editUrl;
     icon.innerHTML = '<i class="bi bi-pencil-square"></i>';

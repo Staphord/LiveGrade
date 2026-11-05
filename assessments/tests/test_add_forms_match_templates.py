@@ -32,11 +32,11 @@ class AddFormsMatchRealTemplatePayloadTests(TestCase):
 
     def test_add_rubric_category_with_no_order_field_in_payload(self):
         # Exactly the fields rubric.html renders — no 'order' input exists.
-        response = self.client.post(f'/assessments/{self.session.pk}/rubric/', {
+        response = self.client.post(f'/classroom/app/{self.session.pk}/rubric/', {
             'name': 'Problem Identification & Real-World Relevance',
             'description': '', 'scope': 'group', 'weight': '10',
         })
-        self.assertRedirects(response, f'/assessments/{self.session.pk}/rubric/')
+        self.assertRedirects(response, f'/classroom/app/{self.session.pk}/rubric/')
         self.assertTrue(
             RubricCategory.objects.filter(
                 assessment_session=self.session,
@@ -44,13 +44,13 @@ class AddFormsMatchRealTemplatePayloadTests(TestCase):
 
     def test_add_group_with_no_order_field_in_payload(self):
         # Exactly the fields groups.html renders — no 'order' input exists.
-        response = self.client.post(f'/assessments/{self.session.pk}/groups/', {'name': 'Group 1', 'max_size': '4'})
-        self.assertRedirects(response, f'/assessments/{self.session.pk}/groups/')
+        response = self.client.post(f'/classroom/app/{self.session.pk}/groups/', {'name': 'Group 1', 'max_size': '4'})
+        self.assertRedirects(response, f'/classroom/app/{self.session.pk}/groups/')
         self.assertTrue(
             PresentationGroup.objects.filter(assessment_session=self.session, name='Group 1').exists())
 
     def test_rubric_form_error_is_visible_on_the_page(self):
-        response = self.client.post(f'/assessments/{self.session.pk}/rubric/', {
+        response = self.client.post(f'/classroom/app/{self.session.pk}/rubric/', {
             'name': '', 'description': '', 'scope': 'group', 'weight': '10',
         })
         self.assertEqual(response.status_code, 200)  # re-rendered, not redirected
@@ -58,13 +58,13 @@ class AddFormsMatchRealTemplatePayloadTests(TestCase):
         self.assertEqual(RubricCategory.objects.filter(assessment_session=self.session).count(), 0)
 
     def test_group_form_error_is_visible_on_the_page(self):
-        response = self.client.post(f'/assessments/{self.session.pk}/groups/', {'name': ''})
+        response = self.client.post(f'/classroom/app/{self.session.pk}/groups/', {'name': ''})
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'field-error')
         self.assertEqual(PresentationGroup.objects.filter(assessment_session=self.session).count(), 0)
 
     def test_roster_form_error_is_visible_on_the_page(self):
-        response = self.client.post(f'/assessments/{self.session.pk}/roster/', {
+        response = self.client.post(f'/classroom/app/{self.session.pk}/roster/', {
             'full_name': '', 'student_id': '', 'email': '', 'programme': '',
         })
         self.assertEqual(response.status_code, 200)

@@ -3,9 +3,14 @@
 {% block page_title %}{{ session.name }}{% endblock %}
 {% block topbar_actions %}
 {% if is_owner is not False %}
-<a href="{% url 'assessment_results_export' session.pk %}" class="btn btn-outline-primary btn-sm">
-  <i class="bi bi-download me-1"></i>Export Excel
-</a>
+<div class="d-flex gap-2">
+  <a href="{% url 'assessment_results_export_csv' session.pk %}" class="btn btn-outline-primary btn-sm">
+    <i class="bi bi-download me-1"></i>Export CSV
+  </a>
+  <a href="{% url 'assessment_results_export' session.pk %}" class="btn btn-outline-primary btn-sm">
+    <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export Excel
+  </a>
+</div>
 {% endif %}
 <a href="{% url 'assessment_session_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>All sessions</a>
 {% endblock %}
@@ -22,13 +27,13 @@
 .live-refresh-badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:results-pulse 1.4s ease-in-out infinite}
 @keyframes results-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
 
-/* A row whose score just changed on a silent refresh gets a brief glow —
+/* A row whose score just changed on a silent refresh gets a brief glow -
    same "just happened" language used on Participation/Live control. */
 @keyframes row-glow{0%{background:var(--accent-soft)}100%{background:transparent}}
 #results-rows tr.is-new td{animation:row-glow 1.8s ease-out}
 
 /* The shared .chart-wrap.is-empty rule (design-kit) hides the canvas via
-   opacity when every value it sees is 0 — meant for a genuinely empty
+   opacity when every value it sees is 0 - meant for a genuinely empty
    chart with a "no data yet" message. These two charts always have real
    values once any evaluation exists, so this only ever misfired as a
    full-blank box with nothing to explain it; force the canvas visible
@@ -38,9 +43,36 @@
 {% endblock %}
 
 {% block content %}
+{% if session.service == 'classroom' %}<p class="text-muted">Peer grading supplies 100% of the assessment score.{% if session.ungraded_penalty %} Configured participation penalties are deducted from the final mark.{% endif %}</p>{% endif %}
 <div class="tabs-sticky-header">
 {% include 'assessments/_session_tabs.html' with active='results' %}
 </div>
+
+{% if is_owner and session.service == 'classroom' and session.status == 'closed' %}
+<section class="card mb-3" aria-labelledby="public-leaderboard-heading">
+  <div class="card-body d-flex flex-column flex-lg-row gap-3 align-items-lg-center justify-content-between">
+    <div>
+      <h2 class="h5 mb-1" id="public-leaderboard-heading">Public room leaderboard</h2>
+      {% if session.public_leaderboard_show_scores %}
+        <p class="mb-0">Aggregate presentation-group scores are visible on the public join screen.</p>
+      {% else %}
+        <p class="mb-0">Group rankings are visible. Numeric scores are hidden until you show them.</p>
+      {% endif %}
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+      <a class="btn btn-outline-primary" href="{% url 'assessment_join_screen' session.uuid %}">Open QR room screen</a>
+      <form method="post" action="{% url 'assessment_public_results' session.pk %}">
+        {% csrf_token %}
+        {% if session.public_leaderboard_show_scores %}
+          <button class="btn btn-outline-danger" name="action" value="revoke">Hide scores</button>
+        {% else %}
+          <button class="btn btn-primary" name="action" value="release">Show scores</button>
+        {% endif %}
+      </form>
+    </div>
+  </div>
+</section>
+{% endif %}
 
 <div class="row g-3 mb-3">
   <div class="col-md-8">
@@ -147,10 +179,10 @@ let distributionChart = null;
 const bucketLabels = ['0–9', '10–19', '20–29', '30–39', '40–49', '50–59', '60–69', '70–79', '80–89', '90–100'];
 
 // Mutate the existing chart's data + `.update()` rather than destroy and
-// recreate on every refresh — recreating repeatedly on the same <canvas>
+// recreate on every refresh - recreating repeatedly on the same <canvas>
 // hit Chart.js's "canvas already in use" reuse guard once the session had
 // been live a while (many refreshes in), which threw inside `new Chart()`
-// right after the old one had already been destroyed — leaving a cleared,
+// right after the old one had already been destroyed - leaving a cleared,
 // permanently blank canvas with nothing left to redraw it. Update-in-place
 // never destroys anything, so there's no window where it can end up blank.
 function renderGroupChart(labels, values) {
@@ -168,7 +200,7 @@ function renderGroupChart(labels, values) {
     data: { labels: labels, datasets: [{ label: 'Group score', data: values,
       backgroundColor: color, borderRadius: 6, maxBarThickness: 48 }] },
     options: { responsive: true, maintainAspectRatio: false,
-      // 'index' + intersect:false — the tooltip shows as soon as the cursor
+      // 'index' + intersect:false - the tooltip shows as soon as the cursor
       // is anywhere over a bar's column, not only the exact pixels of the
       // bar itself, which is what made it feel like hovering "did nothing".
       interaction: { mode: 'index', intersect: false },
@@ -214,7 +246,7 @@ renderDistributionChart([{% for n in distribution_buckets %}{{ n }}{% if not for
 </script>
 {% if session.status == 'live' %}
 <script nonce="{{ csp_nonce }}">
-// Silent-patch refresh of the table rows + both charts — same idea as
+// Silent-patch refresh of the table rows + both charts - same idea as
 // Participation. Driven primarily by the websocket (near-instant); the
 // interval is only a safety net for a dropped/slow socket.
 (function () {
@@ -239,7 +271,7 @@ renderDistributionChart([{% for n in distribution_buckets %}{{ n }}{% if not for
     fetch(REFRESH_URL, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
       .then(function (res) { return res.json(); })
       .then(function (data) {
-        if (data.status !== 'live') return; // session ended mid-poll — stop pretending it's live
+        if (data.status !== 'live') return; // session ended mid-poll - stop pretending it's live
 
         const oldBody = document.getElementById('results-rows');
         if (oldBody) {
@@ -259,15 +291,15 @@ renderDistributionChart([{% for n in distribution_buckets %}{{ n }}{% if not for
         if (data.group_chart) renderGroupChart(data.group_chart.labels, data.group_chart.values);
         if (data.distribution_buckets) renderDistributionChart(data.distribution_buckets);
       })
-      .catch(function () { /* transient hiccup — next tick retries */ })
+      .catch(function () { /* transient hiccup - next tick retries */ })
       .finally(function () { refreshing = false; });
   }
 
-  setInterval(refresh, 20000); // safety net only — the socket below drives real-time updates
+  setInterval(refresh, 20000); // safety net only - the socket below drives real-time updates
 
   if (window.WebSocket) {
     const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const url = `${scheme}://${window.location.host}/ws/assessments/{{ session.uuid }}/`;
+    const url = `${scheme}://${window.location.host}/ws/assessments/{{ session.uuid }}/staff/`;
     let retryTimer = null;
     function connect() {
       const socket = new WebSocket(url);

@@ -5,13 +5,14 @@ loopback address, which only ever means "this device"."""
 from unittest.mock import patch
 from urllib.parse import urlparse
 
-from django.test import RequestFactory, TestCase
+from django.test import RequestFactory, TestCase, override_settings
 
 from accounts.testing import make_org
 from assessments.qr import join_url
 from assessments.models import AssessmentSession
 
 
+@override_settings(LIVEGRADE_PUBLIC_BASE_URL='')
 class JoinUrlLanRewriteTests(TestCase):
     def setUp(self):
         self.org = make_org('Test Uni')
@@ -51,4 +52,12 @@ class JoinUrlLanRewriteTests(TestCase):
             url = join_url(request, self.session)
         parts = urlparse(url)
         self.assertEqual((parts.scheme, parts.hostname), ('https', 'abcd1234.ngrok-free.app'))
+        mock_detect.assert_not_called()
+
+    @patch('assessments.qr.detect_lan_ip')
+    def test_configured_public_origin_is_used_for_shared_links(self, mock_detect):
+        with self.settings(LIVEGRADE_PUBLIC_BASE_URL='http://192.168.2.114:8001'):
+            request = self.factory.get('/', SERVER_NAME='localhost', SERVER_PORT='8001')
+            url = join_url(request, self.session)
+        self.assertEqual(url, f'http://192.168.2.114:8001/assess/{self.session.uuid}/join/')
         mock_detect.assert_not_called()

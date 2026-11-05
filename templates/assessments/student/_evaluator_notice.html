@@ -1,0 +1,9 @@
+{% if session.instructions %}
+<section class="s-card mb-3 text-start" aria-labelledby="evaluator-notice-heading">
+  <h2 class="h6 fw-700" id="evaluator-notice-heading">Before you score</h2>
+  <p class="mb-0 s-text">{{ session.instructions|linebreaksbr }}</p>
+</section>
+{% endif %}
+{% if session.service == 'classroom' %}
+<!-- <p class="s-text-sm text-muted">Peer grading supplies 100% of the assessment score.{% if session.ungraded_penalty %} Configured participation penalties still apply.{% endif %}</p> -->
+{% endif %}

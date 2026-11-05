@@ -10,7 +10,7 @@
                  {% if group.delete_lock %}disabled title="{{ group.delete_lock }}"{% endif %}>
           <span class="icon-badge"><i class="bi bi-diagram-3"></i></span>
           <div>
-            <div class="title group-name">{{ group.name }}</div>
+            <div class="title group-name">{{ group.name }}{% if group.is_practice %} <span class="badge bg-info-subtle text-info-emphasis">Practice</span>{% endif %}</div>
             <div class="sub">{{ group.member_count }} member{{ group.member_count|pluralize }}{% if group.max_size %} of {{ group.max_size }}{% endif %}</div>
           </div>
         </div>
@@ -20,7 +20,7 @@
           </span>
           <button type="button" class="btn btn-sm btn-outline-secondary py-0 group-edit-btn" title="Edit group"
                   data-id="{{ group.pk }}" data-name="{{ group.name }}" data-max-size="{{ group.max_size|default:'' }}"
-                  data-topic="{{ group.topic }}" data-location="{{ group.location }}"
+                  data-is-practice="{{ group.is_practice|yesno:'true,false' }}" data-topic="{{ group.topic }}" data-location="{{ group.location }}"
                   data-edit-url="{% url 'assessment_group_edit' session.pk group.pk %}">
             <i class="bi bi-pencil"></i>
           </button>

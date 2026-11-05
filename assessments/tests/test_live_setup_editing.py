@@ -6,6 +6,7 @@ from django.urls import reverse
 from assessments.models import (AssessmentSession, Evaluation, EvaluationScore, GroupMembership,
                                 PresentationGroup, PresentationTurn, RubricCategory, SessionChange, Student)
 from assessments.tests.test_edges_lecturer_views import AJAX, LecturerTestCase, _messages
+from assessments.tests.participant_flow import join_as
 
 
 class SetupTabAndPageTests(LecturerTestCase):
@@ -218,7 +219,7 @@ class TopicAndLocationOnScreenTests(LecturerTestCase):
         self.set_status('live')
         self.active_turn(self.red)
         student_client = self.client_class()
-        student_client.post(f'/assess/{self.session.uuid}/join/', {'identifier': 'S3'})
+        join_as(student_client, self.session.uuid, 'S3')
         page = student_client.get(f'/assess/{self.session.uuid}/evaluate/')
         self.assertContains(page, 'Red - Smart maps</h3>')
         self.assertNotContains(page, '- Project')
@@ -228,7 +229,7 @@ class TopicAndLocationOnScreenTests(LecturerTestCase):
         self.set_status('live')
         self.active_turn(self.red)
         student_client = self.client_class()
-        student_client.post(f'/assess/{self.session.uuid}/join/', {'identifier': 'S3'})
+        join_as(student_client, self.session.uuid, 'S3')
         page = student_client.get(f'/assess/{self.session.uuid}/evaluate/')
         self.assertContains(page, 'Red</h3>')
         self.assertNotContains(page, '- Project')
@@ -239,7 +240,7 @@ class TopicAndLocationOnScreenTests(LecturerTestCase):
         self.set_status('live')
         self.active_turn(self.red)
         student_client = self.client_class()
-        student_client.post(f'/assess/{self.session.uuid}/join/', {'identifier': 'S1'})
+        join_as(student_client, self.session.uuid, 'S1')
         page = student_client.get(f'/assess/{self.session.uuid}/evaluate/')
         self.assertContains(page, 'Smart maps')
         self.assertContains(page, 'Room 7')

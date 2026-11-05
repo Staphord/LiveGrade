@@ -9,20 +9,25 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_http_methods, require_POST
 
 from accounts.access import active_organization, can_oversee, in_public_workspace, lecturer_required
+from accounts.context import CLASSROOM_WALKTHROUGHS_KEY
 from accounts.models import User
 
+from ..duplication import duplicate_session
 from ..excel import export_results
+from ..reports import export_results_csv
+from ..level_descriptors import format_descriptors
 from ..forms import (
-    AssessmentSessionForm, GroupImportForm, PresentationGroupForm,
-    RubricCategoryForm, RubricImportForm, StudentForm,
+    AssessmentSessionForm, DuplicateSessionForm, GroupImportForm, PresentationGroupForm,
+    RubricCategoryForm, RubricImportForm, StudentForm, TemplateChoiceForm,
 )
 from ..models import (
     TOTAL_WEIGHT, AssessmentSession, Evaluation, GroupMembership, ParticipationRecord,
     PresentationGroup, PresentationTurn, RubricCategory, Student,
 )
+from ..session_templates import blueprint, save_draft_from_template, starters_for, template_queryset
 from ..setup_rules import (
     annotate_groups, closed_reason, group_delete_lock, group_members_lock, is_live,
     live_rubric_lock, record_change, student_delete_lock,
@@ -41,7 +46,7 @@ from ..turns import close_turn as close_turn_service
 
 __all__ = [
     'assessment_session_list', 'assessment_session_create', 'assessment_session_edit',
-    'assessment_session_detail',
+    'assessment_session_detail', 'assessment_session_duplicate',
     'assessment_session_delete', 'assessment_live_state', 'roster', 'roster_search', 'roster_edit',
     'roster_delete',
     'rubric', 'rubric_edit', 'rubric_delete', 'groups', 'group_edit',
@@ -49,12 +54,14 @@ __all__ = [
     'go_live', 'activate_group', 'set_transition_gap', 'set_default_turn_seconds',
     'set_default_presentation_seconds', 'set_designated_next_group', 'toggle_pause', 'toggle_joining',
     'adjust_turn_timer', 'close_turn', 'close_session',
+    'toggle_public_results',
     'participation', 'participation_refresh', 'results', 'results_refresh',
-    'results_export', 'session_qr', 'session_transfer',
+    'results_export', 'results_export_csv', 'session_qr', 'session_transfer',
+    'assessment_walkthrough_start', 'assessment_walkthrough_dismiss',
 ]
 
 
-def _session(request, pk, oversight=False):
+def _session(request, pk, oversight=False, lock=False):
     """The session, if it belongs to this lecturer in the active organization.
 
     Both conditions, every time: a session is private to the person who created
@@ -65,11 +72,14 @@ def _session(request, pk, oversight=False):
     and the hand-over, which somebody DevPerf has given the oversee permission
     may use on any session in the organization. It is opted into per view, never
     the default, so a new page is private to its owner until somebody decides
-    otherwise. The organization still applies.
+    otherwise. The organization still applies, and so does the service: a session of
+    another service is as absent here as a session of another organization.
     """
-    sessions = AssessmentSession.objects.for_request(request)
+    sessions = AssessmentSession.objects.for_request(request).for_service(getattr(request, 'service', None))
     if not (oversight and can_oversee(request)):
         sessions = sessions.owned_by(request.user)
+    if lock:
+        sessions = sessions.select_for_update()
     return get_object_or_404(sessions, pk=pk)
 
 
@@ -89,7 +99,7 @@ def assessment_session_list(request):
     # "All sessions in the organization" is for people DevPerf has given the
     # oversee permission; for everybody else the parameter does nothing.
     show_all = request.GET.get('scope') == 'all' and can_oversee(request)
-    visible = AssessmentSession.objects.for_organization(organization)
+    visible = AssessmentSession.objects.for_organization(organization).for_service(getattr(request, 'service', None))
     if not show_all:
         visible = visible.owned_by(request.user)
     sessions = list(
@@ -135,30 +145,106 @@ def assessment_session_list(request):
 
 
 @lecturer_required
-def assessment_session_create(request):
-    """A full page rather than a modal - the form has three fields across two
-    concerns (identity + penalty), which a dialog box compresses awkwardly.
-    A dedicated page also gives each field room for its help text and makes
-    the "what happens next" (groups and students → rubric → go live) explicit."""
+@require_POST
+def assessment_walkthrough_start(request):
+    """Start or resume a first-session walkthrough for this org in this service."""
+    if getattr(request, 'service', None) != 'classroom':
+        raise Http404
     organization = active_organization(request)
-    if request.method == 'POST':
-        form = AssessmentSessionForm(request.POST)
-        if form.is_valid():
-            session = form.save(commit=False)
-            session.organization_id = organization['id']
-            session.created_by = request.user
-            session.save()
+    existing = (AssessmentSession.objects.for_request(request).for_service('classroom')
+                .owned_by(request.user).filter(status=AssessmentSession.Status.DRAFT)
+                .order_by('-created_at', '-pk').first())
+    walkthroughs = request.session.get(CLASSROOM_WALKTHROUGHS_KEY, {})
+    if not isinstance(walkthroughs, dict):
+        walkthroughs = {}
+    walkthroughs[str(organization['id'])] = {'session_id': existing.pk if existing else None}
+    request.session[CLASSROOM_WALKTHROUGHS_KEY] = walkthroughs
+    if existing:
+        return redirect('assessment_groups', pk=existing.pk)
+    return redirect('assessment_session_create')
+
+
+@lecturer_required
+@require_POST
+def assessment_walkthrough_dismiss(request):
+    if getattr(request, 'service', None) != 'classroom':
+        raise Http404
+    organization = active_organization(request)
+    walkthroughs = request.session.get(CLASSROOM_WALKTHROUGHS_KEY, {})
+    if isinstance(walkthroughs, dict):
+        walkthroughs.pop(str(organization['id']), None)
+    else:
+        walkthroughs = {}
+    request.session[CLASSROOM_WALKTHROUGHS_KEY] = walkthroughs
+    return redirect('assessment_session_list')
+
+
+@lecturer_required
+@require_http_methods(['GET', 'POST'])
+def assessment_session_create(request):
+    """Choose a blank setup, a service starter, or an owned configuration snapshot."""
+    organization = active_organization(request)
+    service = getattr(request, 'service', None)
+    # Team can use the shared setup flow to build its first session template.
+    # Other services have their own assessment and result workflows.
+    if service not in ('classroom', 'team'):
+        raise Http404
+    saved = list(template_queryset(request).prefetch_related('rubric_categories__level_descriptors'))
+    starters = starters_for(service)
+    selection = (request.POST if request.method == 'POST' else request.GET).get('template', '')
+    picker = TemplateChoiceForm({'template': selection}, saved_templates=saved, starters=starters)
+    selected = None
+    if picker.is_valid() and selection:
+        candidates = {'saved:' + str(item.pk): item for item in saved}
+        candidates.update({'starter:' + item.key: item for item in starters})
+        selected = candidates[selection]
+    settings, categories = blueprint(selected) if selected else ({}, [])
+    instance = AssessmentSession(name=selected.name if selected else '', organization_id=organization['id'], service=service,
+                                 created_by=request.user, **settings)
+    form = AssessmentSessionForm(request.POST if request.method == 'POST' else None, instance=instance)
+    if request.method == 'POST' and picker.is_valid() and form.is_valid():
+        try:
+            session = save_draft_from_template(form.save(commit=False), selected)
+        except ValidationError as error:
+            form.add_error(None, ' '.join(error.messages))
+        else:
+            walkthroughs = request.session.get(CLASSROOM_WALKTHROUGHS_KEY, {})
+            guide = walkthroughs.get(str(organization['id'])) if isinstance(walkthroughs, dict) else None
+            if (service == 'classroom' and isinstance(guide, dict)
+                    and guide.get('session_id') is None):
+                walkthroughs[str(organization['id'])] = {'session_id': session.pk}
+                request.session[CLASSROOM_WALKTHROUGHS_KEY] = walkthroughs
             messages.success(request, f'"{session.name}" created - add your groups next.')
             return redirect('assessment_groups', pk=session.pk)
-    else:
-        form = AssessmentSessionForm()
-
     return render(request, 'assessments/session_setup.html', {
-        'session': None, 'active_step': 'basics', 'form': form,
+        'session': None, 'active_step': 'basics', 'form': form, 'template_picker': picker,
+        'selected_template': selected, 'template_selection': selection,
+        'template_categories': categories,
     })
 
 
-BASICS_LABELS = {'name': 'name', 'identify_by': 'how students join', 'ungraded_penalty': 'penalty per group not graded'}
+@lecturer_required
+@require_http_methods(['GET', 'POST'])
+def assessment_session_duplicate(request, pk):
+    source = _session(request, pk)
+    if request.method == 'POST':
+        form = DuplicateSessionForm(request.POST)
+        if form.is_valid():
+            scoped = (AssessmentSession.objects.for_request(request)
+                      .for_service(getattr(request, 'service', None)).owned_by(request.user))
+            try:
+                duplicate = duplicate_session(scoped, source.pk, owner=request.user, **form.cleaned_data)
+            except ValidationError as error:
+                form.add_error(None, error)
+            else:
+                messages.success(request, f'"{duplicate.name}" created as a new draft. Review its setup before going live.')
+                return redirect('assessment_groups', pk=duplicate.pk)
+    else:
+        form = DuplicateSessionForm(initial={'name': f'{source.name[:143]} (copy)'})
+    return render(request, 'assessments/session_duplicate.html', {'session': source, 'form': form})
+
+
+BASICS_LABELS = {'name': 'name', 'identify_by': 'how students join', 'ungraded_penalty': 'penalty per group not graded', 'instructions': 'evaluator notice'}
 
 
 @lecturer_required
@@ -213,6 +299,7 @@ def _live_context(session):
         .values_list('group_id', flat=True))
     joined_count = session.participation_records.count()
     voted_count = Evaluation.objects.filter(
+        presentation_turn__group__is_practice=False,
         presentation_turn__assessment_session=session, target_student__isnull=True
     ).values('evaluator').distinct().count()
     next_group = session.get_effective_next_group()
@@ -257,18 +344,8 @@ def _live_context(session):
     # mid-session rather than only once everything is final. Groups with no
     # votes yet sort to the bottom instead of being dropped, so the full
     # roster of groups is always visible here.
-    group_rankings = []
-    ranked_groups = list(session.groups.all().order_by('order', 'id'))
-    percent_by_group = group_score_percents(session, ranked_groups)
-    votes_by_group = group_vote_counts(session)
-    for group in ranked_groups:
-        group_rankings.append({
-            'group': group, 'percent': percent_by_group[group.pk], 'votes': votes_by_group.get(group.pk, 0),
-            'is_active': bool(active_turn and active_turn.group_id == group.pk),
-        })
-    group_rankings.sort(key=lambda row: (row['percent'] is None, -(row['percent'] or 0)))
-    for i, row in enumerate(group_rankings, start=1):
-        row['rank'] = i
+    from ..leaderboard import group_standings
+    group_rankings = group_standings(session, active_group_id=active_turn.group_id if active_turn else None)
     has_any_scores = any(row['percent'] is not None for row in group_rankings)
 
     # The closed-session summary reuses the Participation tab's own status
@@ -292,7 +369,7 @@ def _live_context(session):
     if session.status == AssessmentSession.Status.CLOSED:
         rank_by_group_id = {row['group'].pk: row for row in group_rankings}
         all_closed_turns = list(
-            session.presentation_turns.filter(status=PresentationTurn.Status.CLOSED)
+            session.presentation_turns.filter(status=PresentationTurn.Status.CLOSED, group__is_practice=False)
             .exclude(closed_at__isnull=True).select_related('group'))
         timeline = []
         timeline_votes = turn_vote_counts([turn.pk for turn in all_closed_turns])
@@ -333,6 +410,7 @@ def _live_context(session):
         'avg_turn_seconds': avg_turn_seconds,
         'elapsed_seconds': elapsed_seconds,
         'group_rankings': group_rankings,
+        'group_points_max': session.group_weight_total(),
         'has_any_scores': has_any_scores,
         'participation_counts': participation_counts,
         'presentation_timeline': presentation_timeline,
@@ -378,6 +456,7 @@ def assessment_live_state(request, pk):
 
     active_turn = context['active_turn']
     return JsonResponse({
+        'public_show_scores': session.public_leaderboard_show_scores,
         'status': session.status,
         'voting_paused': session.voting_paused,
         'active_turn': {
@@ -458,8 +537,13 @@ def _setup_context(request, session, active_step, roster_form=None, rubric_form=
     context['form'] = roster_form or StudentForm(auto_id='id_roster_%s')
     context['basics_form'] = AssessmentSessionForm(instance=session, auto_id='id_basics_%s')
 
-    group_categories = session.rubric_categories.filter(scope=RubricCategory.Scope.GROUP)
-    individual_categories = session.rubric_categories.filter(scope=RubricCategory.Scope.INDIVIDUAL)
+    all_categories = list(session.rubric_categories.prefetch_related('level_descriptors'))
+    for category in all_categories:
+        category.level_descriptors_text = format_descriptors(category.level_descriptors.all())
+    group_categories = [category for category in all_categories
+                        if category.scope == RubricCategory.Scope.GROUP]
+    individual_categories = [category for category in all_categories
+                             if category.scope == RubricCategory.Scope.INDIVIDUAL]
     group_weight_total = sum((c.weight for c in group_categories), Decimal('0'))
     individual_weight_total = sum((c.weight for c in individual_categories), Decimal('0'))
     weight_total = group_weight_total + individual_weight_total
@@ -471,7 +555,7 @@ def _setup_context(request, session, active_step, roster_form=None, rubric_form=
         'individual_weight_total': individual_weight_total,
         'weight_total': weight_total,
         'weight_remaining': TOTAL_WEIGHT - weight_total,
-        'weight_pie': weight_pie(session.rubric_categories.all()),
+        'weight_pie': weight_pie(all_categories),
     })
 
     context.update(_groups_context(session))
@@ -595,9 +679,7 @@ def rubric(request, pk):
             return redirect('assessment_rubric', pk=session.pk)
         form = RubricCategoryForm(request.POST, assessment_session=session, auto_id='id_rubric_%s')
         if form.is_valid():
-            category = form.save(commit=False)
-            category.assessment_session = session
-            category.save()
+            category = form.save()
             messages.success(request, f'"{category.name}" added to the rubric.')
             return redirect('assessment_rubric', pk=session.pk)
 
@@ -777,8 +859,9 @@ def group_members(request, pk, group_pk):
 
 @lecturer_required
 @require_POST
+@transaction.atomic
 def group_edit(request, pk, group_pk):
-    session = _session(request, pk)
+    session = _session(request, pk, lock=True)
     blocked = _closed(request, session)
     if blocked:
         return blocked
@@ -1070,6 +1153,52 @@ def close_session(request, pk):
     return redirect('assessment_results', pk=session.pk)
 
 
+@lecturer_required
+@require_POST
+def toggle_public_results(request, pk):
+    """Explicitly publish/revoke the aggregate group scores on the public room screen."""
+    from django.db import transaction
+
+    release = request.POST.get('action') == 'release'
+    if request.POST.get('action') not in {'release', 'revoke'}:
+        raise Http404
+    with transaction.atomic():
+        locked = _session(request, pk, lock=True)
+        if locked.status != AssessmentSession.Status.CLOSED:
+            messages.error(request, 'Close the session before releasing a public leaderboard.')
+            return redirect('assessment_results', pk=locked.pk)
+        if release and not locked.public_results_released_at:
+            groups = list(locked.groups.filter(is_practice=False).order_by('order', 'pk'))
+            scores = group_score_percents(locked, groups)
+            if not groups or any(scores.get(group.pk) is None for group in groups):
+                messages.error(request,
+                    'Complete scoring for every presentation group before release.')
+                return redirect('assessment_results', pk=locked.pk)
+        elif not release and not locked.public_leaderboard_show_scores:
+            messages.info(request, 'Public scores are already hidden.')
+            return redirect('assessment_results', pk=locked.pk)
+        elif release and locked.public_leaderboard_show_scores:
+            messages.info(request, 'Public scores are already visible.')
+            return redirect('assessment_results', pk=locked.pk)
+        if release:
+            locked.public_results_released_at = timezone.now()
+            locked.public_results_released_by = request.user
+            summary = 'Released aggregate group scores on the public join screen.'
+        else:
+            locked.public_results_released_at = None
+            locked.public_results_released_by = None
+            summary = 'Revoked aggregate group scores from the public join screen.'
+        locked.public_leaderboard_show_scores = release
+        locked.save(update_fields=(
+            'public_results_released_at', 'public_results_released_by', 'public_leaderboard_show_scores'))
+        from ..models import SessionChange
+        SessionChange.objects.create(session=locked, by_user=request.user, summary=summary)
+        transaction.on_commit(lambda: broadcast_session_event(locked, 'public.results.changed', {}))
+    messages.success(request, 'Public leaderboard released.' if release
+                     else 'Public scores hidden; rankings remain visible.')
+    return redirect('assessment_results', pk=locked.pk)
+
+
 # --------------------------------------------------------- Reporting views --
 
 PARTICIPATION_STATUSES = {'full', 'partial', 'none'}
@@ -1082,12 +1211,13 @@ def _participation_rows(session):
     sheet needs the full, unpaginated set)."""
     voted_turn_ids_by_student = {}
     for evaluation in Evaluation.objects.filter(
-            presentation_turn__assessment_session=session, target_student__isnull=True
+            presentation_turn__assessment_session=session, target_student__isnull=True,
+            presentation_turn__group__is_practice=False
     ).values('evaluator_id', 'presentation_turn__group_id'):
         voted_turn_ids_by_student.setdefault(evaluation['evaluator_id'], set()).add(
             evaluation['presentation_turn__group_id'])
 
-    groups = list(session.groups.all().order_by('order', 'id'))
+    groups = list(session.groups.filter(is_practice=False).order_by('order', 'id'))
     all_group_ids = {g.pk for g in groups}
     groups_by_id = {g.pk: g for g in groups}
     # One query for every membership instead of one per group (and, in the
@@ -1095,7 +1225,7 @@ def _participation_rows(session):
     # `member_ids()` from memory with the same set it would have fetched.
     member_ids_by_group = {group.pk: set() for group in groups}
     for group_id, student_id in GroupMembership.objects.filter(
-            group__assessment_session=session).values_list('group_id', 'student_id'):
+            group__assessment_session=session, group__is_practice=False).values_list('group_id', 'student_id'):
         member_ids_by_group[group_id].add(student_id)
     own_group_id_by_student = {}
     for group in groups:
@@ -1106,6 +1236,8 @@ def _participation_rows(session):
     joined_ids = set(session.participation_records.values_list('student_id', flat=True))
     students = session.students.all().order_by('full_name')
     active_turn = session.active_turn()
+    if active_turn and active_turn.group.is_practice:
+        active_turn = None
     active_group_id = active_turn.group_id if active_turn else None
     rows = []
     counts = {'full': 0, 'partial': 0, 'none': 0}
@@ -1288,6 +1420,16 @@ def results_export(request, pk):
     # download) and a quote would end the filename early.
     filename = ' '.join(re.sub(r'[\x00-\x1f\x7f"\\/]+', ' ', session.name).split()) or 'session'
     response['Content-Disposition'] = f'attachment; filename="{filename}-results.xlsx"'
+    return response
+
+
+@lecturer_required
+def results_export_csv(request, pk):
+    session = _session(request, pk)
+    response = HttpResponse(export_results_csv(session, session_results(session)),
+                            content_type='text/csv; charset=utf-8')
+    filename = ' '.join(re.sub(r'[\x00-\x1f\x7f"\\/]+', ' ', session.name).split()) or 'session'
+    response['Content-Disposition'] = f'attachment; filename="{filename}-results.csv"'
     return response
 
 

@@ -1,0 +1,11 @@
+<div id="evaluation-transport" hidden data-endpoint="{% url 'student_evaluate' session.uuid %}"
+     data-session="{{ session.uuid }}" data-student="{{ student.pk }}" data-turn="{{ turn.pk|default:'' }}"
+     data-status="{{ session.status }}" data-open="{{ turn.is_voting_open|yesno:'true,false' }}"
+     data-paused="{{ session.voting_paused|yesno:'true,false' }}" data-done="{{ already_done|yesno:'true,false' }}"
+     data-page="{{ page|default:'evaluate' }}"></div>
+<section id="submission-state" class="s-card mb-3" hidden>
+  <p id="submission-status" role="status" aria-live="polite"></p>
+  <button type="button" id="retry-submission" class="btn btn-primary" hidden>Retry confirmation</button>
+  <button type="button" id="reload-evaluation" class="btn btn-outline-primary" hidden>Refresh current round</button>
+  <a id="rejoin-session" href="{% url 'student_join' session.uuid %}" class="btn btn-outline-primary" hidden>Join again</a>
+</section>

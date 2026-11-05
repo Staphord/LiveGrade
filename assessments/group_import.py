@@ -18,7 +18,7 @@ from collections import defaultdict
 
 from django.db import models, transaction
 
-from .models import AssessmentSession, GroupMembership, PresentationGroup, Student
+from .models import AssessmentSession, Evaluator, GroupMembership, PresentationGroup, Student
 from .sheets import (
     UNREADABLE, cell, clean, key, map_headers, read_rows, split_people, workbook_bytes,
 )
@@ -296,6 +296,12 @@ def apply_import(session, parsed):
     # New students and their memberships go in as two bulk inserts, in the order the
     # file listed them, instead of two queries per person.
     Student.objects.bulk_create(new_students)
+    if session.service == 'classroom' and new_students:
+        Evaluator.objects.bulk_create([
+            Evaluator(assessment_session=session, student=student,
+                      kind=Evaluator.Kind.ROSTER)
+            for student in new_students
+        ])
     GroupMembership.objects.bulk_create(
         [GroupMembership(group=group, student=student) for group, student in placements])
     return counts

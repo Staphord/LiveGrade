@@ -1,0 +1,12 @@
+{% extends 'assessments/student/_student_base.html' %}
+{% block title %}Privacy notice unavailable - {{ session.name }}{% endblock %}
+{% block hero_sub %}Scoring is temporarily unavailable{% endblock %}
+{% block content %}
+<div class="s-center-viewport">
+  <section class="s-card fade-in text-center" aria-labelledby="privacy-unavailable-title">
+    <i class="bi bi-shield-exclamation text-warning s-icon-xl" aria-hidden="true"></i>
+    <h1 class="fw-800 mt-2 s-h2" id="privacy-unavailable-title">We can't show the privacy notice</h1>
+    <p class="text-muted s-text">Scoring is paused until the current notice is available. Please ask the session owner for help.</p>
+  </section>
+</div>
+{% endblock %}

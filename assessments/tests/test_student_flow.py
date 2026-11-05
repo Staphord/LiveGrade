@@ -6,9 +6,10 @@ from django.utils import timezone
 
 from accounts.testing import make_org, make_user
 from assessments.models import (
-    AssessmentSession, Evaluation, GroupMembership, PresentationGroup,
+    AssessmentSession, Evaluation, GroupMembership, ParticipationRecord, PresentationGroup,
     PresentationTurn, RubricCategory, Student,
 )
+from assessments.tests.participant_flow import join_as
 
 
 class StudentFlowTests(TestCase):
@@ -34,7 +35,23 @@ class StudentFlowTests(TestCase):
 
     def test_join_with_correct_id_succeeds(self):
         response = self.client.post(f'/assess/{self.session.uuid}/join/', {'identifier': 'c1'})
-        self.assertRedirects(response, f'/assess/{self.session.uuid}/evaluate/')
+        self.assertRedirects(response, f'/assess/{self.session.uuid}/evaluate/', fetch_redirect_response=False)
+
+    def test_join_with_case_and_whitespace_insensitive_full_name_succeeds(self):
+        AssessmentSession.objects.filter(pk=self.session.pk).update(identify_by='full_name')
+        response = self.client.post(
+            f'/assess/{self.session.uuid}/join/', {'identifier': '  sTUDENT c  '})
+        self.assertRedirects(response, f'/assess/{self.session.uuid}/evaluate/', fetch_redirect_response=False)
+        self.assertTrue(ParticipationRecord.objects.filter(
+            assessment_session=self.session, student=self.student_c).exists())
+
+    def test_a_name_not_on_the_roster_is_refused(self):
+        AssessmentSession.objects.filter(pk=self.session.pk).update(identify_by='full_name')
+        response = self.client.post(
+            f'/assess/{self.session.uuid}/join/', {'identifier': 'Unlisted Person'})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "couldn&#x27;t find you")
+        self.assertFalse(ParticipationRecord.objects.exists())
 
     def test_join_with_wrong_id_shows_error(self):
         response = self.client.post(f'/assess/{self.session.uuid}/join/', {'identifier': 'ZZZ'})
@@ -42,31 +59,31 @@ class StudentFlowTests(TestCase):
         self.assertContains(response, "couldn&#x27;t find you")
 
     def test_evaluate_page_shows_ineligible_for_own_group_member(self):
-        self.client.post(f'/assess/{self.session.uuid}/join/', {'identifier': 'a1'})
+        join_as(self.client, self.session.uuid, 'a1')
         response = self.client.get(f'/assess/{self.session.uuid}/evaluate/')
         self.assertContains(response, "can't grade it")
 
     def test_full_evaluate_and_submit(self):
-        self.client.post(f'/assess/{self.session.uuid}/join/', {'identifier': 'c1'})
+        join_as(self.client, self.session.uuid, 'c1')
         response = self.client.post(f'/assess/{self.session.uuid}/evaluate/', {
             f'group_{self.group_cat.pk}': '8',
         })
         self.assertRedirects(response, f'/assess/{self.session.uuid}/submitted/')
 
     def test_cannot_submit_twice(self):
-        self.client.post(f'/assess/{self.session.uuid}/join/', {'identifier': 'c1'})
+        join_as(self.client, self.session.uuid, 'c1')
         self.client.post(f'/assess/{self.session.uuid}/evaluate/', {f'group_{self.group_cat.pk}': '8'})
         response = self.client.get(f'/assess/{self.session.uuid}/evaluate/')
         self.assertContains(response, "already graded")
 
     def test_checked_in_student_name_shown_on_evaluate_page(self):
-        self.client.post(f'/assess/{self.session.uuid}/join/', {'identifier': 'c1'})
+        join_as(self.client, self.session.uuid, 'c1')
         response = self.client.get(f'/assess/{self.session.uuid}/evaluate/')
         self.assertContains(response, 'Checked in as')
         self.assertContains(response, self.student_c.full_name)
 
     def test_checked_in_student_name_shown_on_submitted_page(self):
-        self.client.post(f'/assess/{self.session.uuid}/join/', {'identifier': 'c1'})
+        join_as(self.client, self.session.uuid, 'c1')
         self.client.post(f'/assess/{self.session.uuid}/evaluate/', {f'group_{self.group_cat.pk}': '8'})
         response = self.client.get(f'/assess/{self.session.uuid}/submitted/')
         self.assertContains(response, self.student_c.full_name)
@@ -81,7 +98,7 @@ class StudentFlowTests(TestCase):
     def test_submission_after_turn_expired_is_not_counted(self):
         self.turn.voting_ends_at = timezone.now() - timezone.timedelta(seconds=5)
         self.turn.save(update_fields=['voting_ends_at'])
-        self.client.post(f'/assess/{self.session.uuid}/join/', {'identifier': 'c1'})
+        join_as(self.client, self.session.uuid, 'c1')
         response = self.client.post(f'/assess/{self.session.uuid}/evaluate/', {
             f'group_{self.group_cat.pk}': '8', 'turn_id': self.turn.pk,
         })
@@ -92,7 +109,7 @@ class StudentFlowTests(TestCase):
     def test_submission_for_a_turn_that_is_no_longer_active_is_not_counted(self):
         self.turn.status = PresentationTurn.Status.CLOSED
         self.turn.save(update_fields=['status'])
-        self.client.post(f'/assess/{self.session.uuid}/join/', {'identifier': 'c1'})
+        join_as(self.client, self.session.uuid, 'c1')
         response = self.client.post(f'/assess/{self.session.uuid}/evaluate/', {
             f'group_{self.group_cat.pk}': '8', 'turn_id': self.turn.pk,
         })
@@ -105,7 +122,7 @@ class StudentFlowTests(TestCase):
         self.session.designated_next_group = group3
         self.session.save(update_fields=['designated_next_group'])
 
-        self.client.post(f'/assess/{self.session.uuid}/join/', {'identifier': 'c1'})
+        join_as(self.client, self.session.uuid, 'c1')
         response = self.client.get(f'/assess/{self.session.uuid}/evaluate/')
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Presentation Order')

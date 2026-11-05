@@ -17,6 +17,7 @@ from assessments.models import (AssessmentSession, Evaluation, EvaluationScore,
                                 ParticipationRecord, PresentationGroup,
                                 PresentationTurn)
 from assessments.tests.test_edges_core import SessionFixture
+from assessments.tests.participant_flow import join_as as join_participant
 
 
 class StudentTestCase(SessionFixture):
@@ -32,7 +33,7 @@ class StudentTestCase(SessionFixture):
         return reverse(name, args=[self.session.uuid])
 
     def join_as(self, student):
-        response = self.client.post(self.url('student_join'), {'identifier': student.student_id})
+        response = join_participant(self.client, self.session.uuid, student.student_id)
         self.assertEqual(response.status_code, 302, 'joining should have worked')
 
     def grade(self, **extra):
@@ -49,10 +50,15 @@ class JoinTests(StudentTestCase):
     def test_the_join_page_asks_for_whatever_the_session_identifies_by(self):
         response = self.client.get(self.url('student_join'))
         self.assertContains(response, 'your student ID')
+        self.assertContains(response, 'This session checks your student ID against the class roster.')
+        self.assertNotContains(response, 'This session checks your full name against the class roster.')
 
     def test_a_name_session_asks_for_a_name(self):
         AssessmentSession.objects.filter(pk=self.session.pk).update(identify_by='full_name')
-        self.assertContains(self.client.get(self.url('student_join')), 'your full name')
+        response = self.client.get(self.url('student_join'))
+        self.assertContains(response, 'your full name')
+        self.assertContains(response, 'This session checks your full name against the class roster.')
+        self.assertNotContains(response, 'This session checks your student ID against the class roster.')
 
     def test_somebody_who_is_on_the_roster_is_let_in_and_recorded(self):
         response = self.client.post(self.url('student_join'), {'identifier': 's3'})
@@ -78,6 +84,14 @@ class JoinTests(StudentTestCase):
         AssessmentSession.objects.filter(pk=self.session.pk).update(joining_locked=True)
         response = self.client.post(self.url('student_join'), {'identifier': 'S3'})
         self.assertContains(response, 'Joining is closed')
+        self.assertFalse(ParticipationRecord.objects.exists())
+
+    def test_a_locked_room_explains_the_refusal_before_the_student_submits(self):
+        AssessmentSession.objects.filter(pk=self.session.pk).update(joining_locked=True)
+        response = self.client.get(self.url('student_join'))
+        self.assertContains(response, 'Joining is closed')
+        self.assertContains(response, 'Please ask the person running it for help.')
+        self.assertNotContains(response, 'id="join-form"')
         self.assertFalse(ParticipationRecord.objects.exists())
 
     def test_an_unknown_session_is_a_404(self):
@@ -286,6 +300,44 @@ class JoinScreenTests(StudentTestCase):
         body = str(state)
         for student in (self.ann, self.bob, self.cat, self.dan):
             self.assertNotIn(student.full_name, body)
+
+    def test_live_room_reports_all_presentations_complete_after_every_group_finishes(self):
+        now = timezone.now()
+        for group in (self.red, self.blue):
+            turn = PresentationTurn.objects.create(
+                assessment_session=self.session, group=group,
+                status=PresentationTurn.Status.CLOSED, opened_at=now, closed_at=now)
+            if group == self.red:
+                Evaluation.objects.create(presentation_turn=turn, evaluator=self.ann)
+
+        state = self.client.get(self.url('assessment_join_screen_state')).json()
+        self.assertEqual(state['public_stage'], 'All presentations complete')
+        self.assertTrue(state['public_all_groups_complete'])
+        self.assertEqual((state['public_completed_groups'], state['public_total_groups']), (2, 2))
+        page = self.client.get(self.url('assessment_join_screen'))
+        self.assertContains(page, 'All presentations are complete')
+        self.assertContains(self.client.get(self.url('assessment_join_screen')),
+            'No groups remaining')
+        self.assertContains(page, 'data-all-groups-complete="true"', html=False)
+        self.assertContains(page,
+            'id="public-countdown" class="room-timer" role="timer" aria-label="Class progress timer" aria-live="off">All presentations are complete</span>',
+            html=False)
+        state = self.client.get(self.url('assessment_join_screen_state')).json()
+        self.assertEqual(state['public_submitted_count'], 1)
+        self.assertContains(page, '<strong id="public-submitted">1</strong><span id="public-submitted-label">peer rating submitted</span>',
+            html=False)
+
+    def test_live_room_submission_metric_is_turn_scoped_while_a_group_is_active(self):
+        self.active_turn(self.red)
+        self.join_as(self.ann)
+        Evaluation.objects.create(presentation_turn=self.session.active_turn(), evaluator=self.ann)
+        page = self.client.get(self.url('assessment_join_screen'))
+        state = self.client.get(self.url('assessment_join_screen_state')).json()
+
+        self.assertEqual(state['public_submitted_count'], 1)
+        self.assertContains(page,
+            '<strong id="public-submitted">1/1</strong><span id="public-submitted-label">submitted this round</span>',
+            html=False)
 
 
     def page(self):

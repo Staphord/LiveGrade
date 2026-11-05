@@ -1,24 +1,33 @@
+import uuid
 from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError
 from django.core.cache import cache
-from django.http import HttpResponse, JsonResponse
+from django.db import OperationalError
+from django.http import Http404, HttpResponse, JsonResponse
+from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
-from django.views.decorators.http import require_POST
+from django.views.decorators.cache import never_cache
+from django.views.decorators.http import require_http_methods, require_POST
 
 from ..forms import JoinForm
 from ..models import AssessmentSession, Evaluation, ParticipationRecord, PresentationTurn, RubricCategory
+from ..privacy import (
+    NOTICE_SHOWN_SESSION_KEY, active_privacy_notice, notice_seen_key,
+)
 from ..qr import join_url, qr_png
 from ..realtime import broadcast_session_event
 from ..services import (
     already_submitted, eligible_to_evaluate, match_student, record_join,
     student_from_request, submit_evaluation,
 )
+from ..scoring import group_score_percents
 from ..turns import ensure_turn_progressed
 
 __all__ = [
-    'join', 'evaluate', 'submitted', 'check_turn_expiry', 'grading_ping',
+    'join', 'privacy_notice', 'evaluate', 'submitted', 'check_turn_expiry', 'grading_ping',
     'join_screen', 'join_screen_state', 'join_screen_qr',
 ]
 
@@ -37,8 +46,7 @@ def join(request, session_uuid):
     if request.method == 'POST':
         if session.joining_locked:
             return render(request, 'assessments/student/join.html', {
-                'session': session, 'form': JoinForm(),
-                'error': 'Joining is closed for this live session. Please ask for help.',
+                'session': session, 'form': JoinForm(), 'joining_closed': True,
                 'field_label': 'your full name' if session.identify_by == AssessmentSession.IdentifyBy.FULL_NAME else 'your student ID',
             })
         form = JoinForm(request.POST)
@@ -57,95 +65,143 @@ def join(request, session_uuid):
         form = JoinForm()
 
     field_label = 'your full name' if session.identify_by == AssessmentSession.IdentifyBy.FULL_NAME else 'your student ID'
+    if error or form.errors:
+        form.fields['identifier'].widget.attrs['aria-invalid'] = 'true'
+        form.fields['identifier'].widget.attrs['aria-describedby'] = 'identifier-help identifier-errors'
     return render(request, 'assessments/student/join.html', {
         'session': session, 'form': form, 'error': error, 'field_label': field_label,
+        'joining_closed': session.joining_locked,
     })
 
 
-def evaluate(request, session_uuid):
+@never_cache
+@require_http_methods(['GET', 'POST'])
+def privacy_notice(request, session_uuid):
+    """Show the current service notice and record the exact version delivered."""
     session = _get_session(session_uuid)
     student = student_from_request(request, session)
     if student is None:
         return redirect('student_join', session_uuid=session.uuid)
+    notice = active_privacy_notice(session)
+    if notice is None:
+        return render(request, 'assessments/student/privacy_unavailable.html',
+                      {'session': session}, status=503)
 
+    participation, _ = ParticipationRecord.objects.get_or_create(
+        assessment_session=session, student=student)
+    seen = request.session.get(NOTICE_SHOWN_SESSION_KEY, {})
+    if not isinstance(seen, dict):
+        seen = {}
+    marker = notice_seen_key(session, student)
+    if request.method == 'POST':
+        if (request.POST.get('action') != 'continue'
+                or seen.get(marker) != notice.pk):
+            return render(request, 'assessments/student/privacy_notice.html', {
+                'session': session, 'notice': notice,
+                'error': 'Review the notice on this page before continuing.',
+            }, status=400)
+        ParticipationRecord.objects.filter(pk=participation.pk).update(privacy_notice=notice)
+        seen.pop(marker, None)
+        request.session[NOTICE_SHOWN_SESSION_KEY] = seen
+        return redirect('student_evaluate', session_uuid=session.uuid)
+
+    if participation.privacy_notice_id == notice.pk:
+        return redirect('student_evaluate', session_uuid=session.uuid)
+    seen[marker] = notice.pk
+    request.session[NOTICE_SHOWN_SESSION_KEY] = seen
+    return render(request, 'assessments/student/privacy_notice.html', {
+        'session': session, 'notice': notice,
+    })
+
+
+@never_cache
+def evaluate(request, session_uuid):
+    session = _get_session(session_uuid)
+    as_json = 'application/json' in request.headers.get('Accept', '')
+    student = student_from_request(request, session)
+    if student is None:
+        if as_json:
+            return JsonResponse({'status': 'join_required', 'message': 'Join the session again to continue.',
+                'next_url': reverse('student_join', args=[session.uuid])}, status=403)
+        return redirect('student_join', session_uuid=session.uuid)
+    if session.status != AssessmentSession.Status.CLOSED:
+        notice = active_privacy_notice(session)
+        if notice is None:
+            if as_json:
+                return JsonResponse({'status': 'privacy_notice_unavailable'}, status=503)
+            return render(request, 'assessments/student/privacy_unavailable.html',
+                          {'session': session}, status=503)
+        participation = ParticipationRecord.objects.filter(
+            assessment_session=session, student=student).first()
+        if participation is None or participation.privacy_notice_id != notice.pk:
+            next_url = reverse('student_privacy_notice', args=[session.uuid])
+            if as_json:
+                return JsonResponse({'status': 'privacy_notice_required', 'next_url': next_url}, status=428)
+            return redirect('student_privacy_notice', session_uuid=session.uuid)
     if session.status == AssessmentSession.Status.LIVE:
-        # Self-healing: if the active turn's timer already ran out (e.g. no
-        # Celery worker is running to pick up the scheduled task), catch it
-        # up right now instead of leaving the page frozen on an expired
-        # countdown until someone manually intervenes.
         ensure_turn_progressed(session)
-
     turn = session.active_turn()
+    eligible = eligible_to_evaluate(student, turn)
+    already_done = turn is not None and already_submitted(student, turn)
     error = None
-    submitted = False
-
+    key = request.POST.get('submission_key', '') if request.method == 'POST' else ''
+    if request.method == 'POST':
+        posted_turn_id = request.POST.get('turn_id')
+        post_turn = turn
+        try:
+            if posted_turn_id:
+                post_turn = PresentationTurn.objects.filter(pk=int(posted_turn_id), assessment_session=session).first()
+            if (key or as_json) and not posted_turn_id:
+                raise ValidationError('A retry must identify the original presentation turn.', code='invalid')
+            if as_json and not key:
+                raise ValidationError('A submission key is required.', code='invalid')
+            if post_turn is None:
+                raise ValidationError("Time ran out before your evaluation was submitted, so it wasn't counted.", code='expired')
+            # Old HTML clients retain their existing already-submitted screen.
+            if not key and already_submitted(student, post_turn):
+                receipt = None
+            else:
+                if not key and (post_turn.status != PresentationTurn.Status.ACTIVE or (post_turn.voting_ends_at is not None and post_turn.voting_ends_at <= timezone.now())):
+                    raise ValidationError("Time ran out before your evaluation was submitted, so it wasn't counted.", code='expired')
+                group_categories = session.rubric_categories.filter(scope=RubricCategory.Scope.GROUP)
+                individual_categories = list(session.rubric_categories.filter(scope=RubricCategory.Scope.INDIVIDUAL))
+                group_scores = {cat.pk: _parse_decimal(request.POST.get(f'group_{cat.pk}')) for cat in group_categories}
+                individual_scores = {}
+                if individual_categories:
+                    for member in post_turn.group.memberships.select_related('student'):
+                        individual_scores[member.student_id] = {
+                            cat.pk: _parse_decimal(request.POST.get(f'ind_{member.student_id}_{cat.pk}'))
+                            for cat in individual_categories}
+                receipt = submit_evaluation(post_turn, student, group_scores, individual_scores, key=key)
+            if receipt is not None:
+                if not receipt.was_replayed:
+                    broadcast_session_event(session, 'evaluation.submitted', {
+                        'group_id': post_turn.group_id, 'student_id': student.pk})
+                if as_json:
+                    return JsonResponse({'status': 'accepted', 'replayed': receipt.was_replayed,
+                        'next_url': reverse('student_submitted', args=[session.uuid])},
+                        status=200 if receipt.was_replayed else 201)
+                return redirect('student_submitted', session_uuid=session.uuid)
+        except (ValidationError, InvalidOperation, TypeError, ValueError) as exc:
+            error = exc.messages[0] if hasattr(exc, 'messages') and exc.messages else 'Invalid submission.'
+            if as_json:
+                code = getattr(exc, 'code', None) or 'invalid'
+                status = 410 if code == 'expired' else 409 if code in ('conflict', 'paused', 'not_open', 'ineligible', 'already_submitted') else 400
+                return JsonResponse({'status': 'rejected', 'code': code, 'message': error}, status=status)
+        except OperationalError:
+            error = 'The connection could not be confirmed. Keep your scores and retry.'
+            if as_json:
+                return JsonResponse({'status': 'retry', 'message': error}, status=503)
+    if as_json:
+        return JsonResponse({'status': session.status, 'turn_id': turn.pk if turn else None,
+            'voting_open': bool(turn and turn.is_voting_open), 'voting_paused': session.voting_paused,
+            'already_submitted': already_done, 'csrf_token': get_token(request)})
     if session.status == AssessmentSession.Status.CLOSED:
         return render(request, 'assessments/student/closed.html', {'session': session, 'student': student})
 
-    eligible = eligible_to_evaluate(student, turn)
-    already_done = turn is not None and already_submitted(student, turn)
-
-    if request.method == 'POST':
-        # Resolve the turn this POST was actually scored against by its own
-        # `turn_id`, not whatever `session.active_turn()` says right now -
-        # `ensure_turn_progressed` above may have already closed that turn
-        # and opened the next one before this request was handled, and
-        # scoring against "whatever's active now" would silently attribute
-        # a late submission to the wrong group. No `turn_id` (e.g. a direct
-        # POST from before this field existed) falls back to `turn` as
-        # before.
-        posted_turn_id = request.POST.get('turn_id')
-        post_turn = turn
-        if posted_turn_id:
-            post_turn = PresentationTurn.objects.filter(
-                pk=posted_turn_id, assessment_session=session).first()
-
-        post_eligible = post_turn is not None and eligible_to_evaluate(student, post_turn)
-        post_already_done = post_turn is not None and already_submitted(student, post_turn)
-        turn_expired = (
-            post_turn is None or post_turn.status != PresentationTurn.Status.ACTIVE
-            or (post_turn.voting_ends_at is not None and post_turn.voting_ends_at <= timezone.now()))
-
-        if post_turn and post_eligible and not post_already_done and not turn_expired:
-            group_categories = list(session.rubric_categories.filter(scope=RubricCategory.Scope.GROUP))
-            individual_categories = list(session.rubric_categories.filter(scope=RubricCategory.Scope.INDIVIDUAL))
-            teammates = [m.student for m in post_turn.group.memberships.all()]
-
-            try:
-                group_scores = {
-                    cat.pk: _parse_decimal(request.POST.get(f'group_{cat.pk}'))
-                    for cat in group_categories
-                }
-                individual_scores = {}
-                if individual_categories:
-                    for teammate in teammates:
-                        individual_scores[teammate.pk] = {
-                            cat.pk: _parse_decimal(request.POST.get(f'ind_{teammate.pk}_{cat.pk}'))
-                            for cat in individual_categories
-                        }
-                submit_evaluation(post_turn, student, group_scores, individual_scores)
-                submitted = True
-                # Wakes the lecturer's live panel the instant a vote lands, not
-                # just when a turn opens/closes - rankings, the "N of M voted"
-                # count on the hero, and participation are all computed fresh
-                # from submitted scores, so without this they were correct on
-                # the next unrelated event but silently stale in between.
-                broadcast_session_event(session, 'evaluation.submitted', {
-                    'group_id': post_turn.group_id, 'student_id': student.pk,
-                })
-            except (ValidationError, InvalidOperation, TypeError) as exc:
-                error = exc.messages[0] if hasattr(exc, 'messages') and exc.messages else str(exc)
-        elif turn_expired and not post_already_done:
-            # Deliberately not scored against whatever's active now, and
-            # not counted as a vote for the group this was meant for - the
-            # student simply didn't grade it in time.
-            error = "Time ran out before your evaluation was submitted, so it wasn't counted."
-
-    if submitted:
-        return redirect('student_submitted', session_uuid=session.uuid)
-
-    group_categories = session.rubric_categories.filter(scope=RubricCategory.Scope.GROUP)
-    individual_categories = session.rubric_categories.filter(scope=RubricCategory.Scope.INDIVIDUAL)
+    categories = session.rubric_categories.prefetch_related('level_descriptors')
+    group_categories = categories.filter(scope=RubricCategory.Scope.GROUP)
+    individual_categories = categories.filter(scope=RubricCategory.Scope.INDIVIDUAL)
     teammates = list(turn.group.memberships.all()) if turn else []
 
     all_groups = list(session.groups.all().order_by('order', 'id').prefetch_related('memberships__student'))
@@ -171,6 +227,7 @@ def evaluate(request, session_uuid):
 
     return render(request, 'assessments/student/evaluate.html', {
         'session': session, 'student': student, 'turn': turn,
+        'submission_key': key or str(uuid.uuid4()),
         'eligible': eligible, 'already_done': already_done, 'error': error,
         'group_categories': group_categories, 'individual_categories': individual_categories,
         'teammates': teammates,
@@ -190,7 +247,11 @@ def submitted(request, session_uuid):
     student = student_from_request(request, session)
     if student is None:
         return redirect('student_join', session_uuid=session.uuid)
-    return render(request, 'assessments/student/submitted.html', {'session': session, 'student': student})
+    last_was_practice = (Evaluation.objects.filter(evaluator=student,
+        presentation_turn__assessment_session=session).order_by('-submitted_at', '-pk')
+        .values_list('presentation_turn__group__is_practice', flat=True).first())
+    return render(request, 'assessments/student/submitted.html', {
+        'session': session, 'student': student, 'is_practice': bool(last_was_practice)})
 
 
 @require_POST
@@ -247,6 +308,8 @@ def grading_ping(request, session_uuid):
     return JsonResponse({'ok': True})
 
 
+@never_cache
+@require_http_methods(['GET'])
 def join_screen(request, session_uuid):
     """A no-login page meant to be projected in the room: the join QR code
     plus the session's name and live status, nothing else. Reachable only
@@ -256,7 +319,14 @@ def join_screen(request, session_uuid):
     view of the same join link the QR on the admin panel already encodes.
     """
     session = _get_session(session_uuid)
-    return render(request, 'assessments/student/join_screen.html', {'session': session, **_public_live_state(session)})
+    if session.service != 'classroom':
+        raise Http404
+    response = render(request, 'assessments/student/join_screen.html', {
+        'session': session, **_public_live_state(session),
+    })
+    response['Cache-Control'] = 'private, no-store'
+    response['Referrer-Policy'] = 'no-referrer'
+    return response
 
 
 def _public_live_state(session):
@@ -266,21 +336,34 @@ def _public_live_state(session):
     turn = session.active_turn()
     joined_count = session.participation_records.count()
     student_count = session.students.count()
-    submitted_count = 0
-    if turn:
-        submitted_count = Evaluation.objects.filter(
-            presentation_turn=turn, target_student__isnull=True
-        ).values('evaluator_id').distinct().count()
     # One cache round trip for the whole roster instead of one per student.
     grading_now_count = sum(1 for flag in cache.get_many(
         [f'assessment-grading:{session.uuid}:{student_id}'
          for student_id in session.students.values_list('pk', flat=True)]).values() if flag)
+    total_groups = session.groups.count()
+    completed_groups = session.presentation_turns.filter(
+        status=PresentationTurn.Status.CLOSED).values('group_id').distinct().count()
+    all_groups_complete = (session.status == AssessmentSession.Status.LIVE and not turn
+                           and not session.pending_next_group and total_groups > 0
+                           and completed_groups >= total_groups)
+    if turn:
+        submitted_count = Evaluation.objects.filter(
+            presentation_turn=turn, target_student__isnull=True,
+            presentation_turn__group__is_practice=False).values('evaluator_id').distinct().count()
+    elif all_groups_complete:
+        submitted_count = Evaluation.objects.filter(
+            presentation_turn__assessment_session=session, target_student__isnull=True,
+            presentation_turn__group__is_practice=False).count()
+    else:
+        submitted_count = 0
     if session.status == AssessmentSession.Status.CLOSED:
         stage = 'Session complete'
     elif session.status != AssessmentSession.Status.LIVE:
         stage = 'Waiting for session to start'
     elif session.pending_next_group:
         stage = 'Transitioning to next group'
+    elif all_groups_complete:
+        stage = 'All presentations complete'
     elif turn and not turn.is_voting_open:
         stage = 'Presentation in progress'
     elif turn:
@@ -289,16 +372,17 @@ def _public_live_state(session):
         stage = 'Waiting for presentation'
 
     next_group = session.pending_next_group or session.get_effective_next_group()
-    total_groups = session.groups.count()
-    completed_groups = session.presentation_turns.filter(status=PresentationTurn.Status.CLOSED).values('group_id').distinct().count()
     current_index = None
     if turn:
         ordered_group_ids = list(session.groups.order_by('order', 'id').values_list('pk', flat=True))
         if turn.group_id in ordered_group_ids:
             current_index = ordered_group_ids.index(turn.group_id) + 1
 
+    leaderboard = _public_group_leaderboard(session)
     return {
-        'public_stage': stage,
+        'public_session_status': session.status,
+        'public_stage': ('Practice - ' + stage) if turn and turn.group.is_practice else stage,
+        'public_is_practice': bool(turn and turn.group.is_practice),
         'public_group_name': turn.group.name if turn else '',
         'public_group_topic': turn.group.topic if turn else '',
         'public_started_at': turn.opened_at.isoformat() if turn and turn.opened_at else '',
@@ -308,27 +392,61 @@ def _public_live_state(session):
         'public_next_group_name': next_group.name if next_group else '',
         'public_total_groups': total_groups,
         'public_completed_groups': completed_groups,
+        'public_all_groups_complete': all_groups_complete,
         'public_current_index': current_index,
         'public_joined_count': joined_count,
         'public_student_count': student_count,
         'public_submitted_count': submitted_count,
         'public_grading_now_count': grading_now_count,
         'public_joining_locked': session.joining_locked,
+        'public_leaderboard_released': session.status != AssessmentSession.Status.DRAFT,
+        'public_show_scores': session.public_leaderboard_show_scores,
+        'public_group_points_max': format(session.group_weight_total(), 'f'),
+        'public_leaderboard_provisional': session.status != AssessmentSession.Status.CLOSED,
+        'public_leaderboard': leaderboard,
     }
 
 
+def _public_group_leaderboard(session):
+    """Completed-group rankings; numeric scores never leave the server when hidden."""
+    if session.service != 'classroom' or session.status == AssessmentSession.Status.DRAFT:
+        return []
+    from ..leaderboard import group_standings
+    rows = []
+    for standing in group_standings(session, completed_only=True):
+        row = {'rank': standing['rank'], 'group_name': standing['group'].name}
+        if session.public_leaderboard_show_scores:
+            score = standing['percent']
+            row['score'] = format(score, 'f') if score is not None else None
+        rows.append(row)
+    return rows
+
+
+@never_cache
+@require_http_methods(['GET'])
 def join_screen_state(request, session_uuid):
     session = _get_session(session_uuid)
-    return JsonResponse(_public_live_state(session))
+    if session.service != 'classroom':
+        raise Http404
+    response = JsonResponse(_public_live_state(session))
+    response['Cache-Control'] = 'private, no-store'
+    response['Referrer-Policy'] = 'no-referrer'
+    return response
 
 
+@never_cache
+@require_http_methods(['GET'])
 def join_screen_qr(request, session_uuid):
     """PNG for the join screen above - a separate, unauthenticated
     counterpart to the admin-only `session_qr` (which requires login and
     organization scoping); both just wrap the same `qr_png(join_url(...))`.
     """
     session = _get_session(session_uuid)
-    return HttpResponse(qr_png(join_url(request, session)), content_type='image/png')
+    if session.service != 'classroom':
+        raise Http404
+    response = HttpResponse(qr_png(join_url(request, session)), content_type='image/png')
+    response['Cache-Control'] = 'private, no-store'
+    return response
 
 
 def _parse_decimal(raw):

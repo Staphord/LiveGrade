@@ -16,6 +16,7 @@ from assessments.models import AssessmentSession, PresentationGroup, Presentatio
 from assessments.turns import (
     activate_pending_transition, activate_turn, auto_advance, ensure_turn_progressed,
 )
+from assessments.tests.participant_flow import join_as
 
 
 class TransitionGapTests(TestCase):
@@ -129,13 +130,13 @@ class ActivateGroupViewGapTests(TestCase):
 
     def test_activating_a_group_remembers_the_chosen_gap(self):
         self.client.post(
-            f'/assessments/{self.session.pk}/activate/{self.group.pk}/',
+            f'/classroom/app/{self.session.pk}/activate/{self.group.pk}/',
             {'duration_seconds': '60', 'gap_seconds': '20'})
         self.session.refresh_from_db()
         self.assertEqual(self.session.transition_gap_seconds, 20)
 
     def test_missing_gap_defaults_to_zero_not_an_error(self):
-        response = self.client.post(f'/assessments/{self.session.pk}/activate/{self.group.pk}/')
+        response = self.client.post(f'/classroom/app/{self.session.pk}/activate/{self.group.pk}/')
         self.assertEqual(response.status_code, 302)
         self.session.refresh_from_db()
         self.assertEqual(self.session.transition_gap_seconds, 0)
@@ -155,14 +156,14 @@ class SetTransitionGapViewTests(TestCase):
         self.group2 = PresentationGroup.objects.create(assessment_session=self.session, name='Group 2', order=2)
 
     def test_saves_the_gap_without_activating_anything(self):
-        response = self.client.post(f'/assessments/{self.session.pk}/set-gap/', {'gap_seconds': '15'})
+        response = self.client.post(f'/classroom/app/{self.session.pk}/set-gap/', {'gap_seconds': '15'})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {'ok': True, 'gap_seconds': 15})
         self.session.refresh_from_db()
         self.assertEqual(self.session.transition_gap_seconds, 15)
 
     def test_non_digit_gap_defaults_to_zero(self):
-        self.client.post(f'/assessments/{self.session.pk}/set-gap/', {'gap_seconds': 'nope'})
+        self.client.post(f'/classroom/app/{self.session.pk}/set-gap/', {'gap_seconds': 'nope'})
         self.session.refresh_from_db()
         self.assertEqual(self.session.transition_gap_seconds, 0)
 
@@ -172,7 +173,7 @@ class SetTransitionGapViewTests(TestCase):
         # The gap is set to 0 (default) when group 1 is activated — then
         # changed via the dedicated endpoint *while it's still presenting*.
         turn = activate_turn(self.session, self.group1, duration_seconds=10)
-        self.client.post(f'/assessments/{self.session.pk}/set-gap/', {'gap_seconds': '30'})
+        self.client.post(f'/classroom/app/{self.session.pk}/set-gap/', {'gap_seconds': '30'})
 
         turn.voting_ends_at = timezone.now() - timedelta(seconds=1)
         turn.save(update_fields=['voting_ends_at'])
@@ -185,7 +186,7 @@ class SetTransitionGapViewTests(TestCase):
         self.assertEqual(self.session.pending_next_group, self.group2)
 
     def test_requires_post(self):
-        response = self.client.get(f'/assessments/{self.session.pk}/set-gap/')
+        response = self.client.get(f'/classroom/app/{self.session.pk}/set-gap/')
         self.assertEqual(response.status_code, 405)
 
 
@@ -205,7 +206,7 @@ class StudentPendingTransitionDisplayTests(TestCase):
             assessment_session=self.session, full_name='Someone', student_id='S1')
 
     def _join(self):
-        self.client.post(f'/assess/{self.session.uuid}/join/', {'identifier': 'S1'})
+        join_as(self.client, self.session.uuid, 'S1')
 
     @patch('assessments.tasks.activate_pending_group.apply_async')
     @patch('assessments.tasks.auto_advance_turn.apply_async')

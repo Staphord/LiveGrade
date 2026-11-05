@@ -21,5 +21,5 @@ class OrgScopingLeakTests(TestCase):
 
     def test_lecturer_b_cannot_open_session_a(self):
         sign_in(self.client, self.lecturer_b, self.org_b)
-        response = self.client.get(f'/assessments/{self.session_a.pk}/')
+        response = self.client.get(f'/classroom/app/{self.session_a.pk}/')
         self.assertEqual(response.status_code, 404)
