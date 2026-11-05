@@ -33,7 +33,7 @@
 --ink:#1a1a2e;--text:#212529;--text-soft:#495057;--text-muted:#6c757d;--text-subtle:#adb5bd;
 --accent:#0d6efd;--accent-soft:#e7f1ff;
 --success:#198754;--warn:#ffc107;--danger:#dc3545;--high:#fd7e14;
-/* AI — a suggestion surface, deliberately not the app's own accent.
+/* AI - a suggestion surface, deliberately not the app's own accent.
    --accent already means "interactive, primary"; an AI suggestion is the one
    thing in this product that must not read as the system's own voice. */
 --ai:#6f42c1;--ai-soft:#f1ebfb;--ai-border:#d9c9f5;--ai-ink:#4c2f8f;
@@ -42,7 +42,7 @@
    .ai-item-grounded / .ai-item-ungrounded set --ai-mark, the same
    per-instance pattern as --status below. */
 --ai-grounded:var(--success);--ai-ungrounded:var(--warn);--ai-mark:var(--ai-border);
-/* Brand — login and signup gradient */
+/* Brand - login and signup gradient */
 --brand-deep:#1B4F8A;--brand-bright:#2E86DE;
 /* Status tones */
 --tone-success-bg:#d1e7dd;--tone-success-fg:#0a3622;
@@ -50,7 +50,7 @@
 --tone-warn-bg:#fff3cd;--tone-warn-fg:#664d03;
 --tone-danger-bg:#f8d7da;--tone-danger-fg:#842029;
 --tone-neutral-bg:#f8f9fa;--tone-neutral-fg:#6c757d;
-/* Identity colours — initials avatars, picked by Profile.avatar_color().
+/* Identity colours - initials avatars, picked by Profile.avatar_color().
    Ordered so neighbouring slots contrast: sequential user ids must not walk
    a rainbow down a list sorted by join date. */
 --av-1-bg:#f1c950;--av-1-fg:#634b03;  /* golden */
@@ -65,7 +65,7 @@
 --av-10-bg:#9ad6ca;--av-10-fg:#12594b;  /* teal */
 --av-11-bg:#f2bf92;--av-11-fg:#7c3c03;  /* peach */
 --av-12-bg:#d3bbe7;--av-12-fg:#501584;  /* violet */
-/* Kanban column chevrons — one colour per state, so the row of headers
+/* Kanban column chevrons - one colour per state, so the row of headers
    reads as a progression. White clears AA on every one (5.0:1 at worst). */
 --chev-ink:#fff;
 --chev:var(--text-subtle);
@@ -77,14 +77,14 @@
 /* Z-index */
 --z-base:1;--z-sticky:100;--z-backdrop:190;--z-sidebar:200;
 --z-dropdown:1000;--z-modal:1055;
-/* Layout — breakpoint is a constant, 768px: custom properties are invalid in @media */
+/* Layout - breakpoint is a constant, 768px: custom properties are invalid in @media */
 --sidebar:220px;--sidebar-collapsed:72px;--page-gutter:var(--sp-4);--topbar-h:54px;
 /* Set at runtime (base.html) to the measured height of a page's
-   `.tabs-sticky-header`, if it has one — 0px here is just the fallback
+   `.tabs-sticky-header`, if it has one - 0px here is just the fallback
    for pages without one, so anything referencing it never needs its own
    `var(--sticky-header-h, 0px)` default. */
 --sticky-header-h:0px;
-/* Density — comfortable by default; html[data-density="compact"] tightens these */
+/* Density - comfortable by default; html[data-density="compact"] tightens these */
 --row-pad-y:var(--sp-2);--row-pad-x:var(--sp-3);--card-pad:var(--sp-4);--nav-pad:var(--sp-2);
 /* Overlays */
 --scrim:rgba(16,24,40,.45);--drawer-w:520px;--drawer-w-lg:720px;--palette-w:640px;
@@ -114,6 +114,38 @@ html[data-density="compact"]{
 --bs-primary:var(--accent);
 }
 
+/* Participant and projected-room pages follow the viewer's light/dark
+   preference without changing the signed-in owner workspace. Keep both
+   surfaces on the same contrast-tested semantic tokens. */
+html[data-livegrade-participant]{--focus-ring:0 0 0 3px #0e457b}
+html[data-livegrade-participant] .student-shell :focus-visible{
+outline:3px solid #0e457b;outline-offset:2px;box-shadow:none}
+@media (prefers-color-scheme:dark){
+html[data-livegrade-participant]{
+color-scheme:dark;
+--canvas:#0b1220;--surface:#121d2e;--surface-sunken:#202d40;--surface-hover:#1a2940;
+--border:#35445a;--border-strong:#52627a;
+--ink:#f8fafc;--text:#e2e8f0;--text-soft:#cbd5e1;--text-muted:#b7c4d6;--text-subtle:#94a3b8;
+--accent:#7db7ff;--accent-soft:#18365a;
+--success:#55d49a;--warn:#ffd166;--danger:#ff8292;--high:#ffad66;
+--tone-success-bg:#123d2b;--tone-success-fg:#c3f6d9;
+--tone-info-bg:#16375c;--tone-info-fg:#d0e5ff;
+--tone-warn-bg:#4a390c;--tone-warn-fg:#ffe7a1;
+--tone-danger-bg:#4b2029;--tone-danger-fg:#ffd5dc;
+--tone-neutral-bg:#253247;--tone-neutral-fg:#d3dce8;
+--focus-ring:0 0 0 3px #c7e2ff;
+--bs-body-bg:var(--canvas);--bs-body-color:var(--text);--bs-secondary-color:var(--text-muted);
+--bs-light-rgb:26,41,64;--bs-dark-rgb:226,232,240;--bs-border-color:var(--border);
+}
+html[data-livegrade-participant] .bg-light{background-color:var(--surface-hover)!important;color:var(--text)!important}
+html[data-livegrade-participant] .text-dark{color:var(--text)!important}
+html[data-livegrade-participant] .join-card{background:var(--surface);color:var(--text)}
+html[data-livegrade-participant] .form-control,html[data-livegrade-participant] .form-select{
+background-color:var(--surface);color:var(--text);border-color:var(--border-strong)}
+html[data-livegrade-participant] .form-control::placeholder{color:var(--text-muted)}
+html[data-livegrade-participant] .student-shell :focus-visible{outline-color:#c7e2ff}
+}
+
 *{box-sizing:border-box}
 body{font-family:var(--font-ui);color:var(--text);font-size:var(--fs-body)}
 
@@ -121,7 +153,7 @@ body{font-family:var(--font-ui);color:var(--text);font-size:var(--fs-body)}
 *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
 }
 
-/* Focus — :focus-visible only, so a mouse click never shows the ring */
+/* Focus - :focus-visible only, so a mouse click never shows the ring */
 :focus-visible{outline:none;box-shadow:var(--focus-ring)}
 .btn:focus-visible,.form-control:focus-visible,.form-select:focus-visible,
 .nav-link:focus-visible,.update-chip:focus-visible,.kanban-card:focus-visible,
@@ -133,11 +165,11 @@ body{font-family:var(--font-ui);color:var(--text);font-size:var(--fs-body)}
 .is-busy{pointer-events:none;opacity:var(--disabled-opacity)}
 .is-busy::before{content:"";display:inline-block;width:.85em;height:.85em;margin-right:var(--sp-1);vertical-align:-.1em;border:2px solid currentColor;border-right-color:transparent;border-radius:var(--radius-pill);animation:spin .6s linear infinite}
 
-/* Navigation progress — the gap between a click and the next page painting */
+/* Navigation progress - the gap between a click and the next page painting */
 .nav-progress{position:fixed;top:0;left:0;height:2px;width:0;background:var(--accent);z-index:var(--z-modal);opacity:0}
 .nav-progress.active{opacity:1;width:85%;transition:width 6s cubic-bezier(.05,.8,.2,1),opacity var(--motion-fast)}
 
-/* Toasts — the live region the JS writes into */
+/* Toasts - the live region the JS writes into */
 .flash-region{position:fixed;top:calc(var(--topbar-h) + var(--sp-3));right:var(--sp-4);z-index:var(--z-modal);display:flex;flex-direction:column;align-items:flex-end;gap:var(--sp-2);pointer-events:none;max-width:min(360px,calc(100vw - var(--sp-6)))}
 .flash-region .alert{margin:0;width:auto;max-width:100%;box-shadow:var(--elev-3);pointer-events:auto;animation:toast-in var(--motion) var(--ease)}
 .flash-region .alert.leaving{animation:toast-out var(--motion-fast) var(--ease) forwards}
@@ -216,7 +248,7 @@ body{font-family:var(--font-ui);color:var(--text);font-size:var(--fs-body)}
 /* Empty states */
 .empty-state{text-align:center;color:var(--text-muted);font-size:var(--fs-body);padding:var(--sp-6) var(--sp-4)}
 .empty-state i{display:block;font-size:var(--icon-lg);color:var(--text-subtle);margin-bottom:var(--sp-3)}
-/* Icons — sizing is glyph size, deliberately outside the text scale */
+/* Icons - sizing is glyph size, deliberately outside the text scale */
 .icon-sm{font-size:var(--icon-sm)}
 .icon-md{font-size:var(--icon-md)}
 .icon-lg{font-size:var(--icon-lg)}
@@ -230,7 +262,7 @@ body{font-family:var(--font-ui);color:var(--text);font-size:var(--fs-body)}
 .t-title{font-size:var(--fs-title)}
 .t-display{font-size:var(--fs-display)}
 
-/* Score hero — the big number on performance pages */
+/* Score hero - the big number on performance pages */
 .score-hero{font-size:var(--fs-hero);font-weight:700;line-height:1}
 .text-tone-success{color:var(--success)}
 .text-tone-info{color:var(--accent)}
@@ -274,7 +306,7 @@ body{font-family:var(--font-ui);color:var(--text);font-size:var(--fs-body)}
 .av-c11{background:var(--av-11-bg);color:var(--av-11-fg)}
 .av-c12{background:var(--av-12-bg);color:var(--av-12-fg)}
 .av-c1,.av-c2,.av-c3,.av-c4,.av-c5,.av-c6,.av-c7,.av-c8,.av-c9,.av-c10,.av-c11,.av-c12{border-color:transparent}
-/* Facepile — overlapping assignees. The ring is the card behind it, not a
+/* Facepile - overlapping assignees. The ring is the card behind it, not a
    border: it separates touching circles without changing their size. */
 .facepile{display:inline-flex;align-items:center;isolation:isolate}
 .facepile-av-xs{--pile:8px}
@@ -291,7 +323,7 @@ body{font-family:var(--font-ui);color:var(--text);font-size:var(--fs-body)}
 .facepile-more{background:var(--surface-sunken);color:var(--text-soft);font-weight:600}
 .facepile-none{background:var(--surface-sunken);color:var(--text-muted)}
 
-/* Task list rows — even height, quiet dividers, and an unset cell that
+/* Task list rows - even height, quiet dividers, and an unset cell that
    invites a value instead of stating its absence. */
 .task-list>tbody>tr>td{height:2.75rem;vertical-align:middle;border-color:var(--border)}
 .task-list>thead>tr>th{border-color:var(--border-strong);white-space:nowrap}
@@ -456,7 +488,7 @@ body{font-family:var(--font-ui);color:var(--text);font-size:var(--fs-body)}
   .fill-height-wide .table-responsive{flex:1 1 auto;min-height:0;max-height:none;overflow-y:auto}
 }
 
-/* Task status — .status-<key> sets --status, the rules below consume it */
+/* Task status - .status-<key> sets --status, the rules below consume it */
 .status-todo{--status:var(--text-subtle)}
 .status-in_progress{--status:var(--accent)}
 .status-in_review{--status:var(--warn)}
@@ -469,7 +501,7 @@ body{font-family:var(--font-ui);color:var(--text);font-size:var(--fs-body)}
 .kanban-col-header.status-done{--chev:var(--chev-done)}
 .status-dot{width:8px;height:8px;border-radius:var(--radius-pill);display:inline-block;background:var(--status,var(--text-subtle));flex-shrink:0}
 
-/* Auth shell — every unauthenticated page */
+/* Auth shell - every unauthenticated page */
 .auth-shell{background:radial-gradient(circle at 15% 10%,color-mix(in srgb,var(--brand-bright) 38%,transparent),transparent 34%),linear-gradient(135deg,var(--brand-deep) 0%,var(--brand-bright) 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:var(--sp-5);position:relative;overflow:auto}
 .auth-shell::before{content:"";position:fixed;width:420px;height:420px;border:1px solid color-mix(in srgb,var(--surface) 22%,transparent);border-radius:50%;right:-180px;top:-180px;opacity:.5;pointer-events:none}
 .auth-shell-plain{background:var(--canvas);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:var(--sp-6);position:relative;overflow:auto}

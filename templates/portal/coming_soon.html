@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ service.name }} is coming soon - LiveGrade</title>
+{% include 'partials/_vendor_styles.html' %}
+{% include 'partials/_design_system.html' %}
+</head>
+<body class="auth-shell">
+<div class="auth-card text-center">
+  <div class="text-center mb-4">
+    <div class="brand-icon"><i class="bi bi-clipboard2-data"></i></div>
+    <h5 class="fw-700 mb-1 text-ink">LiveGrade</h5>
+  </div>
+  <h5 class="fw-700 mb-2">{{ service.name }} is coming soon</h5>
+  <p class="text-muted t-body">{{ service.promise }}</p>
+  <p class="text-muted t-body">For {{ service.audience|lower }}. It is not open yet.</p>
+  {% if subscribed %}
+  <p role="status">Thanks. You're on the notification list.</p>
+  {% else %}
+  <form method="post" action="{% url 'service_interest' service.slug %}" class="text-start mt-3">
+    {% csrf_token %}
+    <p>Get one email when {{ service.name }} opens.</p>
+    {{ interest_form.as_p }}
+    <button type="submit" class="btn btn-primary">Notify me</button>
+  </form>
+  {% endif %}
+  <a href="/" class="btn btn-primary mt-2">See what LiveGrade offers</a>
+</div>
+</body>
+</html>

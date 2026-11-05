@@ -1,0 +1,28 @@
+<section class="card border-primary-subtle mb-4 service-onboarding"
+         aria-labelledby="service-onboarding-title" data-service-onboarding="{{ onboarding.slug }}">
+  <div class="card-body p-3 p-lg-4">
+    <div class="d-flex align-items-start gap-3 mb-3">
+      <span class="service-onboarding-icon" aria-hidden="true"><i class="bi bi-signpost-split"></i></span>
+      <div>
+        <p class="text-primary fw-semibold small text-uppercase mb-1">{{ onboarding.kicker }}</p>
+        <h2 class="h4 mb-1" id="service-onboarding-title">{{ onboarding.title }}</h2>
+        <p class="text-muted mb-0">{{ onboarding.summary }}</p>
+      </div>
+    </div>
+    <ol class="list-group list-group-numbered service-onboarding-steps mb-3">
+      {% for step in onboarding.steps %}
+        <li class="list-group-item">
+          <span class="fw-semibold">{{ step.0 }}</span>
+          <span class="d-block small text-muted">{{ step.1 }}</span>
+        </li>
+      {% endfor %}
+    </ol>
+    <p class="small text-muted mb-3"><i class="bi bi-shield-lock me-1" aria-hidden="true"></i>{{ onboarding.privacy_note }}</p>
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-primary" href="{{ onboarding.create_anchor }}">{{ onboarding.create_label }}</a>
+      {% if onboarding.resume_url %}
+        <a class="btn btn-outline-primary" href="{{ onboarding.resume_url }}">{{ onboarding.resume_label }}{% if onboarding.resume_name %}: {{ onboarding.resume_name }}{% endif %}</a>
+      {% endif %}
+    </div>
+  </div>
+</section>

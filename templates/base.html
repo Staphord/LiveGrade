@@ -6,8 +6,7 @@
 <meta name="csrf-token" content="{{ csrf_token }}">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{% block title %}LiveGrade{% endblock %}</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" integrity="sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM" crossorigin="anonymous" rel="stylesheet">
-<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" integrity="sha384-QuGBSgV5Im3DzL2z+8Ko9/hqNy/N0O7zwvXAtfd1MvPKWa/UbeLV65cfm4BV5Wgq" crossorigin="anonymous" rel="stylesheet">
+{% include 'partials/_vendor_styles.html' %}
 {% include 'partials/_design_system.html' %}
 {% include 'partials/_design_kit.html' %}
 <style nonce="{{ csp_nonce }}">
@@ -139,7 +138,7 @@ display:none!important;
 .priority-dot{width:8px;height:8px;border-radius:var(--radius-pill);flex-shrink:0}
 .drop-zone.drag-over{background:var(--accent-soft);border:2px dashed var(--accent)}
 /* Quick-edit affordance: priority badge + assignee avatars are clickable
-   (board cards and the task detail sidebar) — nothing about a plain badge
+   (board cards and the task detail sidebar) - nothing about a plain badge
    or an avatar stack otherwise signals that, so a hover ring + pointer
    cursor stands in for the missing visual cue. */
 .priority-picker-toggle,.assignee-picker-toggle{cursor:pointer;transition:box-shadow var(--motion-fast) var(--ease)}
@@ -189,7 +188,7 @@ display:none!important;
   .main-wrap, .sidebar.collapsed ~ .main-wrap{margin-left:0}
   .sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:var(--z-backdrop)}
   .sidebar-backdrop.show{display:block}
-  .topbar{flex-wrap:wrap;gap:var(--sp-2);padding:var(--sp-3)}
+  .topbar{height:auto;min-height:var(--topbar-h);flex-wrap:wrap;gap:var(--sp-2);padding:var(--sp-3)}
   .topbar-actions-wrap{width:100%;overflow-x:auto}
   .page-body{padding:var(--sp-3)}
   .kanban-col{flex:0 0 82vw}
@@ -205,6 +204,7 @@ display:none!important;
       <i class="bi bi-clipboard2-data text-primary icon-sm"></i>
       <div>
         <h5>LiveGrade</h5>
+        {% if current_service %}<small>{{ current_service.name }}</small>{% endif %}
       </div>
     </div>
     <button id="sidebar-toggle" class="sidebar-toggle-btn" type="button" aria-label="Toggle sidebar">
@@ -215,10 +215,10 @@ display:none!important;
   {% if only_personal %}
   {% elif my_orgs|length > 1 %}
   <div class="brand-text px-3 py-2 border-bottom">
-    <label class="text-muted d-block mb-1 u-label">Organization</label>
-    <form method="post" action="{% url 'switch_organization' %}">
+    <label class="text-muted d-block mb-1 u-label" for="organization-switcher">Organization</label>
+    <form method="post" action="{% if current_service %}{% url 'service_switch_organization' current_service.slug %}{% else %}{% url 'switch_organization' %}{% endif %}">
       {% csrf_token %}
-      <select name="organization" class="form-select form-select-sm t-body" data-autosubmit>
+      <select id="organization-switcher" name="organization" class="form-select form-select-sm t-body" data-autosubmit>
         {% for org in my_orgs %}
         <option value="{{ org.id }}"{% if active_org and org.id == active_org.id %} selected{% endif %}>{{ org.display_name }}</option>
         {% endfor %}
@@ -233,10 +233,10 @@ display:none!important;
   {% endif %}
 
   <nav class="nav-shell">
-    {% if request.user.is_authenticated %}
+    {% if request.user.is_authenticated and current_service %}
     <div class="nav-section">Main</div>
-    <a href="{% url 'assessment_session_list' %}" class="nav-link {% if 'assessment' in request.resolver_match.url_name %}active{% endif %}">
-      <i class="bi bi-clipboard2-data"></i><span class="nav-text">Sessions</span>
+    <a href="{{ service_dashboard }}" class="nav-link {% if 'assessment' in request.resolver_match.url_name %}active{% endif %}">
+      <i class="bi bi-clipboard2-data"></i><span class="nav-text">{{ current_service.name }} dashboard</span>
     </a>
     {% endif %}
   </nav>
@@ -283,6 +283,7 @@ display:none!important;
     </div>
   </div>
   <div class="page-body">
+    {% if classroom_walkthrough %}{% include 'assessments/_classroom_walkthrough.html' %}{% endif %}
     {% block content %}{% endblock %}
   </div>
 </div>
@@ -305,8 +306,8 @@ display:none!important;
   </div>
 </div>
 {% endif %}
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g" crossorigin="anonymous"></script>
+{% include 'partials/_vendor_scripts.html' %}
+<script src="{% static 'vendor/chartjs/4.4.0/dist/chart.umd.min.js' %}"></script>
 <script src="{% static 'js/design-tokens.js' %}"></script>
 <script src="{% static 'js/feedback.js' %}"></script>
 <script src="{% static 'js/density.js' %}"></script>
@@ -383,8 +384,8 @@ display:none!important;
 
 <script nonce="{{ csp_nonce }}">
 // Any page with a sticky tabs/KPI header (`.tabs-sticky-header`) needs
-// other sticky elements further down the same page — a sidebar form
-// card, say — to sit *below* it, not under it. Its height varies per
+// other sticky elements further down the same page - a sidebar form
+// card, say - to sit *below* it, not under it. Its height varies per
 // page and can change at runtime (a validation banner appearing, a
 // stat updating), so it's measured rather than hard-coded, and exposed
 // as `--sticky-header-h` for any element's `top: calc(var(--topbar-h) +

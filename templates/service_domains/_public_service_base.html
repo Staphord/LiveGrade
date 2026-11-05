@@ -1,0 +1,46 @@
+{% load static %}
+<!doctype html>
+<html lang="en" data-livegrade-participant>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{% block title %}LiveGrade{% endblock %}</title>
+  {% include 'partials/_vendor_styles.html' %}
+  {% include 'partials/_design_system.html' %}
+  <style nonce="{{ csp_nonce }}">
+    body{min-height:100vh;display:flex;flex-direction:column;background:var(--canvas);color:var(--text)}
+    .public-skip-link{position:absolute;z-index:1000;top:.5rem;left:.5rem;padding:.65rem 1rem;border-radius:var(--radius-control);background:var(--surface);color:var(--ink);transform:translateY(-160%)}
+    .public-skip-link:focus{transform:translateY(0)}
+    .public-service-header{display:flex;align-items:center;justify-content:space-between;gap:1rem;min-height:4.25rem;padding:.75rem clamp(1rem,4vw,2.5rem);background:var(--surface);border-bottom:1px solid var(--border)}
+    .public-service-brand{display:flex;align-items:center;gap:.65rem;min-width:0;color:var(--ink)}
+    .public-service-mark{display:grid;place-items:center;width:2.35rem;height:2.35rem;border-radius:.7rem;background:var(--accent-soft);color:var(--accent);font-size:1.15rem}
+    .public-service-brand strong{font-size:1rem}.public-service-brand small{display:block;color:var(--text-muted);font-size:var(--fs-sm)}
+    .public-service-content{width:min(100% - 2rem,64rem);margin:clamp(1.25rem,4vw,3rem) auto;flex:1}
+    .public-service-content.narrow{max-width:44rem}.public-service-content.wide{max-width:90rem}
+    .public-service-footer{padding:1rem;text-align:center;color:var(--text-muted);font-size:var(--fs-sm)}
+    .public-service-content h1{color:var(--ink);line-height:1.15}
+    .public-service-content .card,.public-service-content .s-card{border-color:var(--border);border-radius:var(--radius-card);box-shadow:var(--elev-1)}
+    .public-service-content fieldset{min-width:0}
+    .public-service-content :focus-visible{outline:3px solid var(--accent);outline-offset:2px;box-shadow:none}
+    @media(max-width:575.98px){.public-service-content{width:min(100% - 1rem,64rem);margin:1rem auto}.public-service-header{min-height:3.5rem}}
+    @media print{.public-skip-link,.public-service-header,.public-service-footer,.no-print{display:none!important}.public-service-content{width:100%;max-width:none;margin:0}}
+  </style>
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+  <a class="public-skip-link" href="#public-main">Skip to main content</a>
+  <header class="public-service-header">
+    <div class="public-service-brand" aria-label="LiveGrade shared page">
+      <span class="public-service-mark" aria-hidden="true"><i class="bi bi-clipboard2-data-fill"></i></span>
+      <span><strong>LiveGrade</strong><small>{% block service_name %}Shared workspace{% endblock %}</small></span>
+    </div>
+    {% block public_header_action %}{% endblock %}
+  </header>
+  {% block content %}{% endblock %}
+  <footer class="public-service-footer">LiveGrade</footer>
+  {% include 'partials/_vendor_scripts.html' %}
+  {% block scripts %}{% endblock %}
+</body>
+</html>

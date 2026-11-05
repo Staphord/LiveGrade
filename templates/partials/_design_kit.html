@@ -1,6 +1,6 @@
 <style nonce="{{ csp_nonce }}">
 /* ==========================================================================
-   DevPerf kit — the shared components built on the tokens in
+   DevPerf kit - the shared components built on the tokens in
    _design_system.html. Tokens live there; this file only composes them.
    Live reference: /design-kit/ (superusers).
    ========================================================================== */
@@ -76,7 +76,7 @@
 .page-tabs{gap:var(--sp-4)}
 }
 
-/* F-2b Sticky tab header — an opt-in wrapper (not baked into .page-tabs
+/* F-2b Sticky tab header - an opt-in wrapper (not baked into .page-tabs
    itself, so unrelated pages that already use tabs keep their normal,
    non-sticky layout). Pins the session sub-nav under the topbar as the
    page scrolls, with a compact KPI strip pinned along with it when a page
@@ -87,7 +87,7 @@
 .tabs-sticky-header .page-tabs{margin-bottom:0}
 .tabs-sticky-header > *:not(:last-child){margin-bottom:var(--sp-3)}
 
-/* Shared stat-pill strip — a quick at-a-glance KPI row, originally built for
+/* Shared stat-pill strip - a quick at-a-glance KPI row, originally built for
    the Groups tab and reused (with an added is-bad tone + optional filter-link
    affordance) on Participation, so both "overview strip" instances share one
    definition instead of drifting apart. */
@@ -102,7 +102,7 @@
 .groups-stat-pill .stat-val{font-size:var(--fs-heading);font-weight:800;color:var(--ink);line-height:1.1}
 .groups-stat-pill .stat-val .stat-of{font-size:var(--fs-sm);font-weight:600;color:var(--text-muted)}
 .groups-stat-pill .stat-lbl{font-size:var(--fs-micro);color:var(--text-muted)}
-/* A stat pill that doubles as a filter link — same shape, plus a hover lift
+/* A stat pill that doubles as a filter link - same shape, plus a hover lift
    and an active ring so the current filter reads clearly among the four. */
 a.groups-stat-pill.filter-pill{text-decoration:none;cursor:pointer;transition:transform var(--motion-fast) var(--ease),box-shadow var(--motion-fast) var(--ease)}
 a.groups-stat-pill.filter-pill:hover{transform:translateY(-1px);box-shadow:var(--elev-1)}
@@ -110,7 +110,7 @@ a.groups-stat-pill.filter-pill.is-active{border-color:var(--accent);box-shadow:0
 
 /* A small initials avatar gives every row a distinct visual anchor to
    scan by, the way a real roster/contacts list (not a bare spreadsheet
-   dump) would — Bootstrap's own "subtle" tone classes cycle per row so no
+   dump) would - Bootstrap's own "subtle" tone classes cycle per row so no
    new colour tokens are needed. Originally built for the Roster tab, now
    shared with Results' student column for the same at-a-glance feel. */
 .roster-avatar{width:30px;height:30px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
