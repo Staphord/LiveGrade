@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% block title %}Panel · LiveGrade{% endblock %}
+{% block page_title %}Panel{% endblock %}
+{% block content %}
+{% include 'service_domains/_workspace_styles.html' %}
+{% include 'service_domains/_panel_ui_styles.html' %}
+<main id="main-content" class="container-fluid py-4 service-workspace panel-page panel-dashboard">
+  <header class="panel-hero mb-4">
+    <div class="panel-hero__copy">
+      <p class="panel-eyebrow">LiveGrade Panel</p>
+      <h1 class="page-title">Panel assessments</h1>
+      <p class="page-subtitle mt-2">Set up reviews, run them live, and share approved results.</p>
+    </div>
+    <div class="panel-hero__actions">
+      <a class="btn btn-primary" href="#create-hearing"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create assessment</a>
+      <a class="btn btn-outline-secondary" href="{% url 'combined_assessment_list' %}">Combined assessments</a>
+      {% if can_oversee_panel %}<a class="btn btn-outline-secondary" href="{% url 'panel_oversight_list' %}">Organization results</a>{% endif %}
+    </div>
+  </header>
+
+  {% if messages %}<div aria-live="polite">{% for message in messages %}<div class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'warning' %}alert-warning{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %}" role="status">{{ message }}</div>{% endfor %}</div>{% endif %}
+
+  {% if not hearings %}
+    <section class="panel-card mb-4">
+      {% include 'service_domains/_onboarding.html' with onboarding=onboarding %}
+    </section>
+  {% else %}
+    <section class="panel-kpis mb-4" aria-label="Assessment overview">
+      <div class="panel-kpi"><span class="panel-kpi__label">Live now</span><span class="panel-kpi__value">{{ dashboard_stats.live }}</span></div>
+      <div class="panel-kpi"><span class="panel-kpi__label">In setup</span><span class="panel-kpi__value">{{ dashboard_stats.drafts }}</span></div>
+      <div class="panel-kpi"><span class="panel-kpi__label">To review</span><span class="panel-kpi__value">{{ dashboard_stats.review }}</span></div>
+      <div class="panel-kpi"><span class="panel-kpi__label">Ready to share</span><span class="panel-kpi__value">{{ dashboard_stats.release }}</span></div>
+      <div class="panel-kpi"><span class="panel-kpi__label">Completed</span><span class="panel-kpi__value">{{ dashboard_stats.completed }}</span></div>
+    </section>
+
+    {% if attention_hearings %}<section class="panel-card mb-4" aria-labelledby="attention-heading">
+      <div class="panel-section-heading"><div><h2 class="h5" id="attention-heading"><i class="bi bi-flag me-1 text-primary" aria-hidden="true"></i>Needs your attention</h2><p>Pick up where action is needed.</p></div></div>
+      <div class="list-group list-group-flush">
+        {% for hearing in attention_hearings %}<div class="list-group-item px-0 d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <div class="min-w-0"><strong>{{ hearing.name }}</strong><span class="panel-muted"> · {% if hearing.dashboard_invitation_issue %}{{ hearing.dashboard_invitation_issue }}{% else %}{{ hearing.dashboard_next_action }}{% endif %}</span></div>
+          {% if hearing.status == 'review' or hearing.status == 'signed_off' or hearing.status == 'released' %}<a class="btn btn-sm btn-outline-primary" href="{% url 'panel_results_review' hearing_id=hearing.pk %}">{% if hearing.status == 'signed_off' %}Release results{% else %}Review results{% endif %}</a>
+          {% elif hearing.status == 'draft' and hearing.dashboard_next_action == 'Ready to open' %}<a class="btn btn-sm btn-outline-primary" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}?step=ready">Review and open</a>
+          {% else %}<a class="btn btn-sm btn-outline-primary" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}">{% if hearing.status == 'open' %}Open live controls{% else %}Continue setup{% endif %}</a>{% endif %}
+        </div>{% endfor %}
+      </div>
+    </section>{% endif %}
+
+    <section class="mb-4" aria-labelledby="assessments-heading">
+      <div class="panel-section-heading"><div><h2 class="h4" id="assessments-heading">Your assessments</h2><p>Live work and assessments needing action appear first.</p></div></div>
+      <div class="row g-3">
+        {% for hearing in hearings %}<div class="col-12 col-md-6 col-xl-4"><article class="panel-card panel-card--accent d-flex flex-column">
+          <div class="panel-card__top mb-2"><h3 class="h5 mb-0 text-break">{{ hearing.name }}</h3><span class="panel-state {% if hearing.status == 'open' %}panel-state--live{% elif hearing.status == 'draft' %}panel-state--draft{% else %}panel-state--done{% endif %}">{{ hearing.get_status_display }}</span></div>
+          <p class="small panel-muted mb-3">{{ hearing.get_workflow_display }}</p>
+          <div class="d-flex flex-wrap gap-2 mb-3"><span class="badge text-bg-light border">{{ hearing.candidate_count }} candidate{{ hearing.candidate_count|pluralize }}</span><span class="badge text-bg-light border">{{ hearing.accepted_examiner_count }} examiner{{ hearing.accepted_examiner_count|pluralize }} ready</span></div>
+          {% if hearing.status == 'open' %}
+            {% if hearing.active_candidate %}<p class="small text-success mb-3"><i class="bi bi-broadcast me-1" aria-hidden="true"></i>Now reviewing: <strong>{{ hearing.active_candidate.display_name }}</strong></p>{% else %}<p class="small panel-muted mb-3">Waiting for you to start the next candidate.</p>{% endif %}
+            <a class="btn btn-primary mt-auto" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}">Open live controls</a>
+          {% elif hearing.status == 'draft' %}<p class="small panel-muted mb-3">Next: {{ hearing.dashboard_next_action }}</p><a class="btn btn-primary mt-auto" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}{% if hearing.dashboard_next_action == 'Ready to open' %}?step=ready{% endif %}">{% if hearing.dashboard_next_action == 'Ready to open' %}Review and open{% else %}Continue setup{% endif %}</a>
+          {% elif hearing.status == 'review' or hearing.status == 'signed_off' %}<a class="btn btn-outline-primary mt-auto" href="{% url 'panel_results_review' hearing_id=hearing.pk %}">{% if hearing.status == 'signed_off' %}Release results{% else %}Review results{% endif %}</a>
+          {% elif hearing.status == 'released' %}<a class="btn btn-outline-secondary mt-auto" href="{% url 'panel_results_review' hearing_id=hearing.pk %}">View released results</a>{% endif %}
+        </article></div>{% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
+  <section class="panel-card" id="create-hearing" aria-labelledby="new-hearing-heading">
+    <p class="panel-eyebrow">New assessment</p><h2 class="h4" id="new-hearing-heading">Create a Panel assessment</h2>
+    <p class="panel-muted">Name it and choose how examiners will take part. You can add candidates and reviewers next.</p>
+    <form method="post" class="service-flow-form" novalidate>{% csrf_token %}
+      {% for error in form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endfor %}
+      {% for field in form %}<div class="panel-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-text text-muted">{{ field.help_text }}</small>{% endif %}{% for error in field.errors %}<div class="text-danger small" role="alert">{{ error }}</div>{% endfor %}</div>{% endfor %}
+      <button class="btn btn-primary" type="submit">Create draft</button>
+    </form>
+  </section>
+</main>
+{% endblock %}

@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block title %}{{ hearing.name }} · Organization results{% endblock %}
+{% block page_title %}Organization results{% endblock %}
+{% block content %}
+{% include 'service_domains/_workspace_styles.html' %}
+{% include 'service_domains/_panel_ui_styles.html' %}
+<main id="main-content" class="container-fluid py-4 service-workspace panel-page--wide">
+  <p><a class="btn btn-link px-0" href="{% url 'panel_oversight_list' %}"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i>Organization results</a></p>
+  <header class="panel-hero mb-4"><div class="panel-hero__copy"><p class="panel-eyebrow">Read-only results · {{ hearing.get_status_display }}</p><h1 class="page-title">{{ hearing.name }}</h1><p class="page-subtitle mt-2">Combined results by candidate and criterion.</p></div><span class="panel-state panel-state--done">{{ result_rows|length }} result{{ result_rows|length|pluralize }}</span></header>
+  <div class="alert alert-light border" role="note">Examiner identities, individual marks, and private comments are not included.</div>
+  {% if result_rows %}<section class="row g-3" aria-label="Assessment results">{% for row in result_rows %}<div class="col-12 col-md-6 col-xl-4"><article class="panel-card h-100"><p class="panel-eyebrow">{{ row.snapshot.candidate.display_name }}</p><h2 class="h5">{{ row.snapshot.criterion.name }}</h2><div class="d-flex align-items-baseline gap-2"><strong class="fs-3 panel-number">{% if row.latest_adjustment %}{{ row.latest_adjustment.adjusted_score|floatformat:'-2' }}{% else %}{{ row.snapshot.score|floatformat:'-2' }}{% endif %}</strong><span class="small panel-muted">/ 100</span></div><div class="panel-progress mt-2" role="meter" aria-label="{{ row.snapshot.candidate.display_name }} — {{ row.snapshot.criterion.name }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{% if row.latest_adjustment %}{{ row.latest_adjustment.adjusted_score }}{% else %}{{ row.snapshot.score }}{% endif %}"><span style="width:{% if row.latest_adjustment %}{{ row.latest_adjustment.adjusted_score }}{% else %}{{ row.snapshot.score }}{% endif %}%"></span></div><p class="small panel-muted mt-3 mb-0">Combined from {{ row.snapshot.rater_count }} examiner{{ row.snapshot.rater_count|pluralize }}{% if row.snapshot.below_minimum %} · below required response count{% endif %}</p>{% if row.latest_adjustment %}<details class="mt-3"><summary class="small fw-semibold">View score change</summary><p class="small mt-2 mb-0">{{ row.latest_adjustment.reason }}</p></details>{% endif %}</article></div>{% endfor %}</section>
+  {% else %}<section class="panel-empty"><h2 class="h5">No combined results</h2><p class="panel-muted mb-0">There are no results to show for this assessment.</p></section>{% endif %}
+</main>
+{% endblock %}

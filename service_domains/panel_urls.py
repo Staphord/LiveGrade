@@ -1,0 +1,47 @@
+from django.urls import path
+from .combined_views import (combined_assessment_create, combined_assessment_detail,
+                             combined_assessment_list)
+
+from .views import (panel_candidate_import, panel_candidate_import_sample,
+                    panel_rubric_import, panel_rubric_import_sample,
+                    panel_invitation_import, panel_invitation_import_sample,
+                    panel_examiner, panel_hearing_list, panel_hearing_manage,
+                    panel_live_display, panel_live_display_updates,
+                    panel_recusal_export, panel_results_export, panel_results_review, panel_entrant_results,
+                    panel_oversight_list, panel_oversight_detail)
+
+
+urlpatterns = [
+    path('app/combined/', combined_assessment_list, name='combined_assessment_list'),
+    path('app/combined/new/', combined_assessment_create, name='combined_assessment_create'),
+    path('app/combined/<int:assessment_id>/', combined_assessment_detail,
+         name='combined_assessment_detail'),
+    path('app/hearings/', panel_hearing_list, name='panel_hearing_list'),
+    path('app/hearings/<int:hearing_id>/', panel_hearing_manage, name='panel_hearing_manage'),
+    path('app/hearings/<int:hearing_id>/candidates/import/', panel_candidate_import,
+         name='panel_candidate_import'),
+    path('app/hearings/<int:hearing_id>/candidates/import/sample.xlsx',
+         panel_candidate_import_sample, name='panel_candidate_import_sample'),
+    path('app/hearings/<int:hearing_id>/rubric/import/', panel_rubric_import,
+         name='panel_rubric_import'),
+    path('app/hearings/<int:hearing_id>/rubric/import/sample.xlsx',
+         panel_rubric_import_sample, name='panel_rubric_import_sample'),
+    path('app/hearings/<int:hearing_id>/invitations/import/', panel_invitation_import,
+         name='panel_invitation_import'),
+    path('app/hearings/<int:hearing_id>/invitations/import/sample.xlsx',
+         panel_invitation_import_sample, name='panel_invitation_import_sample'),
+    path('app/hearings/<int:hearing_id>/recusals.csv', panel_recusal_export,
+         name='panel_recusal_export'),
+    path('app/hearings/<int:hearing_id>/results/', panel_results_review,
+         name='panel_results_review'),
+    path('app/hearings/<int:hearing_id>/results.xlsx', panel_results_export,
+         name='panel_results_export'),
+    path('app/oversight/hearings/', panel_oversight_list, name='panel_oversight_list'),
+    path('app/oversight/hearings/<int:hearing_id>/', panel_oversight_detail,
+         name='panel_oversight_detail'),
+    path('results/<str:token>/', panel_entrant_results, name='panel_entrant_results'),
+    path('examiner/<str:token>/', panel_examiner, name='panel_examiner'),
+    path('display/<str:token>/', panel_live_display, name='panel_live_display'),
+    path('display/<str:token>/updates/', panel_live_display_updates,
+         name='panel_live_display_updates'),
+]

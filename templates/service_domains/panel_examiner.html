@@ -1,0 +1,79 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% block title %}Examiner workspace · {{ hearing.name }}{% endblock %}
+{% block service_name %}Panel examiner workspace{% endblock %}
+{% block content %}
+{% include 'service_domains/_panel_ui_styles.html' %}
+<main id="public-main" class="public-service-content wide">
+  <header class="panel-hero mb-4">
+    <div class="panel-hero__copy"><p class="panel-eyebrow">Examiner workspace</p><h1>{{ hearing.name }}</h1>
+      {% if hearing.status == 'draft' %}<p class="panel-muted mt-2">The organizer has not opened scoring yet. You can review the candidate list.</p>
+      {% elif hearing.active_candidate %}<p class="panel-muted mt-2">Score the active candidate below. Your marks and comments stay private.</p>
+      {% else %}<p class="panel-muted mt-2">Waiting for the organizer to select the next candidate.</p>{% endif %}
+    </div>
+    <div class="panel-hero__actions"><span class="panel-state {% if hearing.status == 'open' %}panel-state--live{% else %}panel-state--done{% endif %}" data-hearing-state>{{ hearing.get_status_display }}</span></div>
+  </header>
+  <div class="alert alert-danger" role="alert" {% if not form_error %}hidden{% endif %}>{% if form_error %}{{ form_error }}{% endif %}</div>
+  <div class="alert alert-info" role="status" aria-live="polite" data-live-change hidden></div>
+  {% if candidate_rows %}
+    <nav class="panel-card mb-4" aria-label="Candidates"><div class="panel-section-heading"><div><h2 class="h5">Candidate list</h2><p>Choose a name to jump to its review.</p></div></div><div class="d-flex flex-wrap gap-2">{% for row in candidate_rows %}<a class="btn btn-sm {% if row.active %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="#candidate-{{ row.candidate.pk }}" data-candidate-link="{{ row.candidate.pk }}">{{ row.candidate.display_name }}{% if row.active %}<span class="visually-hidden">, active now</span>{% endif %}</a>{% endfor %}</div></nav>
+  {% endif %}
+  {% for row in candidate_rows %}
+    <section class="panel-card mb-4{% if row.active %} panel-card--accent{% endif %}" id="candidate-{{ row.candidate.pk }}" data-candidate-card="{{ row.candidate.pk }}" aria-labelledby="candidate-title-{{ row.candidate.pk }}">
+      <div class="panel-card__top mb-3"><div><p class="panel-eyebrow">Candidate {{ forloop.counter }}</p><h2 class="h3 mb-0 text-break" id="candidate-title-{{ row.candidate.pk }}">{{ row.candidate.display_name }}</h2></div>
+        {% if row.active %}<span class="panel-state panel-state--live" data-active-badge>Scoring now</span>{% elif hearing.status == 'draft' %}<span class="panel-state panel-state--done">Not started</span>{% else %}<span class="panel-state panel-state--done">Waiting</span>{% endif %}
+      </div>
+      {% if row.conflicted %}<div class="alert alert-info" role="status">You reported a conflict for this candidate. You do not need to score them.</div>
+      {% else %}
+        {% if row.can_declare_conflict %}<details class="mb-3"><summary class="btn btn-sm btn-outline-secondary">I cannot assess this candidate fairly</summary><form method="post" class="panel-score-form mt-2">{% csrf_token %}<input type="hidden" name="action" value="conflict"><input type="hidden" name="candidate_id" value="{{ row.candidate.pk }}"><label class="form-label" for="conflict-reason-{{ row.candidate.pk }}">Brief reason</label><textarea class="form-control" id="conflict-reason-{{ row.candidate.pk }}" name="reason" maxlength="1000" required></textarea><button class="btn btn-outline-danger mt-2" type="submit">Submit conflict</button></form></details>{% endif %}
+        {% if hearing.workflow == 'vote' or hearing.workflow == 'hybrid' or hearing.workflow == 'review_vote' %}
+          {% if row.vote %}<div class="alert alert-success" role="status">Your private vote has been recorded: {{ row.vote.get_choice_display }}.</div>{% elif row.active and hearing.status == 'open' %}<form method="post" class="panel-score-form mb-3">{% csrf_token %}<input type="hidden" name="action" value="vote"><input type="hidden" name="candidate_id" value="{{ row.candidate.pk }}"><h3 class="h5">Your vote</h3>{{ row.vote_form.as_p }}<button class="btn btn-primary" type="submit">Submit private vote</button></form>{% endif %}
+        {% endif %}
+        {% if hearing.workflow == 'review' or hearing.workflow == 'review_vote' %}
+          {% if row.written_review %}<div class="alert alert-success" role="status">Your latest review was submitted {{ row.written_review.created_at }}. You can update it while this candidate is active.</div><blockquote class="border-start border-3 ps-3 mb-3">{{ row.written_review.report|linebreaksbr }}</blockquote>{% endif %}
+          {% if row.active and hearing.status == 'open' %}<form method="post" class="panel-score-form mb-3">{% csrf_token %}<input type="hidden" name="action" value="review"><input type="hidden" name="candidate_id" value="{{ row.candidate.pk }}"><h3 class="h5">{% if row.written_review %}Update your review{% else %}Write your review{% endif %}</h3>{{ row.review_form.as_p }}<button class="btn btn-primary" type="submit">{% if row.written_review %}Submit update{% else %}Submit review{% endif %}</button></form>{% endif %}
+        {% endif %}
+        {% for item in row.criteria %}
+          {% if item.score %}<article class="panel-score-form mb-3"><div class="panel-card__top"><h3 class="h5">{{ item.criterion.name }}</h3><span class="badge text-bg-success">Submitted</span></div><p class="mb-0"><strong>Your score:</strong> {{ item.score.score }}{% if item.score.comment %}<br><span class="panel-muted">{{ item.score.comment }}</span>{% endif %}</p></article>
+          {% elif item.abstained %}<article class="panel-score-form mb-3"><div class="panel-card__top"><h3 class="h5">{{ item.criterion.name }}</h3><span class="badge text-bg-secondary">Skipped</span></div><p class="panel-muted mb-0">You chose not to score this criterion.</p></article>
+          {% elif row.active and hearing.status == 'open' %}<form method="post" class="panel-score-form mb-3">{% csrf_token %}<input type="hidden" name="candidate_id" value="{{ row.candidate.pk }}"><input type="hidden" name="criterion_id" value="{{ item.criterion.pk }}"><h3 class="h5">{{ item.criterion.name }}</h3>{% if item.criterion.description %}<p class="panel-muted">{{ item.criterion.description }}</p>{% endif %}
+            {% if item.levels %}<details class="mb-3"><summary class="small fw-semibold">View score guidance</summary><ul class="small panel-muted mt-2">{% for level in item.levels %}<li><strong>{{ level.score|floatformat:'-2' }} points:</strong> {{ level.description }}</li>{% endfor %}</ul></details>{% endif %}
+            <div class="row g-3 align-items-end"><div class="col-12 col-sm-4"><label class="form-label" for="score-{{ row.candidate.pk }}-{{ item.criterion.pk }}">Score (0–100)</label><input class="form-control" type="number" min="0" max="100" step="0.01" inputmode="decimal" required id="score-{{ row.candidate.pk }}-{{ item.criterion.pk }}" name="score"></div><div class="col-12 col-sm-8"><label class="form-label" for="comment-{{ row.candidate.pk }}-{{ item.criterion.pk }}">Comment (optional)</label><textarea class="form-control" id="comment-{{ row.candidate.pk }}-{{ item.criterion.pk }}" name="comment" maxlength="2000" rows="2"></textarea></div></div>
+            <div class="d-flex flex-wrap gap-2 mt-3"><button class="btn btn-primary" type="submit" name="action" value="score">Submit score</button><button class="btn btn-outline-secondary" type="submit" name="action" value="abstain" formnovalidate>Skip this criterion</button></div>
+          </form>{% endif %}
+        {% endfor %}
+        {% if not row.active and not row.vote and not row.written_review %}<p class="panel-muted mb-0">This candidate is not open for scoring right now.</p>{% endif %}
+      {% endif %}
+    </section>
+  {% empty %}<div class="panel-empty"><h2 class="h5">No candidates yet</h2><p class="panel-muted mb-0">Contact the organizer for the next step.</p></div>{% endfor %}
+</main>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const change = document.querySelector('[data-live-change]');
+  const stateUrl = `${window.location.pathname}?state=1`;
+  let lastActive = [...document.querySelectorAll('[data-candidate-card]')].find(card => card.querySelector('[data-active-badge]'))?.dataset.candidateCard || '';
+  async function refreshState() {
+    try {
+      const response = await fetch(stateUrl, {headers: {'Accept': 'application/json'}, cache: 'no-store', credentials: 'same-origin'});
+      if (!response.ok) return;
+      const data = await response.json();
+      const nextActive = data.active_candidate_id == null ? '' : String(data.active_candidate_id);
+      if (nextActive !== lastActive) {
+        change.hidden = false;
+        change.textContent = nextActive ? `${data.active_candidate_name} is now active. Refresh this page to start scoring.` : 'The organizer has paused scoring. Refresh this page for the latest status.';
+        if (!change.querySelector('a')) {
+          const link = document.createElement('a');
+          link.className = 'alert-link ms-1';
+          link.href = window.location.pathname;
+          link.textContent = 'Refresh workspace';
+          change.append(document.createTextNode(' '), link);
+        }
+        lastActive = nextActive;
+      }
+    } catch (_error) { /* Keep the current scorecard usable if the network drops. */ }
+  }
+  window.setInterval(refreshState, 8000);
+})();
+</script>
+{% endblock %}

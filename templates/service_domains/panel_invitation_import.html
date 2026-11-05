@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block title %}Invite examiners · {{ hearing.name }} · Panel{% endblock %}
+{% block page_title %}Invite examiners{% endblock %}
+{% block content %}
+{% include 'service_domains/_workspace_styles.html' %}
+{% include 'service_domains/_panel_ui_styles.html' %}
+<main id="main-content" class="container-fluid py-4 service-workspace panel-import-shell">
+  <p><a class="btn btn-link px-0" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i>{{ hearing.name }}</a></p>
+  <header class="panel-hero mb-4"><div class="panel-hero__copy"><p class="panel-eyebrow">Assessment setup</p><h1 class="page-title">Invite examiners</h1><p class="page-subtitle mt-2">Upload email addresses, check the list, then send invitations.</p></div></header>
+  <ol class="service-setup-nav mb-3" aria-label="Invitation steps"><li{% if not plan %} aria-current="step"{% endif %}><span class="step-index">1</span>Upload file</li><li{% if plan %} aria-current="step"{% endif %}><span class="step-index">2</span>Review and send</li></ol>
+  <section id="upload-examiners" class="panel-card mb-4" aria-labelledby="upload-heading">
+    <div class="panel-import-guide"><div><h2 class="h5" id="upload-heading">Choose the examiner list</h2><p class="panel-muted">Use one email address per row. Duplicate active invitations are flagged in the preview.</p>
+      <a class="btn btn-outline-secondary btn-sm mb-3" href="{% url 'panel_invitation_import_sample' hearing_id=hearing.pk %}"><i class="bi bi-download me-1" aria-hidden="true"></i>Download sample file</a>
+      <form method="post" enctype="multipart/form-data" class="service-flow-form">{% csrf_token %}
+        {% for error in form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endfor %}
+        {% include 'assessments/_partials/import_dropzone.html' with file_field=form.file dropzone_id='panel-invitation-dropzone' filename_id='panel-invitation-filename' %}
+        {% for error in form.file.errors %}<div class="text-danger small mt-2" role="alert">{{ error }}</div>{% endfor %}
+        <div class="panel-form-grid mt-3">{% for field in form %}{% if field.name != 'file' %}<div class="panel-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-text text-muted">{{ field.help_text }}</small>{% endif %}{% for error in field.errors %}<div class="text-danger small" role="alert">{{ error }}</div>{% endfor %}</div>{% endif %}{% endfor %}</div>
+        <button class="btn btn-primary mt-2" type="submit">Preview examiner list</button>
+      </form>
+    </div><aside class="panel-import-summary"><strong>Before you upload</strong><ul class="mb-0 mt-2 ps-3"><li>Use an .xlsx file.</li><li>Enter one examiner email per row.</li><li>Nothing is sent until you confirm.</li></ul></aside></div>
+  </section>
+  {% if plan %}<section id="examiner-preview" class="panel-card" aria-labelledby="preview-heading">
+    <div class="panel-section-heading"><div><p class="panel-eyebrow">Step 2</p><h2 class="h5" id="preview-heading">Review invitations</h2><p>Only valid addresses without an active invitation can be sent.</p></div></div>
+    {% if plan.errors %}<div class="alert alert-warning" role="alert"><strong>Review these issues before sending:</strong><ul class="mb-0 mt-1">{% for row, error in plan.errors %}<li>{% if row %}Row {{ row }}: {% endif %}{{ error }}</li>{% endfor %}</ul></div>{% endif %}
+    {% if plan.rows %}<div class="panel-table-card table-responsive"><table class="table table-hover align-middle"><caption>Invitation preview. No email is sent until you confirm.</caption><thead><tr><th scope="col">Row</th><th scope="col">Email address</th><th scope="col">Status</th></tr></thead><tbody>{% for row in plan.rows %}<tr><th scope="row">{{ row.row }}</th><td>{{ row.email }}</td><td>{% if row.errors %}<span class="text-danger">{{ row.errors|join:'; ' }}</span>{% else %}<span class="text-success">Ready to invite</span>{% endif %}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+    <p class="mt-3"><strong>{{ plan.invitations_to_create }}</strong> invitation{{ plan.invitations_to_create|pluralize }} ready.</p>
+    <div class="d-flex flex-wrap gap-2"><a class="btn btn-outline-secondary" href="#upload-examiners">Choose another file</a>{% if plan.ok and preview_token %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="apply"><input type="hidden" name="preview_token" value="{{ preview_token }}"><button class="btn btn-primary" type="submit">Send {{ plan.invitations_to_create }} invitation{{ plan.invitations_to_create|pluralize }}</button></form>{% endif %}</div>
+  </section>{% endif %}
+</main>
+{% endblock %}
