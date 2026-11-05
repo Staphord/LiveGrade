@@ -36,7 +36,7 @@ class FriendlyPagesTests(TestCase):
         sign_in(client, other, org)
         for debug_flag in (False, True):
             with self.subTest(debug=debug_flag), override_settings(DEBUG=debug_flag):
-                self.assertFriendly404(client.get(f'/assessments/{session.pk}/'))
+                self.assertFriendly404(client.get(f'/classroom/app/{session.pk}/'))
 
     def test_a_crash_gets_the_friendly_page_and_the_traceback_still_reaches_the_log(self):
         for debug_flag in (False, True):

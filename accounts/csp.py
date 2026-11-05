@@ -22,10 +22,6 @@ import secrets
 from django.conf import settings
 from django.core.exceptions import DisallowedHost
 
-#: Where scripts, styles and fonts may come from besides this site. Matches base.html. The Inter
-#: font is served from static/fonts, so no font host is needed.
-CDN = 'https://cdn.jsdelivr.net'
-
 PERMISSIONS_POLICY = ('accelerometer=(), camera=(), geolocation=(), gyroscope=(), '
                       'magnetometer=(), microphone=(), payment=(), usb=()')
 
@@ -39,11 +35,11 @@ def build_policy(nonce, host, secure):
     socket = f"{'wss' if secure else 'ws'}://{host}" if host else ''
     directives = [
         ("default-src", "'self'"),
-        ("script-src", f"'self' 'nonce-{nonce}' {CDN}"),
-        ("style-src", f"'self' 'nonce-{nonce}' {CDN}"),
-        ("style-src-elem", f"'self' 'nonce-{nonce}' {CDN}"),
+        ("script-src", f"'self' 'nonce-{nonce}'"),
+        ("style-src", f"'self' 'nonce-{nonce}'"),
+        ("style-src-elem", f"'self' 'nonce-{nonce}'"),
         ("style-src-attr", "'unsafe-inline'"),
-        ("font-src", f"'self' {CDN}"),
+        ("font-src", "'self'"),
         ("img-src", "'self' data: blob:"),
         ("connect-src", f"'self' {socket}".rstrip()),
         # Signing out is a form post that is redirected on to DevPerf; Chrome applies

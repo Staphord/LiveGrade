@@ -1,22 +1,28 @@
 from django.contrib.auth import logout
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
 
 from .access import ACTIVE_KEY, ORGS_KEY, active_organization, lecturer_required
 from .oidc import SWITCH_ACCOUNT_STATE, devperf_logout_url
+from portal.models import services_for
+from portal.services import SERVICES, dashboard_url, get_service, is_released
 
 
 def home(request):
-    """A visitor sees what LiveGrade is and how to start; somebody signed in goes
-    straight to their sessions."""
+    """Choose a service here; returning people also see their existing services."""
     if not request.user.is_authenticated:
         if request.GET.get('state') == SWITCH_ACCOUNT_STATE:
             return redirect('oidc_authentication_init')
-        return render(request, 'landing.html')
-    if active_organization(request) is None:
+    elif active_organization(request) is None:
         return no_access(request)
-    return redirect('assessment_session_list')
+    return render(request, 'landing.html', {
+        'service_cards': [{'service': service, 'released': is_released(service.slug)}
+                          for service in SERVICES],
+        'released_service_slugs': [service.slug for service in SERVICES
+                                   if is_released(service.slug)],
+        'used_services': services_for(request.user) if request.user.is_authenticated else [],
+    })
 
 
 def no_access(request):
@@ -37,15 +43,18 @@ def switch_account(request):
 
 @lecturer_required
 @require_POST
-def switch_organization(request):
+def switch_organization(request, slug=None):
     """Work in another of the lecturer's organizations, if it is theirs."""
+    service = get_service(getattr(request, 'service', None))
+    if slug is not None and (not service or service.slug != slug or not is_released(slug)):
+        raise Http404
     try:
         wanted = int(request.POST.get('organization', ''))
     except ValueError:
         wanted = None
     if any(org['id'] == wanted for org in request.session.get(ORGS_KEY, [])):
         request.session[ACTIVE_KEY] = wanted
-    return redirect('home')
+    return redirect(dashboard_url(service) if service else 'home')
 
 
 def health(request):

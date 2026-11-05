@@ -7,6 +7,8 @@ from django.urls import reverse
 from accounts.access import ORGS_KEY
 from accounts.models import User
 from accounts.oidc import DevPerfBackend, devperf_logout_url
+from portal.models import ServiceAccess
+from portal.services import CHOICE_KEY
 
 CLAIMS = {
     'sub': '42', 'email': 'tea@uni.test', 'name': 'Tea Cher', 'given_name': 'Tea',
@@ -77,13 +79,24 @@ class SignInFlowTests(TestCase):
     """The browser's journey through LiveGrade's sign-in, with DevPerf's
     answers stubbed at the network edge."""
 
-    def begin(self):
-        response = self.client.get(reverse('oidc_authentication_init'))
+    def begin(self, service_path=None, choice_override=None, sign_in_query=None):
+        if service_path:
+            entry_response = self.client.get(service_path)
+            self.assertEqual(entry_response.status_code, 302)
+        if choice_override is not None:
+            session = self.client.session
+            session[CHOICE_KEY] = choice_override
+            session.save()
+        response = self.client.get(reverse('oidc_authentication_init'), sign_in_query)
         self.assertEqual(response.status_code, 302)
         return response
 
-    def finish(self, claims=CLAIMS):
-        state = parse_qs(urlsplit(self.begin()['Location']).query)['state'][0]
+    def finish(self, claims=CLAIMS, service_path=None, choice_override=None):
+        response = self.begin(service_path, choice_override)
+        state = parse_qs(urlsplit(response['Location']).query)['state'][0]
+        return self.complete(state, claims)
+
+    def complete(self, state, claims=CLAIMS):
         with mock.patch.object(DevPerfBackend, 'get_token',
                                return_value={'id_token': 'id.jwt', 'access_token': 'at'}), \
                 mock.patch.object(DevPerfBackend, 'verify_token', return_value={'sub': claims['sub']}), \
@@ -108,7 +121,60 @@ class SignInFlowTests(TestCase):
         self.assertEqual(User.objects.get().sub, '42')
         self.assertEqual(self.client.session[ORGS_KEY],
                          [{'id': 1, 'slug': 'acme', 'name': 'Acme', 'public': False, 'can_oversee': False}])
-        self.assertContains(self.client.get('/assessments/'), 'Tea Cher')
+        self.assertContains(self.client.get('/classroom/app/'), 'Tea Cher')
+
+    def test_service_choice_survives_sign_in_and_is_recorded(self):
+        response = self.finish(service_path='/classroom/')
+        self.assertRedirects(response, '/classroom/app/', fetch_redirect_response=False)
+        self.assertEqual(ServiceAccess.objects.values_list('service', flat=True).get(), 'classroom')
+        self.assertNotIn(CHOICE_KEY, self.client.session)
+
+    def test_an_expired_owner_bookmark_keeps_its_service_through_sign_in(self):
+        response = self.client.get('/classroom/app/')
+        self.assertRedirects(response, '/classroom/', fetch_redirect_response=False)
+        response = self.finish(service_path=response['Location'])
+        self.assertRedirects(response, '/classroom/app/', fetch_redirect_response=False)
+
+    def test_a_tampered_service_choice_returns_to_the_landing_page(self):
+        response = self.finish(service_path='/classroom/', choice_override='panel')
+        self.assertRedirects(response, '/', fetch_redirect_response=False)
+        self.assertEqual(ServiceAccess.objects.count(), 0)
+        self.assertNotIn(CHOICE_KEY, self.client.session)
+
+    def test_an_unknown_service_choice_returns_to_the_landing_page(self):
+        response = self.finish(service_path='/classroom/', choice_override='unknown')
+        self.assertRedirects(response, '/', fetch_redirect_response=False)
+        self.assertEqual(ServiceAccess.objects.count(), 0)
+
+    def test_a_sign_in_without_a_service_choice_returns_to_the_landing_page(self):
+        response = self.finish()
+        self.assertRedirects(response, '/', fetch_redirect_response=False)
+
+    def test_a_later_sign_in_does_not_replace_an_earlier_tabs_service(self):
+        first = parse_qs(urlsplit(self.begin('/classroom/')['Location']).query)['state'][0]
+        second = parse_qs(urlsplit(self.begin()['Location']).query)['state'][0]
+        self.assertRedirects(self.complete(first), '/classroom/app/', fetch_redirect_response=False)
+        self.assertRedirects(self.complete(second), '/', fetch_redirect_response=False)
+        self.assertEqual(ServiceAccess.objects.count(), 1)
+
+    def test_registration_keeps_the_providers_signup_hint(self):
+        response = self.begin('/classroom/', sign_in_query={'signup': '1'})
+        self.assertEqual(parse_qs(urlsplit(response['Location']).query)['screen_hint'], ['signup'])
+
+    def test_a_next_parameter_cannot_replace_the_service_destination(self):
+        for hostile in ('https://evil.example/', '//evil.example/', '/panel/', '/no-access/'):
+            with self.subTest(next=hostile):
+                self.client.logout()
+                response = self.begin('/classroom/', sign_in_query={'next': hostile})
+                state = parse_qs(urlsplit(response['Location']).query)['state'][0]
+                self.assertRedirects(self.complete(state), '/classroom/app/', fetch_redirect_response=False)
+
+    def test_a_service_switched_off_during_sign_in_is_not_entered(self):
+        response = self.begin('/classroom/')
+        state = parse_qs(urlsplit(response['Location']).query)['state'][0]
+        with override_settings(LIVEGRADE_LIVE_SERVICES=[]):
+            self.assertRedirects(self.complete(state), '/', fetch_redirect_response=False)
+        self.assertEqual(ServiceAccess.objects.count(), 0)
 
     def test_a_sign_in_adds_the_person_to_the_colleague_directory(self):
         from accounts.models import OrganizationLecturer
@@ -130,11 +196,11 @@ class SignInFlowTests(TestCase):
                  'can_oversee_assessments': True}]
         self.finish({**CLAIMS, 'orgs': orgs})
         self.assertEqual(self.client.session[ORGS_KEY][0]['can_oversee'], True)
-        self.assertContains(self.client.get('/assessments/?scope=all'), 'All sessions in Acme')
+        self.assertContains(self.client.get('/classroom/app/?scope=all'), 'All sessions in Acme')
 
     def test_without_the_claim_there_is_no_oversight(self):
         self.finish()
-        self.assertNotContains(self.client.get('/assessments/?scope=all'), 'All sessions in')
+        self.assertNotContains(self.client.get('/classroom/app/?scope=all'), 'All sessions in')
 
     def test_only_the_organizations_where_they_may_run_it_are_kept(self):
         self.finish()
