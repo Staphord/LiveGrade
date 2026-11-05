@@ -1,0 +1,189 @@
+name: Release operations
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        options: [deploy-testing, status, deploy-production, rollback]
+        required: true
+      environment:
+        type: choice
+        options: [testing, production]
+        required: true
+      target:
+        description: Full staging SHA for testing; vMAJOR.MINOR.PATCH tag for production/rollback
+        type: string
+      approval:
+        description: Recorded release or rollback approval reference
+        type: string
+      backup:
+        description: Verified pre-operation backup record reference
+        type: string
+      migration_plan:
+        description: Rehearsed migration and code rollback compatibility record reference
+        type: string
+
+permissions:
+  contents: read
+
+# Do not cancel an operation that might already be applying a migration.
+concurrency:
+  group: livegrade-release-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      sha: ${{ steps.target.outputs.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - name: Require independent environment approval rules
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/environments/$DEPLOY_ENVIRONMENT" > environment.json
+          python3 scripts/release_checks.py environment environment.json
+      - name: Resolve release target
+        id: target
+        env:
+          OPERATION: ${{ inputs.operation }}
+          DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+          TARGET: ${{ inputs.target }}
+          APPROVAL: ${{ inputs.approval }}
+          BACKUP: ${{ inputs.backup }}
+          MIGRATION_PLAN: ${{ inputs.migration_plan }}
+        run: |
+          sha=$(python3 scripts/release_target.py --operation "$OPERATION" --environment "$DEPLOY_ENVIRONMENT" \
+            --target "$TARGET" --approval "$APPROVAL" --backup "$BACKUP" --migration-plan "$MIGRATION_PLAN")
+          printf 'sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
+      - name: Require successful static security checks for the exact commit
+        if: inputs.operation != 'status'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/security.yml/runs" \
+            -f "head_sha=$RELEASE_SHA" -f per_page=100 > security-runs.json
+          python3 scripts/release_checks.py security security-runs.json --sha "$RELEASE_SHA"
+
+  verify:
+    needs: validate
+    if: inputs.operation != 'status'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DEBUG: 'True'
+      SECRET_KEY: ci-only-secret-key-not-used-in-production-0123456789
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: operation-tools
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          path: app
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+        working-directory: app
+      - run: python3 -m unittest discover -s scripts/tests -v
+        working-directory: operation-tools
+      - run: coverage run manage.py test --parallel
+        working-directory: app
+      - run: coverage combine && coverage report
+        working-directory: app
+
+  operate:
+    needs: [validate, verify]
+    if: >-
+      always() && needs.validate.result == 'success' &&
+      (needs.verify.result == 'success' || inputs.operation == 'status')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    # Configure independent required reviewers and main-only deployment rules on both environments.
+    environment: ${{ inputs.environment }}
+    steps:
+      # Run the reviewed operation script from the workflow revision, not from the target tag.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Recheck environment rules after approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/environments/$DEPLOY_ENVIRONMENT" > environment.json
+          python3 scripts/release_checks.py environment environment.json
+      - name: Configure pinned SSH identity
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d ~/.ssh
+          (umask 077; printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy)
+          (umask 077; printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts)
+      - name: Run approved operation
+        env:
+          OPERATION: ${{ inputs.operation }}
+          DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+          TARGET: ${{ inputs.target }}
+          APPROVAL: ${{ inputs.approval }}
+          EXPECTED_SHA: ${{ needs.validate.outputs.sha }}
+          BACKUP: ${{ inputs.backup }}
+          MIGRATION_PLAN: ${{ inputs.migration_plan }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -o pipefail
+          [[ "$VPS_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ ]]
+          [[ "$VPS_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]
+          [[ "$VPS_PORT" =~ ^[0-9]+$ ]]
+          remote=$(python3 - <<'PY'
+          import os
+          import shlex
+          keys = ['OPERATION', 'DEPLOY_ENVIRONMENT']
+          if os.environ['OPERATION'] != 'status':
+              keys += ['TARGET', 'APPROVAL', 'EXPECTED_SHA', 'BACKUP', 'MIGRATION_PLAN']
+          print(shlex.join(['bash', '-s', '--', *(os.environ[key] for key in keys)]))
+          PY
+          )
+          ssh -T -i ~/.ssh/id_deploy -p "$VPS_PORT" \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 \
+            "$VPS_USER@$VPS_HOST" "$remote" < scripts/deploy.sh 2>&1 | tee operation.log
+      - name: Record outcome
+        if: always()
+        env:
+          OPERATION: ${{ inputs.operation }}
+          DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+          EXPECTED_SHA: ${{ needs.validate.outputs.sha }}
+          APPROVAL: ${{ inputs.approval }}
+          RESULT: ${{ job.status }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import html
+          import os
+          print('## Release operation\n')
+          for key in ('OPERATION', 'DEPLOY_ENVIRONMENT', 'EXPECTED_SHA', 'APPROVAL', 'RESULT'):
+              print(f'- {key}: {html.escape(os.environ[key])}')
+          PY
+      - name: Remove temporary SSH identity
+        if: always()
+        run: rm -f ~/.ssh/id_deploy ~/.ssh/known_hosts

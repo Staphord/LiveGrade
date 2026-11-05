@@ -2,9 +2,12 @@ name: CI/CD
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
   pull_request:
-    branches: [main]
+    branches: [main, staging]
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -16,6 +19,7 @@ jobs:
     # LiveGrade's suite needs no Postgres, Redis or network: SQLite, in-memory
     # channels and in-process Celery are switched on by settings when running tests.
     env:
+      DEBUG: "True"
       SECRET_KEY: ci-only-secret-key-not-used-in-production-0123456789
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -27,6 +31,8 @@ jobs:
             requirements.txt
             requirements-dev.txt
       - run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Deployment tooling tests
+        run: python3 -m unittest discover -s scripts/tests -v
       - name: Run tests
         run: |
           set -o pipefail
@@ -40,29 +46,3 @@ jobs:
           coverage combine >/dev/null 2>&1 || true
           coverage json -o cov.json -q || true
           python scripts/ci_summary.py test test.log cov.json >> "$GITHUB_STEP_SUMMARY"
-
-  deploy:
-    needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - name: Configure SSH
-        run: |
-          install -m 700 -d ~/.ssh
-          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_deploy
-          chmod 600 ~/.ssh/id_deploy
-          ssh-keyscan -p "${{ secrets.VPS_PORT || 22 }}" "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
-      - name: Deploy
-        run: |
-          set -o pipefail
-          ssh -i ~/.ssh/id_deploy -p "${{ secrets.VPS_PORT || 22 }}" \
-            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
-            "APP_DIR='${{ secrets.VPS_APP_DIR }}' SERVICES='${{ secrets.VPS_SERVICES }}' bash -s" \
-            < scripts/deploy.sh 2>&1 | tee deploy.log
-      - name: Job summary
-        if: always()
-        env:
-          JOB_STATUS: ${{ job.status }}
-        run: python3 scripts/ci_summary.py deploy deploy.log >> "$GITHUB_STEP_SUMMARY"

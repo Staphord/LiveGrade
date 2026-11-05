@@ -16,7 +16,7 @@ run() { # sast: Semgrep rules for Django, Python, OWASP Top 10, secrets, JS
       --exclude venv --exclude security --exclude '*/migrations/*' \
       --metrics=off --sarif-output=$R/semgrep.sarif --text-output=$R/semgrep.txt . ; cat $R/semgrep.txt ;;
   bandit)  # Python-specific security linter
-    $T/bandit -r accounts assessments config -x '*/tests/*,*/migrations/*' \
+    $T/bandit -r accounts assessments config portal -x '*/tests/*,*/migrations/*' \
       -f txt -o $R/bandit.txt; cat $R/bandit.txt ;;
   deps)    # known-vulnerable dependencies (PyPI advisory DB + OSV)
     # The one ignored advisory is explained in security/accepted-risks.md (and a test enforces that).

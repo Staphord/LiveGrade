@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>LiveGrade manual testing checklist</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#172b45;background:#f4f7fb;font-synthesis:none;text-rendering:optimizeLegibility;--blue:#155eef;--muted:#56677d;--line:#d9e2ef;--green:#087a55}
+    *{box-sizing:border-box}body{margin:0;line-height:1.55}header{background:linear-gradient(125deg,#102c50,#1856a4);color:#fff;padding:2.5rem max(1rem,calc((100vw - 980px)/2)) 2rem}
+    header h1{font-size:clamp(1.8rem,4vw,2.6rem);line-height:1.15;margin:.4rem 0 .75rem}header p{max-width:70ch;color:#e2edff;margin:.4rem 0}
+    main{max-width:980px;margin:1.5rem auto;padding:0 1rem 4rem}.toolbar{position:sticky;top:0;z-index:2;background:#fffffff2;backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:14px;padding:1rem;margin-bottom:1rem;box-shadow:0 6px 22px #19365a12}
+    .toolbar-row{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}.progress-copy{font-weight:700}.progress-track{height:9px;background:#e7edf5;border-radius:99px;overflow:hidden;margin-top:.65rem}.progress-fill{height:100%;width:0;background:var(--green);transition:width .15s ease}
+    button{font:inherit;font-weight:650;border:1px solid #aebdd0;background:#fff;color:#17375e;border-radius:8px;padding:.55rem .8rem;cursor:pointer}button:hover{background:#edf4ff}button:focus-visible,input:focus-visible{outline:3px solid #f4a900;outline-offset:3px}
+    .note{border-left:4px solid #e2a300;background:#fff9e7;padding:.8rem 1rem;margin:1rem 0 1.2rem;border-radius:0 8px 8px 0}.section{background:white;border:1px solid var(--line);border-radius:14px;margin:1rem 0;overflow:hidden;box-shadow:0 3px 12px #19365a0a}.section h2{font-size:1.25rem;margin:0;padding:1rem 1.2rem;background:#f8faff;border-bottom:1px solid var(--line)}.section ol{list-style:none;padding:0;margin:0}.section li{padding:.72rem 1.2rem;border-bottom:1px solid #edf1f6}.section li:last-child{border-bottom:0}.check{display:flex;gap:.75rem;align-items:flex-start;cursor:pointer}.check input{width:1.15rem;height:1.15rem;margin:.24rem 0 0;accent-color:var(--green);flex:0 0 auto}.check span{flex:1}.section li:has(input:checked) .check span{text-decoration:line-through;text-decoration-color:#9aaabc;color:#64748b}
+    .small{font-size:.92rem;color:var(--muted)}.subnote{font-size:.9rem;color:#43566d;padding:.8rem 1.2rem;background:#f8faff;border-top:1px solid var(--line)}footer{color:var(--muted);font-size:.9rem;padding:1rem 0}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    @media(max-width:600px){header{padding:1.8rem 1rem}main{margin:1rem auto}.toolbar{position:static}.section h2{font-size:1.12rem}.section li{padding:.75rem .9rem}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important}}
+    @media print{body{background:#fff;font-size:10pt}header{background:#fff;color:#111;padding:0 0 1rem}header p{color:#333}.toolbar{position:static;box-shadow:none}.toolbar button,.progress-track{display:none}.section{break-inside:avoid;box-shadow:none}.section h2{background:#eee}.check input{appearance:auto}.section li:has(input:checked) .check span{text-decoration:none;color:#111}main{max-width:none;margin:0;padding:0}}
+  </style>
+</head>
+<body>
+<header>
+  <p>LiveGrade · Manual QA</p>
+  <h1>Service testing checklist</h1>
+  <p>Work through each flow using a test organization and disposable sessions or events. Use separate browser profiles or devices for the organizer, participants, judges, and public display.</p>
+</header>
+<main>
+  <div class="toolbar" aria-label="Checklist progress and actions">
+    <div class="toolbar-row"><div><div class="progress-copy" id="progress-copy" aria-live="polite">0 of 0 checks complete</div><div class="small">Progress is saved in this browser on this device.</div></div>
+      <div><button type="button" id="print">Print</button> <button type="button" id="reset">Clear all checkmarks</button></div>
+    </div>
+    <div class="progress-track" role="progressbar" aria-label="Checklist completion" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="progress-fill"></div></div>
+  </div>
+  <p class="note"><strong>Safety for your test data:</strong> perform closing, canceling, publishing, and result-release actions only on disposable test records. Record the account/device, expected and actual results, and any screenshot or error separately.</p>
+
+  <section class="section" aria-labelledby="classroom-title"><h2 id="classroom-title">1. Classroom peer grading</h2><ol>
+    <li><label class="check"><input type="checkbox"><span>Sign in as an organizer and create a Classroom session.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Add several groups, participants, and a rubric whose weights total 100%.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Check validation by trying an invalid rubric total and incomplete group/member data.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Open the join screen; have participants join using the configured identifier and join code or QR.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>From separate devices, submit peer evaluations for eligible groups.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Verify each participant sees only groups they can evaluate and cannot evaluate their own group when the session rules exclude it.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Edit or retry a submission if the interface permits it; check that duplicate submissions do not inflate results.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Close the session and inspect results, score coverage, and group rankings.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Try accessing the session as a user from another organization and confirm access is denied.</span></label></li>
+  </ol></section>
+
+  <section class="section" aria-labelledby="panel-title"><h2 id="panel-title">2. Panel grading</h2><ol>
+    <li><label class="check"><input type="checkbox"><span>Create a Panel hearing; add candidates, criteria, and criterion-level descriptions.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Invite multiple examiners and open each invitation in a separate browser/device.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Before scoring, declare a conflict for one examiner/candidate; verify that examiner cannot score that candidate and the chair can see the coverage gap.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Start the hearing and activate one candidate.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Submit scores from multiple examiners; check that inactive candidates cannot be scored.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Activate the next candidate and repeat; test abstention if available.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Close scoring, inspect normalized results and coverage, and try the anonymous aggregate export.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Check the export omits examiner-to-score pairings and an unauthorized user cannot open the hearing.</span></label></li>
+  </ol></section>
+
+  <section class="section" aria-labelledby="combined-title"><h2 id="combined-title">3. Combined Panel and peer grading</h2><ol>
+    <li><label class="check"><input type="checkbox"><span>Create and complete a Classroom peer assessment and a Panel hearing using the same presentation entries.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>In Combined grading, link the Classroom session to the Panel hearing and verify entry/group mapping carefully.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Select Separate results and confirm peer and Panel scores are shown distinctly, with course policy determining which counts.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Create a separate test assessment using Weighted combined numeric mark. Set peer and Panel weights totaling 100%; confirm invalid totals are rejected.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Use known scores to verify the combined mark equals peer × peer weight + Panel × Panel weight.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Test missing peer or Panel coverage and a score difference above the moderation threshold; confirm the mark is held for the required moderation decision.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Confirm approved adjustments and moderator reasons appear in the result, and unauthorized users cannot view or change the linked assessment.</span></label></li>
+  </ol></section>
+
+  <section class="section" aria-labelledby="leaderboard-title"><h2 id="leaderboard-title">4. Live leaderboard</h2><ol>
+    <li><label class="check"><input type="checkbox"><span>Create a Classroom session with several groups and submit enough peer scores to produce distinct rankings, including a tie if possible.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Close the session, then use the organizer’s public leaderboard controls to release results.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Open the public join-screen URL in a signed-out browser or projector device; verify only released group-level data is shown.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Check whether scores are shown or hidden according to the organizer’s setting.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Revoke the release; refresh the public page and its data endpoint and confirm results disappear.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Verify no names, individual evaluations, or unreleased scores appear.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Separately test the Competition public leaderboard: results should remain hidden until the organizer completes and reveals them, then update on refresh.</span></label></li>
+  </ol><div class="subnote"><strong>Scope note:</strong> Showcase’s live monitor is owner-only and reports coverage; it does not publish a live public ranking.</div></section>
+
+  <section class="section" aria-labelledby="poll-title"><h2 id="poll-title">5. Hosting a poll/vote for an activity</h2><ol>
+    <li><label class="check"><input type="checkbox"><span>Open a Classroom session’s Classroom polls page and create a poll asking when to hold a session, presentation, or meeting.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Add clear date/time options, set timezone and any deadline, and choose single or multiple selection as appropriate.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Choose the intended voter access method: roster identity or personal voting links. Publish the poll.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Open the QR/shared link as a participant. Submit a vote, edit it while voting is open, then try voting again from the same identity and verify it does not create a duplicate.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>If using personal links, test a valid link, a replaced/rotated link, and an invalid or wrong-voter link.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Watch organizer results update; check response counts, abstentions if enabled, and unanswered voters.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Close voting and verify participants can no longer change responses. Try canceling a separate test poll.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Confirm the highest vote count is identifiable and ties are shown as ties; record the teacher’s final decision if using that control.</span></label></li>
+  </ol><div class="subnote"><strong>Scope note:</strong> this is a Classroom poll tied to a session. Do not assume an independent, service-wide event scheduler or automatic calendar booking.</div></section>
+
+  <section class="section" aria-labelledby="competition-title"><h2 id="competition-title">6. Competition service</h2><ol>
+    <li><label class="check"><input type="checkbox"><span>Create a competition with tracks, entries, and at least two rounds; test spreadsheet preview/import if using a roster file.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Configure judging criteria and the supported scoring method; invite judges and distribute their individual links.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Open judge links separately and score assigned entries. Check invalid, reused, or unauthorized links.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Complete a round, inspect tallies and coverage, then advance the configured entries to the next round.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Use known scores to manually verify advancement order and tie resolution; confirm the system does not silently invent an audience/judge blend.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Before completion and reveal, open the public leaderboard while signed out and confirm results remain hidden.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Complete the competition and reveal results; refresh the public page and check displayed order and tie handling.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Try owner actions from another organization and confirm they are denied.</span></label></li>
+  </ol></section>
+
+  <section class="section" aria-labelledby="team-title"><h2 id="team-title">7. Team and Training services</h2><ol>
+    <li><label class="check"><input type="checkbox"><span>Create a Team demo setup; add team members, rubric, and practice/demo activities.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Run a demo with members joining and submitting peer feedback; check the participant understands what to do and sees the expected confirmation.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Inspect team results and feedback visibility; confirm individual/team data is visible only to intended users.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Create a Training series, define competencies and passing scores, and add a sequence of sessions/demos.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Complete a qualifying session, then inspect competency outcomes, progress/trends, and certificate eligibility.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Test a non-qualifying or incomplete session and verify it does not incorrectly issue a certificate.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Check feedback links, expiry/replacement behavior if used, and access boundaries between organizations.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Confirm learner results remain private unless an explicit supported release control is used.</span></label></li>
+  </ol></section>
+
+  <section class="section" aria-labelledby="showcase-title"><h2 id="showcase-title">8. Showcase service</h2><ol>
+    <li><label class="check"><input type="checkbox"><span>Create a Showcase event; set event dates, categories, judge coverage, and minors-consent attestation if applicable.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Import exhibits from a spreadsheet; inspect the preview and correct invalid rows before applying.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Print/open exhibit QR labels and scan each with a visitor device.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Submit a star rating; try a second submission from the same device and confirm duplicate handling. Confirm visitors are not asked for free-text personal information.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>If judging is enabled, set the rubric, invite judges, assign exhibits, and check coverage.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Open a judge invitation, declare a conflict on one assigned exhibit, and verify scoring is blocked for that exhibit.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Submit judge scorecards for other assigned exhibits; check score normalization and incomplete-coverage indicators.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Open the organizer live monitor and verify visitor rating counts/averages and judge-score coverage are separate, with no preliminary winner exposed.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Close visitor ratings; confirm new visitor submissions are rejected while existing judges can finish outstanding scorecards.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Attempt publication with incomplete required judge coverage and verify it is blocked. Complete coverage and publish.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Verify category awards use judge scorecards, Audience Favorite uses visitor ratings, ties are handled visibly, and certificates match published winners.</span></label></li>
+    <li><label class="check"><input type="checkbox"><span>Confirm the public sees results only after publication and organizer/judge controls are not accessible through public links.</span></label></li>
+  </ol></section>
+
+  <footer>Checkmarks are stored only in this browser’s local storage. Clearing browser data or using another browser/device may clear or hide saved progress. Use Print if you need a paper copy.</footer>
+</main>
+<script>
+(() => {
+  const key = 'livegrade-manual-qa-checklist-v1';
+  const boxes = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+  const label = document.getElementById('progress-copy');
+  const bar = document.querySelector('[role="progressbar"]');
+  const fill = document.querySelector('.progress-fill');
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(key) || '{}'); } catch (_) { saved = {}; }
+  boxes.forEach((box, index) => {
+    box.dataset.checkId = String(index);
+    box.checked = saved[String(index)] === true;
+    box.addEventListener('change', () => {
+      saved[String(index)] = box.checked;
+      try { localStorage.setItem(key, JSON.stringify(saved)); } catch (_) { /* checklist still works for this page view */ }
+      update();
+    });
+  });
+  function update() {
+    const done = boxes.filter(box => box.checked).length;
+    const percent = boxes.length ? Math.round(done * 100 / boxes.length) : 0;
+    label.textContent = `${done} of ${boxes.length} checks complete (${percent}%)`;
+    bar.setAttribute('aria-valuenow', String(percent));
+    fill.style.width = `${percent}%`;
+  }
+  document.getElementById('reset').addEventListener('click', () => {
+    if (!window.confirm('Clear every saved checkmark in this browser?')) return;
+    boxes.forEach(box => { box.checked = false; });
+    saved = {};
+    try { localStorage.removeItem(key); } catch (_) { /* page state is still cleared */ }
+    update();
+  });
+  document.getElementById('print').addEventListener('click', () => window.print());
+  update();
+})();
+</script>
+</body>
+</html>
