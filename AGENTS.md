@@ -16,6 +16,24 @@ LiveGrade is a Django service integrated with DevPerf sign-in. Read this file an
 - Preserve LiveGrade's own session and CSRF cookie names. Never set `SESSION_COOKIE_DOMAIN`.
 - Treat public participant pages, uploads, imports, WebSockets, and invitation links as security boundaries. Validate input server-side and avoid exposing identities, scores, or records beyond the intended role.
 - For security-specific tasks, use the installed `security-best-practices` and `security-threat-model` skills. For auth, imports, tenancy, or public endpoints, apply the relevant security checks during implementation and review.
+- Follow the dedicated LiveGrade domain skills located in `.gemini/skills/`, `.codex/skills/`, and `.claude/skills/`:
+  - `systematic-debugging`: 4-phase root-cause debugging protocol; eliminates guessing and enforces reproduction tests.
+  - `django-query-optimization`: N+1 query elimination, `select_related`/`prefetch_related`, and bulk operations.
+  - `tdd-test-driven-development`: Red-Green-Refactor discipline with mandatory boundary and edge-case testing.
+  - `git-safe-workflows`: Working-tree preservation, secret protection, and atomic commits.
+  - `ui-ux-design-system`: Token hierarchy, responsive breakpoints, user interaction states, and layout consistency.
+  - `web-accessibility-a11y`: WCAG 2.1 AA landmarks, ARIA labeling, keyboard navigation, and focus management.
+  - `security-best-practices`: Injection prevention, CSRF enforcement, token protections, and rate-limiting.
+  - `clean-code-refactoring`: SRP, low cyclomatic complexity, early returns, and neutral documentation.
+  - `livegrade-domain-architecture`: Layered separation of concerns and clean code practices.
+  - `livegrade-scoring-aggregation`: Strict rubric, weight, and aggregation invariants with independent test verification.
+  - `livegrade-realtime-websockets`: WebSocket authorization, consumer safety, and data minimization.
+  - `livegrade-spreadsheet-transports`: Bounded parsing, formula injection prevention, and two-phase preview caching.
+  - `livegrade-tenancy-security`: Tenant isolation and access matrix synchronization.
+  - `livegrade-test-and-coverage-gate`: Mandatory 100% coverage gate and parallel test verification.
+
+
+
 
 ## UI and interaction
 

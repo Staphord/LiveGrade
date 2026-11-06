@@ -23,6 +23,8 @@ security/.tmp/
 prompts/
 /reports/
 .codex/skills/
+.gemini/skills/
+.claude/skills/
 output/
 
 # Local analysis and test caches
