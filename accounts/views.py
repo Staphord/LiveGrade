@@ -1,5 +1,5 @@
 from django.contrib.auth import logout
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
 
@@ -59,6 +59,30 @@ def switch_organization(request, slug=None):
 
 def health(request):
     return HttpResponse('ok', content_type='text/plain')
+
+
+def readiness(request):
+    """Dependency readiness, separate from process liveness; never expose details."""
+    import secrets
+    from django.core.cache import cache
+    from django.db import connections
+
+    if request.method not in ('GET', 'HEAD'):
+        return HttpResponse(status=405, headers={'Allow': 'GET, HEAD'})
+    key = 'readiness:' + secrets.token_hex(12)
+    ready = False
+    try:
+        with connections['default'].cursor() as cursor:
+            cursor.execute('SELECT 1')
+            database_ready = cursor.fetchone()[0] == 1
+        cache.set(key, 'ready', timeout=5)
+        ready = database_ready and cache.get(key) == 'ready'
+        cache.delete(key)
+    except Exception:
+        pass
+    response = JsonResponse({'status': 'ready' if ready else 'unavailable'}, status=200 if ready else 503)
+    response['Cache-Control'] = 'no-store'
+    return response
 
 
 def csrf_failure(request, reason=''):

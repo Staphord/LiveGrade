@@ -11,7 +11,7 @@ class AccountsConfig(AppConfig):
     def ready(self):
         from accounts.logging import BearerUrlRedactionFilter
 
-        for logger_name in ('django.request', 'django.server'):
+        for logger_name in ('django.request', 'django.server', 'daphne.access', 'daphne.server'):
             logger = logging.getLogger(logger_name)
             if not any(isinstance(item, BearerUrlRedactionFilter)
                        for item in logger.filters):

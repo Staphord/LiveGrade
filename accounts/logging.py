@@ -6,14 +6,18 @@ import traceback
 
 
 BEARER_PATH_PATTERN = re.compile(
-    r'(?i)(/(?:panel/(?:examiner|results)|competition/judge|team/feedback|assess/poll-invitation)/)'
+    r'(?i)(/(?:panel/(?:examiner|results|display)|competition/judge|showcase/judge|team/(?:feedback|results)|assess/(?:poll-invitation|polls)|polls/(?:vote|live|qr))/)'
     r'([^/?\s"\'<>]+)'
 )
+
+SESSION_PATH_PATTERN = re.compile(
+    r'(?i)(/assess/)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?=/|$)')
 
 
 def redact_bearer_paths(value):
     """Replace capability values while retaining a useful route description."""
-    return BEARER_PATH_PATTERN.sub(r'\1[redacted]', value)
+    return SESSION_PATH_PATTERN.sub(r'\1[redacted]',
+        BEARER_PATH_PATTERN.sub(r'\1[redacted]', value))
 
 
 class BearerUrlRedactionFilter(logging.Filter):

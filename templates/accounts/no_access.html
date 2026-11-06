@@ -88,6 +88,9 @@ body{margin:0;min-height:100vh;color:#fff;font-size:1rem}
 .na-dot-3{animation:na-twinkle 3.1s ease-in-out -0.5s infinite}
 .na-dot-4{animation:na-bob 5.5s ease-in-out -3s infinite,na-twinkle 3.6s ease-in-out -2s infinite}
 .na-wave svg path:first-child{transform-box:fill-box;transform-origin:50% 100%;animation:na-breathe 7s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){
+  .na-seal,.na-eyebrow,.na-content h1,.na-actions,.na-seal::before,.na-seal::after,.na-seal i,.na-orb-1,.na-orb-2,.na-orb-3,.na-s-a,.na-s-b,.na-s-c,.na-s-d,.na-s-e,.na-s-f,.na-s-g,.na-s-h,.na-dot-1,.na-dot-2,.na-dot-3,.na-dot-4,.na-wave svg path:first-child{animation:none}
+}
 @media (max-width:767px){
   .na-s-e,.na-s-f,.na-s-g,.na-s-h,.na-s-b{display:none}
   .na-s-c{width:150px;height:150px;right:-30px}

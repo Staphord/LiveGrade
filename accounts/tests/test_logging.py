@@ -83,3 +83,18 @@ class BearerUrlRequestLogTests(TestCase):
         self.assertNotIn(token, '\n'.join(captured.output))
         self.assertTrue(all(getattr(record, 'request', None) is None
                             for record in captured.records))
+
+
+class DisplayAndJudgeRedactionTests(SimpleTestCase):
+    def test_redacts_display_and_showcase_judge_capabilities(self):
+        for path in ('/panel/display/synthetic-display-token/updates/',
+                     '/showcase/judge/synthetic-judge-token/submit/',
+                     '/polls/live/synthetic-poll-token/state/',
+                     '/assess/polls/synthetic-classroom-poll/results/'):
+            redacted = redact_bearer_paths(path)
+            self.assertIn('[redacted]', redacted)
+            self.assertNotIn('synthetic-', redacted)
+
+    def test_session_uuid_paths_are_redacted_without_hiding_the_action(self):
+        value = '/assess/123e4567-e89b-12d3-a456-426614174000/join/'
+        self.assertEqual(redact_bearer_paths(value), '/assess/[redacted]/join/')
