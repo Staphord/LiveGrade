@@ -4,7 +4,7 @@
 {% block content %}
 {% include 'service_domains/_workspace_styles.html' %}
 {% include 'service_domains/_team_competition_styles.html' %}
-<main id="main-content" class="container-fluid py-4 service-workspace tc-workspace">
+<div class="container-fluid py-4 service-workspace tc-workspace">
   <p><a href="{% url 'training_series_manage' series_id=series.pk %}">← {{ series.name }}</a></p>
   <header class="tc-hero"><div><h1>Series progress</h1><p>Competency results across {{ session_count }} demo{{ session_count|pluralize }}.</p></div>
     <a class="btn btn-outline-primary" href="{% url 'training_series_export' series_id=series.pk %}">Download outcomes CSV</a>
@@ -12,7 +12,7 @@
   <nav aria-label="Progress sections"><ol class="tc-step-nav"><li><a href="#learner-progress"><span class="tc-step-number">1</span>Learners</a></li><li><a href="#team-progress"><span class="tc-step-number">2</span>Teams</a></li><li><a href="#feedback-progress"><span class="tc-step-number">3</span>Anonymous feedback</a></li></ol></nav>
 
   <section id="learner-progress" class="tc-panel mb-3" aria-labelledby="learner-progress-heading">
-    <header><div><h2 id="learner-progress-heading">Learner progress</h2><p>Latest recorded result for each learner and competency in each demo.</p><details class="mt-2"><summary>How learners are matched</summary><p class="small text-muted mt-2">Learners are matched by student reference, or by a unique full name when no reference is available.</p></details></div><span class="tc-status is-active">{{ trends|length }} trends</span></header>
+    <header><div><h2 id="learner-progress-heading">Learner progress</h2><p>Latest trainer competency decision for each learner in each demo. Peer demo scores do not populate these charts.</p><details class="mt-2"><summary>How learners are matched</summary><p class="small text-muted mt-2">Learners are matched by student reference, or by a unique full name when no reference is available.</p></details></div><span class="tc-status is-active">{{ trends|length }} trends</span></header>
     {% if trends %}<div class="tc-list">{% for trend in trends %}<article class="tc-list-card">
       <span class="w-100"><h3>{{ trend.learner }} <span class="text-muted fw-normal">· {{ trend.competency }}</span></h3>
         <span class="tc-context"><span class="tc-chip">First {{ trend.first_score|floatformat:1 }}</span><span class="tc-chip">Latest {{ trend.latest_score|floatformat:1 }}</span><span class="tc-chip">Change {% if trend.change > 0 %}+{% endif %}{{ trend.change|floatformat:1 }}</span></span>
@@ -21,12 +21,12 @@
         </ul></div></details>
       </span>
     </article>{% endfor %}</div>
-    {% elif session_count < 3 %}<div class="tc-empty" role="status"><h3>More demos needed</h3><p>Record outcomes in at least three demos before learner trends appear.</p></div>
+    {% elif session_count < 3 %}<div class="tc-empty" role="status"><h3>More demos needed</h3><p>Record trainer competency decisions in at least three demos before learner trends appear.</p></div>
     {% else %}<div class="tc-empty" role="status"><h3>No learner trends yet</h3><p>No competency has a recorded decision in three or more demos.</p></div>{% endif %}
   </section>
 
   <section id="team-progress" class="tc-panel mb-3" aria-labelledby="team-progress-heading">
-    <header><div><h2 id="team-progress-heading">Team progress</h2><p>Average score per competency and the number of learner results included. Only teams with an unambiguous name across demos can be compared.</p></div><span class="tc-status is-active">{{ team_trends|length }} trends</span></header>
+    <header><div><h2 id="team-progress-heading">Team competency progress</h2><p>Average score per competency and the number of learner results included. Only teams with an unambiguous name across demos can be compared.</p></div><span class="tc-status is-active">{{ team_trends|length }} trends</span></header>
     {% if team_trends %}<div class="tc-list">{% for trend in team_trends %}<article class="tc-list-card">
       <span class="w-100"><h3>{{ trend.team }} <span class="text-muted fw-normal">· {{ trend.competency }}</span></h3>
         <span class="tc-context"><span class="tc-chip">First {{ trend.first_score|floatformat:1 }}</span><span class="tc-chip">Latest {{ trend.latest_score|floatformat:1 }}</span><span class="tc-chip">Change {% if trend.change > 0 %}+{% endif %}{{ trend.change|floatformat:1 }}</span></span>
@@ -35,7 +35,7 @@
         </ul></div></details>
       </span>
     </article>{% endfor %}</div>
-    {% elif session_count < 3 %}<div class="tc-empty" role="status"><h3>More demos needed</h3><p>Record outcomes in at least three demos before team trends appear.</p></div>
+    {% elif session_count < 3 %}<div class="tc-empty" role="status"><h3>More demos needed</h3><p>Record trainer competency decisions in at least three demos before team trends appear.</p></div>
     {% else %}<div class="tc-empty" role="status"><h3>No team trends yet</h3><p>Team trends need a consistent, unambiguous team name across at least three demos.</p></div>{% endif %}
   </section>
 
@@ -53,5 +53,5 @@
       </tbody></table></div>
     {% else %}<div class="tc-empty" role="status"><h3>No demos to summarize</h3><p>Feedback summaries will appear after a demo closes and responses are received.</p></div>{% endif %}
   </section>
-</main>
+</div>
 {% endblock %}

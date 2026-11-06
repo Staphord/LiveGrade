@@ -162,7 +162,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var
 .score-level-guidance li{display:flex;gap:.5rem;padding:.12rem .5rem}
 .score-level-guidance strong{flex:0 0 5.5rem;color:var(--ink);font-weight:700}
 .score-num{width:3.6rem;min-width:44px;min-height:44px;flex-shrink:0;text-align:center;font-weight:800;font-size:var(--fs-strong);
-     border:1.5px solid var(--border);border-radius:10px;padding:.3rem;color:var(--accent)}
+     background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:.3rem;color:var(--accent)}
 .score-num:focus{outline:none;border-color:var(--accent);box-shadow:var(--focus-ring)}
 .category-check{color:var(--success);opacity:0;transform:scale(.6);transition:all .2s var(--ease,ease)}
 .category-block.is-answered .category-check{opacity:1;transform:scale(1)}
@@ -177,7 +177,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var
 @keyframes draw-check{to{stroke-dashoffset:0}}
 
 /* Staggered entrance for cards that arrive as a group */
-.stagger-in{opacity:0;transform:translateY(10px);animation:fade-in .4s var(--ease,ease) forwards}
+.stagger-in{animation:fade-in .4s var(--ease,ease) both}
 .stagger-in:nth-child(1){animation-delay:.03s}
 .stagger-in:nth-child(2){animation-delay:.09s}
 .stagger-in:nth-child(3){animation-delay:.15s}
@@ -212,7 +212,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var
       <div class="hero-title-group">
         <div class="hero-icon"><i class="bi bi-clipboard2-data-fill"></i></div>
         <div>
-          <h1>{{ session.name|default:"Peer Assessment" }}</h1>
+          <h1>{% block hero_title %}{% if session %}{{ session.name }}{% elif poll %}{% if poll.standalone %}Anonymous Poll{% else %}Classroom Poll{% endif %}{% else %}Peer Assessment{% endif %}{% endblock %}</h1>
           <div class="sub">
             {% block hero_sub %}<span class="pulse-dot"></span>Live presentation grading{% endblock %}
           </div>
@@ -222,7 +222,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var
     {% block hero_extra %}{% endblock %}
   </div>
 </div>
-<main class="student-shell" id="participant-main" tabindex="-1">
+<main class="student-shell{% block main_class %}{% endblock %}" id="participant-main" tabindex="-1">
   {% block content %}{% endblock %}
 </main>
 <div id="participant-live-status" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>

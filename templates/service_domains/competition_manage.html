@@ -4,7 +4,7 @@
 {% block content %}
 {% include 'service_domains/_workspace_styles.html' %}
 {% include 'service_domains/_team_competition_styles.html' %}
-<main id="main-content" class="container-fluid py-4 service-workspace tc-workspace">
+<div class="container-fluid py-4 service-workspace tc-workspace">
   <p><a href="{% url 'competition_list' %}">← Competitions</a></p>
   <header class="tc-hero">
     <div><h1>{{ competition.name }}</h1>
@@ -13,6 +13,7 @@
     </div>
     <span class="tc-status {% if competition.status == 'active' %}is-active{% elif competition.status == 'complete' %}is-warn{% elif competition.status == 'revealed' %}is-success{% endif %}">{{ competition.get_status_display }}</span>
   </header>
+  {% if competition.status == 'complete' or competition.status == 'revealed' %}<p><a class="btn btn-outline-primary" href="{% url 'competition_results_export' competition.pk %}">Download results CSV</a></p>{% endif %}
   {% if action_error %}<div class="alert alert-danger" role="alert">{{ action_error }}</div>{% endif %}
   <p class="small text-muted">Organizer workspace · Public results stay hidden until you reveal them.</p>
   {% if competition.status == 'active' %}<nav aria-label="Live event sections"><ol class="tc-step-nav"><li><a href="#audience-links-heading"><span class="tc-step-number">1</span>Audience voting</a></li><li><a href="#judge-invitations-heading"><span class="tc-step-number">2</span>Judges</a></li><li><a href="#advancement-heading"><span class="tc-step-number">3</span>Round progress</a></li></ol></nav>{% endif %}
@@ -146,9 +147,9 @@
     {% elif audience_weighted_round %}<p>Finalize judge means for every entry, collect at least one complete audience ranking for every track, then close voting and calculate the weighted scores before advancing.</p>
     {% else %}<p>Tally judge scores for every entry in every track before advancing.</p>{% endif %}
   </section>{% endif %}
-  {% if competition.status == 'active' and judge_form %}<section class="tc-panel mt-3" aria-labelledby="judge-invitations-heading">
+  {% if judge_form %}<section class="tc-panel mt-3" aria-labelledby="judge-invitations-heading">
     <h2 id="judge-invitations-heading" class="h4">Invite judges · {{ latest_round.name }}</h2>
-    <p>Each judge gets a private link for one track and scores every entry. Scores use a 0–100 scale and the weights shown in the setup.</p>
+    <p>Each judge gets a private link for one track and scores each eligible entry or records a reason for not scoring. Scores use a 0–100 scale and the weights shown in the setup.</p>
     {% if judge_notice %}<div class="alert alert-info" role="status">{{ judge_notice }}</div>{% endif %}
     {% if tally_results %}<div class="alert alert-success" role="status">Judge means recorded for {{ tally_results|length }} entries. Counts are shown below.</div>{% endif %}
     {% if manual_invitation_url %}<p><a href="{{ manual_invitation_url }}">Copy the one-time judge link</a></p>{% endif %}
@@ -193,7 +194,7 @@
       {{ first_round_form.as_p }}<button class="btn btn-primary" type="submit">Create initial round</button>
     </form>
   </section></div></details>{% endif %}
-</main>
+</div>
 <script nonce="{{ csp_nonce }}">
 document.addEventListener('click',function(event){
   var link=event.target.closest('a[href^="#"]');

@@ -127,6 +127,7 @@
 {% endblock %}
 
 {% block content %}
+<h1 class="visually-hidden">Participation — {{ session.name }}</h1>
 <div class="tabs-sticky-header">
 {% include 'assessments/_session_tabs.html' with active='participation' %}
 {% include 'assessments/_partials/participation_stats.html' %}
@@ -251,14 +252,23 @@ document.addEventListener('click', function (e) {
   }
   window.DevPerfParticipationRefresh = refresh; // markSubmitted (defined below, outside this IIFE) needs it too
 
-  setInterval(refresh, 20000); // safety net only - the socket below drives real-time updates
+  const refreshInterval = setInterval(refresh, 20000); // safety net only - the socket below drives real-time updates
 
   if (window.WebSocket) {
     const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const url = `${scheme}://${window.location.host}/ws/assessments/{{ session.uuid }}/staff/`;
     let retryTimer = null;
+    let staffSocket = null;
     function connect() {
+      if (staffSocket) {
+        staffSocket.onmessage = null;
+        staffSocket.onclose = null;
+        staffSocket.onerror = null;
+        try { staffSocket.close(); } catch (_) {}
+        staffSocket = null;
+      }
       const socket = new WebSocket(url);
+      staffSocket = socket;
       socket.onmessage = function (event) {
         let data;
         try { data = JSON.parse(event.data); } catch (e) { return; }
@@ -277,12 +287,29 @@ document.addEventListener('click', function (e) {
         refresh();
       };
       socket.onclose = function () {
+        socket.onmessage = null;
+        socket.onclose = null;
+        socket.onerror = null;
+        if (staffSocket === socket) staffSocket = null;
         window.clearTimeout(retryTimer);
         retryTimer = setTimeout(connect, 4000);
       };
-      socket.onerror = function () { socket.close(); };
+      socket.onerror = function () {
+        socket.close();
+      };
     }
     connect();
+    window.addEventListener('pagehide', function () {
+      clearInterval(refreshInterval);
+      clearTimeout(retryTimer);
+      if (staffSocket) {
+        staffSocket.onmessage = null;
+        staffSocket.onclose = null;
+        staffSocket.onerror = null;
+        try { staffSocket.close(); } catch (_) {}
+        staffSocket = null;
+      }
+    });
   }
 })();
 

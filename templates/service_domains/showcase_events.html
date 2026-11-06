@@ -8,7 +8,7 @@
 @media(max-width:1000px){.sc-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.sc-grid{grid-template-columns:1fr}.sc-event{grid-template-columns:minmax(0,1.5fr) repeat(2,minmax(70px,.5fr)) auto}.sc-event-stat.rating{display:none}}
 @media(max-width:600px){.sc-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.sc-event{grid-template-columns:1fr auto}.sc-event-stat{display:none!important}}
 </style>
-<main id="main-content" class="container-fluid py-4 service-workspace showcase-dashboard">
+<div class="container-fluid py-4 service-workspace showcase-dashboard">
   <header class="sc-hero"><div><h1 class="page-title">Showcase dashboard</h1><p class="page-subtitle mb-0">A clear view of your events, exhibits, visitor feedback, and judge scorecards.</p></div><a href="{% url 'showcase_event_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create event</a></header>
   <section class="sc-kpis" aria-label="Showcase summary">
     <article class="sc-kpi"><div class="sc-kpi-label">Events</div><div class="sc-kpi-value">{{ total_events }}</div><div class="sc-kpi-note">Across all stages</div></article>
@@ -29,6 +29,6 @@
     </aside>
   </div>
   {% else %}<section class="sc-empty"><div class="display-6 text-primary mb-2"><i class="bi bi-easel2" aria-hidden="true"></i></div><h2 class="h4">Set up your first Showcase event</h2><p class="text-muted">The guided setup will help you name the event, choose its schedule, and set judging expectations.</p><a class="btn btn-primary" href="{% url 'showcase_event_create' %}">Start event setup</a></section>{% endif %}
-</main>
+</div>
 {% if events %}<script nonce="{{ csp_nonce }}">(()=>{const buttons=[...document.querySelectorAll('[data-event-filter]')],rows=[...document.querySelectorAll('[data-event-status]')],empty=document.getElementById('showcase-event-filter-empty');buttons.forEach(button=>button.addEventListener('click',()=>{let shown=0;buttons.forEach(item=>item.setAttribute('aria-pressed',String(item===button)));rows.forEach(row=>{const visible=button.dataset.eventFilter==='all'||row.dataset.eventStatus===button.dataset.eventFilter;row.hidden=!visible;if(visible)shown++});empty.hidden=shown>0}))})();</script>{% endif %}
 {% endblock %}

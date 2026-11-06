@@ -4,7 +4,7 @@
 {% block content %}
 {% include 'service_domains/_workspace_styles.html' %}
 {% include 'service_domains/_team_competition_styles.html' %}
-<main id="main-content" class="container-fluid py-4 service-workspace tc-workspace">
+<div class="container-fluid py-4 service-workspace tc-workspace">
   <p><a href="{% url 'assessment_session_detail' session.pk %}">← {{ session.name }}</a></p>
   <header class="tc-hero"><div><h1>Competency outcomes</h1><p>{{ session.name }} · Record a score and work-related evidence for each learner.</p>
       <div class="tc-context"><span class="tc-chip"><strong>{{ criteria|length }}</strong> competencies</span><span class="tc-chip"><strong>{{ session.students.count }}</strong> learners</span></div>
@@ -19,6 +19,15 @@
     <form method="post">{% csrf_token %}<input type="hidden" name="action" value="issue_certificates"><button class="btn btn-primary" type="submit">Issue eligible certificates</button></form>
   </section>{% else %}<p class="alert alert-info" role="status">Certificates can be issued after this demo closes.</p>{% endif %}
 
+  {% if session.status == 'closed' %}<section class="tc-panel mb-3" aria-labelledby="learner-release-heading">
+    <h2 id="learner-release-heading">Share a learner’s results</h2>
+    <p>Release the current competency scores and evidence for one learner. Share the private link only with that learner. Creating a new link replaces their previous links.</p>
+    {% if learner_report_url %}<div class="alert alert-success" role="status"><label for="learner-report-link">Private result link · copy before leaving</label><input id="learner-report-link" class="form-control" value="{{ learner_report_url }}" readonly><a href="{{ learner_report_url }}" target="_blank" rel="noopener">Preview released results</a></div>{% endif %}
+    <form method="post">{% csrf_token %}<label for="report-student">Learner</label><select class="form-select mb-2" id="report-student" name="student_id" required>{% for student in learners %}<option value="{{ student.pk }}">{{ student.full_name }}</option>{% endfor %}</select>
+      <button class="btn btn-primary" name="action" value="release_learner">Release private results</button>
+      <button class="btn btn-outline-danger" name="action" value="revoke_learner">Revoke result links</button>
+    </form>
+  </section>{% endif %}
   {% if criteria and rows %}
     {% regroup rows by criterion as criterion_groups %}
     {% for group in criterion_groups %}{% with criterion=group.grouper %}
@@ -45,5 +54,5 @@
     {% endwith %}{% endfor %}
   {% elif not criteria %}<div class="tc-empty"><h2>No competency criteria</h2><p>Add criteria to this series before creating a new demo that uses them.</p></div>
   {% else %}<div class="tc-empty"><h2>No learners in this demo</h2><p>Add learners to the series roster and create a new demo to assess them.</p></div>{% endif %}
-</main>
+</div>
 {% endblock %}

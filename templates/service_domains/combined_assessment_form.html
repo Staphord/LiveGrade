@@ -4,7 +4,7 @@
 {% block content %}
 {% include 'service_domains/_workspace_styles.html' %}
 {% include 'service_domains/_panel_ui_styles.html' %}
-<main id="main-content" class="container-fluid py-4 service-workspace panel-page">
+<div class="container-fluid py-4 service-workspace panel-page">
   <header class="panel-hero mb-4">
     <div class="page-header-main">
       <p class="panel-eyebrow">Classroom + Panel</p>
@@ -93,7 +93,7 @@
       </section>
     </aside>
   </div>
-</main>
+</div>
 <script nonce="{{ csp_nonce }}">
 (() => {
   const policy = document.getElementById('id_result_policy');

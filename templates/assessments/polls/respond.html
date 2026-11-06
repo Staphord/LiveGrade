@@ -2,10 +2,10 @@
 {% block title %}{{ poll.question }} - Classroom poll{% endblock %}
 {% block hero_sub %}Classroom poll{% endblock %}
 {% block content %}
-<div class="student-shell s-center-viewport">
+<div class="s-center-viewport">
 <section class="s-card">
   <p class="text-muted">{{ session.name }} · Classroom poll</p>
-  <h1 class="h4">{{ poll.question }}</h1>
+  <h2 class="h4">{{ poll.question }}</h2>
   {% if questions|length > 1 %}<p class="text-muted">{{ questions|length }} questions · Submit one response for the whole poll.</p>{% endif %}
   {% if poll.deadline %}<p class="text-muted">Respond by <time datetime="{{ poll.deadline|date:'c' }}" data-local-deadline>{{ poll.deadline|date:'j M Y, H:i' }}</time>.</p>{% endif %}
   <p class="small text-muted">Your teacher can see whether you responded, but your choices are not shown to classmates. This poll does not affect your grade.</p>

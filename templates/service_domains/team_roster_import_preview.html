@@ -4,7 +4,7 @@
 {% block content %}
 {% include 'service_domains/_workspace_styles.html' %}
 {% include 'service_domains/_team_competition_styles.html' %}
-<main id="main-content" class="container-fluid py-4 service-workspace tc-workspace">
+<div class="container-fluid py-4 service-workspace tc-workspace">
   <p><a href="{% url 'training_series_manage' series_id=series.pk %}#team-roster">← {{ series.name }}</a></p>
   <header class="tc-hero"><div><h1>Review roster import</h1><p>Check every row before adding anyone to the series.</p></div><span class="tc-status is-active">Step 2 of 2</span></header>
   <nav aria-label="Roster import progress"><ol class="tc-step-nav"><li><a href="{% url 'training_series_manage' series_id=series.pk %}#team-roster"><span class="tc-step-number">1</span>Choose spreadsheet</a></li><li><a href="#roster-review" aria-current="step"><span class="tc-step-number">2</span>Review rows</a></li></ol></nav>
@@ -31,5 +31,5 @@
       <form method="post">{% csrf_token %}<input type="hidden" name="action" value="cancel"><button class="btn btn-outline-secondary" type="submit">Cancel and return</button></form>
     </div>
   </section>
-</main>
+</div>
 {% endblock %}

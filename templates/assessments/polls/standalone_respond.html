@@ -2,10 +2,10 @@
 {% block title %}{{ poll.question }} - Anonymous poll{% endblock %}
 {% block hero_sub %}Anonymous poll{% endblock %}
 {% block content %}
-<div class="student-shell s-center-viewport">
+<div class="s-center-viewport">
   <section class="s-card">
     <p class="text-muted">Anonymous poll</p>
-    <h1 class="h4">{{ poll.question }}</h1>
+    <h2 class="h4">{{ poll.question }}</h2>
     {% if questions|length > 1 %}<p class="text-muted">{{ questions|length }} questions · One anonymous response.</p>{% endif %}
     {% if poll.deadline %}<p>Respond by <time data-local-deadline datetime="{{ poll.deadline|date:'c' }}">{{ poll.deadline|date:'j M Y, H:i' }}</time>.</p>{% endif %}
     <p class="small text-muted">No name, email or roster entry is collected. The poll owner sees only aggregate answers and the total number of responses.</p>
@@ -32,6 +32,38 @@
   </section>
   <section class="s-card mt-3" aria-labelledby="live-poll-results-heading"><div class="d-flex align-items-center justify-content-between gap-2 mb-2"><h2 class="h5 mb-0" id="live-poll-results-heading">Live poll results</h2><a class="btn btn-sm btn-outline-primary" href="{{ results_url }}" target="_blank" rel="noopener">Open display screen</a></div>{% include 'assessments/polls/_results.html' with questions=results.questions responded=results.responded invited=None unanswered=None public_results=True %}</section>
 </div>
-{% if poll.accepting_responses %}{{ state_url|json_script:'anonymous-poll-state' }}<script nonce="{{ csp_nonce }}">(function(){const url=JSON.parse(document.getElementById('anonymous-poll-state').textContent);setInterval(async function(){try{const r=await fetch(url,{headers:{'X-Requested-With':'XMLHttpRequest'}});if(r.ok){const s=await r.json();const results=document.getElementById('poll-results');if(results)results.outerHTML=s.html;if(!s.accepting)location.reload()}}catch(e){}},3000)})();</script>{% endif %}
+<p id="poll-connection" role="status" class="small text-muted">Results update automatically.</p>
+{% if poll.accepting_responses %}{{ state_url|json_script:'anonymous-poll-state' }}
+<script nonce="{{ csp_nonce }}">
+(function(){
+  const url=JSON.parse(document.getElementById('anonymous-poll-state').textContent);
+  const status=document.getElementById('poll-connection');
+  let pending=false, failures=0;
+  async function refresh(){
+    if(pending) return;
+    if(document.hidden){setTimeout(refresh,10000);return;}
+    pending=true;
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),10000);
+    try{
+      const response=await fetch(url,{cache:'no-store',signal:controller.signal});
+      if(!response.ok)throw new Error('Refresh failed');
+      const state=await response.json();
+      const results=document.getElementById('poll-results');
+      if(results)results.outerHTML=state.html;
+      status.textContent='Results are up to date.';
+      failures=0;
+      if(!state.accepting){location.reload();return;}
+    }catch(error){
+      failures=Math.min(failures+1,4);
+      status.textContent='Connection interrupted. Results may be out of date. Retrying…';
+    }finally{
+      clearTimeout(timeout);pending=false;
+      setTimeout(refresh,Math.min(30000,3000*Math.pow(2,failures))+Math.random()*1000);
+    }
+  }
+  setTimeout(refresh,3000+Math.random()*1000);
+})();
+</script>{% endif %}
 {% include 'assessments/polls/_local_deadline.html' %}
 {% endblock %}

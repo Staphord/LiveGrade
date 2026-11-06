@@ -4,16 +4,16 @@
 {% block content %}
 {% include 'service_domains/_workspace_styles.html' %}
 {% include 'service_domains/_team_competition_styles.html' %}
-<main id="main-content" class="container-fluid py-4 service-workspace tc-workspace">
+<div class="container-fluid py-4 service-workspace tc-workspace">
   <p><a href="{% url 'training_series_list' %}">← All series</a></p>
   <header class="tc-hero">
     <div><h1>{{ series.name }}</h1>
       {% if series.description %}<p>{{ series.description }}</p>{% else %}<p>Manage the team, competency criteria and demos for this series.</p>{% endif %}
       <div class="tc-context">
         {% if series.cadence_note %}<span class="tc-chip">Usual rhythm: {{ series.cadence_note }}</span>{% endif %}
-        <span class="tc-chip"><strong>{{ participants|length }}</strong> team members</span>
-        <span class="tc-chip"><strong>{{ competencies|length }}</strong> competencies</span>
-        <span class="tc-chip"><strong>{{ sessions|length }}</strong> demos</span>
+        <span class="tc-chip"><strong>{{ participants|length }}</strong> team member{{ participants|length|pluralize }}</span>
+        <span class="tc-chip"><strong>{{ competencies|length }}</strong> competenc{{ competencies|length|pluralize:"y,ies" }}</span>
+        <span class="tc-chip"><strong>{{ sessions|length }}</strong> demo{{ sessions|length|pluralize }}</span>
       </div>
     </div>
     <span class="tc-status is-active">Active series</span>
@@ -93,5 +93,5 @@
     {% if series.feedback_minimum_responses %}<p>Results stay hidden until at least <strong>{{ series.feedback_minimum_responses }}</strong> responses are received.</p>{% else %}<p>Choose a response minimum to enable feedback collection. Leave it blank to keep feedback disabled.</p>{% endif %}
     <details class="tc-disclosure" {% if privacy_form.errors %}open{% endif %}><summary>Change response minimum</summary><div class="tc-disclosure-body"><form method="post" class="service-flow-form mt-2" novalidate>{% csrf_token %}<input type="hidden" name="action" value="feedback_privacy">{{ privacy_form.as_p }}<button class="btn btn-outline-secondary" type="submit">Save privacy setting</button></form></div></details>
   </section>
-</main>
+</div>
 {% endblock %}

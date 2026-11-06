@@ -1,12 +1,20 @@
 {% extends 'assessments/student/_student_base.html' %}
 {% block title %}Live results - {{ poll.question }}{% endblock %}
 {% block hero_sub %}Live poll results{% endblock %}
-{% block extra_css %}<style nonce="{{ csp_nonce }}">.public-poll-screen{width:min(100% - 2rem,72rem);margin:2rem auto}.public-poll-screen .s-card{padding:clamp(1.25rem,3vw,2.5rem)}.public-poll-screen .poll-screen-title{font-size:clamp(1.6rem,3vw,2.5rem);line-height:1.15}.public-poll-screen .table{font-size:1.05rem}.public-poll-screen .table th,.public-poll-screen .table td{padding:.8rem}</style>{% endblock %}
+{% block main_class %} public-poll-main{% endblock %}
+{% block extra_css %}<style nonce="{{ csp_nonce }}">
+.student-shell.public-poll-main{max-width:72rem;width:min(100% - 2rem,72rem);margin:1.5rem auto;padding:0}
+.public-poll-screen{width:100%;margin:0 auto}
+.public-poll-screen .s-card{padding:clamp(1.25rem,3vw,2.5rem)}
+.public-poll-screen .poll-screen-title{font-size:clamp(1.6rem,3vw,2.5rem);line-height:1.15;font-weight:800;margin-bottom:.75rem}
+.public-poll-screen .table{font-size:1.05rem}
+.public-poll-screen .table th,.public-poll-screen .table td{padding:.8rem}
+</style>{% endblock %}
 {% block content %}
-<main class="public-poll-screen">
+<div class="public-poll-screen">
   <section class="s-card">
     <p id="public-poll-state" class="text-muted mb-2" role="status">Live poll results · {% if poll.accepting_responses %}Voting is open{% else %}Voting is closed{% endif %}</p>
-    <h1 class="poll-screen-title">{{ poll.question }}</h1>
+    <h2 class="poll-screen-title">{{ poll.question }}</h2>
     {% if questions|length > 1 %}<p class="text-muted">{{ questions|length }} questions</p>{% endif %}
     {% if poll.deadline %}<p class="small text-muted">Deadline: <time data-local-deadline datetime="{{ poll.deadline|date:'c' }}">{{ poll.deadline|date:'j M Y, H:i' }}</time></p>{% endif %}
     <p class="text-muted">Results show aggregate votes only. Voter names and individual ballots are private.</p>
@@ -14,7 +22,7 @@
     <p id="public-poll-refresh-status" class="small text-muted mb-0" role="status">Live results refresh automatically.</p>
     <a class="btn btn-outline-primary mt-3" href="{% if poll.standalone %}{% url 'standalone_poll_public' poll.uuid %}{% else %}{% url 'classroom_poll' poll.uuid %}{% endif %}">Open voting page</a>
   </section>
-</main>
+</div>
 {% if poll.accepting_responses %}{{ state_url|json_script:'public-poll-state-url' }}
 <script nonce="{{ csp_nonce }}">(function(){const url=JSON.parse(document.getElementById('public-poll-state-url').textContent);let busy=false,timer;async function refresh(){if(busy)return;busy=true;try{const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw new Error('Refresh failed');const s=await r.json();const results=document.getElementById('poll-results');if(results)results.outerHTML=s.html;if(!s.accepting){const state=document.getElementById('public-poll-state');if(state)state.textContent='Live poll results · Voting is closed';const status=document.getElementById('public-poll-refresh-status');if(status)status.textContent='Voting is closed. Final results are shown.';clearInterval(timer)}}catch(e){const status=document.getElementById('public-poll-refresh-status');if(status)status.textContent='Connection interrupted. Displayed results may be out of date; retrying.'}finally{busy=false}}timer=setInterval(refresh,3000)})();</script>{% endif %}
 {% include 'assessments/polls/_local_deadline.html' %}

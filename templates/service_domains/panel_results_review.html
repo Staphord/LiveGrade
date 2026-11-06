@@ -4,7 +4,7 @@
 {% block content %}
 {% include 'service_domains/_workspace_styles.html' %}
 {% include 'service_domains/_panel_ui_styles.html' %}
-<main id="main-content" class="container-fluid py-4 service-workspace panel-page--wide">
+<div class="container-fluid py-4 service-workspace panel-page--wide">
   <p><a class="btn btn-link px-0" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i>{{ hearing.name }}</a></p>
   <header class="panel-hero mb-4"><div class="panel-hero__copy"><p class="panel-eyebrow">Panel assessment · {{ hearing.get_status_display }}</p><h1 class="page-title">Results review</h1><p class="page-subtitle mt-2">Check the results and approve what will be shared.</p></div><div class="panel-hero__actions">{% if result_rows or show_decisions %}<a class="btn btn-outline-secondary" href="{% url 'panel_results_export' hearing_id=hearing.pk %}"><i class="bi bi-download me-1" aria-hidden="true"></i>Download workbook</a>{% endif %}</div></header>
   {% if action_error %}<div class="alert alert-danger" role="alert">{{ action_error }}</div>{% endif %}
@@ -50,5 +50,5 @@
     <div class="row g-3">{% for candidate in entrant_candidates %}<div class="col-12 col-md-6"><article class="panel-score-form h-100"><h3 class="h6">{{ candidate.display_name }}</h3><form method="post">{% csrf_token %}<input type="hidden" name="action" value="issue_entrant_link"><input type="hidden" name="candidate_id" value="{{ candidate.pk }}"><button class="btn btn-outline-primary btn-sm" type="submit">Create private result link</button></form></article></div>{% endfor %}</div>
     {% if entrant_links %}<h3 class="h5 mt-4">Issued links</h3><ul class="list-group">{% for link in entrant_links %}<li class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2"><span><strong>{{ link.candidate.display_name }}</strong><small class="d-block panel-muted">Created {{ link.issued_at|date:'j M Y, H:i' }}{% if link.revoked_at %} · revoked{% endif %}</small></span>{% if not link.revoked_at %}<form method="post" class="d-flex flex-wrap gap-2 align-items-end" data-confirm="Revoke this candidate’s result link? Anyone using it will lose access." data-confirm-title="Revoke result link" data-confirm-label="Revoke link" data-confirm-tone="danger">{% csrf_token %}<input type="hidden" name="action" value="revoke_entrant_link"><input type="hidden" name="link_id" value="{{ link.pk }}"><label class="visually-hidden" for="revoke-result-link-{{ link.pk }}">Reason for revoking {{ link.candidate.display_name }}’s link</label><input class="form-control form-control-sm" id="revoke-result-link-{{ link.pk }}" name="reason" maxlength="500" required placeholder="Reason for revoking"><button class="btn btn-sm btn-outline-danger" type="submit">Revoke link</button></form>{% endif %}</li>{% endfor %}</ul>{% endif %}
   </section>{% endif %}
-</main>
+</div>
 {% endblock %}

@@ -4,16 +4,16 @@
 {% block content %}
 {% include 'service_domains/_workspace_styles.html' %}
 {% include 'service_domains/_team_competition_styles.html' %}
-<main id="main-content" class="container-fluid py-4 service-workspace tc-workspace">
+<div class="container-fluid py-4 service-workspace tc-workspace">
   <header class="tc-hero">
     <div><h1>Team and Training</h1>
       <p>Build a reusable team roster, run a series of demos, and follow competency progress.</p>
-      <div class="tc-context"><span class="tc-chip"><strong>{{ series|length }}</strong> active series</span></div>
+      <div class="tc-context"><span class="tc-chip"><strong>{{ series_total }}</strong> active series</span></div>
     </div>
     <span class="tc-status is-active">Training workspace</span>
   </header>
 
-  {% include 'service_domains/_onboarding.html' with onboarding=onboarding %}
+  {% if series %}<details class="tc-disclosure mb-3"><summary>Getting started</summary><div class="tc-disclosure-body">{% include 'service_domains/_onboarding.html' with onboarding=onboarding %}</div></details>{% else %}{% include 'service_domains/_onboarding.html' with onboarding=onboarding %}{% endif %}
 
   <section class="tc-panel" aria-labelledby="series-list-heading">
     <header><div><h2 id="series-list-heading">Your training series</h2><p>Open a series to manage its team, competencies and demos.</p></div>
@@ -27,9 +27,9 @@
               {% if item.description %}<p>{{ item.description }}</p>{% endif %}
               {% if item.cadence_note %}<p>Usual rhythm: {{ item.cadence_note }}</p>{% endif %}
               <span class="tc-context">
-                <span class="tc-chip">{{ item.participants.count }} team members</span>
-                <span class="tc-chip">{{ item.competencies.count }} competencies</span>
-                <span class="tc-chip">{{ item.series_sessions.count }} demos</span>
+                <span class="tc-chip">{{ item.participant_count }} team member{{ item.participant_count|pluralize }}</span>
+                <span class="tc-chip">{{ item.competency_count }} competenc{{ item.competency_count|pluralize:"y,ies" }}</span>
+                <span class="tc-chip">{{ item.demo_count }} demo{{ item.demo_count|pluralize }}</span>
               </span>
             </span>
             <span class="tc-status is-active">Active</span>
@@ -41,6 +41,11 @@
     {% endif %}
   </section>
 
+  {% if series.has_other_pages %}<nav aria-label="Training series pages" class="d-flex gap-3 my-3">
+    {% if series.has_previous %}<a href="?page={{ series.previous_page_number }}">Previous</a>{% endif %}
+    <span>Page {{ series.number }} of {{ series.paginator.num_pages }}</span>
+    {% if series.has_next %}<a href="?page={{ series.next_page_number }}">Next</a>{% endif %}
+  </nav>{% endif %}
   <details class="tc-disclosure mt-3" id="create-series" {% if form.errors %}open{% endif %}>
     <summary>Create a training series</summary>
     <div class="tc-disclosure-body">
@@ -51,5 +56,5 @@
       </form>
     </div>
   </details>
-</main>
+</div>
 {% endblock %}

@@ -286,6 +286,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 {% endblock %}
 
 {% block content %}
+<h1 class="visually-hidden">{% if session %}{{ session.name }} — Setup{% elif request.service == 'team' %}New Team demo setup{% else %}New assessment session{% endif %}</h1>
 <a href="{% url 'assessment_session_list' %}" class="back-link">
   <i class="bi bi-chevron-left"></i>{% if request.service == 'team' %}Team demos{% else %}All sessions{% endif %}
 </a>
@@ -387,18 +388,18 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
           <input type="hidden" name="template" value="{{ template_selection }}">
           {% for error in form.non_field_errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}
           <div class="mb-4">
-            <label class="form-label fw-600 t-body">{% if request.service == 'team' %}Demo setup name{% else %}Session name{% endif %}</label>
+            <label class="form-label fw-600 t-body" for="{{ form.name.id_for_label }}">{% if request.service == 'team' %}Demo setup name{% else %}Session name{% endif %}</label>
             {{ form.name }}
             {% if form.name.errors %}<div class="field-error">{{ form.name.errors|join:", " }}</div>{% endif %}
             <div class="text-muted t-micro mt-1">e.g. "Sprint Demo - Q1 2026" or "Final-Year Project Presentations"</div>
           </div>
           <div class="mb-4">
-            <label class="form-label fw-600 t-body">Identify {% if request.service == 'team' %}team members{% else %}students{% endif %} by</label>
+            <label class="form-label fw-600 t-body" for="{{ form.identify_by.id_for_label }}">Identify {% if request.service == 'team' %}team members{% else %}students{% endif %} by</label>
             {{ form.identify_by }}
             <div class="text-muted t-micro mt-1">Whichever field {% if request.service == 'team' %}team members{% else %}students{% endif %} type in on their phone to join - pick whatever's on your roster.</div>
           </div>
           <div class="mb-2">
-            <label class="form-label fw-600 t-body">{{ form.ungraded_penalty.label }}</label>
+            <label class="form-label fw-600 t-body" for="{{ form.ungraded_penalty.id_for_label }}">{{ form.ungraded_penalty.label }}</label>
             <div class="input-group" style="max-width:220px">
               {{ form.ungraded_penalty }}
               <span class="input-group-text">points</span>
@@ -426,17 +427,17 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
         <form method="post">
           {% csrf_token %}
           <div class="mb-4">
-            <label class="form-label fw-600 t-body">Session name</label>
+            <label class="form-label fw-600 t-body" for="{{ form.name.id_for_label }}">Session name</label>
             {{ form.name }}
             {% if form.name.errors %}<div class="field-error">{{ form.name.errors|join:", " }}</div>{% endif %}
           </div>
           <div class="mb-4">
-            <label class="form-label fw-600 t-body">Identify students by</label>
+            <label class="form-label fw-600 t-body" for="{{ form.identify_by.id_for_label }}">Identify students by</label>
             {{ form.identify_by }}
             <div class="text-muted t-micro mt-1">Whichever field students type in on their phone to join.{% if live_mode %} Students already in the room stay in; this only changes how new students join.{% endif %}</div>
           </div>
           <div class="mb-2">
-            <label class="form-label fw-600 t-body">{{ form.ungraded_penalty.label }}</label>
+            <label class="form-label fw-600 t-body" for="{{ form.ungraded_penalty.id_for_label }}">{{ form.ungraded_penalty.label }}</label>
             <div class="input-group" style="max-width:220px">
               {{ form.ungraded_penalty }}
               <span class="input-group-text">points</span>
@@ -567,12 +568,12 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                   {% if group_form.non_field_errors %}<div class="alert alert-danger py-2 t-sm">{{ group_form.non_field_errors|join:", " }}</div>{% endif %}
                   <div class="row g-2">
                     <div class="col-7">
-                      <label class="form-label t-sm fw-600">Group name <span class="text-danger">*</span></label>
+                      <label class="form-label t-sm fw-600" for="{{ group_form.name.id_for_label }}">Group name <span class="text-danger">*</span></label>
                       {{ group_form.name }}
                       {% if group_form.name.errors %}<div class="field-error">{{ group_form.name.errors|join:", " }}</div>{% endif %}
                     </div>
                     <div class="col-5">
-                      <label class="form-label t-sm fw-600">Size <span class="text-danger">*</span></label>
+                      <label class="form-label t-sm fw-600" for="{{ group_form.max_size.id_for_label }}">Size <span class="text-danger">*</span></label>
                       {{ group_form.max_size }}
                       {% if group_form.max_size.errors %}<div class="field-error">{{ group_form.max_size.errors|join:", " }}</div>{% endif %}
                     </div>
@@ -582,12 +583,12 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                   </div>
                   <div class="row g-2 mt-1">
                     <div class="col-12">
-                      <label class="form-label t-sm fw-600">Topic <span class="text-muted fw-400">(optional)</span></label>
+                      <label class="form-label t-sm fw-600" for="{{ group_form.topic.id_for_label }}">Topic <span class="text-muted fw-400">(optional)</span></label>
                       {{ group_form.topic }}
                       {% if group_form.topic.errors %}<div class="field-error">{{ group_form.topic.errors|join:", " }}</div>{% endif %}
                     </div>
                     <div class="col-12">
-                      <label class="form-label t-sm fw-600">Presentation location <span class="text-muted fw-400">(optional)</span></label>
+                      <label class="form-label t-sm fw-600" for="{{ group_form.location.id_for_label }}">Presentation location <span class="text-muted fw-400">(optional)</span></label>
                       {{ group_form.location }}
                       {% if group_form.location.errors %}<div class="field-error">{{ group_form.location.errors|join:", " }}</div>{% endif %}
                     </div>
@@ -599,8 +600,8 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                     {% for error in group_form.is_practice.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}
                   </div>
                   {% if ungrouped_students %}
-                  <label class="form-label t-sm fw-600 mt-3 mb-1" id="group-members-label">Members (optional - add now or later)</label>
-                  <div class="border rounded p-2" style="max-height:220px;overflow-y:auto" id="group-members-list">
+                  <div class="form-label t-sm fw-600 mt-3 mb-1" id="group-members-label">Members (optional - add now or later)</div>
+                  <div class="border rounded p-2" style="max-height:220px;overflow-y:auto" id="group-members-list" role="group" aria-labelledby="group-members-label">
                     {% for student in ungrouped_students %}
                     <div class="form-check">
                       <input class="form-check-input" type="checkbox" name="members" value="{{ student.pk }}" id="new-member-{{ student.pk }}">
@@ -716,7 +717,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                   {% csrf_token %}
                   {% if form.non_field_errors %}<div class="alert alert-danger py-2 t-sm">{{ form.non_field_errors|join:", " }}</div>{% endif %}
                   <div class="mb-2">
-                    <label class="form-label t-sm fw-600">
+                    <label class="form-label t-sm fw-600" for="{{ form.full_name.id_for_label }}">
                       Full name
                       {% if session.identify_by == 'full_name' %}<span class="badge bg-primary-subtle text-primary-emphasis">used to join</span>{% endif %}
                     </label>
@@ -724,7 +725,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                     {% if form.full_name.errors %}<div class="field-error">{{ form.full_name.errors|join:", " }}</div>{% endif %}
                   </div>
                   <div class="mb-2">
-                    <label class="form-label t-sm fw-600">
+                    <label class="form-label t-sm fw-600" for="{{ form.student_id.id_for_label }}">
                       Student ID
                       {% if session.identify_by == 'student_id' %}<span class="badge bg-primary-subtle text-primary-emphasis">used to join</span>{% endif %}
                     </label>
@@ -732,11 +733,11 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                     {% if form.student_id.errors %}<div class="field-error">{{ form.student_id.errors|join:", " }}</div>{% endif %}
                   </div>
                   <div class="mb-2">
-                    <label class="form-label t-sm fw-600">Email <span class="text-muted fw-400">(optional)</span></label>
+                    <label class="form-label t-sm fw-600" for="{{ form.email.id_for_label }}">Email <span class="text-muted fw-400">(optional)</span></label>
                     {{ form.email }}
                   </div>
                   <div class="mb-2">
-                    <label class="form-label t-sm fw-600">Programme <span class="text-muted fw-400">(optional)</span></label>
+                    <label class="form-label t-sm fw-600" for="{{ form.programme.id_for_label }}">Programme <span class="text-muted fw-400">(optional)</span></label>
                     {{ form.programme }}
                   </div>
                   <div class="d-flex gap-2">
@@ -768,7 +769,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                         <input type="search" name="q" class="form-control border-start-0" placeholder="Find a student…"
                                value="{{ query }}" aria-label="Search roster" id="roster-search-input" autocomplete="off">
                         <button type="button" class="btn btn-outline-secondary {% if not query %}d-none{% endif %}"
-                                id="roster-search-clear" title="Clear search"><i class="bi bi-x-lg"></i></button>
+                                id="roster-search-clear" title="Clear search" aria-label="Clear search"><i class="bi bi-x-lg"></i></button>
                       </div>
                     </form>
                   </div>
@@ -922,15 +923,15 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                   {% csrf_token %}
                   {% if rubric_form.non_field_errors %}<div class="alert alert-danger py-2 t-sm">{{ rubric_form.non_field_errors|join:", " }}</div>{% endif %}
                   <div class="mb-2">
-                    <label class="form-label t-sm fw-600">Name</label>{{ rubric_form.name }}
+                    <label class="form-label t-sm fw-600" for="{{ rubric_form.name.id_for_label }}">Name</label>{{ rubric_form.name }}
                     {% if rubric_form.name.errors %}<div class="field-error">{{ rubric_form.name.errors|join:", " }}</div>{% endif %}
                   </div>
                   <div class="mb-2">
-                    <label class="form-label t-sm fw-600">Description (optional)</label>{{ rubric_form.description }}
+                    <label class="form-label t-sm fw-600" for="{{ rubric_form.description.id_for_label }}">Description (optional)</label>{{ rubric_form.description }}
                     {% if rubric_form.description.errors %}<div class="field-error">{{ rubric_form.description.errors|join:", " }}</div>{% endif %}
                   </div>
                   <div class="mb-2">
-                    <label class="form-label t-sm fw-600">Scope</label>{{ rubric_form.scope }}
+                    <label class="form-label t-sm fw-600" for="{{ rubric_form.scope.id_for_label }}">Scope</label>{{ rubric_form.scope }}
                     <button type="button" class="scope-info-toggle" aria-expanded="false" aria-controls="rubric-scope-info" title="More information about rubric scope"><i class="bi bi-info-lg" aria-hidden="true"></i><span class="visually-hidden">More information about rubric scope</span></button>
                     <div class="scope-hint scope-info-copy" id="rubric-scope-info" hidden>
                       <i class="bi bi-info-circle-fill"></i><span>Group categories score the whole presenting group at once; Individual categories are scored per student. All weights, group and individual together, add up to 100%.</span>
@@ -938,7 +939,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                     {% if rubric_form.scope.errors %}<div class="field-error">{{ rubric_form.scope.errors|join:", " }}</div>{% endif %}
                   </div>
                   <div class="mb-2">
-                    <label class="form-label t-sm fw-600">Weight %</label>{{ rubric_form.weight }}
+                    <label class="form-label t-sm fw-600" for="{{ rubric_form.weight.id_for_label }}">Weight %</label>{{ rubric_form.weight }}
                     <div class="text-muted t-micro mt-1">{{ weight_remaining|floatformat:"-2" }}% of the 100% is still free.</div>
                     {% if rubric_form.weight.errors %}<div class="field-error">{{ rubric_form.weight.errors|join:", " }}</div>{% endif %}
                   </div>
@@ -990,7 +991,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                   <div class="rubric-cat-card" data-id="{{ cat.pk }}" data-name="{{ cat.name }}" data-description="{{ cat.description }}"
                        data-scope="{{ cat.scope }}" data-weight="{{ cat.weight }}"
                        data-edit-url="{% url 'assessment_rubric_edit' session.pk cat.pk %}">
-                    <textarea class="d-none rubric-level-descriptors-source">{{ cat.level_descriptors_text }}</textarea>
+                    <textarea class="d-none rubric-level-descriptors-source" aria-hidden="true" tabindex="-1" aria-label="Score level guidance">{{ cat.level_descriptors_text }}</textarea>
                     {% if not live_mode %}<input type="checkbox" class="form-check-input rubric-select-box me-2 flex-shrink-0" value="{{ cat.pk }}" data-name="{{ cat.name }}" aria-label="Select {{ cat.name }}">{% endif %}
                     <span class="cat-icon"><i class="bi bi-clipboard-check"></i></span>
                     <div class="cat-body">
@@ -1002,9 +1003,9 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                     </div>
                     {% if not live_mode %}
                     <div class="cat-actions">
-                      <button type="button" class="btn btn-sm btn-outline-secondary py-0 rubric-edit-btn" title="Edit category"><i class="bi bi-pencil"></i></button>
+                      <button type="button" class="btn btn-sm btn-outline-secondary py-0 rubric-edit-btn" title="Edit category" aria-label="Edit category {{ cat.name }}"><i class="bi bi-pencil"></i></button>
                       <form method="post" action="{% url 'assessment_rubric_delete' session.pk cat.pk %}" data-confirm="Remove this category? This can't be undone." data-confirm-label="Remove">
-                        {% csrf_token %}<button class="btn btn-sm btn-outline-danger py-0" title="Remove category"><i class="bi bi-trash"></i></button>
+                        {% csrf_token %}<button class="btn btn-sm btn-outline-danger py-0" title="Remove category" aria-label="Remove category {{ cat.name }}"><i class="bi bi-trash"></i></button>
                       </form>
                     </div>
                     {% endif %}
@@ -1038,7 +1039,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                   <div class="rubric-cat-card is-individual" data-id="{{ cat.pk }}" data-name="{{ cat.name }}" data-description="{{ cat.description }}"
                        data-scope="{{ cat.scope }}" data-weight="{{ cat.weight }}"
                        data-edit-url="{% url 'assessment_rubric_edit' session.pk cat.pk %}">
-                    <textarea class="d-none rubric-level-descriptors-source">{{ cat.level_descriptors_text }}</textarea>
+                    <textarea class="d-none rubric-level-descriptors-source" aria-hidden="true" tabindex="-1" aria-label="Score level guidance">{{ cat.level_descriptors_text }}</textarea>
                     {% if not live_mode %}<input type="checkbox" class="form-check-input rubric-select-box me-2 flex-shrink-0" value="{{ cat.pk }}" data-name="{{ cat.name }}" aria-label="Select {{ cat.name }}">{% endif %}
                     <span class="cat-icon"><i class="bi bi-person-lines-fill"></i></span>
                     <div class="cat-body">
@@ -1050,9 +1051,9 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
                     </div>
                     {% if not live_mode %}
                     <div class="cat-actions">
-                      <button type="button" class="btn btn-sm btn-outline-secondary py-0 rubric-edit-btn" title="Edit category"><i class="bi bi-pencil"></i></button>
+                      <button type="button" class="btn btn-sm btn-outline-secondary py-0 rubric-edit-btn" title="Edit category" aria-label="Edit category {{ cat.name }}"><i class="bi bi-pencil"></i></button>
                       <form method="post" action="{% url 'assessment_rubric_delete' session.pk cat.pk %}" data-confirm="Remove this category? This can't be undone." data-confirm-label="Remove">
-                        {% csrf_token %}<button class="btn btn-sm btn-outline-danger py-0" title="Remove category"><i class="bi bi-trash"></i></button>
+                        {% csrf_token %}<button class="btn btn-sm btn-outline-danger py-0" title="Remove category" aria-label="Remove category {{ cat.name }}"><i class="bi bi-trash"></i></button>
                       </form>
                     </div>
                     {% endif %}

@@ -4,11 +4,11 @@
 {% block content %}
 {% include 'service_domains/_workspace_styles.html' %}
 {% include 'service_domains/_team_competition_styles.html' %}
-<main id="main-content" class="container-fluid py-4 service-workspace tc-workspace">
+<div class="container-fluid py-4 service-workspace tc-workspace">
   <header class="tc-hero"><div><h1>Competition</h1><p>Set up an event, collect judge or audience results, and choose when to publish the leaderboard.</p><div class="tc-context"><span class="tc-chip"><strong>{{ competitions|length }}</strong> competitions</span></div></div>
     <a class="btn btn-primary" href="#create-competition">Create competition</a>
   </header>
-  {% include 'service_domains/_onboarding.html' with onboarding=onboarding %}
+  {% if competitions %}<details class="tc-disclosure mb-3"><summary>Getting started</summary><div class="tc-disclosure-body">{% include 'service_domains/_onboarding.html' with onboarding=onboarding %}</div></details>{% else %}{% include 'service_domains/_onboarding.html' with onboarding=onboarding %}{% endif %}
 
   <section class="tc-panel mb-3" aria-labelledby="competition-list-heading">
     <header><div><h2 id="competition-list-heading">Your competitions</h2><p>Choose an event to continue setup, scoring or results.</p></div></header>
@@ -31,5 +31,5 @@
       <form method="post" class="service-flow-form" novalidate>{% csrf_token %}{{ form.as_p }}<button class="btn btn-primary" type="submit">Create draft</button></form>
     </div>
   </details>
-</main>
+</div>
 {% endblock %}
