@@ -62,16 +62,16 @@ class CompetitionJudgeScorecardViewTests(TestCase):
         self.assertIn('private, no-store', page['Cache-Control'])
         data = {f'entry_{row.pk}': str(75 + index) for index, row in enumerate(self.rows)}
         submitted = self.request(client, 'post', self.score_url(token), data)
-        self.assertContains(submitted, 'Your scorecard has been submitted.')
+        self.assertContains(submitted, 'Scorecard submitted')
         self.assertEqual(CompetitionJudgeScore.objects.count(), 3)
         self.assertEqual(list(CompetitionJudgeScore.objects.order_by('round_entry_id')
             .values_list('score', flat=True)), [75, 76, 77])
         self.assertIsNotNone(invitation.__class__.objects.get(pk=invitation.pk).submitted_at)
         receipt = self.request(client, 'get', self.score_url(token))
-        self.assertContains(receipt, 'Your scorecard has been submitted')
+        self.assertContains(receipt, 'Scorecard submitted')
         self.assertNotContains(receipt, 'Score from 0 to 100')
         retry = self.request(client, 'post', self.score_url(token), data)
-        self.assertContains(retry, 'Your scorecard has been submitted')
+        self.assertContains(retry, 'Scorecard submitted')
         changed = {**data, f'entry_{self.rows[0].pk}': '99'}
         rejected = self.request(client, 'post', self.score_url(token), changed)
         self.assertEqual(rejected.status_code, 400)
@@ -173,7 +173,7 @@ class CompetitionJudgeScorecardViewTests(TestCase):
         self.assertEqual(score_page.status_code, 200)
         scored = self.request(self.client, 'post', score_url, {
             f'entry_{round_obj.round_entries.get().pk}': '88.50'})
-        self.assertContains(scored, 'Your scorecard has been submitted.')
+        self.assertContains(scored, 'Scorecard submitted')
         tally = self.request(self.client, 'post', reverse('competition_manage', args=(draft.pk,)), {
             'action': 'tally_judges', 'track_id': str(track.pk)})
         self.assertContains(tally, 'Judge means recorded for 1 entries.')

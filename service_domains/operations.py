@@ -64,7 +64,17 @@ def competition_audience_join_code(competition, round_obj, track):
     chars = []
     for shift in range(35, -1, -5):
         chars.append(COMPETITION_JOIN_CODE_ALPHABET[(bits >> shift) & 31])
-    return ''.join(chars)
+    code = ''.join(chars)
+    from .models import CompetitionAudienceJoinCode
+    for attempt in range(8):
+        try:
+            with transaction.atomic():
+                routing, _ = CompetitionAudienceJoinCode.objects.get_or_create(
+                    round=round_obj, track=track, defaults={'code': code})
+            return routing.code
+        except IntegrityError:
+            code = ''.join(secrets.choice(COMPETITION_JOIN_CODE_ALPHABET) for _ in range(8))
+    raise ValidationError('Unable to issue a unique audience code. Please retry.')
 
 
 def owned_rows(model, organization, user):
@@ -610,7 +620,7 @@ def submit_panel_score(raw_token, candidate, criterion, score, comment='', *, at
 
 
 @transaction.atomic
-def abstain_panel_score(raw_token, candidate, criterion, *, at=None):
+def abstain_panel_score(raw_token, candidate, criterion, *, reason='', at=None):
     """Record one criterion abstention for an invited examiner, without a score."""
     hearing, invitation = _lock_panel_invitation(raw_token, at)
     if not PanelCandidate.objects.filter(pk=candidate.pk, hearing_id=invitation.hearing_id).exists():
@@ -627,7 +637,10 @@ def abstain_panel_score(raw_token, candidate, criterion, *, at=None):
         raise PermissionDenied('This examiner is recused from the candidate.')
     if PanelScore.objects.filter(invitation=invitation, candidate=candidate, criterion=criterion).exists():
         raise ValidationError('A submitted score cannot be changed to an abstention.')
+    if not isinstance(reason, str) or not reason.strip() or len(reason.strip()) > 1000:
+        raise ValidationError('Give a reason for skipping this criterion (up to 1000 characters).')
     abstention = PanelAbstention(invitation=invitation, candidate=candidate, criterion=criterion,
+        reason=reason.strip(),
         organization_id=invitation.organization_id, created_by=invitation.created_by)
     abstention.full_clean()
     abstention.save(force_insert=True)
@@ -1621,8 +1634,8 @@ def issue_competition_judge_invitation(competition, round_obj, track, email, exp
         .select_for_update().filter(pk=competition.pk).first())
     if competition is None:
         raise PermissionDenied
-    if competition.status != Competition.Status.ACTIVE:
-        raise ValidationError('Judges can be invited only while the competition is active.')
+    if competition.status not in (Competition.Status.DRAFT, Competition.Status.ACTIVE):
+        raise ValidationError('Invite judges during setup or while the competition is active.')
     if competition.judge_weight == 0:
         raise ValidationError('Judge invitations are not used for a 100% audience-scored event.')
     scoped_round = (CompetitionRound.objects.for_organization(organization).owned_by(user)
@@ -1640,6 +1653,9 @@ def issue_competition_judge_invitation(competition, round_obj, track, email, exp
         raise ValidationError('Judge invitations are locked after round scoring is finalized.')
     if not isinstance(email, str) or not email.strip() or len(email.strip()) > 254:
         raise ValidationError('Enter a valid judge email address.')
+    if CompetitionJudgeInvitation.objects.filter(round=scoped_round, track=scoped_track,
+            email__iexact=email.strip(), revoked_at__isnull=True, expires_at__gt=timezone.now()).exists():
+        raise ValidationError('This judge already has a current invitation for this track and round.')
     token = secrets.token_urlsafe(32)
     invitation = CompetitionJudgeInvitation(competition=competition, round=scoped_round,
         track=scoped_track, email=email.strip(), token_digest=CompetitionJudgeInvitation.digest_token(token),
@@ -1662,7 +1678,7 @@ def resolve_competition_judge_invitation(token, *, at=None):
         return None
     if invitation.submitted_at is not None:
         return invitation
-    if invitation.competition.status != Competition.Status.ACTIVE:
+    if invitation.competition.status not in (Competition.Status.DRAFT, Competition.Status.ACTIVE):
         return None
     latest_round = (CompetitionRound.objects.filter(competition=invitation.competition)
         .order_by('-order').values_list('pk', flat=True).first())
@@ -1706,9 +1722,19 @@ def submit_competition_judge_scores(token, scores, *, at=None):
         raise ValidationError('Score every entry in the assigned track.') from exc
     if not entries or submitted_ids != expected_ids or len(scores) != len(expected_ids):
         raise ValidationError('Score every entry in the assigned track exactly once.')
+    from .models import CompetitionJudgeAbstention
+    abstentions = {}
     normalized = {}
     for row in entries:
         payload = scores.get(str(row.pk), scores.get(row.pk))
+        if isinstance(payload, dict) and 'abstention' in payload:
+            if (set(payload) != {'abstention', 'reason'}
+                    or payload['abstention'] not in ('conflict', 'abstain')
+                    or not isinstance(payload['reason'], str)
+                    or not payload['reason'].strip() or len(payload['reason'].strip()) > 1000):
+                raise ValidationError('Give a valid decision and reason for not scoring this entry.')
+            abstentions[row.pk] = (payload['abstention'], payload['reason'].strip())
+            continue
         if len(required_criteria) == 1 and not isinstance(payload, dict):
             values_by_criterion = {required_criteria[0].pk if required_criteria[0] else None: payload}
         elif isinstance(payload, dict):
@@ -1735,12 +1761,22 @@ def submit_competition_judge_scores(token, scores, *, at=None):
         previous_scores = {(entry_id, criterion_id): value for entry_id, criterion_id, value
             in CompetitionJudgeScore.objects.filter(invitation=invitation)
                 .values_list('round_entry_id', 'criterion_id', 'score')}
-        if normalized == previous_scores:
+        previous_abstentions = {row_id: (kind, reason) for row_id, kind, reason
+            in invitation.abstentions.values_list('round_entry_id', 'kind', 'reason')}
+        if normalized == previous_scores and abstentions == previous_abstentions:
             return list(CompetitionJudgeScore.objects.filter(
                 invitation=invitation).order_by('round_entry_id'))
         raise ValidationError('This scorecard was already submitted and cannot be changed.')
     records = []
     for row in entries:
+        if row.pk in abstentions:
+            kind, reason = abstentions[row.pk]
+            abstention = CompetitionJudgeAbstention(invitation=invitation, round_entry=row,
+                kind=kind, reason=reason, organization_id=invitation.organization_id,
+                created_by=invitation.created_by)
+            abstention.full_clean()
+            abstention.save(force_insert=True)
+            continue
         for criterion in required_criteria:
             criterion_id = criterion.pk if criterion else None
             score = CompetitionJudgeScore(invitation=invitation, round_entry=row,
@@ -1764,7 +1800,7 @@ def revoke_competition_judge_invitation(competition, invitation_id, *, organizat
     except (TypeError, ValueError) as exc:
         raise PermissionDenied from exc
     competition = (Competition.objects.for_organization(organization).owned_by(user)
-        .select_for_update().filter(pk=competition.pk, status=Competition.Status.ACTIVE).first())
+        .select_for_update().filter(pk=competition.pk, status__in=(Competition.Status.DRAFT, Competition.Status.ACTIVE)).first())
     if competition is None:
         raise PermissionDenied
     invitation = (CompetitionJudgeInvitation.objects.select_for_update()
@@ -2391,6 +2427,9 @@ def record_training_competency_result(session, criterion, student, score, eviden
         result.save(force_insert=True)
     except IntegrityError as exc:
         raise ValidationError('A competency decision was submitted at the same time. Reload and retry.') from exc
+    from .models import TrainingLearnerReportLink
+    TrainingLearnerReportLink.objects.filter(series_session=series_link, student=locked_student,
+        revoked_at__isnull=True).update(revoked_at=timezone.now())
     return result
 
 

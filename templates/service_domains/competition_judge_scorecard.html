@@ -11,8 +11,10 @@
        data-invitation="{{ invitation.pk }}"
        data-round="{{ invitation.round_id }}"></div>
   <header class="tc-public-head rounded-4 mb-3"><h1>{{ invitation.competition.name }}</h1><p>{{ invitation.round.name }} · {{ invitation.track.name }}</p></header>
-  <p>Score each entry from 0 to 100 using the criteria shown. Your scores are private. Submit once when every entry is complete.</p>
-  {% if submitted %}
+  <p>Score each entry from 0 to 100 using the criteria shown. Your scores are private. For each entry, score or record why you cannot assess it. Submit when every entry is complete.</p>
+  {% if invitation.competition.status == 'draft' %}
+    <div class="alert alert-info" role="status"><h2 class="h5">Your invitation is ready</h2><p>The organizer has not started this round. Keep this private link and return when scoring opens.</p><a class="btn btn-outline-primary" href="">Check scoring status</a></div>
+  {% elif submitted %}
     <div class="tc-result-state" role="status"><span aria-hidden="true">✓</span><div><strong>Scorecard submitted</strong>Your scores were received. This receipt remains available if you reopen the link before it expires.</div></div>
   {% else %}
     {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
@@ -27,6 +29,8 @@
         <summary><span>{{ forloop.counter }}. {{ row.entry.name }}</span><span class="tc-outcome is-pending" data-entry-status>Not scored</span></summary>
         <fieldset class="border-0 tc-judge-entry-body">
           <legend class="visually-hidden">Scores for {{ row.entry.name }}</legend>
+          <div class="mb-3">{{ row.decision_field.label_tag }}{{ row.decision_field }}{{ row.decision_field.errors }}</div>
+          <div class="mb-3">{{ row.reason_field.label_tag }}{{ row.reason_field }}{{ row.reason_field.errors }}</div>
           {% for item in row.score_fields %}<div class="mb-3 tc-score-input">
             {{ item.field.label_tag }}
             {{ item.field }}
@@ -48,13 +52,20 @@ document.addEventListener('DOMContentLoaded',function(){
   entries.forEach(function(entry){
     var status=entry.querySelector('[data-entry-status]');
     var inputs=Array.from(entry.querySelectorAll('input[type="number"]'));
+    var decision=entry.querySelector('select');
+    var reason=entry.querySelector('textarea');
     function update(){
-      var complete=inputs.length>0&&inputs.every(function(input){return input.value!==''&&input.checkValidity();});
-      status.textContent=complete?'Scores entered':'Not scored';
+      var skipping=decision&&decision.value!=='score';
+      inputs.forEach(function(input){input.disabled=skipping;});
+      if(reason){reason.closest('.mb-3').hidden=!skipping;reason.required=skipping;}
+      var complete=skipping?!!(reason&&reason.value.trim()):inputs.length>0&&inputs.every(function(input){return input.value!==''&&input.checkValidity();});
+      status.textContent=complete?(skipping?'Reason recorded':'Scores entered'):'Incomplete';
       status.classList.toggle('is-pass',complete);
       status.classList.toggle('is-pending',!complete);
     }
     inputs.forEach(function(input){input.addEventListener('input',update);});
+    if(decision)decision.addEventListener('change',update);
+    if(reason)reason.addEventListener('input',update);
     update();
   });
 });

@@ -104,3 +104,18 @@ class PanelLiveDisplayTests(TestCase):
         self.assertNotEqual(old_token, new_token)
         self.assertEqual(PanelLiveDisplayLink.objects.filter(
             hearing=self.hearing, revoked_at__isnull=True).count(), 1)
+
+    def test_live_score_respects_relative_criterion_weights(self):
+        invitation = self.invitation('weighted@example.test')
+        self.criterion.weight = Decimal('40')
+        self.criterion.save(update_fields=['weight'])
+        for criterion, score in [(self.criterion, 80)]:
+            PanelScore.objects.create(organization_id=self.org.id, created_by=self.owner,
+                invitation=invitation, candidate=self.candidate, criterion=criterion, score=score)
+        for name, weight, score in [('Delivery', 35, 60), ('Questions', 25, 100)]:
+            criterion = PanelCriterion.objects.create(organization_id=self.org.id, created_by=self.owner,
+                hearing=self.hearing, name=name, weight=weight)
+            self.panel.criteria.add(criterion)
+            PanelScore.objects.create(organization_id=self.org.id, created_by=self.owner,
+                invitation=invitation, candidate=self.candidate, criterion=criterion, score=score)
+        self.assertEqual(panel_live_activity(self.hearing)['candidates'][0]['score'], '78.00')

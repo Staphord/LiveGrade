@@ -108,6 +108,13 @@ class CompetitionJudgeScorecardForm(forms.Form):
         self.single_criterion = len(self.criteria) <= 1
         for row in self.entries:
             row.score_fields = []
+            self.fields[f'decision_{row.pk}'] = forms.ChoiceField(required=False,
+                choices=(('score', 'Score this entry'), ('conflict', 'Conflict of interest'),
+                         ('abstain', 'Unable to assess')), initial='score', label='Your decision')
+            self.fields[f'reason_{row.pk}'] = forms.CharField(required=False, max_length=1000,
+                label='Reason (required when not scoring)', widget=forms.Textarea(attrs={'rows': 2}))
+            row.decision_field = self[f'decision_{row.pk}']
+            row.reason_field = self[f'reason_{row.pk}']
             for criterion in self.criteria or [None]:
                 field_name = (f'entry_{row.pk}' if self.single_criterion else
                     f'entry_{row.pk}_criterion_{criterion.pk}')
@@ -115,16 +122,36 @@ class CompetitionJudgeScorecardForm(forms.Form):
                     f'{row.entry.name} · {criterion.name}')
                 self.fields[field_name] = forms.DecimalField(
                     min_value=Decimal('0'), max_value=Decimal('100'), max_digits=5,
-                    decimal_places=2, label=label,
+                    decimal_places=2, label=label, required=False,
                     help_text=(f"Score from 0 to 100. Criterion weight: {criterion.weight}%."
                         if criterion else 'Score from 0 to 100.'))
                 row.score_fields.append({'criterion': criterion, 'field': self[field_name]})
+
+    def clean(self):
+        cleaned = super().clean()
+        for row in self.entries:
+            decision = cleaned.get(f'decision_{row.pk}') or 'score'
+            if decision != 'score':
+                if not cleaned.get(f'reason_{row.pk}'):
+                    self.add_error(f'reason_{row.pk}', 'Give a reason for not scoring this entry.')
+                if any(cleaned.get(item['field'].name) is not None for item in row.score_fields):
+                    self.add_error(f'decision_{row.pk}', 'Clear the scores when declaring a conflict or abstaining.')
+            else:
+                for item in row.score_fields:
+                    if cleaned.get(item['field'].name) is None:
+                        self.add_error(item['field'].name, 'Enter a score or choose why you cannot assess this entry.')
+        return cleaned
 
     def score_payload(self):
         if not self.is_valid():
             raise ValueError('A valid judge scorecard is required.')
         payload = {}
         for row in self.entries:
+            decision = self.cleaned_data.get(f'decision_{row.pk}') or 'score'
+            if decision != 'score':
+                payload[str(row.pk)] = {'abstention': decision,
+                                        'reason': self.cleaned_data[f'reason_{row.pk}']}
+                continue
             if self.single_criterion:
                 payload[str(row.pk)] = self.cleaned_data[f'entry_{row.pk}']
             else:

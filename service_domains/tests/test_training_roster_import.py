@@ -113,7 +113,7 @@ class TrainingRosterImportTests(TestCase):
             preview_url = reverse('training_series_roster_preview', args=(self.series.pk,))
             preview = self.client.get(preview_url)
             self.assertEqual(preview.status_code, 200)
-            self.assertContains(preview, 'ready to add')
+            self.assertContains(preview, 'Ready to add')
             self.assertContains(preview, 'Amina Yusuf')
             applied = self.client.post(preview_url, {'action': 'apply'})
             self.assertEqual(applied.status_code, 302)

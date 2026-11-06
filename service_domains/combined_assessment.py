@@ -69,18 +69,19 @@ def combined_assessment_results(assessment):
         peer_score = normalized_peer_group_score(mapping.group, assessment.classroom_session)
         snapshots = list(PanelResultSnapshot.objects.filter(
             hearing=assessment.panel_hearing, candidate=mapping.candidate,
-        ).prefetch_related('adjustments').order_by('criterion_id'))
+        ).select_related('criterion').prefetch_related('adjustments').order_by('criterion_id'))
         expected_criteria = assessment.panel_hearing.criteria.count()
         panel_criteria_complete = expected_criteria > 0 and len(snapshots) == expected_criteria
         adjusted_scores = []
         for snapshot in snapshots:
             latest_adjustment = snapshot.adjustments.order_by('-revision').first()
-            adjusted_scores.append(latest_adjustment.adjusted_score if latest_adjustment else snapshot.score)
+            adjusted_scores.append((latest_adjustment.adjusted_score if latest_adjustment else snapshot.score)
+                                   * snapshot.criterion.weight)
         panel_coverage = min((row.rater_count for row in snapshots), default=0)
         panel_score = None
         if panel_criteria_complete:
             panel_score = (sum(adjusted_scores, Decimal('0')) /
-                           Decimal(len(snapshots))).quantize(Decimal('0.000001'), rounding=ROUND_HALF_UP)
+                           sum((row.criterion.weight for row in snapshots), Decimal('0'))).quantize(Decimal('0.000001'), rounding=ROUND_HALF_UP)
         panel_decision = (PanelDecision.objects.filter(hearing=assessment.panel_hearing,
             candidate=mapping.candidate).order_by('-revision').first())
         panel_vote_counts = {row['choice']: row['count'] for row in PanelVote.objects.filter(

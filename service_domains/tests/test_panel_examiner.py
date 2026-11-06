@@ -308,7 +308,7 @@ class PanelExaminerViewTests(TestCase):
         page = self.request('get', self.url)
         self.assertContains(page, 'Skip this criterion')
         response = self.request('post', self.url, {
-            'action': 'abstain', 'candidate_id': self.candidate.pk,
+            'action': 'abstain', 'abstention_reason': 'Unable to assess this criterion.', 'candidate_id': self.candidate.pk,
             'criterion_id': self.criterion.pk,
         })
         self.assertEqual(response.status_code, 302)
@@ -326,7 +326,7 @@ class PanelExaminerViewTests(TestCase):
         self.assertEqual(refused_score.status_code, 400)
         self.assertFalse(PanelScore.objects.exists())
         duplicate = self.request('post', self.url, {
-            'action': 'abstain', 'candidate_id': self.candidate.pk,
+            'action': 'abstain', 'abstention_reason': 'Unable to assess this criterion.', 'candidate_id': self.candidate.pk,
             'criterion_id': self.criterion.pk,
         })
         self.assertEqual(duplicate.status_code, 400)
@@ -364,7 +364,7 @@ class PanelExaminerViewTests(TestCase):
         })
         self.assertEqual(scored.status_code, 302)
         refused = self.request('post', self.url, {
-            'action': 'abstain', 'candidate_id': self.candidate.pk,
+            'action': 'abstain', 'abstention_reason': 'Unable to assess this criterion.', 'candidate_id': self.candidate.pk,
             'criterion_id': self.criterion.pk,
         })
         self.assertEqual(refused.status_code, 400)
@@ -374,7 +374,7 @@ class PanelExaminerViewTests(TestCase):
         self.invitation.conflicts.create(organization_id=self.org.id,
             created_by=self.owner, candidate=self.candidate, reason='Declared conflict.')
         recused = self.request('post', self.url, {
-            'action': 'abstain', 'candidate_id': self.candidate.pk,
+            'action': 'abstain', 'abstention_reason': 'Unable to assess this criterion.', 'candidate_id': self.candidate.pk,
             'criterion_id': self.criterion.pk,
         })
         self.assertEqual(recused.status_code, 400)

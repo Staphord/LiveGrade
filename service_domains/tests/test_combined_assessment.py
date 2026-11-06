@@ -339,3 +339,84 @@ class CombinedAssessmentTests(TestCase):
         self.assertEqual(self.session.presentation_turns.filter(status='active').get().group_id, group.pk)
         self.hearing.refresh_from_db()
         self.assertEqual(self.hearing.active_candidate_id, candidate.pk)
+
+    def test_combined_assessment_edge_cases_and_error_handling(self):
+        sign_in(self.client, self.owner, self.org)
+        mapping = self.assessment.mappings.first()
+
+        # Non-CombinedPresentationAssessment object passed to combined_assessment_results
+        with self.assertRaises(TypeError):
+            combined_assessment_results(object())
+
+        # Unmatched group membership snapshot invalidates complete mapping
+        mapping.group_member_ids_snapshot = [9999]
+        mapping.save()
+        self.assertFalse(self.assessment.mappings.first().assessment.mappings.count() == 0)
+
+        # Deactivate entry action
+        response = self.client.post(reverse('combined_assessment_detail', args=[self.assessment.pk]), {
+            'action': 'deactivate_entry', 'mapping_id': mapping.pk})
+        self.assertEqual(response.status_code, 302)
+
+        # Invalid action triggers warning
+        response = self.client.post(reverse('combined_assessment_detail', args=[self.assessment.pk]), {
+            'action': 'unsupported_action'})
+        self.assertEqual(response.status_code, 302)
+
+        # Remove mapping action
+        response = self.client.post(reverse('combined_assessment_detail', args=[self.assessment.pk]), {
+            'action': 'remove_mapping', 'mapping_id': mapping.pk})
+        self.assertEqual(response.status_code, 302)
+
+        # Delete draft combined assessment with dedicated fresh sessions
+        sess_draft = AssessmentSession.objects.create(
+            organization_id=self.org.id, created_by=self.owner, name='Peer draft sess',
+            service='classroom', status='draft', ungraded_penalty=0)
+        hearing_draft = PanelHearing.objects.create(
+            organization_id=self.org.id, created_by=self.owner, name='Panel draft hearing',
+            status=PanelHearing.Status.DRAFT, workflow=PanelHearing.Workflow.SCORED)
+        draft_to_delete = CombinedPresentationAssessment.objects.create(
+            organization_id=self.org.id, created_by=self.owner, name='Temporary draft',
+            classroom_session=sess_draft, panel_hearing=hearing_draft,
+            result_policy=CombinedPresentationAssessment.ResultPolicy.SEPARATE)
+        response = self.client.post(reverse('combined_assessment_detail', args=[draft_to_delete.pk]), {
+            'action': 'delete_draft'})
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(CombinedPresentationAssessment.objects.filter(pk=draft_to_delete.pk).exists())
+
+        # Create candidate from group action
+        group_unlinked = self.session.groups.create(name='Unlinked Group')
+        self.hearing.status = PanelHearing.Status.DRAFT
+        self.hearing.save()
+        self.assessment.status = CombinedPresentationAssessment.Status.DRAFT
+        self.assessment.save()
+        response = self.client.post(reverse('combined_assessment_detail', args=[self.assessment.pk]), {
+            'action': 'create_candidate_from_group', 'group_id': group_unlinked.pk})
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(PanelCandidate.objects.filter(hearing=self.hearing, source_group=group_unlinked).exists())
+
+        # Pause and Close combined assessment
+        self.assessment.status = CombinedPresentationAssessment.Status.ACTIVE
+        self.assessment.save()
+        response = self.client.post(reverse('combined_assessment_detail', args=[self.assessment.pk]), {
+            'action': 'close'})
+        self.assertEqual(response.status_code, 302)
+        self.assessment.refresh_from_db()
+        self.assertEqual(self.assessment.status, CombinedPresentationAssessment.Status.CLOSED)
+
+        # Service scoping verification
+        from django.test import RequestFactory
+        from service_domains.combined_views import combined_assessment_list
+        rf = RequestFactory()
+        req = rf.get(reverse('combined_assessment_list'))
+        req.user = self.owner
+        req.service = 'classroom'
+        from django.http import Http404
+        with self.assertRaises(Http404):
+            combined_assessment_list(req)
+
+        # Unauthorized access from another user
+        unauth_client = self.client_class()
+        sign_in(unauth_client, self.other, self.org)
+        response = unauth_client.get(reverse('combined_assessment_detail', args=[self.assessment.pk]))
+        self.assertEqual(response.status_code, 404)

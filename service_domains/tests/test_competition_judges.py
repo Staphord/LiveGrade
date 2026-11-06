@@ -336,7 +336,7 @@ class CompetitionJudgeOperationsTests(TestCase):
         self.assertIsNone(resolve_competition_judge_invitation('x' * 257))
         self.competition.status = Competition.Status.DRAFT
         self.competition.save(update_fields=('status', 'updated_at'))
-        self.assertIsNone(resolve_competition_judge_invitation(token))
+        self.assertEqual(resolve_competition_judge_invitation(token), invitation)
         with self.assertRaises(PermissionDenied):
             submit_competition_judge_scores(token, {
                 str(row.pk): '60' for row in self.round_entries})
@@ -357,3 +357,27 @@ class CompetitionJudgeOperationsTests(TestCase):
             organization_id=self.org.id, created_by=self.owner)
         score.save(force_insert=True)
         self.assertIsNotNone(score.pk)
+
+    def test_reasoned_conflict_is_not_a_zero_and_cannot_satisfy_coverage(self):
+        invitation, token = self.issue('conflicted@example.test')
+        payload = {str(row.pk): '75' for row in self.round_entries}
+        payload[str(self.round_entries[0].pk)] = {'abstention': 'conflict', 'reason': 'I supervise this entrant.'}
+        scores = submit_competition_judge_scores(token, payload)
+        self.assertEqual(len(scores), 2)
+        self.assertEqual(invitation.abstentions.get().reason, 'I supervise this entrant.')
+        self.assertFalse(CompetitionJudgeScore.objects.filter(
+            invitation=invitation, round_entry=self.round_entries[0]).exists())
+        self.assertEqual(len(submit_competition_judge_scores(token, payload)), 2)
+        with self.assertRaises(ValidationError):
+            compile_competition_judge_scores(self.competition, self.round, self.track,
+                organization=self.org.as_claim(), user=self.owner)
+
+    def test_draft_invitation_resolves_but_cannot_accept_scores_and_duplicate_is_rejected(self):
+        self.competition.status = Competition.Status.DRAFT
+        self.competition.save(update_fields=['status'])
+        invitation, token = self.issue('prepare@example.test')
+        self.assertEqual(resolve_competition_judge_invitation(token), invitation)
+        with self.assertRaises(PermissionDenied):
+            submit_competition_judge_scores(token, {str(row.pk): '80' for row in self.round_entries})
+        with self.assertRaisesMessage(ValidationError, 'already has a current invitation'):
+            self.issue('PREPARE@example.test')

@@ -100,7 +100,7 @@ class ShowcasePublicRatingFlowTests(TestCase):
     def test_each_exhibit_has_a_printable_label_and_png_qr_for_its_rating_url(self):
         label = self.client.get(self.label_url)
         self.assertEqual(label.status_code, 200)
-        self.assertContains(label, 'Use your browser’s Print command')
+        self.assertContains(label, 'Print this label')
         self.assertContains(label, self.url)
         self.assertContains(label, 'alt="QR code for rating Water filter"')
         qr = self.client.get(self.qr_url)
@@ -205,7 +205,7 @@ class ShowcasePublicRatingFlowTests(TestCase):
         response = self.client.get(results_url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Water filter')
-        self.assertContains(response, 'Average rating: 5 out of 5 from 1 ratings.')
+        self.assertContains(response, 'Average rating: 5 out of 5 from 1 rating.')
         self.assertNotContains(response, 'Private note')
         self.assertNotContains(response, 'Another note')
         self.assertIn('no-store', response['Cache-Control'])
@@ -228,7 +228,7 @@ class ShowcasePublicRatingFlowTests(TestCase):
         self.event.save(update_fields=('status', 'public_results'))
         response = self.client.get(reverse('showcase_public_results', args=(self.event.public_id,)))
         self.assertContains(response, 'The audience favorite is tied:')
-        self.assertContains(response, 'No judge scorecards were recorded for this category.')
+        self.assertContains(response, 'No judge scorecards were submitted in this category.')
 
         empty_event = ShowcaseEvent.objects.create(organization_id=self.org.id,
             created_by=self.owner, name='Quiet Showcase', status=ShowcaseEvent.Status.PUBLISHED,
@@ -237,7 +237,7 @@ class ShowcasePublicRatingFlowTests(TestCase):
             event=empty_event, name='Unrated category')
         empty = self.client.get(reverse('showcase_public_results', args=(empty_event.public_id,)))
         self.assertContains(empty, 'No audience ratings were recorded.')
-        self.assertContains(empty, 'No judge scorecards were recorded for this category.')
+        self.assertContains(empty, 'No judge scorecards were submitted in this category.')
 
     def test_public_results_remain_available_if_shared_cache_read_and_write_fail(self):
         self.event.status = ShowcaseEvent.Status.OPEN
@@ -256,7 +256,7 @@ class ShowcasePublicRatingFlowTests(TestCase):
                  patch('service_domains.views.cache.set', side_effect=RuntimeError('cache unavailable')):
                 response = self.client.get(results_url)
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Average rating: 5 out of 5 from 1 ratings.')
+        self.assertContains(response, 'Average rating: 5 out of 5 from 1 rating.')
         self.assertEqual(response['Cache-Control'], 'no-store')
         self.assertEqual(len(cache_logs.output), 2)
         self.assertNotIn('cache unavailable', '\n'.join(cache_logs.output))

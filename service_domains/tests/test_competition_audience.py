@@ -64,7 +64,7 @@ class CompetitionAudienceBallotTests(TestCase):
 
         first = self.post_ranking(client, self.entries)
         self.assertEqual(first.status_code, 200)
-        self.assertContains(first, 'ranked ballot was recorded')
+        self.assertContains(first, 'Your ranked ballot has been recorded.')
         ballot = CompetitionAudienceBallot.objects.get()
         self.assertIsNone(ballot.created_by_id)
         self.assertEqual(ballot.ranking, [entry.pk for entry in self.entries])
@@ -265,7 +265,7 @@ class CompetitionAudienceBallotTests(TestCase):
 
         join_url = reverse('competition_audience_join')
         code = competition_audience_join_code(self.competition, self.round, self.track)
-        with patch('service_domains.competition_views.allow_unknown_bearer_request',
+        with patch('service_domains.competition_views.allow_public_event_request',
                    return_value=True):
             joined = self.request(client, 'post', join_url, {'code': code})
         self.assertEqual(joined.status_code, 400)

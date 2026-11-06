@@ -46,6 +46,8 @@ def _read_bounded_rows(uploaded_file):
             worksheet = workbook.worksheets[0]
             if (worksheet.max_row or 0) > MAX_PHYSICAL_ROWS:
                 return TOO_MANY_PHYSICAL_ROWS
+            if (worksheet.max_column or 0) > 100:
+                return None
             return [[cell.value for cell in row]
                     for row in worksheet.iter_rows(max_row=MAX_PHYSICAL_ROWS)]
         finally:

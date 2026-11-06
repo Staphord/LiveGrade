@@ -72,7 +72,8 @@ def competition_judge_scorecard(request, token):
     criteria = list(CompetitionCriterion.objects.filter(track=invitation.track).order_by('order', 'pk'))
     form = CompetitionJudgeScorecardForm(
         request.POST if request.method == 'POST' else None, entries=entries, criteria=criteria)
-    score_rows = [{'entry': row.entry, 'score_fields': row.score_fields} for row in entries]
+    score_rows = [{'entry': row.entry, 'score_fields': row.score_fields,
+                   'decision_field': row.decision_field, 'reason_field': row.reason_field} for row in entries]
     error = ''
     submitted = invitation.submitted_at is not None
     if request.method == 'POST':

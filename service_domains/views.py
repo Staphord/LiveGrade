@@ -13,10 +13,12 @@ from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
 from django.core.cache import cache
 from django.db import IntegrityError
-from django.db.models import Count, Avg, Q
+from django.db.models import Count, Avg, Q, OuterRef, Subquery, Value
+from django.db.models.functions import Coalesce
 from django.db import transaction
 from functools import wraps
 
+from django.core.paginator import Paginator
 from django.core import signing
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
@@ -1149,7 +1151,7 @@ def panel_results_export(request, hearing_id):
     sheet.title = 'Panel results'
     sheet.append(['Hearing', 'Date', 'Venue', 'Candidate', 'Reference', 'Criterion',
                   'Aggregate score', 'Final score', 'Raters', 'Minimum met',
-                  'Aggregation', 'Trim fraction', 'Panel methodology'])
+                  'Aggregation', 'Trim fraction', 'Panel methodology', 'Criterion weight'])
     def safe_text(value):
         value = str(value or '')
         return "'" + value if value.startswith(('=', '+', '-', '@')) else value
@@ -1162,7 +1164,7 @@ def panel_results_export(request, hearing_id):
             float(adjustment.adjusted_score if adjustment else snapshot.score),
             snapshot.rater_count, not snapshot.below_minimum, snapshot.aggregation,
             float(snapshot.trim_fraction) if snapshot.trim_fraction is not None else None,
-            safe_text(snapshot.panel_methodology)])
+            safe_text(snapshot.panel_methodology), float(snapshot.criterion.weight)])
     decisions = (PanelDecision.objects.for_organization(request.organization)
         .owned_by(request.user).filter(hearing=hearing).select_related('candidate', 'decided_by')
         .order_by('candidate__order', 'candidate_id', '-revision'))
@@ -1213,6 +1215,16 @@ def panel_results_export(request, hearing_id):
                     report.created_at])
         report_sheet.freeze_panes = 'A2'
         report_sheet.auto_filter.ref = report_sheet.dimensions
+    abstentions = (PanelAbstention.objects.for_organization(request.organization)
+        .owned_by(request.user).filter(candidate__hearing=hearing)
+        .select_related('candidate', 'criterion'))
+    if abstentions.exists():
+        skipped = book.create_sheet('Abstentions')
+        skipped.append(['Candidate', 'Criterion', 'Reason'])
+        for abstention in abstentions:
+            skipped.append([safe_text(abstention.candidate.display_name),
+                            safe_text(abstention.criterion.name),
+                            safe_text(abstention.reason or 'Not recorded (legacy response)')])
     sheet.freeze_panes = 'A2'
     sheet.auto_filter.ref = sheet.dimensions
     output = io.BytesIO()
@@ -1700,7 +1712,7 @@ def panel_examiner(request, token):
                 if criterion is None:
                     raise Http404
                 if action == 'abstain':
-                    abstain_panel_score(token, candidate, criterion)
+                    abstain_panel_score(token, candidate, criterion, reason=request.POST.get('abstention_reason', ''))
                 else:
                     submit_panel_score(token, candidate, criterion,
                         request.POST.get('score', ''), request.POST.get('comment', ''))
@@ -2078,9 +2090,18 @@ def competition_audience_vote(request, competition_id, round_id, track_id):
 @never_cache
 @_team_owner
 def training_series_list(request):
+    def count_for_series(model):
+        return Coalesce(Subquery(model.objects.filter(series_id=OuterRef('pk'))
+            .order_by().values('series_id').annotate(total=Count('pk')).values('total')[:1]), Value(0))
+
     series = (TrainingSeries.objects.for_organization(request.organization)
-              .owned_by(request.user).filter(active=True).order_by('-created_at', 'pk'))
+              .owned_by(request.user).filter(active=True).annotate(
+                  participant_count=count_for_series(TrainingParticipant),
+                  competency_count=count_for_series(TrainingCompetency),
+                  demo_count=count_for_series(TrainingSeriesSession))
+              .order_by('-created_at', 'pk'))
     latest_series = series.first()
+    page = Paginator(series, 20).get_page(request.GET.get('page'))
     if request.method == 'POST':
         form = TrainingSeriesForm(request.POST)
         if form.is_valid():
@@ -2093,7 +2114,7 @@ def training_series_list(request):
     else:
         form = TrainingSeriesForm()
     return render(request, 'service_domains/team_series.html', {
-        'series': series, 'form': form,
+        'series': page, 'series_total': page.paginator.count, 'form': form,
         'onboarding': service_onboarding('team',
             resume_url=(reverse('training_series_manage', args=(latest_series.pk,))
                         if latest_series else ''),
@@ -2342,6 +2363,20 @@ def training_session_competencies(request, pk):
 
     form = None
     certificate_error = ''
+    learner_report_url = ''
+    if request.method == 'POST' and request.POST.get('action') in ('release_learner', 'revoke_learner'):
+        from .team_reports import release_learner_report, revoke_learner_report
+        try:
+            if request.POST['action'] == 'release_learner':
+                token = release_learner_report(series_link, request.POST.get('student_id'),
+                    organization=request.organization, user=request.user)
+                learner_report_url = public_url(request, reverse('training_learner_report', args=(token,)))
+            else:
+                revoke_learner_report(series_link, request.POST.get('student_id'),
+                    organization=request.organization, user=request.user)
+                messages.success(request, 'Private result links revoked for this learner.')
+        except (ValidationError, PermissionDenied) as exc:
+            certificate_error = '; '.join(getattr(exc, 'messages', [])) or 'This learner is unavailable.'
     if request.method == 'POST' and request.POST.get('action') == 'issue_certificates':
         try:
             issued = issue_training_certificates(session,
@@ -2354,8 +2389,9 @@ def training_session_competencies(request, pk):
             messages.success(request,
                 f'{len(issued)} current passing certificate(s) issued or already available.')
             return redirect('training_session_competencies', pk=session.pk)
-    elif request.method == 'POST':
-        form = TrainingCompetencyResultForm(request.POST)
+    elif request.method == 'POST' and request.POST.get('action') not in ('release_learner', 'revoke_learner'):
+        form = TrainingCompetencyResultForm(request.POST,
+            auto_id=f"comp_{request.POST.get('criterion_id')}_student_{request.POST.get('student_id')}_%s")
         criterion = series_link.competency_criteria.filter(
             pk=request.POST.get('criterion_id')).first()
         student = session.students.filter(pk=request.POST.get('student_id')).first()
@@ -2399,11 +2435,13 @@ def training_session_competencies(request, pk):
                 'form': (form if form is not None
                          and str(criterion.pk) == request.POST.get('criterion_id')
                          and str(student.pk) == request.POST.get('student_id')
-                         else TrainingCompetencyResultForm()),
+                         else TrainingCompetencyResultForm(
+                             auto_id=f'comp_{criterion.pk}_student_{student.pk}_%s')),
             })
     response = render(request, 'service_domains/team_competencies.html', {
         'session': session, 'series_link': series_link, 'rows': rows,
         'criteria': criteria, 'certificate_error': certificate_error,
+        'learner_report_url': learner_report_url, 'learners': students,
     }, status=400 if form is not None and not form.is_valid() else 200)
     response['Cache-Control'] = 'private, no-store'
     return response
@@ -2469,6 +2507,7 @@ def showcase_event_list(request):
             else:
                 event.save(force_insert=True)
                 return redirect('showcase_event_manage', event_id=event.pk)
+        return render(request, 'service_domains/showcase_event_create.html', {'form': form})
     status_counts = {status: sum(event.status == status for event in events)
         for status, _label in ShowcaseEvent.Status.choices}
     total_events = len(events)
@@ -2546,7 +2585,7 @@ def showcase_event_manage(request, event_id):
     manual_judge_url = ''
     judge_invitation_notice = ''
     if request.method == 'POST' and request.POST.get('action') == 'confirm_consent':
-        consent_form = ShowcaseMinorConsentForm(request.POST)
+        consent_form = ShowcaseMinorConsentForm(request.POST, auto_id='consent_%s')
         if event.status != ShowcaseEvent.Status.DRAFT or not event.includes_minors:
             raise Http404
         if consent_form.is_valid():
@@ -2741,7 +2780,7 @@ def showcase_event_manage(request, event_id):
         .order_by('declared_at', 'pk'))
     if (event.status == ShowcaseEvent.Status.DRAFT and event.includes_minors
             and event.consent_confirmed_at is None and consent_form is None):
-        consent_form = ShowcaseMinorConsentForm()
+        consent_form = ShowcaseMinorConsentForm(auto_id='consent_%s')
     response = render(request, 'service_domains/showcase_event_manage.html', {
         'event': event, 'exhibits': exhibits, 'event_form': event_form,
         'invite_form': invite_form,
@@ -2761,7 +2800,8 @@ def showcase_event_manage(request, event_id):
         'event_ready': event_ready,
         'event_can_be_deleted': event_can_be_deleted,
         'transition_choices': transition_choices,
-        'transition_form': ShowcaseEventTransitionForm(choices=transition_choices),
+        'transition_form': ShowcaseEventTransitionForm(choices=transition_choices,
+            auto_id='transition_%s'),
     }, status=400 if ((consent_form is not None and consent_form.errors)
         or (invite_form is not None and invite_form.errors)
         or (criteria_formset is not None and criteria_formset.is_bound
@@ -2863,7 +2903,8 @@ def showcase_judge_workspace(request, token):
             elif bound_assignment.pk in conflicts:
                 error = 'A conflict has already been declared for this exhibit.'
             else:
-                conflict_form = ShowcaseJudgeConflictForm(request.POST)
+                conflict_form = ShowcaseJudgeConflictForm(request.POST,
+                    auto_id=f'conflict_{bound_assignment.pk}_%s')
                 if conflict_form.is_valid():
                     try:
                         declare_showcase_judge_conflict(token,
@@ -2910,7 +2951,8 @@ def showcase_judge_workspace(request, token):
                     prefix=f'exhibit_{assignment.pk}'))
         if evaluation is None and assignment.pk not in conflicts:
             declaration_form = (conflict_form if assignment == bound_assignment
-                and conflict_form is not None else ShowcaseJudgeConflictForm())
+                and conflict_form is not None else ShowcaseJudgeConflictForm(
+                    auto_id=f'conflict_{assignment.pk}_%s'))
         cards.append({'assignment': assignment, 'evaluation': evaluation,
             'form': score_form, 'conflict': conflicts.get(assignment.pk),
             'conflict_form': declaration_form})
@@ -2938,7 +2980,7 @@ def showcase_judge_workspace(request, token):
 def showcase_event_transition(request, event_id):
     event = _owned_showcase_event(request, event_id)
     form = ShowcaseEventTransitionForm(request.POST,
-        choices=_showcase_transition_choices(event))
+        choices=_showcase_transition_choices(event), auto_id='transition_%s')
     if form.is_valid():
         try:
             transition_showcase_event(event, form.cleaned_data['target_status'],
@@ -2985,7 +3027,7 @@ def showcase_event_transition(request, event_id):
             event, minimum_judges=event.minimum_judges_per_exhibit),
         'transition_form': form,
         'transition_choices': _showcase_transition_choices(event),
-        'consent_form': (ShowcaseMinorConsentForm()
+        'consent_form': (ShowcaseMinorConsentForm(auto_id='consent_%s')
             if event.status == ShowcaseEvent.Status.DRAFT and event.includes_minors
             and event.consent_confirmed_at is None else None),
         'consent_audit_events': ShowcaseConsentAudit.objects.for_organization(

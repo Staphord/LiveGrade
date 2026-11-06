@@ -76,11 +76,11 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
     def test_owner_can_create_and_manage_only_their_organization_events(self):
         self.sign_in()
         listing = self.request('get', reverse('showcase_event_list'))
-        self.assertContains(listing, 'Your workflow')
-        self.assertContains(listing, 'Your Showcase workspace')
+        self.assertContains(listing, 'Event overview')
+        self.assertContains(listing, 'Showcase dashboard')
         self.assertNotContains(listing, 'Set up your first Showcase event')
-        self.assertContains(listing, 'Assign judges and prepare QR labels')
-        self.assertContains(listing, 'href="#create-showcase"')
+        self.assertContains(listing, reverse('showcase_event_create'))
+        self.assertContains(listing, 'Create event')
         created = self.request('post', reverse('showcase_event_list'), {
             'name': 'Community fair', 'includes_minors': 'on',
             'minimum_judges_per_exhibit': '1',
@@ -108,7 +108,7 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
         self.event.delete()
         self.sign_in()
         listing = self.request('get', reverse('showcase_event_list'))
-        self.assertContains(listing, 'Getting started')
+        self.assertContains(listing, 'Start event setup')
         self.assertContains(listing, 'Set up your first Showcase event')
 
     def test_event_label_sheet_prints_every_owned_exhibit_and_no_other_event_data(self):
@@ -665,7 +665,7 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
         with self.assertRaisesMessage(ValidationError, 'confirmation statement'):
             invalid_record.full_clean()
         page = self.request('get', self.event_url)
-        self.assertContains(page, 'Required consent was confirmed')
+        self.assertContains(page, 'Consent was confirmed')
         self.assertContains(page, 'Required guardian permissions collected')
 
         with self.assertRaisesMessage(ValidationError, 'already been confirmed'):

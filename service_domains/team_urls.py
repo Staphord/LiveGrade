@@ -1,5 +1,7 @@
 from django.urls import path
 
+from .team_reports import training_learner_report
+
 from .views import (training_anonymous_feedback, training_series_list,
                     training_series_manage, training_series_trends,
                     training_series_export, training_certificate_verify,
@@ -7,6 +9,7 @@ from .views import (training_anonymous_feedback, training_series_list,
                     training_series_roster_sample)
 
 urlpatterns = [
+    path('results/<str:token>/', training_learner_report, name='training_learner_report'),
     path('certificates/<uuid:public_id>/', training_certificate_verify,
          name='training_certificate_verify'),
     path('feedback/<uuid:feedback_public_id>/', training_anonymous_feedback,

@@ -459,7 +459,7 @@ class PanelOperationTests(ServiceDomainFixture):
 
     def test_invitation_persists_only_hash_and_token_expires_or_revokes(self):
         expires = timezone.now() + timedelta(hours=1)
-        invitation, token = issue_panel_invitation(self.hearing, 'examiner@example.test', expires,
+        invitation, token = issue_panel_invitation(self.hearing, 'token-check@example.test', expires,
                                                    organization=self.org.as_claim(), user=self.owner)
         self.assertNotEqual(invitation.token_digest, token)
         self.assertEqual(resolve_panel_invitation(token), invitation)

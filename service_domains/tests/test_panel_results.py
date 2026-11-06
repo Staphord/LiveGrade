@@ -178,7 +178,7 @@ class PanelResultCompilationTests(TestCase):
         self.score(self.tokens[1], self.candidate_a, 90)
         activate_panel_candidate(self.hearing, self.candidate_b,
             organization=self.org.as_claim(), user=self.owner)
-        abstain_panel_score(self.tokens[0], self.candidate_b, self.criterion)
+        abstain_panel_score(self.tokens[0], self.candidate_b, self.criterion, reason='Unable to assess this criterion.')
         self.score(self.tokens[1], self.candidate_b, 70)
         snapshots = compile_panel_results(self.hearing,
             organization=self.org.as_claim(), user=self.owner)

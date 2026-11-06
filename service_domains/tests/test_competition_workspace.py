@@ -19,7 +19,8 @@ from service_domains.models import (Competition, CompetitionEntry, CompetitionRo
                                     CompetitionLeaderboardTieDecision,
                                     CompetitionTransitionAudit,
                                     CompetitionLeaderboardAudit,
-                                    CompetitionCriterion)
+                                    CompetitionCriterion,
+                                    CompetitionAudienceJoinCode)
 from service_domains.models import CompetitionWeightedResultAudit
 from service_domains.operations import (create_initial_competition_round,
                                         compile_competition_judge_scores,
@@ -113,7 +114,7 @@ class CompetitionWorkspaceTests(TestCase):
         page = self.request('get', reverse('competition_public_leaderboard',
             args=(self.competition.public_id,)))
         self.assertEqual(page.status_code, 200)
-        self.assertContains(page, '80.00% judge mean + 20.00% audience ranking score')
+        self.assertContains(page, '80.00% judge scores and 20.00% audience rankings')
         self.assertContains(page, '84.00')
         self.assertContains(page, '100.00')
 
@@ -134,7 +135,7 @@ class CompetitionWorkspaceTests(TestCase):
             f'rank_{entries[0].pk}': '1',
         })
         self.assertEqual(submitted.status_code, 200)
-        self.assertContains(submitted, 'ranked ballot was recorded')
+        self.assertContains(submitted, 'Your ranked ballot has been recorded.')
 
         finalized = finalize_competition_weighted_scores(self.competition, round_obj,
             organization=self.org.as_claim(), user=self.owner)
@@ -212,8 +213,8 @@ class CompetitionWorkspaceTests(TestCase):
         page = self.request('get', reverse('competition_public_leaderboard',
             args=(self.competition.public_id,)))
         self.assertEqual(page.status_code, 200)
-        self.assertContains(page, '100.00% audience ranking score')
-        self.assertContains(page, 'Audience ballots')
+        self.assertContains(page, '0.00% judge scores and 100.00% audience rankings')
+        self.assertContains(page, 'Audience score:')
 
     def test_organizer_weighted_rubric_scores_are_applied_and_retained(self):
         track = CompetitionTrack.objects.create(organization_id=self.org.id,
@@ -265,7 +266,7 @@ class CompetitionWorkspaceTests(TestCase):
         sign_in(self.client, self.owner, self.org)
         empty = self.request('get', reverse('competition_list'))
         self.assertEqual(empty.status_code, 200)
-        self.assertContains(empty, 'Your workflow')
+        self.assertContains(empty, 'Getting started')
         self.assertContains(empty, 'Your Competition workspace')
         self.assertNotContains(empty, 'Set up your first competition')
         self.assertContains(empty, 'Add tracks and entries')
@@ -313,11 +314,11 @@ class CompetitionWorkspaceTests(TestCase):
         self.assertEqual(competition.audience_weight, 35)
         self.assertEqual(competition.judge_weight, 65)
         page = self.request('get', reverse('competition_manage', args=(competition.pk,)))
-        self.assertContains(page, 'Configured audience share: <strong>35.00%</strong>')
-        self.assertContains(page, 'reserved judge share: <strong>65.00%</strong>')
-        self.assertContains(page, 'How to run this competition')
-        self.assertContains(page, 'Collect judge scorecards where the judge share is above 0%')
-        self.assertContains(page, 'The public display stays hidden until you reveal')
+        self.assertContains(page, 'Audience 35.00% · Judges 65.00%')
+        self.assertContains(page, 'Judges 65.00%')
+        self.assertContains(page, 'Setup checklist')
+        self.assertContains(page, 'check the judging rules')
+        self.assertContains(page, 'Public results stay hidden until you reveal')
 
     def test_short_audience_join_code_resolves_only_to_current_active_ballot(self):
         track, entries, source = self.active_scored_round([90, 80])
@@ -355,7 +356,7 @@ class CompetitionWorkspaceTests(TestCase):
 
         self.assertEqual(page.status_code, 200)
         self.assertContains(page,
-            'Ranked-choice audience voting needs at least two entries in this track.')
+            'Audience voting needs at least two entries in this track.')
         self.assertNotContains(page, 'Open ranked-choice ballot')
         self.assertNotContains(page, 'Review current audience-only tally')
         self.assertNotContains(page, competition_audience_join_code(
@@ -391,24 +392,24 @@ class CompetitionWorkspaceTests(TestCase):
             args=(self.competition.public_id,)))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, '<th scope="col">Judge score</th>', count=1, html=True)
-        self.assertContains(response, '<th scope="col">Judges</th>', count=1, html=True)
-        self.assertContains(response, '<th scope="col">Criterion results</th>', count=1, html=True)
+        self.assertContains(response, 'Judge score:', count=1)
+        self.assertContains(response, '1 judge')
+        self.assertContains(response, 'Score details', count=1)
 
     def test_audience_join_code_rejects_invalid_format_and_fails_closed_without_throttle(self):
         join_url = reverse('competition_audience_join')
         malformed = self.request('post', join_url, {'code': 'AAAA-0000'})
         self.assertEqual(malformed.status_code, 400)
-        with patch('service_domains.competition_views.allow_unknown_bearer_request', return_value=None):
+        with patch('service_domains.competition_views.allow_public_event_request', return_value=None):
             unavailable_malformed = self.request('post', join_url, {'code': 'bad'})
         self.assertEqual(unavailable_malformed.status_code, 503)
-        with patch('service_domains.competition_views.allow_unknown_bearer_request', return_value=None):
+        with patch('service_domains.competition_views.allow_public_event_request', return_value=None):
             unavailable = self.request('post', join_url, {'code': 'ABCDEFGH'})
         self.assertEqual(unavailable.status_code, 503)
 
     def test_audience_join_code_throttles_invalid_attempts_and_ignores_inactive_rounds(self):
         join_url = reverse('competition_audience_join')
-        with patch('service_domains.competition_views.allow_unknown_bearer_request', return_value=False):
+        with patch('service_domains.competition_views.allow_public_event_request', return_value=False):
             limited_invalid = self.request('post', join_url, {'code': 'bad'})
         self.assertEqual(limited_invalid.status_code, 429)
         self.assertIn('Retry-After', limited_invalid)
@@ -427,12 +428,12 @@ class CompetitionWorkspaceTests(TestCase):
             created_by=self.owner, competition=empty_track_competition, name='Round 1', order=1)
         empty_code = competition_audience_join_code(
             empty_track_competition, empty_round, empty_track)
-        with patch('service_domains.competition_views.allow_unknown_bearer_request', return_value=True):
+        with patch('service_domains.competition_views.allow_public_event_request', return_value=True):
             unavailable_code = self.request('post', join_url, {'code': empty_code})
         self.assertEqual(unavailable_code.status_code, 400)
         self.assertContains(unavailable_code, 'unavailable or voting has closed', status_code=400)
 
-        with patch('service_domains.competition_views.allow_unknown_bearer_request', return_value=False):
+        with patch('service_domains.competition_views.allow_public_event_request', return_value=False):
             limited_unknown = self.request('post', join_url, {'code': 'ABCDEFGH'})
         self.assertEqual(limited_unknown.status_code, 429)
 
@@ -959,7 +960,7 @@ class CompetitionWorkspaceTests(TestCase):
         track, entries, source = self.active_scored_round([90, 80, 80])
         manage = reverse('competition_manage', args=(self.competition.pk,))
         page = self.request('get', manage)
-        self.assertContains(page, 'head-judge selection')
+        self.assertContains(page, 'head-judge decision')
         invalid = self.request('post', manage, {'action': 'advance_round', 'name': 'Final'})
         self.assertEqual(invalid.status_code, 400)
         self.assertEqual(CompetitionRound.objects.filter(competition=self.competition).count(), 1)
@@ -1085,10 +1086,10 @@ class CompetitionWorkspaceTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertLess(response.content.index(b'Entry 3'), response.content.index(b'Entry 2'))
         self.assertLess(response.content.index(b'Entry 2'), response.content.index(b'Entry 1'))
-        self.assertIn(b'<td>1</td>', response.content)
-        self.assertIn(b'<td>2</td>', response.content)
-        self.assertIn(b'<td>3</td>', response.content)
-        self.assertContains(response, 'recorded head-judge decisions')
+        self.assertContains(response, 'aria-label="Place 1"')
+        self.assertContains(response, 'aria-label="Place 2"')
+        self.assertContains(response, 'aria-label="Place 3"')
+        self.assertContains(response, 'recorded head-judge decision')
         self.competition.refresh_from_db()
         self.assertEqual(self.competition.status, Competition.Status.REVEALED)
         self.assertEqual(CompetitionTransitionAudit.objects.filter(
@@ -1107,8 +1108,8 @@ class CompetitionWorkspaceTests(TestCase):
             args=(self.competition.public_id,)))
         self.assertEqual(response.status_code, 200)
         self.assertLess(response.content.index(b'Entry 1'), response.content.index(b'Entry 2'))
-        self.assertIn(b'<td>1</td>', response.content)
-        self.assertIn(b'<td>2</td>', response.content)
+        self.assertContains(response, 'aria-label="Place 1"')
+        self.assertContains(response, 'aria-label="Place 2"')
 
     def test_revealed_leaderboard_uses_shared_cache_for_its_frozen_projection(self):
         _, _, _ = self.active_scored_round([92, 83, 71])
@@ -1495,3 +1496,35 @@ class CompetitionWorkspaceTests(TestCase):
         unresolved_url = reverse('competition_public_leaderboard',
             args=(unresolved.public_id,))
         self.assertEqual(self.request('get', unresolved_url).status_code, 404)
+
+    def test_competition_results_export_csv(self):
+        sign_in(self.client, self.owner, self.org)
+        url = reverse('competition_results_export', args=(self.competition.pk,))
+        # Export fails while draft/not complete
+        self.assertEqual(self.request('get', url).status_code, 404)
+
+        # Mark complete with track, round, and entries
+        self.competition.status = Competition.Status.COMPLETE
+        self.competition.save()
+        track = CompetitionTrack.objects.create(organization_id=self.org.id,
+            created_by=self.owner, competition=self.competition, name='Innovation Track')
+        entry = CompetitionEntry.objects.create(organization_id=self.org.id,
+            created_by=self.owner, track=track, name='=HYPERLINK("formula")', reference='REF-1')
+        round_obj = CompetitionRound.objects.create(organization_id=self.org.id,
+            created_by=self.owner, competition=self.competition, name='Round 1', order=1)
+        CompetitionRoundEntry.objects.create(organization_id=self.org.id,
+            created_by=self.owner, round=round_obj, entry=entry, track=track,
+            judge_score=Decimal('85.00'), audience_score=Decimal('90.00'), score=Decimal('87.50'))
+
+        response = self.request('get', url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'text/csv; charset=utf-8')
+        content = response.content.decode('utf-8')
+        self.assertIn("'=HYPERLINK", content)  # Formula injection escaped
+        self.assertIn('87.5', content)
+
+        # Non-owner cannot export
+        sign_in(self.client, self.other_owner, self.org)
+        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'competition'):
+            res = self.client.get(url)
+            self.assertEqual(res.status_code, 404)

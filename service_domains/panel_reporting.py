@@ -105,7 +105,7 @@ def panel_live_activity(hearing):
             if observed_share:
                 if observed_share != 1:
                     weighted_score /= observed_share
-                criterion_scores.append(weighted_score)
+                criterion_scores.append((weighted_score, criterion.weight))
             if not criterion_complete:
                 complete = False
         if voting or reviewing:
@@ -121,7 +121,8 @@ def panel_live_activity(hearing):
 
         required_units += candidate_required
         completed_units += candidate_completed
-        score = (sum(criterion_scores, Decimal('0')) / len(criterion_scores)
+        score = (sum((value * weight for value, weight in criterion_scores), Decimal('0')) /
+                 sum((weight for value, weight in criterion_scores), Decimal('0'))
                  if criterion_scores else None)
         entries.append({
             'id': candidate.pk,

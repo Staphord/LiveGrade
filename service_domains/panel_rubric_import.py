@@ -1,5 +1,6 @@
 """Bounded, preview-first import of panel scoring criteria from Excel."""
 from collections import defaultdict
+from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
@@ -13,6 +14,7 @@ from .panel_import import MAX_ROWS, TOO_MANY_PHYSICAL_ROWS, _read_bounded_rows
 
 HEADERS = {
     'name': {'criterion', 'criterion name', 'name'},
+    'weight': {'weight', 'criterion weight', 'relative weight'},
     'description': {'description', 'what is assessed', 'guidance'},
     'levels': {'score guidance', 'score levels', 'level guidance', 'anchors'},
 }
@@ -20,10 +22,10 @@ MAX_LEVEL_TEXT = 1200
 
 
 def sample_workbook():
-    return workbook_bytes(['Criterion', 'Description', 'Score guidance'], [
+    return workbook_bytes(['Criterion', 'Description', 'Score guidance', 'Weight'], [
         ['Subject knowledge', 'Accuracy and depth of understanding',
-         '0 | Not demonstrated\n50 | Partly demonstrated\n100 | Fully demonstrated'],
-        ['Communication', 'Clear structure and audience engagement', ''],
+         '0 | Not demonstrated\n50 | Partly demonstrated\n100 | Fully demonstrated', 60],
+        ['Communication', 'Clear structure and audience engagement', '', 40],
     ], {'A': 28, 'B': 52, 'C': 62})
 
 
@@ -55,11 +57,21 @@ def parse_rubric(uploaded_file):
     for number, source in enumerate(rows[1:], start=2):
         name = clean(cell(source, mapping, 'name'))
         description = clean(cell(source, mapping, 'description'))
-        levels_text = clean(cell(source, mapping, 'levels'))
+        raw_levels = cell(source, mapping, 'levels')
+        levels_text = str(raw_levels).strip() if raw_levels not in (None, '') else ''
         if not name and not description and not levels_text:
             continue
         row = {'row': number, 'name': name, 'description': description,
                'levels_text': levels_text, 'levels': [], 'errors': []}
+        raw_weight = cell(source, mapping, 'weight')
+        try:
+            weight = Decimal(str(raw_weight)) if raw_weight not in (None, '') else Decimal('1')
+            if not weight.is_finite() or not Decimal('0.01') <= weight <= Decimal('100') or weight.as_tuple().exponent < -2:
+                raise InvalidOperation
+            row['weight'] = str(weight)
+        except (InvalidOperation, TypeError, ValueError):
+            row['weight'] = '1'
+            row['errors'].append('Weight must be a number from 0.01 to 100 with at most two decimal places.')
         if not name:
             row['errors'].append('Criterion name is required.')
         if len(name) > 120:
@@ -120,7 +132,7 @@ def apply_rubric_import(hearing, parsed, *, organization, user):
     order = max((item.order for item in locked.criteria.all()), default=-1) + 1
     created = []
     for row in plan['rows']:
-        criterion = PanelCriterion(hearing=locked, name=row['name'],
+        criterion = PanelCriterion(hearing=locked, name=row['name'], weight=Decimal(row.get('weight', '1')),
             description=row['description'], order=order,
             organization_id=locked.organization_id, created_by=locked.created_by)
         criterion.full_clean()

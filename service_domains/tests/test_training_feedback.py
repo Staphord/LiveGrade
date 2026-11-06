@@ -78,7 +78,7 @@ class TrainingAnonymousFeedbackTests(TestCase):
         trends_url = reverse('training_series_trends', args=(self.series.pk,))
         response = self.request(self.client, 'get', trends_url)
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Mean 4.00 / 5; median 4.00 / 5')
+        self.assertEqual(response.context['feedback_summaries'][0]['aggregate']['mean'], 4)
         self.assertNotContains(response, '5 out of 5')
         self.assertEqual(set(response.context['feedback_summaries'][0]['aggregate']),
             {'response_count', 'mean', 'median'})
@@ -213,7 +213,7 @@ class TrainingAnonymousFeedbackTests(TestCase):
         sign_in(self.client, self.owner, self.org)
         manage_url = reverse('training_series_manage', args=(self.series.pk,))
         response = self.request(self.client, 'get', manage_url)
-        self.assertContains(response, 'open anonymous feedback')
+        self.assertContains(response, 'Feedback link')
         self.assertContains(response, self.url)
         invalid = self.request(self.client, 'post', manage_url, {
             'action': 'feedback_privacy', 'minimum_responses': '1',

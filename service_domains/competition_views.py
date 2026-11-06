@@ -33,7 +33,7 @@ from .operations import (competition_final_tie_requirements,
     resolve_competition_final_ties, competition_audience_join_code,
     competition_audience_ranked_choice, finalize_competition_weighted_scores)
 from .models import CompetitionLeaderboardTieDecision
-from .throttling import allow_unknown_bearer_request
+from .throttling import allow_public_event_request
 from .onboarding import service_onboarding
 
 
@@ -479,6 +479,9 @@ def competition_manage(request, competition_id):
         if judge_form is None and competition.judge_weight > 0:
             judge_form = CompetitionJudgeInvitationForm(
                 organization=request.organization, user=request.user, competition=competition)
+    if competition.status == Competition.Status.DRAFT and latest_round and competition.judge_weight > 0 and judge_form is None:
+        judge_form = CompetitionJudgeInvitationForm(
+            organization=request.organization, user=request.user, competition=competition)
     entry_count = sum(len(track.organizer_entries) for track in tracks)
     criterion_count = sum(len(track.organizer_criteria) for track in tracks)
     round_count = len(rounds)
@@ -517,41 +520,10 @@ def competition_audience_join(request):
         raise Http404
     form = CompetitionAudienceJoinForm(request.POST or None)
     if request.method == 'POST':
-        if not form.is_valid():
-            allowed = allow_unknown_bearer_request(request, service='competition-join-code')
-            if allowed is None:
-                return render(request, 'service_domains/competition_join.html', {
-                    'form': form, 'error': 'Audience joining is temporarily unavailable.',
-                }, status=503)
-            if not allowed:
-                response = render(request, 'service_domains/competition_join.html', {
-                    'form': form, 'error': 'Too many attempts. Try again shortly.',
-                }, status=429)
-                response['Retry-After'] = str(settings.PUBLIC_BEARER_UNKNOWN_RATE_WINDOW)
-                return response
-            return render(request, 'service_domains/competition_join.html', {
-                'form': form, 'error': '',
-            }, status=400)
-        code = form.cleaned_data['code']
-        matches = []
-        active_competitions = Competition.objects.filter(status=Competition.Status.ACTIVE)
-        for active in active_competitions.iterator():
-            latest = (CompetitionRound.objects.filter(competition=active)
-                .order_by('-order').first())
-            if latest is None or latest.audience_locked_at is not None:
-                continue
-            for track in CompetitionTrack.objects.filter(competition=active).order_by('pk'):
-                expected = competition_audience_join_code(active, latest, track)
-                if hmac.compare_digest(expected, code):
-                    entry_count = CompetitionRoundEntry.objects.filter(
-                        round=latest, track=track).count()
-                    minimum_entries = (1 if active.effective_audience_weight > 0 else 2)
-                    if entry_count >= minimum_entries:
-                        matches.append((active, latest, track))
-        if len(matches) == 1:
-            active, latest, track = matches[0]
-            return redirect('competition_audience_vote', active.public_id, latest.pk, track.pk)
-        allowed = allow_unknown_bearer_request(request, service='competition-join-code')
+        # Limit every attempt before validation or database routing work.
+        allowed = allow_public_event_request(request, service='competition-join-code',
+            event_id='join', limit=settings.COMPETITION_JOIN_RATE_LIMIT,
+            window=settings.PUBLIC_BEARER_UNKNOWN_RATE_WINDOW)
         if allowed is None:
             return render(request, 'service_domains/competition_join.html', {
                 'form': form, 'error': 'Audience joining is temporarily unavailable.',
@@ -562,6 +534,23 @@ def competition_audience_join(request):
             }, status=429)
             response['Retry-After'] = str(settings.PUBLIC_BEARER_UNKNOWN_RATE_WINDOW)
             return response
+        if not form.is_valid():
+            return render(request, 'service_domains/competition_join.html', {
+                'form': form, 'error': '',
+            }, status=400)
+        from .models import CompetitionAudienceJoinCode
+        routing = (CompetitionAudienceJoinCode.objects.select_related(
+            'round__competition', 'track').filter(code=form.cleaned_data['code']).first())
+        if routing:
+            round_obj, track = routing.round, routing.track
+            active = round_obj.competition
+            latest_id = active.rounds.order_by('-order').values_list('pk', flat=True).first()
+            if (active.status == Competition.Status.ACTIVE
+                    and round_obj.pk == latest_id and round_obj.audience_locked_at is None
+                    and track.competition_id == active.pk):
+                minimum = 1 if active.effective_audience_weight > 0 else 2
+                if CompetitionRoundEntry.objects.filter(round=round_obj, track=track).count() >= minimum:
+                    return redirect('competition_audience_vote', active.public_id, round_obj.pk, track.pk)
         return render(request, 'service_domains/competition_join.html', {
             'form': form, 'error': 'That code is unavailable or voting has closed.',
         }, status=400)
@@ -664,4 +653,34 @@ def competition_public_leaderboard(request, competition_id):
     })
     response['Cache-Control'] = 'private, no-store'
     response['X-Robots-Tag'] = 'noindex, nofollow'
+    return response
+
+
+@require_safe
+@never_cache
+@_competition_owner
+def competition_results_export(request, competition_id):
+    """Owner-only handoff of frozen aggregate results; never export judge identities."""
+    import csv
+    from django.http import HttpResponse
+
+    competition = _owned_competition(request, competition_id)
+    if competition.status not in (Competition.Status.COMPLETE, Competition.Status.REVEALED):
+        raise Http404
+    rows = (CompetitionRoundEntry.objects.for_organization(request.organization).owned_by(request.user)
+        .filter(round__competition=competition).select_related('round', 'track', 'entry')
+        .order_by('round__order', 'track__name', '-score', 'entry__order'))
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = f'attachment; filename="competition-{competition.pk}-results.csv"'
+    response['Cache-Control'] = 'private, no-store'
+    response['X-Content-Type-Options'] = 'nosniff'
+    writer = csv.writer(response)
+    writer.writerow(['Event', 'Round', 'Track', 'Entry', 'Reference', 'Judge score', 'Audience score', 'Final score'])
+    def safe_text(value):
+        value = str(value or '')
+        return "'" + value if value.lstrip().startswith(('=', '+', '-', '@')) else value
+    for row in rows.iterator(chunk_size=500):
+        writer.writerow([safe_text(competition.name), safe_text(row.round.name), safe_text(row.track.name),
+            safe_text(row.entry.name), safe_text(row.entry.reference), row.judge_score,
+            row.audience_score, row.score])
     return response

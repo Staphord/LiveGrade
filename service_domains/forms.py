@@ -55,13 +55,18 @@ class PanelCriterionForm(forms.ModelForm):
 
     class Meta:
         model = PanelCriterion
-        fields = ('name', 'description', 'order')
+        fields = ('name', 'description', 'weight', 'order')
 
     def __init__(self, *args, panels=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['panels'].queryset = panels if panels is not None else PanelScoringPanel.objects.none()
+        self.fields['weight'].required = False
+        self.fields['weight'].help_text = 'Relative importance: use 40, 35 and 25 for a 40/35/25 rubric. Equal weights count equally.'
         if self.instance.pk:
             self.initial['level_descriptors'] = format_descriptors(self.instance.levels.all())
+
+    def clean_weight(self):
+        return self.cleaned_data.get('weight') or (self.instance.weight if self.instance.pk else Decimal('1'))
 
     def clean(self):
         cleaned = super().clean()

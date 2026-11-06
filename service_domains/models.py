@@ -180,6 +180,8 @@ class PanelCandidate(OwnedDomainRecord):
 
 
 class PanelCriterion(OwnedDomainRecord):
+    weight = models.DecimalField(max_digits=7, decimal_places=2, default=Decimal('1'),
+        validators=[MinValueValidator(Decimal('0.01')), MaxValueValidator(Decimal('100'))])
     hearing = models.ForeignKey(PanelHearing, on_delete=models.CASCADE, related_name='criteria')
     name = models.CharField(max_length=120)
     description = models.TextField(blank=True, max_length=1000)
@@ -377,6 +379,7 @@ class PanelAbstention(OwnedDomainRecord):
         related_name='panel_abstentions')
     criterion = models.ForeignKey(PanelCriterion, on_delete=models.PROTECT,
         related_name='panel_abstentions')
+    reason = models.CharField(max_length=1000, blank=True)
     submitted_at = models.DateTimeField(auto_now_add=True)
 
     objects = PanelAbstentionManager()
@@ -1432,6 +1435,18 @@ class TrainingSeriesSession(OwnedDomainRecord):
                 raise ValidationError({'assessment_session': 'The session and series must have the same owner.'})
 
 
+class TrainingLearnerReportLink(OwnedDomainRecord):
+    """Owner-released, revocable snapshot shared privately with one learner."""
+    series_session = models.ForeignKey(TrainingSeriesSession, on_delete=models.PROTECT,
+        related_name='learner_report_links')
+    student = models.ForeignKey('assessments.Student', on_delete=models.PROTECT,
+        related_name='training_report_links')
+    token_digest = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    snapshot = models.JSONField()
+
+
 class TrainingFeedbackQuerySet(OwnedQuerySet):
     def update(self, **kwargs):
         raise ValidationError('Anonymous training feedback is immutable.')
@@ -1902,6 +1917,18 @@ class CompetitionRound(OwnedDomainRecord):
         constraints = [models.UniqueConstraint(fields=('competition', 'order'), name='competition_round_order_unique')]
 
 
+class CompetitionAudienceJoinCode(models.Model):
+    """Indexed public routing code; lifecycle checks remain on the target event."""
+
+    code = models.CharField(max_length=8, unique=True)
+    round = models.ForeignKey(CompetitionRound, on_delete=models.CASCADE, related_name='join_codes')
+    track = models.ForeignKey(CompetitionTrack, on_delete=models.CASCADE, related_name='join_codes')
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=('round', 'track'),
+                       name='competition_join_round_track_unique')]
+
+
 class CompetitionRoundEntry(OwnedDomainRecord):
     """An entry in a specific competition round, with its finalized score."""
 
@@ -2069,6 +2096,30 @@ class CompetitionJudgeInvitation(OwnedDomainRecord):
         at = at or timezone.now()
         return (self.revoked_at is None and self.submitted_at is None
                 and self.expires_at > at)
+
+
+class CompetitionJudgeAbstention(OwnedDomainRecord):
+    """A reasoned decision to exclude one judge from one entry's numeric result."""
+    invitation = models.ForeignKey(CompetitionJudgeInvitation, on_delete=models.PROTECT,
+        related_name='abstentions')
+    round_entry = models.ForeignKey(CompetitionRoundEntry, on_delete=models.PROTECT,
+        related_name='judge_abstentions')
+    kind = models.CharField(max_length=10, choices=(('conflict', 'Conflict of interest'),
+                                                 ('abstain', 'Unable to assess')))
+    reason = models.CharField(max_length=1000)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=('invitation', 'round_entry'),
+                        name='competition_judge_entry_abstain_once')]
+
+    def clean(self):
+        super().clean()
+        if self.invitation_id and self.round_entry_id:
+            if (self.invitation.round_id != self.round_entry.round_id
+                    or self.invitation.track_id != self.round_entry.track_id):
+                raise ValidationError('The entry must belong to this judge’s assigned round and track.')
+        if not self.reason.strip():
+            raise ValidationError({'reason': 'Give a reason for not scoring this entry.'})
 
 
 class CompetitionJudgeScoreQuerySet(OwnedQuerySet):
