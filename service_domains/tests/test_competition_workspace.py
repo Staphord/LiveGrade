@@ -1538,33 +1538,41 @@ class CompetitionWorkspaceTests(TestCase):
         self.assertEqual(res.status_code, 404)
 
         # Create active scored round with audience weight
+        self.competition.status = Competition.Status.DRAFT
+        self.competition.save(update_fields=('status',))
         track, entries, source = self.active_scored_round([85, 75], audience_weight=20)
-        self.competition.status = Competition.Status.ACTIVE
-        self.competition.save()
 
         # Tally audience on weighted event produces notification error
         res = self.request('post', manage_url, {'action': 'tally_audience', 'track_id': track.pk})
-        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.status_code, 400)
         self.assertIn('Weighted events use the disclosed Borda ranking score', res.context['action_error'])
 
         # Finalize weighted scores redirects
         token = CompetitionAudienceBallot.issue_device_token(self.competition, source, track)
         submit_competition_audience_ballot(self.competition.public_id, source.pk, track.pk, token, [entries[0].pk, entries[1].pk])
         res = self.request('post', manage_url, {'action': 'finalize_weighted_scores'})
-        self.assertRedirects(res, manage_url)
+        self.assertEqual(res.status_code, 302)
+        self.assertEqual(res['Location'], manage_url)
 
         # Attempting to finalize already finalized scores records error
         res = self.request('post', manage_url, {'action': 'finalize_weighted_scores'})
-        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.status_code, 400)
         self.assertIn('already been finalized', res.context['action_error'])
 
     def test_competition_manage_criterion_lifecycle(self):
         sign_in(self.client, self.owner, self.org)
-        comp = Competition.objects.create(organization_id=self.org.id,
-            created_by=self.owner, name='Criterion demo comp')
         track = CompetitionTrack.objects.create(organization_id=self.org.id,
-            created_by=self.owner, competition=comp, name='Tech')
-        manage_url = reverse('competition_manage', args=(comp.pk,))
+            created_by=self.owner, competition=self.competition, name='Lifecycle Track')
+        manage_url = reverse('competition_manage', args=(self.competition.pk,))
+
+        # Invalid criterion form sets errors and returns 400
+        res = self.request('post', manage_url, {
+            'action': 'criterion',
+            'track': track.pk,
+            'name': '',
+            'weight': '50.00',
+        })
+        self.assertEqual(res.status_code, 400)
 
         # Add criterion successfully
         res = self.request('post', manage_url, {
@@ -1575,8 +1583,73 @@ class CompetitionWorkspaceTests(TestCase):
             'weight': '50.00',
             'order': '1',
         })
-        self.assertRedirects(res, manage_url)
+        self.assertEqual(res.status_code, 302)
+        self.assertEqual(res['Location'], manage_url)
         criterion = CompetitionCriterion.objects.get(track=track, name='Innovation')
+
+        # Duplicate criterion name on same track triggers form error
+        res = self.request('post', manage_url, {
+            'action': 'criterion',
+            'track': track.pk,
+            'name': 'Innovation',
+            'description': 'Duplicate name',
+            'weight': '50.00',
+            'order': '2',
+        })
+        self.assertEqual(res.status_code, 400)
+        self.assertTrue(res.context['criterion_form'].errors)
+
+        # Criterion model validation error handling
+        with patch.object(CompetitionCriterion, 'full_clean', side_effect=[None, ValidationError(['Simulated validation failure'])]):
+            res = self.request('post', manage_url, {
+                'action': 'criterion',
+                'track': track.pk,
+                'name': 'CleanFail',
+                'description': 'Desc',
+                'weight': '50.00',
+                'order': '3',
+            })
+            self.assertEqual(res.status_code, 400)
+            self.assertIn('Simulated validation failure', res.context['criterion_form'].errors['__all__'][0])
+
+        # Criterion database integrity error handling
+        with patch.object(CompetitionCriterion, 'save', side_effect=IntegrityError('Unique constraint')):
+            res = self.request('post', manage_url, {
+                'action': 'criterion',
+                'track': track.pk,
+                'name': 'SaveFail',
+                'description': 'Desc',
+                'weight': '50.00',
+                'order': '4',
+            })
+            self.assertEqual(res.status_code, 400)
+            self.assertIn('already has a criterion with that name', res.context['criterion_form'].errors['name'][0])
+
+        # Criterion model validation error handling
+        with patch.object(CompetitionCriterion, 'full_clean', side_effect=ValidationError('Simulated validation failure')):
+            res = self.request('post', manage_url, {
+                'action': 'criterion',
+                'track': track.pk,
+                'name': 'CleanFail',
+                'description': 'Desc',
+                'weight': '50.00',
+                'order': '3',
+            })
+            self.assertEqual(res.status_code, 400)
+            self.assertIn('Simulated validation failure', res.context['criterion_form'].errors['__all__'][0])
+
+        # Criterion database integrity error handling
+        with patch.object(CompetitionCriterion, 'save', side_effect=IntegrityError('Unique constraint')):
+            res = self.request('post', manage_url, {
+                'action': 'criterion',
+                'track': track.pk,
+                'name': 'SaveFail',
+                'description': 'Desc',
+                'weight': '50.00',
+                'order': '4',
+            })
+            self.assertEqual(res.status_code, 400)
+            self.assertIn('already has a criterion with that name', res.context['criterion_form'].errors['name'][0])
 
         # Delete criterion with invalid id returns 404
         res = self.request('post', manage_url, {'action': 'delete_criterion', 'criterion_id': '999999'})
@@ -1584,7 +1657,8 @@ class CompetitionWorkspaceTests(TestCase):
 
         # Delete criterion successfully redirects
         res = self.request('post', manage_url, {'action': 'delete_criterion', 'criterion_id': str(criterion.pk)})
-        self.assertRedirects(res, manage_url)
+        self.assertEqual(res.status_code, 302)
+        self.assertEqual(res['Location'], manage_url)
         self.assertFalse(CompetitionCriterion.objects.filter(pk=criterion.pk).exists())
 
     def test_competition_service_scoping_and_join_edge_cases(self):
@@ -1595,14 +1669,20 @@ class CompetitionWorkspaceTests(TestCase):
             res = self.client.get(reverse('competition_public_leaderboard', args=(self.competition.public_id,)))
             self.assertEqual(res.status_code, 404)
 
+        # Audience join with unknown code returns 400
+        res = self.request('post', reverse('competition_audience_join'), {'code': 'ZZZZ9999'})
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('That code is unavailable or voting has closed.', res.context['error'])
+
         # Audience join with inactive / closed code returns 400
+        self.competition.status = Competition.Status.DRAFT
+        self.competition.save(update_fields=('status',))
         track, entries, source = self.active_scored_round([90, 80], audience_weight=0)
         code = CompetitionAudienceJoinCode.objects.create(
-            round=source, track=track, code='JOIN12',
-            expires_at=timezone.now() + timedelta(hours=1))
+            round=source, track=track, code='ABCD2345')
         source.audience_locked_at = timezone.now()
         source.save()
 
-        res = self.request('post', reverse('competition_audience_join'), {'code': 'JOIN12'})
+        res = self.request('post', reverse('competition_audience_join'), {'code': 'ABCD2345'})
         self.assertEqual(res.status_code, 400)
         self.assertIn('That code is unavailable or voting has closed.', res.context['error'])
