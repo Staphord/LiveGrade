@@ -29,8 +29,10 @@ jobs:
           cache: pip
           cache-dependency-path: |
             requirements.txt
+            requirements.lock
             requirements-dev.txt
-      - run: pip install -r requirements.txt -r requirements-dev.txt
+      - run: pip install --require-hashes -r requirements.lock
+      - run: pip install -r requirements-dev.txt
       - name: Deployment tooling tests
         run: python3 -m unittest discover -s scripts/tests -v
       - name: Run tests

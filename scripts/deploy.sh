@@ -52,7 +52,10 @@ cd "$APP_DIR"
 health() {
   local unit
   for unit in "${UNITS[@]}"; do systemctl is-active --quiet "$unit" || return 1; done
-  curl --fail --silent --show-error --max-time 10 --retry 2 --output /dev/null "$HEALTHCHECK_URL"
+  curl --fail --silent --show-error --max-time 10 --retry 2 --output /dev/null "$HEALTHCHECK_URL" || return 1
+  local readiness_url
+  readiness_url="${READINESSCHECK_URL:-$(python3 -c 'from urllib.parse import urlsplit; import sys; print(urlsplit(sys.argv[1])._replace(path="/readyz", query="", fragment="").geturl())' "$HEALTHCHECK_URL")}"
+  curl --fail --silent --show-error --max-time 10 --retry 2 --output /dev/null "$readiness_url"
 }
 if [[ "$OPERATION" == status ]]; then
   echo "==> Environment $DEPLOY_ENVIRONMENT"
@@ -113,7 +116,7 @@ git merge-base --is-ancestor "$RESOLVED_SHA" "refs/remotes/origin/$RELEASE_BRANC
 PHASE=checkout
 git checkout --detach "$RESOLVED_SHA"
 PHASE=dependencies
-"$APP_DIR/venv/bin/python" -m pip install --quiet -r requirements.txt
+"$APP_DIR/venv/bin/python" -m pip install --quiet --require-hashes -r requirements.lock
 PHASE=configuration
 "$APP_DIR/venv/bin/python" manage.py check --deploy --fail-level ERROR
 if [[ "$OPERATION" != rollback ]]; then

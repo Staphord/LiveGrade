@@ -16,11 +16,11 @@ run() { # sast: Semgrep rules for Django, Python, OWASP Top 10, secrets, JS
       --exclude venv --exclude security --exclude '*/migrations/*' \
       --metrics=off --sarif-output=$R/semgrep.sarif --text-output=$R/semgrep.txt . ; cat $R/semgrep.txt ;;
   bandit)  # Python-specific security linter
-    $T/bandit -r accounts assessments config portal -x '*/tests/*,*/migrations/*' \
+    $T/bandit -r accounts assessments config portal service_domains -x '*/tests/*,*/migrations/*' \
       -f txt -o $R/bandit.txt; cat $R/bandit.txt ;;
   deps)    # known-vulnerable dependencies (PyPI advisory DB + OSV)
     # The one ignored advisory is explained in security/accepted-risks.md (and a test enforces that).
-    $T/pip-audit -r requirements.txt --desc --ignore-vuln CVE-2026-106454 | tee $R/pip-audit.txt
+    $T/pip-audit -r requirements.lock --desc --ignore-vuln CVE-2026-106454 | tee $R/pip-audit.txt
     # OSV-Scanner v2 syntax is `osv-scanner scan source -r <dir>`; pointing it at the
     # repo root would also walk venv/, so it is left out of the default run.
     ;;

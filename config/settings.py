@@ -204,11 +204,12 @@ DATABASES = {
     }
 }
 if DATABASES['default']['ENGINE'] != 'django.db.backends.sqlite3':  # pragma: no cover - server databases only; tests and dev run on SQLite
-    # Reuse the database connection between requests instead of opening a new one
-    # for each (a handshake on every page and every live-state poll). The health
-    # check replaces a connection the server dropped rather than failing a request.
-    DATABASES['default']['CONN_MAX_AGE'] = int(os.getenv('DB_CONN_MAX_AGE', '60'))
+    # ASGI workers must not retain per-thread persistent connections. Configure
+    # database-side pooling and its connection budget in the deployment environment.
+    DATABASES['default']['CONN_MAX_AGE'] = int(os.getenv('DB_CONN_MAX_AGE', '0'))
     DATABASES['default']['CONN_HEALTH_CHECKS'] = True
+    if DATABASES['default']['ENGINE'].endswith('postgresql'):
+        DATABASES['default']['OPTIONS'] = {'connect_timeout': int(os.getenv('DB_CONNECT_TIMEOUT', '5'))}
 
 # Live updates and the turn timers. Redis database 1, not DevPerf's 0, so the
 # two services sharing one Redis server can never read each other's messages or
@@ -228,6 +229,15 @@ if LIVEGRADE_INTEREST_RATE_LIMIT < 1 or LIVEGRADE_INTEREST_RATE_WINDOW < 1:
     from django.core.exceptions import ImproperlyConfigured
 
     raise ImproperlyConfigured('Service interest rate limit and window must be positive.')
+# Per-event source budgets allow shared classroom and event Wi-Fi addresses.
+COMPETITION_JOIN_RATE_LIMIT = int(os.getenv('COMPETITION_JOIN_RATE_LIMIT', '6000'))
+if COMPETITION_JOIN_RATE_LIMIT < 1:
+    raise ImproperlyConfigured('Competition join request budget must be positive.')
+POLL_PUBLIC_READ_RATE_LIMIT = int(os.getenv('POLL_PUBLIC_READ_RATE_LIMIT', '60000'))
+POLL_PUBLIC_SUBMISSION_RATE_LIMIT = int(os.getenv('POLL_PUBLIC_SUBMISSION_RATE_LIMIT', '6000'))
+if min(POLL_PUBLIC_READ_RATE_LIMIT, POLL_PUBLIC_SUBMISSION_RATE_LIMIT) < 1:
+    raise ImproperlyConfigured('Poll request budgets must be positive.')
+
 PANEL_EXAMINER_RATE_LIMIT = int(os.getenv('PANEL_EXAMINER_RATE_LIMIT', '120'))
 PANEL_EXAMINER_RATE_WINDOW = int(os.getenv('PANEL_EXAMINER_RATE_WINDOW', '60'))
 if PANEL_EXAMINER_RATE_LIMIT < 1 or PANEL_EXAMINER_RATE_WINDOW < 1:

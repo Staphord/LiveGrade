@@ -199,7 +199,7 @@ DevPerf. They create one DevPerf account and see only LiveGrade.
 venv/bin/python manage.py test --parallel
 ```
 
-The suite needs no Redis, no DevPerf and no network. Line and branch coverage are held at 100%:
+The suite needs no Redis, no DevPerf and no network. The release target is 100% combined line and branch coverage:
 
 ```
 coverage run manage.py test --parallel
@@ -224,12 +224,19 @@ coverage combine && coverage report
 | `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` | SMTP server for Panel examiner invitation email. Credentials must come from an untracked `.env` or deployment secret manager. |
 | `EMAIL_USE_TLS`, `EMAIL_USE_SSL`, `EMAIL_TIMEOUT`, `DEFAULT_FROM_EMAIL` | SMTP transport and sender settings. TLS and SSL default off; set the option required by the provider. Mail delivery failure leaves a one-time copy fallback for the organizer. |
 | `DB_ENGINE`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | Database (default: local SQLite). |
+| `DB_CONN_MAX_AGE`, `DB_CONNECT_TIMEOUT` | Database connection lifetime and PostgreSQL connect timeout. ASGI deployments default to no persistent Django connections and a five-second connection timeout; configure and capacity-test an external pool. |
+| `COMPETITION_JOIN_RATE_LIMIT` | Competition join requests per observed source in the public request window (default 6,000). Set this with shared-network traffic and edge limits in mind. |
+| `POLL_PUBLIC_READ_RATE_LIMIT`, `POLL_PUBLIC_SUBMISSION_RATE_LIMIT` | Per-event, per-observed-source poll request budgets in a 60-second window. Configure for the deployment and shared-network traffic. |
 | `SESSION_COOKIE_AGE` | Seconds a sign-in lasts (default 8 hours). It is also the longest a withdrawn permission can linger. |
 | `CSP_ENFORCE` | Content-Security-Policy. Enforced by default when `DEBUG` is off; report-only (the console lists what it would block) while developing. `CSP_ENFORCE=False` is the emergency switch back to report-only. |
 | `SECURE_HSTS_SECONDS`, `SECURE_HSTS_INCLUDE_SUBDOMAINS`, `SECURE_HSTS_PRELOAD` | HSTS lifetime (default 30 days) and, once every subdomain serves HTTPS, whether it covers them and may be preloaded. Both flags default to `False`. |
 | `DEVPERF_DB_*` | Only for the one-off data copy below. |
 
 Production also needs HTTPS, a Celery worker, and a web server that serves `static/`.
+
+Use Python 3.12 and install the reviewed production dependency lock with `pip install --require-hashes -r requirements.lock`. Regenerate and re-audit the lock when changing dependencies. The CBOR package may require a Rust compiler when a wheel is unavailable, including on some Intel Macs.
+
+`/healthz` is process liveness; `/readyz` checks the database and shared cache and returns 503 on failure without exposing connection details. Deployment checks both endpoints. Set `READINESSCHECK_URL` in the server deployment configuration if readiness is served at a different origin or path. Readiness does not verify workers, queued jobs, email, sign-in, or capacity: monitor and test those separately.
 
 ## Importing sessions from DevPerf
 
