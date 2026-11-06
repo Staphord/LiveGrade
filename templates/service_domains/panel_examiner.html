@@ -26,7 +26,7 @@
       {% else %}
         {% if row.can_declare_conflict %}<details class="mb-3"><summary class="btn btn-sm btn-outline-secondary">I cannot assess this candidate fairly</summary><form method="post" class="panel-score-form mt-2">{% csrf_token %}<input type="hidden" name="action" value="conflict"><input type="hidden" name="candidate_id" value="{{ row.candidate.pk }}"><label class="form-label" for="conflict-reason-{{ row.candidate.pk }}">Brief reason</label><textarea class="form-control" id="conflict-reason-{{ row.candidate.pk }}" name="reason" maxlength="1000" required></textarea><button class="btn btn-outline-danger mt-2" type="submit">Submit conflict</button></form></details>{% endif %}
         {% if hearing.workflow == 'vote' or hearing.workflow == 'hybrid' or hearing.workflow == 'review_vote' %}
-          {% if row.vote %}<div class="alert alert-success" role="status">Your private vote has been recorded: {{ row.vote.get_choice_display }}.</div>{% elif row.active and hearing.status == 'open' %}<form method="post" class="panel-score-form mb-3">{% csrf_token %}<input type="hidden" name="action" value="vote"><input type="hidden" name="candidate_id" value="{{ row.candidate.pk }}"><h3 class="h5">Your vote</h3>{{ row.vote_form.as_p }}<button class="btn btn-primary" type="submit">Submit private vote</button></form>{% endif %}
+          {% if row.vote %}<div class="alert alert-success" role="status">Your private vote has been recorded: {{ row.vote.get_choice_display }}.</div>{% elif row.active and hearing.status == 'open' %}<form method="post" class="panel-score-form mb-3">{% csrf_token %}<input type="hidden" name="action" value="vote"><input type="hidden" name="candidate_id" value="{{ row.candidate.pk }}"><h3 class="h5">Your vote</h3><fieldset class="mb-3"><legend class="form-label">{{ row.vote_form.choice.label }}</legend>{% for radio in row.vote_form.choice %}<div class="form-check"><input class="form-check-input" type="radio" name="{{ row.vote_form.choice.html_name }}" id="vote-{{ row.candidate.pk }}-{{ forloop.counter0 }}" value="{{ radio.data.value }}" {% if radio.data.selected %}checked{% endif %} required><label class="form-check-label" for="vote-{{ row.candidate.pk }}-{{ forloop.counter0 }}">{{ radio.choice_label }}</label></div>{% endfor %}{% for error in row.vote_form.choice.errors %}<div class="text-danger small" role="alert">{{ error }}</div>{% endfor %}</fieldset><button class="btn btn-primary" type="submit">Submit private vote</button></form>{% endif %}
         {% endif %}
         {% if hearing.workflow == 'review' or hearing.workflow == 'review_vote' %}
           {% if row.written_review %}<div class="alert alert-success" role="status">Your latest review was submitted {{ row.written_review.created_at }}. You can update it while this candidate is active.</div><blockquote class="border-start border-3 ps-3 mb-3">{{ row.written_review.report|linebreaksbr }}</blockquote>{% endif %}
@@ -38,7 +38,7 @@
           {% elif row.active and hearing.status == 'open' %}<form method="post" class="panel-score-form mb-3">{% csrf_token %}<input type="hidden" name="candidate_id" value="{{ row.candidate.pk }}"><input type="hidden" name="criterion_id" value="{{ item.criterion.pk }}"><h3 class="h5">{{ item.criterion.name }}</h3>{% if item.criterion.description %}<p class="panel-muted">{{ item.criterion.description }}</p>{% endif %}
             {% if item.levels %}<details class="mb-3"><summary class="small fw-semibold">View score guidance</summary><ul class="small panel-muted mt-2">{% for level in item.levels %}<li><strong>{{ level.score|floatformat:'-2' }} points:</strong> {{ level.description }}</li>{% endfor %}</ul></details>{% endif %}
             <div class="row g-3 align-items-end"><div class="col-12 col-sm-4"><label class="form-label" for="score-{{ row.candidate.pk }}-{{ item.criterion.pk }}">Score (0–100)</label><input class="form-control" type="number" min="0" max="100" step="0.01" inputmode="decimal" required id="score-{{ row.candidate.pk }}-{{ item.criterion.pk }}" name="score"></div><div class="col-12 col-sm-8"><label class="form-label" for="comment-{{ row.candidate.pk }}-{{ item.criterion.pk }}">Comment (optional)</label><textarea class="form-control" id="comment-{{ row.candidate.pk }}-{{ item.criterion.pk }}" name="comment" maxlength="2000" rows="2"></textarea></div></div>
-            <div class="d-flex flex-wrap gap-2 mt-3"><button class="btn btn-primary" type="submit" name="action" value="score">Submit score</button><button class="btn btn-outline-secondary" type="submit" name="action" value="abstain" formnovalidate>Skip this criterion</button></div>
+            <details class="mt-3"><summary>Unable to score?</summary><label class="form-label mt-2" for="skip-{{ row.candidate.pk }}-{{ item.criterion.pk }}">Reason for skipping</label><textarea class="form-control" id="skip-{{ row.candidate.pk }}-{{ item.criterion.pk }}" name="abstention_reason" maxlength="1000" rows="2"></textarea><p class="small panel-muted">Required only when you skip this criterion. Visible to the organizer.</p></details><div class="d-flex flex-wrap gap-2 mt-3"><button class="btn btn-primary" type="submit" name="action" value="score">Submit score</button><button class="btn btn-outline-secondary" type="submit" name="action" value="abstain" formnovalidate>Skip this criterion</button></div>
           </form>{% endif %}
         {% endfor %}
         {% if not row.active and not row.vote and not row.written_review %}<p class="panel-muted mb-0">This candidate is not open for scoring right now.</p>{% endif %}
@@ -53,6 +53,9 @@
   const change = document.querySelector('[data-live-change]');
   const stateUrl = `${window.location.pathname}?state=1`;
   let lastActive = [...document.querySelectorAll('[data-candidate-card]')].find(card => card.querySelector('[data-active-badge]'))?.dataset.candidateCard || '';
+  let dirty = false;
+  document.addEventListener('input', () => { dirty = true; });
+  document.addEventListener('change', () => { dirty = true; });
   async function refreshState() {
     try {
       const response = await fetch(stateUrl, {headers: {'Accept': 'application/json'}, cache: 'no-store', credentials: 'same-origin'});
@@ -60,6 +63,10 @@
       const data = await response.json();
       const nextActive = data.active_candidate_id == null ? '' : String(data.active_candidate_id);
       if (nextActive !== lastActive) {
+        if (!dirty) {
+          window.location.reload();
+          return;
+        }
         change.hidden = false;
         change.textContent = nextActive ? `${data.active_candidate_name} is now active. Refresh this page to start scoring.` : 'The organizer has paused scoring. Refresh this page for the latest status.';
         if (!change.querySelector('a')) {

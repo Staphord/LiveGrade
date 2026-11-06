@@ -21,7 +21,7 @@
 /* Small entrance choreography + a liveness badge for the control panel -
    scoped here rather than added to base.html's global CSS. */
 @keyframes assess-fade-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-.assess-stagger{opacity:0;animation:assess-fade-in var(--motion,.35s) var(--ease,ease) forwards}
+.assess-stagger{animation:assess-fade-in var(--motion,.35s) var(--ease,ease) both}
 .assess-stagger:nth-child(1){animation-delay:.02s}
 .assess-stagger:nth-child(2){animation-delay:.07s}
 .assess-stagger:nth-child(3){animation-delay:.12s}
@@ -322,6 +322,7 @@
 {% endblock %}
 
 {% block content %}
+<h1 class="visually-hidden">{{ session.name }}</h1>
 <div class="tabs-sticky-header">
 {% include 'assessments/_session_tabs.html' with active='overview' %}
 </div>
@@ -1138,8 +1139,10 @@
   // group the picker has highlighted as "next up".
   document.addEventListener('keydown', function (e) {
     if (e.code !== 'Space' && e.key !== ' ') return;
-    const tag = (e.target.tagName || '').toLowerCase();
-    if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) return;
+    if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (document.querySelector('.modal.show')) return;
+    const target = e.target instanceof Element ? e.target : null;
+    if (target && (target.isContentEditable || target.closest('input, textarea, select, button, a, summary, details, [role="button"], [role="link"], [role="tab"], [role="menuitem"], [tabindex]'))) return;
     e.preventDefault();
     const endForm = document.querySelector('#live-hero form[action="{% url "assessment_close_turn" session.pk %}"]');
     if (endForm) { endForm.requestSubmit(); return; }

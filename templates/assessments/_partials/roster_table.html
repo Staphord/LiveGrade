@@ -30,14 +30,15 @@
                       data-email="{{ student.email|default:'' }}"
                       data-programme="{{ student.programme|default:'' }}"
                       data-edit-url="{% url 'assessment_roster_edit' session.pk student.pk %}"
-                      title="Edit student">
+                      title="Edit student"
+                      aria-label="Edit {{ student.full_name|default:student.student_id }}">
                 <i class="bi bi-pencil"></i>
               </button>
               <form method="post" action="{% url 'assessment_roster_delete' session.pk student.pk %}"
                     data-confirm="Remove {{ student.full_name|default:student.student_id }} from the roster?"
                     data-confirm-label="Remove">
                 {% csrf_token %}
-                <button class="btn btn-sm btn-outline-danger py-0" title="Remove student"><i class="bi bi-trash"></i></button>
+                <button class="btn btn-sm btn-outline-danger py-0" title="Remove student" aria-label="Remove {{ student.full_name|default:student.student_id }}"><i class="bi bi-trash"></i></button>
               </form>
             </div>
           </td>

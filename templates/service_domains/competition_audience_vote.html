@@ -21,12 +21,34 @@
           {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
           <ol class="tc-ballot-list">
           {% for field in form %}<li class="tc-ballot-entry"><div><h2>{{ field.label|slice:'6:' }}</h2>{% if field.help_text %}<p class="form-text">{{ field.help_text }}</p>{% endif %}</div>
-            <div class="tc-rank-input">{{ field.label_tag }}{{ field }}{% for field_error in field.errors %}<div class="text-danger small" role="alert">{{ field_error }}</div>{% endfor %}</div>
+            <div class="tc-rank-input">{{ field.label_tag }}{{ field }}<div class="text-danger small" data-duplicate-rank-error role="alert" hidden>Each rank can be used once.</div>{% for field_error in field.errors %}<div class="text-danger small" role="alert">{{ field_error }}</div>{% endfor %}</div>
           </li>{% endfor %}
           </ol>
           <p class="small text-muted">Use each rank once. Rank 1 is your first choice. Review the numbers before submitting.</p>
           <button class="btn btn-primary btn-lg w-100" type="submit">Submit ranked ballot</button>
         </form>
+        <script nonce="{{ csp_nonce }}">
+        (function () {
+          const inputs = Array.from(document.querySelectorAll('.tc-rank-input input[type="number"]'));
+          if (!inputs.length) return;
+          function checkDuplicates() {
+            const counts = new Map();
+            inputs.forEach(function (inp) {
+              const val = inp.value.trim();
+              if (val !== '') counts.set(val, (counts.get(val) || 0) + 1);
+            });
+            inputs.forEach(function (inp) {
+              const val = inp.value.trim();
+              const isDup = val !== '' && (counts.get(val) || 0) > 1;
+              inp.setCustomValidity(isDup ? 'Each rank can be used once.' : '');
+              const err = inp.parentElement ? inp.parentElement.querySelector('[data-duplicate-rank-error]') : null;
+              if (err) err.hidden = !isDup;
+            });
+          }
+          inputs.forEach(function (inp) { inp.addEventListener('input', checkDuplicates); });
+          checkDuplicates();
+        })();
+        </script>
       {% endif %}
     </div>
   </section>

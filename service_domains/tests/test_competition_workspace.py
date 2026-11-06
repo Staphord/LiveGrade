@@ -1528,3 +1528,81 @@ class CompetitionWorkspaceTests(TestCase):
         with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'competition'):
             res = self.client.get(url)
             self.assertEqual(res.status_code, 404)
+
+    def test_competition_manage_tally_and_finalize_actions(self):
+        sign_in(self.client, self.owner, self.org)
+        manage_url = reverse('competition_manage', args=(self.competition.pk,))
+        
+        # Test finalize_weighted_scores when no rounds exist returns 404
+        res = self.request('post', manage_url, {'action': 'finalize_weighted_scores'})
+        self.assertEqual(res.status_code, 404)
+
+        # Create active scored round with audience weight
+        track, entries, source = self.active_scored_round([85, 75], audience_weight=20)
+        self.competition.status = Competition.Status.ACTIVE
+        self.competition.save()
+
+        # Tally audience on weighted event produces notification error
+        res = self.request('post', manage_url, {'action': 'tally_audience', 'track_id': track.pk})
+        self.assertEqual(res.status_code, 200)
+        self.assertIn('Weighted events use the disclosed Borda ranking score', res.context['action_error'])
+
+        # Finalize weighted scores redirects
+        token = CompetitionAudienceBallot.issue_device_token(self.competition, source, track)
+        submit_competition_audience_ballot(self.competition.public_id, source.pk, track.pk, token, [entries[0].pk, entries[1].pk])
+        res = self.request('post', manage_url, {'action': 'finalize_weighted_scores'})
+        self.assertRedirects(res, manage_url)
+
+        # Attempting to finalize already finalized scores records error
+        res = self.request('post', manage_url, {'action': 'finalize_weighted_scores'})
+        self.assertEqual(res.status_code, 200)
+        self.assertIn('already been finalized', res.context['action_error'])
+
+    def test_competition_manage_criterion_lifecycle(self):
+        sign_in(self.client, self.owner, self.org)
+        comp = Competition.objects.create(organization_id=self.org.id,
+            created_by=self.owner, name='Criterion demo comp')
+        track = CompetitionTrack.objects.create(organization_id=self.org.id,
+            created_by=self.owner, competition=comp, name='Tech')
+        manage_url = reverse('competition_manage', args=(comp.pk,))
+
+        # Add criterion successfully
+        res = self.request('post', manage_url, {
+            'action': 'criterion',
+            'track': track.pk,
+            'name': 'Innovation',
+            'description': 'Novel ideas',
+            'weight': '50.00',
+            'order': '1',
+        })
+        self.assertRedirects(res, manage_url)
+        criterion = CompetitionCriterion.objects.get(track=track, name='Innovation')
+
+        # Delete criterion with invalid id returns 404
+        res = self.request('post', manage_url, {'action': 'delete_criterion', 'criterion_id': '999999'})
+        self.assertEqual(res.status_code, 404)
+
+        # Delete criterion successfully redirects
+        res = self.request('post', manage_url, {'action': 'delete_criterion', 'criterion_id': str(criterion.pk)})
+        self.assertRedirects(res, manage_url)
+        self.assertFalse(CompetitionCriterion.objects.filter(pk=criterion.pk).exists())
+
+    def test_competition_service_scoping_and_join_edge_cases(self):
+        # Service scoping rejection (404) when service is not competition
+        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'classroom'):
+            res = self.client.get(reverse('competition_audience_join'))
+            self.assertEqual(res.status_code, 404)
+            res = self.client.get(reverse('competition_public_leaderboard', args=(self.competition.public_id,)))
+            self.assertEqual(res.status_code, 404)
+
+        # Audience join with inactive / closed code returns 400
+        track, entries, source = self.active_scored_round([90, 80], audience_weight=0)
+        code = CompetitionAudienceJoinCode.objects.create(
+            round=source, track=track, code='JOIN12',
+            expires_at=timezone.now() + timedelta(hours=1))
+        source.audience_locked_at = timezone.now()
+        source.save()
+
+        res = self.request('post', reverse('competition_audience_join'), {'code': 'JOIN12'})
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('That code is unavailable or voting has closed.', res.context['error'])
