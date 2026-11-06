@@ -2,6 +2,8 @@
 import csv
 import uuid
 
+from assessments.poll_access import public_poll_budget
+
 from django.contrib import messages
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
@@ -218,6 +220,7 @@ def _public_poll(poll_uuid):
 
 @never_cache
 @require_http_methods(['GET'])
+@public_poll_budget
 def public_poll_results(request, poll_uuid):
     """A read-only display page: aggregate counts only, never voter rows or ballots."""
     poll = _public_poll(poll_uuid)
@@ -257,6 +260,7 @@ def _may_identify(request, poll):
 
 @never_cache
 @require_http_methods(['GET', 'POST'])
+@public_poll_budget
 def public_poll(request, poll_uuid):
     poll = _public_poll(poll_uuid)
     token = request.session.get(POLL_IDENTITIES, {}).get(str(poll.uuid))
@@ -340,6 +344,7 @@ def public_poll(request, poll_uuid):
 
 @never_cache
 @require_http_methods(['GET'])
+@public_poll_budget
 def poll_qr(request, poll_uuid):
     poll = _public_poll(poll_uuid)
     return _private(HttpResponse(qr_png(public_url(request, reverse('classroom_poll', args=[poll.uuid]))), content_type='image/png'))

@@ -695,6 +695,7 @@ class ClassroomPoll(models.Model):
         CONFIRMED = 'confirmed', 'Decision confirmed'
         CANCELLED = 'cancelled', 'Cancelled'
 
+    result_counts = models.JSONField(default=dict, blank=True, editable=False)
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     assessment_session = models.ForeignKey(AssessmentSession, on_delete=models.CASCADE,
         related_name='polls', null=True, blank=True)

@@ -118,6 +118,10 @@ TARGETS = {
 
 #: Routes that take an id but are deliberately outside this check, and why.
 EXEMPT = {
+    'competition_results_export': 'scoped owner-only frozen aggregate export; foreign owner and organization denials covered by competition export tests',
+    'training_learner_report': 'digest-only revocable capability; private snapshot, foreign-owner denial and revocation tested in test_team_reports',
+    'panel_live_display': 'revocable display capability; privacy, revocation and foreign owner rejection are covered by test_panel_live_display',
+    'panel_live_display_updates': 'same display capability with aggregate-only projection; live display tests cover denial and privacy',
     'classroom_poll': 'public UUID identifies a published poll; roster or personal-link identity is required to vote or see totals',
     'classroom_poll_results': 'public poll UUID reveals aggregate results only; classroom poll result privacy is covered by poll tests',
     'classroom_poll_qr': 'published poll UUID QR contains only the shared poll URL',
@@ -451,10 +455,10 @@ class OverseerInTheSameOrganizationTests(RowsAreUnreachable, TestCase):
         self.assertContains(owner_workspace, reverse('panel_oversight_list'))
         self.assertContains(detail, 'Panel candidate marker')
         self.assertContains(detail, 'Panel criterion marker')
-        self.assertContains(detail, '82.500000')
-        self.assertContains(detail, '83.500000')
+        self.assertContains(detail, '82.5')
+        self.assertContains(detail, '83.5')
         self.assertContains(detail, 'Latest correction marker')
-        self.assertContains(detail, '<td>1</td>', html=False)
+        self.assertContains(detail, 'Combined from 1 examiner')
         self.assertNotContains(detail, 'EXAMINER-PRIVATE@example.test')
         self.assertNotContains(detail, 'EXAMINER-COMMENT-PRIVATE')
         self.assertIn('private', detail['Cache-Control'])

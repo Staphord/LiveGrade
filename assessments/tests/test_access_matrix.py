@@ -82,17 +82,21 @@ STUDENT_ROUTES = {
     'showcase_public_results': GET,
     'showcase_certificate_verify': GET,
     'training_anonymous_feedback': GET,
+    'training_learner_report': GET,
     'training_certificate_verify': GET,
     'competition_audience_join': GET,
     'competition_audience_vote': GET,
     'competition_judge_scorecard': GET,
     'competition_public_leaderboard': GET,
     'panel_examiner': GET,
+    'panel_live_display': GET,
+    'panel_live_display_updates': GET,
     'panel_entrant_results': GET,
 }
 CLOSED_SERVICE_ROUTES = {
     # Owner workspaces under construction stay unreachable while the registry has no dashboard.
     'showcase_event_list': GET,
+    'showcase_event_create': GET,
     'showcase_event_manage': GET,
     'showcase_live_monitor': GET,
     'showcase_live_activity': GET,
@@ -125,6 +129,7 @@ CLOSED_SERVICE_ROUTES = {
     'panel_results_export': GET,
     'competition_list': GET,
     'competition_manage': GET,
+    'competition_results_export': GET,
     'competition_judge_scorecard': GET,
 }
 ACCOUNT_ROUTES = {
@@ -135,6 +140,7 @@ ACCOUNT_ROUTES = {
     'switch_organization': (GET, LOGIN, 403, 405),
     'service_switch_organization': (GET, LOGIN, 403, 405),
     'health': (GET, 200, 200, 200),
+    'readiness': (GET, 200, 200, 200),
     'oidc_authentication_callback': (GET, '/no-access/', '/no-access/', '/no-access/'),
     'oidc_authentication_init': (GET, 'idp', 'idp', 'idp'),
     'oidc_logout': (GET, 405, 405, 405),

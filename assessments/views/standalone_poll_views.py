@@ -1,6 +1,8 @@
 """Owner workspace and identity-free public ballots for standalone polls."""
 import uuid
 
+from assessments.poll_access import public_poll_budget
+
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -187,6 +189,7 @@ def _public_poll(poll_uuid):
 @never_cache
 @require_http_methods(['GET', 'POST'])
 @_poll_service
+@public_poll_budget
 def standalone_poll_public(request, poll_uuid):
     poll = _public_poll(poll_uuid)
     tokens = request.session.get(TOKEN_KEY, {})
@@ -239,6 +242,7 @@ def standalone_poll_public(request, poll_uuid):
 @never_cache
 @require_http_methods(['GET'])
 @_poll_service
+@public_poll_budget
 def standalone_poll_qr(request, poll_uuid):
     poll = _public_poll(poll_uuid)
     url = public_url(request, reverse('standalone_poll_public', args=[poll.uuid]))
@@ -250,6 +254,7 @@ def standalone_poll_qr(request, poll_uuid):
 @never_cache
 @require_http_methods(['GET'])
 @_poll_service
+@public_poll_budget
 def standalone_poll_live_results(request, poll_uuid):
     poll = _public_poll(poll_uuid)
     results = poll_results(poll)
@@ -262,6 +267,7 @@ def standalone_poll_live_results(request, poll_uuid):
 @never_cache
 @require_http_methods(['GET'])
 @_poll_service
+@public_poll_budget
 def standalone_poll_live_state(request, poll_uuid):
     poll = _public_poll(poll_uuid)
     results = poll_results(poll)

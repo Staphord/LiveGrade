@@ -4,7 +4,7 @@ import uuid
 from asgiref.sync import sync_to_async
 from channels.testing import WebsocketCommunicator
 from django.conf import settings
-from django.test import Client, TransactionTestCase
+from django.test import Client, TransactionTestCase, override_settings
 
 from accounts.access import ACTIVE_KEY, ORGS_KEY
 from accounts.testing import make_org, make_user
@@ -165,3 +165,30 @@ class AssessmentSocketTests(TransactionTestCase):
         communicator = WebsocketCommunicator(application, self.path(self.session))
         connected, _ = await communicator.connect()
         self.assertFalse(connected)
+
+    @override_settings(LIVEGRADE_LIVE_SERVICES=['classroom', 'team'])
+    async def test_team_staff_socket_preserves_owner_and_organization_boundary(self):
+        team = await sync_to_async(AssessmentSession.objects.create)(
+            organization_id=self.org_id, name='Training demo', created_by=self.owner, service='team')
+        headers = await sync_to_async(self.staff_headers)()
+        owner, connected = await self.open(self.staff_path(team), headers=headers)
+        self.assertTrue(connected)
+        await owner.disconnect()
+        wrong_headers = await sync_to_async(self.staff_headers)(org_id=self.org_id + 100)
+        foreign, connected = await self.open(self.staff_path(team), headers=wrong_headers)
+        self.assertFalse(connected)
+        await foreign.disconnect()
+        colleague = await sync_to_async(make_user)('team-colleague')
+        colleague_headers = await sync_to_async(self.staff_headers)(user=colleague)
+        denied, connected = await self.open(self.staff_path(team), headers=colleague_headers)
+        self.assertFalse(connected)
+        await denied.disconnect()
+
+    @override_settings(LIVEGRADE_LIVE_SERVICES=['classroom'])
+    async def test_disabled_team_service_rejects_staff_socket(self):
+        team = await sync_to_async(AssessmentSession.objects.create)(
+            organization_id=self.org_id, name='Disabled training', created_by=self.owner, service='team')
+        headers = await sync_to_async(self.staff_headers)()
+        communicator, connected = await self.open(self.staff_path(team), headers=headers)
+        self.assertFalse(connected)
+        await communicator.disconnect()

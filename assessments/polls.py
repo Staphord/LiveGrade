@@ -324,10 +324,12 @@ def save_response(poll_id, voter_id, selected, abstained=False, *, token, questi
         answers[str(question.pk)] = sorted(choices)
         all_choices.update(choices)
 
+    previous = ClassroomPollResponse.objects.filter(voter=voter).values('answers').first()
     response, _ = ClassroomPollResponse.objects.update_or_create(
         voter=voter, defaults={'answers': answers,
                                'abstained': all(value is None for value in answers.values())})
     response.options.set(all_choices)
+    _update_counts(poll, previous['answers'] if previous else None, answers)
     transaction.on_commit(lambda: broadcast_session_event(poll.assessment_session, 'poll.changed', {}))
     return response
 
@@ -365,45 +367,51 @@ def save_anonymous_response(poll_id, browser_token, question_answers):
         if question.options.filter(pk__in=choices).count() != len(choices):
             raise ValidationError('Choose answer options listed under each question.')
         answers[str(question.pk)] = sorted(choices)
+    previous = AnonymousClassroomPollResponse.objects.filter(poll=poll, token=browser_token).values('answers').first()
     response, _ = AnonymousClassroomPollResponse.objects.update_or_create(
         poll=poll, token=browser_token, defaults={'answers': answers})
+    _update_counts(poll, previous['answers'] if previous else None, answers)
     return response
 
 
+def _update_counts(poll, previous, answers):
+    """Update a bounded projection inside the ballot's existing poll transaction."""
+    counts = poll.result_counts or {'responded': 0, 'questions': {}}
+    if previous is None:
+        counts['responded'] += 1
+    for source, direction in ((previous or {}, -1), (answers, 1)):
+        for key, choices in source.items():
+            row = counts['questions'].setdefault(key, {'responded': 0, 'abstained': 0, 'options': {}})
+            row['responded'] += direction
+            if choices is None:
+                row['abstained'] += direction
+            else:
+                for option in choices:
+                    option = str(option)
+                    row['options'][option] = row['options'].get(option, 0) + direction
+    poll.result_counts = counts
+    poll.save(update_fields=['result_counts'])
+
+
 def poll_results(poll):
-    if poll.standalone:
-        responses = list(poll.anonymous_responses.values_list('answers', flat=True))
-        total = len(responses)
-    else:
-        total = poll.voters.count()
-        responses = list(ClassroomPollResponse.objects.filter(voter__poll=poll).values_list('answers', flat=True))
-    answer_counts, abstention_counts = Counter(), Counter()
-    standalone_option_counts = Counter()
-    for answers in responses:
-        for key, value in answers.items():
-            answer_counts[key] += 1
-            if value is None:
-                abstention_counts[key] += 1
-            elif poll.standalone:
-                standalone_option_counts.update(value)
+    # Reading results costs O(questions + options), independent of ballot history.
+    counts = ClassroomPoll.objects.values_list('result_counts', flat=True).get(pk=poll.pk)
+    responded = counts.get('responded', 0)
+    total = None if poll.standalone else poll.voters.count()
     question_results = []
     for question in poll.questions.all():
-        key = str(question.pk)
-        question_responded = answer_counts[key]
-        abstained_count = abstention_counts[key]
-        options = list(question.options.annotate(vote_count=Count('responses', distinct=True)))
-        if poll.standalone:
-            for option in options:
-                option.vote_count = standalone_option_counts[option.pk]
+        row = counts.get('questions', {}).get(str(question.pk), {})
+        question_responded = row.get('responded', 0)
+        options = list(question.options.all())
         for option in options:
+            option.vote_count = row.get('options', {}).get(str(option.pk), 0)
             option.percent = round(100 * option.vote_count / question_responded) if question_responded else 0
         question_results.append({'question': question, 'options': options,
-                                 'responded': question_responded, 'abstained_count': abstained_count,
+                                 'responded': question_responded, 'abstained_count': row.get('abstained', 0),
                                  'confirmed_option': question.confirmed_option,
                                  'decision_note': question.decision_note})
-    responded = len(responses)
     first = question_results[0] if question_results else {'options': [], 'abstained_count': 0}
     return {'questions': question_results, 'options': first['options'],
-            'invited': None if poll.standalone else total,
-            'responded': responded, 'unanswered': None if poll.standalone else total - responded,
+            'invited': total, 'responded': responded,
+            'unanswered': None if poll.standalone else max(0, total - responded),
             'abstained_count': first['abstained_count']}

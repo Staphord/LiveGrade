@@ -5,6 +5,7 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
 from accounts.access import ACTIVE_KEY, ORGS_KEY
 from assessments.models import AssessmentSession
+from portal.services import is_released
 
 
 class AssessmentSessionConsumer(AsyncJsonWebsocketConsumer):
@@ -42,10 +43,10 @@ class AssessmentStaffSessionConsumer(AssessmentSessionConsumer):
         if not user or not user.is_authenticated:
             return False
         session = AssessmentSession.objects.filter(
-            uuid=self.session_uuid, service='classroom').only(
-                'organization_id', 'created_by_id').first()
+            uuid=self.session_uuid, service__in=('classroom', 'team')).only(
+                'organization_id', 'created_by_id', 'service').first()
         state = self.scope.get('session')
-        if session is None or state is None:
+        if session is None or state is None or not is_released(session.service):
             return False
         organizations = state.get(ORGS_KEY) or []
         if not isinstance(organizations, list) or not organizations:

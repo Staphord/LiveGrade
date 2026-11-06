@@ -1,5 +1,6 @@
 """Shared pieces for reading the spreadsheets lecturers upload."""
 import re
+import zipfile
 from io import BytesIO
 
 import openpyxl
@@ -51,12 +52,35 @@ def read_rows(uploaded_file, percent_as_points=False):
     A corrupt or mislabelled upload raises a different exception from each layer
     (zip, XML, openpyxl); all of them mean the same thing to the person who chose it.
     """
+    workbook = None
     try:
+        # Inspect the archive before parsing XML or materializing worksheet cells.
+        uploaded_file.seek(0, 2)
+        if uploaded_file.tell() > 10 * 1024 * 1024:
+            return None
+        uploaded_file.seek(0)
+        with zipfile.ZipFile(uploaded_file) as archive:
+            entries = archive.infolist()
+            if len(entries) > 1000 or sum(item.file_size for item in entries) > 25 * 1024 * 1024:
+                return None
+        uploaded_file.seek(0)
         workbook = openpyxl.load_workbook(uploaded_file, read_only=True, data_only=True)
-        return [[_value(cell, percent_as_points) for cell in row]
-                for row in workbook.worksheets[0].iter_rows()]
+        sheet = workbook.worksheets[0]
+        if (sheet.max_row or 0) > 10000 or (sheet.max_column or 0) > 100:
+            return None
+        rows = []
+        cells = 0
+        for row in sheet.iter_rows():
+            cells += len(row)
+            if len(rows) >= 10000 or len(row) > 100 or cells > 200000:
+                return None
+            rows.append([_value(cell, percent_as_points) for cell in row])
+        return rows
     except Exception:
         return None
+    finally:
+        if workbook is not None:
+            workbook.close()
 
 
 def map_headers(header_row, aliases):
