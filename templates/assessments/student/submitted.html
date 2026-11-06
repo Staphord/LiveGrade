@@ -21,6 +21,9 @@
     <a href="{% url 'student_evaluate' session.uuid %}" class="btn btn-outline-primary big-btn w-100 mt-3">
       <i class="bi bi-arrow-clockwise me-1"></i>Back to waiting room now
     </a>
+    <button type="button" class="btn btn-link btn-sm text-muted mt-2" id="cancel-redirect-btn">
+      <i class="bi bi-pause-circle me-1" aria-hidden="true"></i>Stay on this page
+    </button>
   </div>
 </div>
 {% endblock %}
@@ -28,14 +31,27 @@
 <script nonce="{{ csp_nonce }}">
 (function () {
   const fill = document.getElementById('countdown-fill');
+  const cancelBtn = document.getElementById('cancel-redirect-btn');
   const seconds = 8;
   if (fill) {
     fill.style.transition = `width ${seconds}s linear`;
     requestAnimationFrame(function () { fill.style.width = '0%'; });
   }
-  setTimeout(function () {
+  const timer = setTimeout(function () {
     window.location.href = "{% url 'student_evaluate' session.uuid %}";
   }, seconds * 1000);
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', function () {
+      clearTimeout(timer);
+      if (fill) {
+        const computedWidth = window.getComputedStyle(fill).width;
+        fill.style.transition = 'none';
+        fill.style.width = computedWidth;
+      }
+      cancelBtn.disabled = true;
+      cancelBtn.textContent = 'Automatic redirect paused';
+    });
+  }
 })();
 </script>
 {% endblock %}

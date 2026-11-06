@@ -55,11 +55,20 @@
         if (bar) bar.style.width = `${row.candidate_required ? Math.round(row.candidate_progress / row.candidate_required * 100) : 0}%`;
         node.classList.toggle('is-active', row.active);
       }
-      if (scoring && list) [...list.children].sort((a, b) => {
-        const ar = Number(a.dataset.rank) || Number.MAX_SAFE_INTEGER;
-        const br = Number(b.dataset.rank) || Number.MAX_SAFE_INTEGER;
-        return ar - br;
-      }).forEach(row => list.appendChild(row));
+      if (scoring && list) {
+        const sorted = [...list.children].sort((a, b) => {
+          const ar = Number(a.dataset.rank) || Number.MAX_SAFE_INTEGER;
+          const br = Number(b.dataset.rank) || Number.MAX_SAFE_INTEGER;
+          return ar - br;
+        });
+        let orderChanged = false;
+        for (let i = 0; i < sorted.length; i++) {
+          if (list.children[i] !== sorted[i]) { orderChanged = true; break; }
+        }
+        if (orderChanged) {
+          sorted.forEach(row => list.appendChild(row));
+        }
+      }
       const updated = document.querySelector('[data-updated-at]');
       if (updated) updated.textContent = new Intl.DateTimeFormat(undefined, {hour: 'numeric', minute: '2-digit'}).format(new Date(data.updated));
       if (updateStatus) updateStatus.textContent = 'Updating automatically';
@@ -73,7 +82,10 @@
     if (document.fullscreenElement) document.exitFullscreen();
     else root.requestFullscreen?.();
   });
-  window.setInterval(updateDisplay, 8000);
+  const updateInterval = window.setInterval(updateDisplay, 8000);
+  window.addEventListener('pagehide', () => {
+    window.clearInterval(updateInterval);
+  });
 })();
 </script>
 {% endblock %}

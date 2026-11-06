@@ -263,7 +263,7 @@ a.cu-more:hover{color:var(--accent)}
 .flash-region .toast-action{margin-left:var(--sp-3);padding:0;border:0;background:none;color:inherit;font-weight:700;text-decoration:underline;text-underline-offset:2px}
 .flash-region .toast-action:hover{text-decoration-thickness:2px}
 .flash-region .toast-timer{position:absolute;left:0;bottom:0;height:2px;width:100%;background:currentColor;opacity:.35;transform-origin:left;animation:toast-timer var(--toast-life,5s) linear forwards}
-.flash-region .alert:hover .toast-timer{animation-play-state:paused}
+.flash-region .alert:hover .toast-timer,.flash-region .alert:focus-within .toast-timer{animation-play-state:paused}
 @keyframes toast-timer{from{transform:scaleX(1)}to{transform:scaleX(0)}}
 
 /* The card at the foot of a column stack: it takes the leftover height so

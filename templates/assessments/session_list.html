@@ -5,7 +5,7 @@
 {% block extra_css %}
 <style nonce="{{ csp_nonce }}">
 @keyframes assess-fade-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-.assess-stagger{opacity:0;animation:assess-fade-in var(--motion,.35s) var(--ease,ease) forwards}
+.assess-stagger{animation:assess-fade-in var(--motion,.35s) var(--ease,ease) both}
 .assess-stagger:nth-child(1){animation-delay:.03s}
 .assess-stagger:nth-child(2){animation-delay:.08s}
 .assess-stagger:nth-child(3){animation-delay:.13s}
@@ -62,6 +62,7 @@
 {% endblock %}
 
 {% block content %}
+<div>
 {% include 'partials/_page_header.html' with title='LiveGrade' subtitle='Run live, QR-joined peer assessment for presentations, demos, or any session worth grading in the room.' %}
 
 {% if can_oversee %}
@@ -175,4 +176,5 @@
   {% endfor %}
 </div>
 {% endif %}
+</div>
 {% endblock %}

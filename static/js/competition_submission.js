@@ -48,8 +48,11 @@
         retryButton.disabled = name === 'sending';
       }
       if (form) {
-        form.querySelectorAll('input, button[type=submit]').forEach(field => {
-          field.disabled = pending;
+        form.querySelectorAll('input, select, textarea, button[type=submit]').forEach(field => {
+          const entry = field.closest('[data-score-entry]');
+          const decision = entry && entry.querySelector('select');
+          const skippedScore = field.name.startsWith('entry_') && decision && decision.value !== 'score';
+          field.disabled = pending || Boolean(skippedScore);
         });
       }
     },
@@ -78,10 +81,13 @@
   root.document.addEventListener('visibilitychange', () => {
     if (root.document.visibilityState === 'visible') transport.synchronize();
   });
-  root.setInterval(() => {
+  const syncInterval = root.setInterval(() => {
     if (root.document.visibilityState === 'visible' && transport.hasPending) {
       transport.synchronize();
     }
   }, 20000);
+  root.addEventListener('pagehide', () => {
+    root.clearInterval(syncInterval);
+  });
   if (transport.hasPending) transport.retry();
 })(typeof window !== 'undefined' ? window : globalThis);
