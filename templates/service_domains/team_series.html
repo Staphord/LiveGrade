@@ -51,7 +51,8 @@
     <div class="tc-disclosure-body">
       <p class="text-muted">Each demo in the series can reuse its team and competencies.</p>
       <form method="post" class="service-flow-form" novalidate>
-        {% csrf_token %}{{ form.as_p }}
+        {% csrf_token %}
+        {% include 'partials/_form_fields.html' with form=form %}
         <button class="btn btn-primary" type="submit">Create series</button>
       </form>
     </div>

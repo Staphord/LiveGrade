@@ -23,7 +23,7 @@
     <h2 id="learner-release-heading">Share a learner’s results</h2>
     <p>Release the current competency scores and evidence for one learner. Share the private link only with that learner. Creating a new link replaces their previous links.</p>
     {% if learner_report_url %}<div class="alert alert-success" role="status"><label for="learner-report-link">Private result link · copy before leaving</label><input id="learner-report-link" class="form-control" value="{{ learner_report_url }}" readonly><a href="{{ learner_report_url }}" target="_blank" rel="noopener">Preview released results</a></div>{% endif %}
-    <form method="post">{% csrf_token %}<label for="report-student">Learner</label><select class="form-select mb-2" id="report-student" name="student_id" required>{% for student in learners %}<option value="{{ student.pk }}">{{ student.full_name }}</option>{% endfor %}</select>
+    <form method="post">{% csrf_token %}<label class="form-label" for="report-student">Learner</label><select class="form-select mb-2" id="report-student" name="student_id" required>{% for student in learners %}<option value="{{ student.pk }}">{{ student.full_name }}</option>{% endfor %}</select>
       <button class="btn btn-primary" name="action" value="release_learner">Release private results</button>
       <button class="btn btn-outline-danger" name="action" value="revoke_learner">Revoke result links</button>
     </form>
@@ -44,7 +44,7 @@
                 {% else %}<p class="text-muted mt-2">No decision has been recorded for this learner.</p>{% endif %}
                 <form method="post" class="service-flow-form tc-record-form mt-3" novalidate>
                   {% csrf_token %}<input type="hidden" name="criterion_id" value="{{ criterion.pk }}"><input type="hidden" name="student_id" value="{{ row.student.pk }}">
-                  {{ row.form.as_p }}<button class="btn btn-secondary" type="submit">{% if row.result %}Save correction{% else %}Record outcome{% endif %}</button>
+                  {% include 'partials/_form_fields.html' with form=row.form %}<button class="btn btn-secondary" type="submit">{% if row.result %}Save correction{% else %}Record outcome{% endif %}</button>
                 </form>
               </div>
             </details>

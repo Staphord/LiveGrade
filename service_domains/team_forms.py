@@ -4,10 +4,11 @@ from assessments.models import AssessmentSession, SessionTemplate
 from assessments.forms import validate_workbook
 from assessments.session_templates import StarterTemplate, starters_for
 
+from .form_mixins import StyledFormMixin
 from .models import TrainingCompetency, TrainingParticipant, TrainingSeries
 
 
-class TrainingSeriesForm(forms.ModelForm):
+class TrainingSeriesForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = TrainingSeries
         fields = ('name', 'description', 'cadence_note', 'feedback_minimum_responses')
@@ -24,7 +25,7 @@ class TrainingSeriesForm(forms.ModelForm):
             'What performance need should this series help address, and what should learners be able to do?')
 
 
-class TrainingSeriesDetailsForm(forms.ModelForm):
+class TrainingSeriesDetailsForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = TrainingSeries
         fields = ('name', 'description', 'cadence_note')
@@ -35,7 +36,7 @@ class TrainingSeriesDetailsForm(forms.ModelForm):
         self.fields['description'].help_text = (
             'What performance need should this series help address, and what should learners be able to do?')
 
-class TrainingParticipantForm(forms.ModelForm):
+class TrainingParticipantForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = TrainingParticipant
         fields = ('display_name', 'reference', 'group_name')
@@ -44,20 +45,20 @@ class TrainingParticipantForm(forms.ModelForm):
         }
 
 
-class TrainingRosterImportForm(forms.Form):
+class TrainingRosterImportForm(StyledFormMixin, forms.Form):
     file = forms.FileField(
         validators=[validate_workbook],
         widget=forms.ClearableFileInput(attrs={'class': 'form-control', 'accept': '.xlsx'}),
         help_text='One learner per row. Required columns: Name and Team. Student ID is optional.')
 
 
-class TrainingCompetencyForm(forms.ModelForm):
+class TrainingCompetencyForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = TrainingCompetency
         fields = ('name', 'description', 'passing_score')
 
 
-class CreateTrainingSessionForm(forms.Form):
+class CreateTrainingSessionForm(StyledFormMixin, forms.Form):
     name = forms.CharField(max_length=150, label='Demo session name')
     scheduled_for = forms.DateTimeField(required=False, label='Planned date and time',
         widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}),
@@ -100,7 +101,7 @@ class CreateTrainingSessionForm(forms.Form):
         return template
 
 
-class TrainingCompetencyResultForm(forms.Form):
+class TrainingCompetencyResultForm(StyledFormMixin, forms.Form):
     score = forms.DecimalField(min_value=0, max_value=100, max_digits=5, decimal_places=2,
         label='Competency score')
     evidence = forms.CharField(max_length=1000, label='Evidence for this decision',
@@ -112,13 +113,13 @@ class TrainingCompetencyResultForm(forms.Form):
         help_text='Required when correcting an earlier decision.')
 
 
-class TrainingFeedbackForm(forms.Form):
+class TrainingFeedbackForm(StyledFormMixin, forms.Form):
     score = forms.ChoiceField(
         choices=tuple((str(value), f'{value} out of 5') for value in range(1, 6)),
         widget=forms.RadioSelect, label='How useful was this demo?')
 
 
-class TrainingFeedbackPrivacyForm(forms.Form):
+class TrainingFeedbackPrivacyForm(StyledFormMixin, forms.Form):
     minimum_responses = forms.IntegerField(required=False, min_value=2, max_value=50,
         label='Minimum anonymous responses before showing feedback',
         help_text='Leave blank to disable feedback collection for this series.')

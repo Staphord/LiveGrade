@@ -1023,3 +1023,130 @@ class TrainingCompetencyDecisionOperationTests(TestCase):
             organization=self.org.as_claim(), user=self.owner)
         self.assertFalse(form.is_valid())
         self.assertIn('Select a valid choice', form.errors['template'][0])
+
+    def test_team_series_step_navigation_save_advance_embedded_import_and_removals(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from service_domains.training_roster_import import sample_training_roster
+
+        sign_in(self.client, self.owner, self.org)
+        series = TrainingSeries.objects.create(
+            organization_id=self.org.id, created_by=self.owner, name='Initial Series'
+        )
+        detail = reverse('training_series_manage', args=(series.pk,))
+
+        saved_res = self.request('post', detail, {
+            'action': 'series_details',
+            'name': 'Updated Series',
+            'description': 'Skill mastery',
+            'completion_rule': 'all_competencies',
+            'certificate_valid_days': '365',
+        })
+        self.assertEqual(saved_res.status_code, 302)
+        self.assertEqual(saved_res['Location'], f'{detail}?step=details&saved=1')
+        details_page = self.request('get', f'{detail}?step=details&saved=1')
+        self.assertContains(details_page, 'Series details saved.')
+        self.assertContains(details_page, 'id="team-unsaved-dialog"')
+        self.assertContains(details_page, 'data-panel-details-form')
+
+        advance_res = self.request('post', detail, {
+            'action': 'series_details',
+            'name': 'Advanced Series',
+            'description': 'Skill mastery',
+            'completion_rule': 'all_competencies',
+            'certificate_valid_days': '365',
+            'advance': '1',
+        })
+        self.assertEqual(advance_res.status_code, 302)
+        self.assertEqual(advance_res['Location'], f'{detail}?step=roster')
+
+        add_p = self.request('post', detail, {
+            'action': 'participant',
+            'display_name': 'Grace',
+            'reference': 'GR-1',
+            'group_name': 'Cohort 1',
+            'setup_step': 'roster',
+        })
+        self.assertEqual(add_p.status_code, 302)
+        self.assertEqual(add_p['Location'], f'{detail}?step=roster')
+        participant = TrainingParticipant.objects.get(series=series, display_name='Grace')
+
+        add_c = self.request('post', detail, {
+            'action': 'competency',
+            'name': 'Safety Check',
+            'description': 'Pre-flight check',
+            'passing_score': '80',
+            'setup_step': 'competencies',
+        })
+        self.assertEqual(add_c.status_code, 302)
+        self.assertEqual(add_c['Location'], f'{detail}?step=competencies')
+        competency = TrainingCompetency.objects.get(series=series, name='Safety Check')
+
+        rm_p = self.request('post', detail, {
+            'action': 'remove_participant',
+            'participant_id': str(participant.pk),
+            'setup_step': 'roster',
+        })
+        self.assertEqual(rm_p.status_code, 302)
+        self.assertEqual(rm_p['Location'], f'{detail}?step=roster')
+        self.assertFalse(TrainingParticipant.objects.filter(pk=participant.pk).exists())
+
+        rm_c = self.request('post', detail, {
+            'action': 'remove_competency',
+            'competency_id': str(competency.pk),
+            'setup_step': 'competencies',
+        })
+        self.assertEqual(rm_c.status_code, 302)
+        self.assertEqual(rm_c['Location'], f'{detail}?step=competencies')
+        self.assertFalse(TrainingCompetency.objects.filter(pk=competency.pk).exists())
+
+        priv_res = self.request('post', detail, {
+            'action': 'feedback_privacy',
+            'minimum_responses': '5',
+            'setup_step': 'demos',
+        })
+        self.assertEqual(priv_res.status_code, 302)
+        self.assertEqual(priv_res['Location'], f'{detail}?step=demos')
+
+        import_url = reverse('training_series_roster_import', args=(series.pk,))
+        empty_upload = self.request('post', f'{import_url}?embedded=1', {'setup_step': 'roster'})
+        self.assertEqual(empty_upload.status_code, 302)
+        self.assertEqual(empty_upload['Location'], f'{detail}?step=roster')
+
+        bad_ext = SimpleUploadedFile('roster.csv', b'a,b,c', content_type='text/csv')
+        bad_upload = self.request('post', f'{import_url}?embedded=1', {'file': bad_ext, 'setup_step': 'roster'})
+        self.assertEqual(bad_upload.status_code, 302)
+        self.assertEqual(bad_upload['Location'], f'{detail}?step=roster')
+
+        corrupt_xlsx = SimpleUploadedFile('roster.xlsx', b'not-a-zip', content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        corrupt_upload = self.request('post', f'{import_url}?embedded=1', {'file': corrupt_xlsx, 'setup_step': 'roster'})
+        self.assertEqual(corrupt_upload.status_code, 302)
+        self.assertEqual(corrupt_upload['Location'], f'{detail}?step=roster')
+
+        valid_xlsx = SimpleUploadedFile(
+            'roster.xlsx',
+            sample_training_roster().getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        ok_upload = self.request('post', f'{import_url}?embedded=1', {'file': valid_xlsx, 'setup_step': 'roster'})
+        self.assertEqual(ok_upload.status_code, 302)
+        self.assertEqual(ok_upload['Location'], f'{detail}?step=roster')
+
+        preview_manage = self.request('get', detail)
+        self.assertEqual(preview_manage.context['active_step'], 'roster')
+        self.assertContains(preview_manage, 'id="roster-inline-preview"')
+
+        cancel_res = self.request('post', f'{import_url}?embedded=1', {'action': 'cancel', 'setup_step': 'roster'})
+        self.assertEqual(cancel_res.status_code, 302)
+        self.assertEqual(cancel_res['Location'], f'{detail}?step=roster')
+
+        valid_xlsx_2 = SimpleUploadedFile(
+            'roster.xlsx',
+            sample_training_roster().getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        self.request('post', f'{import_url}?embedded=1', {'file': valid_xlsx_2, 'setup_step': 'roster'})
+        apply_res = self.request('post', f'{import_url}?embedded=1', {'action': 'apply', 'setup_step': 'roster'})
+        self.assertEqual(apply_res.status_code, 302)
+        self.assertEqual(apply_res['Location'], f'{detail}?step=roster')
+        self.assertGreater(series.participants.count(), 0)
+

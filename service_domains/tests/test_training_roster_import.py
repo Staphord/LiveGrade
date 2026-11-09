@@ -1,7 +1,8 @@
 from io import BytesIO
 
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import IntegrityError
 from django.test import TestCase
 from django.urls import reverse
 from unittest.mock import patch
@@ -10,6 +11,7 @@ from accounts.testing import make_org, make_user, sign_in
 from assessments.sheets import workbook_bytes
 from service_domains.models import TrainingParticipant, TrainingSeries
 from service_domains.training_roster_import import (
+    UNREADABLE,
     apply_training_roster_import, parse_training_roster,
     plan_training_roster_import, sample_training_roster,
 )
@@ -118,3 +120,98 @@ class TrainingRosterImportTests(TestCase):
             applied = self.client.post(preview_url, {'action': 'apply'})
             self.assertEqual(applied.status_code, 302)
         self.assertEqual(self.series.participants.count(), 3)
+
+    def test_parse_training_roster_edge_cases_and_limits(self):
+        corrupt = SimpleUploadedFile('bad.xlsx', b'not a valid zip file', content_type='application/octet-stream')
+        self.assertEqual(parse_training_roster(corrupt)['fatal'], UNREADABLE)
+
+        empty_upload = upload_workbook(workbook_bytes(['', ''], [['', '']]))
+        self.assertEqual(parse_training_roster(empty_upload)['fatal'], 'The file is empty.')
+
+        too_many = workbook_bytes(['Name', 'Team'], [['Learner', 'Team']] * 5001)
+        self.assertIn('Split it and import in parts', parse_training_roster(upload_workbook(too_many))['fatal'])
+
+        blank_and_invalid_rows = workbook_bytes(['Name', 'Student ID', 'Team', 'Notes'], [
+            ['', '', '', 'Unmapped note row'],
+            ['', 'EMP-010', 'Team A', ''],
+            ['Learner Two', '', '', ''],
+            ['A' * 200, 'B' * 100, 'C' * 200, ''],
+        ])
+        parsed = parse_training_roster(upload_workbook(blank_and_invalid_rows))
+        self.assertEqual(len(parsed['participants']), 3)
+        self.assertIn('Name is required.', parsed['participants'][0]['issues'])
+        self.assertIn('Team or group is required.', parsed['participants'][1]['issues'])
+        self.assertTrue(any('longer than' in issue for issue in parsed['participants'][2]['issues']))
+
+    def test_plan_training_roster_edge_cases_matching_existing(self):
+        TrainingParticipant.objects.create(organization_id=self.org.id, created_by=self.owner,
+            series=self.series, display_name='Existing Name', reference='EMP-999', group_name='Existing Group')
+        TrainingParticipant.objects.create(organization_id=self.org.id, created_by=self.owner,
+            series=self.series, display_name='No Ref Learner', reference='', group_name='Team Alpha')
+
+        diff_learner_same_ref = workbook_bytes(['Name', 'Student ID', 'Team'], [
+            ['Different Name', 'EMP-999', 'Other Group'],
+            ['No Ref Learner', '', 'Team Alpha'],
+        ])
+        parsed = parse_training_roster(upload_workbook(diff_learner_same_ref))
+        plan = plan_training_roster_import(self.series, parsed,
+            organization=self.org.as_claim(), user=self.owner)
+        self.assertIn('belongs to a different learner', plan['participants'][0]['issues'][0])
+        self.assertIn('already in this team', plan['participants'][1]['warnings'][0])
+
+        diff_team_same_name_no_ref = workbook_bytes(['Name', 'Student ID', 'Team'], [
+            ['No Ref Learner', '', 'Team Beta'],
+        ])
+        parsed_diff = parse_training_roster(upload_workbook(diff_team_same_name_no_ref))
+        plan_diff = plan_training_roster_import(self.series, parsed_diff,
+            organization=self.org.as_claim(), user=self.owner)
+        self.assertIn('already in the series', plan_diff['participants'][0]['issues'][0])
+
+    def test_apply_training_roster_integrity_error_handling(self):
+        parsed = parse_training_roster(upload_workbook())
+        with patch('service_domains.training_roster_import.TrainingParticipant.objects.bulk_create',
+                   side_effect=IntegrityError('Duplicate simulated')):
+            with self.assertRaises(ValidationError):
+                apply_training_roster_import(self.series, parsed,
+                    organization=self.org.as_claim(), user=self.owner)
+
+    def test_import_and_preview_views_edge_cases_and_cancellation(self):
+        sign_in(self.client, self.owner, self.org)
+        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'team'):
+            invalid_post = self.client.post(
+                reverse('training_series_roster_import', args=(self.series.pk,)), {})
+            self.assertEqual(invalid_post.status_code, 302)
+
+            fatal_file = SimpleUploadedFile('corrupt.xlsx', b'garbage', content_type='application/octet-stream')
+            fatal_post = self.client.post(
+                reverse('training_series_roster_import', args=(self.series.pk,)), {'file': fatal_file})
+            self.assertEqual(fatal_post.status_code, 302)
+
+            with patch('service_domains.views.cache.set', side_effect=RuntimeError('Cache down')):
+                cache_down = self.client.post(
+                    reverse('training_series_roster_import', args=(self.series.pk,)),
+                    {'file': upload_workbook()})
+                self.assertEqual(cache_down.status_code, 302)
+
+            preview_url = reverse('training_series_roster_preview', args=(self.series.pk,))
+            no_token_preview = self.client.get(preview_url)
+            self.assertEqual(no_token_preview.status_code, 302)
+
+            self.client.post(reverse('training_series_roster_import', args=(self.series.pk,)),
+                             {'file': upload_workbook()})
+            cancel_resp = self.client.post(preview_url, {'action': 'cancel'})
+            self.assertEqual(cancel_resp.status_code, 302)
+
+            self.client.post(reverse('training_series_roster_import', args=(self.series.pk,)),
+                             {'file': upload_workbook()})
+            invalid_action = self.client.post(preview_url, {'action': 'unknown'})
+            self.assertEqual(invalid_action.status_code, 404)
+
+            self.client.post(reverse('training_series_roster_import', args=(self.series.pk,)),
+                             {'file': upload_workbook()})
+            with patch('service_domains.views.apply_training_roster_import',
+                       side_effect=ValidationError('Simulated apply error')):
+                err_resp = self.client.post(preview_url, {'action': 'apply'})
+                self.assertEqual(err_resp.status_code, 400)
+                self.assertContains(err_resp, 'Simulated apply error', status_code=400)
+

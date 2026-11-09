@@ -61,6 +61,21 @@ class PrivateLearnerReportTests(TestCase):
         self.assertContains(response, 'learner-report-link')
         self.assertTrue(response.context['learner_report_url'])
 
+    def test_owner_revoke_and_error_handling_from_outcomes_screen(self):
+        sign_in(self.client, self.owner, self.org)
+        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'team'):
+            revoke_resp = self.client.post(
+                reverse('training_session_competencies', args=(self.session.pk,)),
+                {'action': 'revoke_learner', 'student_id': self.student.pk})
+            self.assertEqual(revoke_resp.status_code, 200)
+
+            err_resp = self.client.post(
+                reverse('training_session_competencies', args=(self.session.pk,)),
+                {'action': 'release_learner', 'student_id': 99999})
+            self.assertEqual(err_resp.status_code, 200)
+            self.assertIn('This learner is unavailable', err_resp.context['certificate_error'])
+
+
     def test_release_and_revoke_edge_cases(self):
         from django.core.exceptions import ValidationError
         # Attempt release when session is not closed
