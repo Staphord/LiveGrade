@@ -18,6 +18,7 @@ from service_domains.models import (
     PanelDecision, PanelHearing,
     PanelInvitationAttempt,
     PanelInvitation, PanelScore, PanelScoringPanel,
+    PanelWrittenReview, PanelVote, PanelLiveDisplayLink,
 )
 from service_domains.operations import (abstain_panel_score, issue_panel_invitation,
                                         open_panel_hearing, bind_panel_invitation_device,
@@ -1085,3 +1086,385 @@ class PanelOwnerWorkspaceTests(TestCase):
             description='Clearly demonstrated', organization_id=self.org.id,
             created_by=self.owner)
         valid_level.clean()
+
+    def test_panel_hearing_list_dashboard_populated(self):
+        hearing = PanelHearing.objects.create(organization_id=self.org.id,
+            created_by=self.owner, name='Populated dashboard hearing', status=PanelHearing.Status.OPEN)
+        res = self.request('get', reverse('panel_hearing_list'))
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, hearing.name)
+
+    def test_panel_hearing_manage_live_activity_json(self):
+        hearing = PanelHearing.objects.create(organization_id=self.org.id,
+            created_by=self.owner, name='Activity hearing', status=PanelHearing.Status.OPEN)
+        manage_url = reverse('panel_hearing_manage', args=(hearing.pk,))
+        res = self.request('get', manage_url + '?activity=1')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res['Content-Type'], 'application/json')
+
+    def test_panel_hearing_manage_update_details_and_candidate_lifecycle(self):
+        sign_in(self.client, self.owner, self.org)
+        draft = PanelHearing.objects.create(organization_id=self.org.id,
+            created_by=self.owner, name='Draft hearing', status=PanelHearing.Status.DRAFT)
+        draft_cand = PanelCandidate.objects.create(organization_id=self.org.id,
+            created_by=self.owner, hearing=draft, display_name='Draft Cand')
+        draft_url = reverse('panel_hearing_manage', args=(draft.pk,))
+
+        res = self.request('post', draft_url, {
+            'action': 'update_hearing',
+            'name': 'Updated Draft Name',
+            'aggregation': 'mean',
+            'minimum_examiners': '1',
+            'workflow': PanelHearing.Workflow.SCORED,
+        })
+        self.assertEqual(res.status_code, 302)
+        draft.refresh_from_db()
+        self.assertEqual(draft.name, 'Updated Draft Name')
+
+        draft.status = PanelHearing.Status.OPEN
+        draft.save()
+
+        res = self.request('post', draft_url, {
+            'action': 'activate_candidate',
+            'candidate_id': str(draft_cand.pk),
+        })
+        self.assertEqual(res.status_code, 302)
+        draft.refresh_from_db()
+        self.assertEqual(draft.active_candidate_id, draft_cand.pk)
+
+        res = self.request('post', draft_url, {'action': 'end_candidate'})
+        self.assertEqual(res.status_code, 302)
+        draft.refresh_from_db()
+        self.assertIsNone(draft.active_candidate_id)
+
+    def test_panel_hearing_manage_display_link_issue_and_revoke(self):
+        hearing = PanelHearing.objects.create(organization_id=self.org.id,
+            created_by=self.owner, name='Display hearing', status=PanelHearing.Status.OPEN)
+        manage_url = reverse('panel_hearing_manage', args=(hearing.pk,))
+
+        res = self.request('post', manage_url, {'action': 'issue_display_link'})
+        self.assertEqual(res.status_code, 200)
+        link = PanelLiveDisplayLink.objects.filter(hearing=hearing, revoked_at__isnull=True).first()
+        self.assertIsNotNone(link)
+
+        res = self.request('post', manage_url, {
+            'action': 'revoke_display_link',
+            'display_link_id': str(link.pk),
+        })
+        self.assertEqual(res.status_code, 302)
+        link.refresh_from_db()
+        self.assertIsNotNone(link.revoked_at)
+
+    def test_panel_examiner_polling_decline_vote_and_review(self):
+        hearing = PanelHearing.objects.create(organization_id=self.org.id,
+            created_by=self.owner, name='Examiner actions', status=PanelHearing.Status.OPEN,
+            workflow=PanelHearing.Workflow.REVIEW_VOTE)
+        candidate = PanelCandidate.objects.create(organization_id=self.org.id,
+            created_by=self.owner, hearing=hearing, display_name='Candidate')
+        panel = PanelScoringPanel.objects.create(organization_id=self.org.id,
+            created_by=self.owner, hearing=hearing, name='Review panel')
+        invitation, token = issue_panel_invitation(hearing, 'reviewer@example.test',
+            timezone.now() + timedelta(hours=1), organization=self.org.as_claim(),
+            user=self.owner, panel=panel)
+        invitation.confirmed_at = timezone.now()
+        invitation.save(update_fields=('confirmed_at',))
+        examiner_url = reverse('panel_examiner', kwargs={'token': token})
+
+        cookie_name = f'livegrade_panel_examiner_{invitation.pk}'
+        cookie_val = issue_panel_device_cookie(invitation)
+        self.client.cookies[cookie_name] = cookie_val
+        bind_panel_invitation_device(invitation, cookie_val)
+
+        res = self.request('get', examiner_url + '?state=1')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res['Content-Type'], 'application/json')
+
+        other_inv, other_token = issue_panel_invitation(hearing,
+            'declining@example.test', timezone.now() + timedelta(hours=1),
+            organization=self.org.as_claim(), user=self.owner)
+        decline_url = reverse('panel_examiner', kwargs={'token': other_token})
+        res = self.request('post', decline_url, {'action': 'decline'})
+        self.assertEqual(res.status_code, 200)
+        other_inv.refresh_from_db()
+        self.assertIsNotNone(other_inv.declined_at)
+
+        activate_panel_candidate(hearing, candidate, organization=self.org.as_claim(), user=self.owner)
+
+        res = self.request('post', examiner_url, {
+            'action': 'vote',
+            'candidate_id': str(candidate.pk),
+            'choice': PanelVote.Choice.SUPPORT,
+        })
+        self.assertEqual(res.status_code, 302)
+        self.assertTrue(PanelVote.objects.filter(hearing=hearing, candidate=candidate).exists())
+
+        res = self.request('post', examiner_url, {
+            'action': 'review',
+            'candidate_id': str(candidate.pk),
+            'report': 'Thorough presentation and good methodology.',
+        })
+        self.assertEqual(res.status_code, 302)
+        self.assertTrue(PanelWrittenReview.objects.filter(hearing=hearing, candidate=candidate).exists())
+
+    def test_panel_hearing_export_with_all_sheets(self):
+        hearing = PanelHearing.objects.create(organization_id=self.org.id,
+            created_by=self.owner, name='Export hearing', status=PanelHearing.Status.OPEN,
+            workflow=PanelHearing.Workflow.REVIEW_VOTE)
+        candidate = PanelCandidate.objects.create(organization_id=self.org.id,
+            created_by=self.owner, hearing=hearing, display_name='Export cand')
+        criterion = PanelCriterion.objects.create(organization_id=self.org.id,
+            created_by=self.owner, hearing=hearing, name='Export crit')
+        panel = PanelScoringPanel.objects.create(organization_id=self.org.id,
+            created_by=self.owner, hearing=hearing, name='Export panel')
+        invitation, token = issue_panel_invitation(hearing, 'export@example.test',
+            timezone.now() + timedelta(hours=1), organization=self.org.as_claim(),
+            user=self.owner, panel=panel)
+
+        PanelDecision.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, candidate=candidate, outcome=PanelDecision.Outcome.ACCEPT,
+            rationale='Good defence', conditions='None', dissent='None', decided_by=self.owner, revision=1)
+        PanelVote.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, candidate=candidate, invitation=invitation,
+            choice=PanelVote.Choice.SUPPORT)
+        PanelWrittenReview.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, candidate=candidate, invitation=invitation,
+            report='Detailed review', revision=1)
+        PanelAbstention.objects.create(organization_id=self.org.id, created_by=self.owner,
+            candidate=candidate, criterion=criterion, invitation=invitation,
+            reason='Conflict of interest')
+        hearing.status = PanelHearing.Status.REVIEW
+        hearing.save()
+
+        export_url = reverse('panel_results_export', args=(hearing.pk,))
+        res = self.request('get', export_url)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res['Content-Type'],
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+    def test_panel_embedded_imports_and_cancel(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from assessments.sheets import workbook_bytes
+
+        draft = PanelHearing.objects.create(organization_id=self.org.id,
+            created_by=self.owner, name='Import Draft', status=PanelHearing.Status.DRAFT)
+        c_url = reverse('panel_candidate_import', args=(draft.pk,))
+
+        res = self.request('post', c_url, {'action': 'cancel'})
+        self.assertEqual(res.status_code, 302)
+        self.assertIn('step=candidates', res['Location'])
+
+        wb_bytes = workbook_bytes(['Candidate', 'Reference'],
+            [['Alice Smith', 'Quantum ML']]).getvalue()
+        wb_file = SimpleUploadedFile('candidates.xlsx', wb_bytes,
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        res = self.request('post', f'{c_url}?embedded=1', {'file': wb_file})
+        self.assertEqual(res.status_code, 302)
+        self.assertIn('step=candidates', res['Location'])
+
+        manage_res = self.request('get', res['Location'])
+        self.assertEqual(manage_res.status_code, 200)
+        self.assertContains(manage_res, 'panel-candidate-preview')
+        self.assertContains(manage_res, 'Alice Smith')
+
+        res_err = self.request('post', f'{c_url}?embedded=1', {})
+        self.assertEqual(res_err.status_code, 302)
+        self.assertIn('step=candidates', res_err['Location'])
+
+    def test_panel_setup_inline_previews_and_unsaved_guard(self):
+        draft = PanelHearing.objects.create(organization_id=self.org.id,
+            created_by=self.owner, name='Inline Preview Draft', status=PanelHearing.Status.DRAFT)
+        manage_url = reverse('panel_hearing_manage', args=(draft.pk,))
+
+        page = self.request('get', manage_url)
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, 'id="panel-unsaved-dialog"')
+        self.assertContains(page, 'data-panel-details-form')
+        self.assertContains(page, '(required)</span>')
+        self.assertContains(page, 'data-panel-import-form')
+
+        # Test candidate import inline preview
+        from assessments.sheets import workbook_bytes
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        c_url = reverse('panel_candidate_import', args=(draft.pk,))
+        wb_bytes = workbook_bytes(['Candidate', 'Reference'], [['Bob Preview', 'B-101']]).getvalue()
+        wb_file = SimpleUploadedFile('candidates.xlsx', wb_bytes,
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+        import_post = self.request('post', f'{c_url}?embedded=1', {'file': wb_file})
+        self.assertEqual(import_post.status_code, 302)
+
+        preview_page = self.request('get', import_post['Location'])
+        self.assertEqual(preview_page.status_code, 200)
+        self.assertContains(preview_page, 'id="candidate-inline-preview"')
+        self.assertContains(preview_page, 'Bob Preview')
+        self.assertContains(preview_page, 'Import 1 candidate')
+        self.assertContains(preview_page, 'Cancel preview')
+
+    def test_panel_step_one_save_advance_and_inline_feedback(self):
+        draft = PanelHearing.objects.create(organization_id=self.org.id,
+            created_by=self.owner, name='Original Hearing', status=PanelHearing.Status.DRAFT)
+        manage_url = reverse('panel_hearing_manage', args=(draft.pk,))
+
+        res_save = self.request('post', manage_url, {
+            'action': 'update_hearing',
+            'name': 'Saved Hearing Name',
+            'aggregation': 'mean',
+            'workflow': PanelHearing.Workflow.SCORED,
+        })
+        self.assertEqual(res_save.status_code, 302)
+        self.assertIn('step=details', res_save['Location'])
+        self.assertIn('saved=1', res_save['Location'])
+
+        get_saved = self.request('get', res_save['Location'])
+        self.assertEqual(get_saved.status_code, 200)
+        self.assertContains(get_saved, 'Hearing details saved successfully.')
+
+        res_advance = self.request('post', manage_url, {
+            'action': 'update_hearing',
+            'name': 'Advanced Hearing Name',
+            'aggregation': 'mean',
+            'workflow': PanelHearing.Workflow.SCORED,
+            'advance': '1',
+        })
+        self.assertEqual(res_advance.status_code, 302)
+        self.assertIn('step=candidates', res_advance['Location'])
+
+    def test_panel_candidate_and_criterion_removal_in_draft(self):
+        draft = PanelHearing.objects.create(organization_id=self.org.id,
+            created_by=self.owner, name='Removal Draft', status=PanelHearing.Status.DRAFT)
+        cand = PanelCandidate.objects.create(organization_id=self.org.id,
+            created_by=self.owner, hearing=draft, display_name='Delete Candidate')
+        crit = PanelCriterion.objects.create(organization_id=self.org.id,
+            created_by=self.owner, hearing=draft, name='Delete Criterion', weight=10)
+        manage_url = reverse('panel_hearing_manage', args=(draft.pk,))
+
+        res_cand = self.request('post', manage_url, {
+            'action': 'remove_candidate',
+            'candidate_id': str(cand.pk),
+        })
+        self.assertEqual(res_cand.status_code, 302)
+        self.assertIn('step=candidates', res_cand['Location'])
+        self.assertFalse(PanelCandidate.objects.filter(pk=cand.pk).exists())
+
+        # Test candidate removal when referenced by PanelAuditEvent
+        cand_with_audit = PanelCandidate.objects.create(organization_id=self.org.id,
+            created_by=self.owner, hearing=draft, display_name='Audited Candidate')
+        audit_event = PanelAuditEvent.objects.create(
+            organization_id=self.org.id,
+            created_by=self.owner,
+            hearing=draft,
+            candidate=cand_with_audit,
+            action=PanelAuditEvent.Action.CANDIDATE_ADDED,
+            reason='Added candidate',
+        )
+        res_audited = self.request('post', manage_url, {
+            'action': 'remove_candidate',
+            'candidate_id': str(cand_with_audit.pk),
+        })
+        self.assertEqual(res_audited.status_code, 302)
+        self.assertFalse(PanelCandidate.objects.filter(pk=cand_with_audit.pk).exists())
+        audit_event.refresh_from_db()
+        self.assertIsNone(audit_event.candidate)
+
+        res_crit = self.request('post', manage_url, {
+            'action': 'remove_criterion',
+            'criterion_id': str(crit.pk),
+        })
+        self.assertEqual(res_crit.status_code, 302)
+        self.assertIn('step=scoring', res_crit['Location'])
+        self.assertFalse(PanelCriterion.objects.filter(pk=crit.pk).exists())
+
+    def test_panel_record_decision_error_scenarios(self):
+        hearing = PanelHearing.objects.create(organization_id=self.org.id,
+            created_by=self.owner, name='Decision hearing', status=PanelHearing.Status.REVIEW)
+        candidate = PanelCandidate.objects.create(organization_id=self.org.id,
+            created_by=self.owner, hearing=hearing, display_name='Dec cand')
+        review_url = reverse('panel_results_review', args=(hearing.pk,))
+
+        res = self.request('post', review_url, {
+            'action': 'decision',
+            'candidate_id': '999999',
+        })
+        self.assertEqual(res.status_code, 404)
+
+        res = self.request('post', review_url, {
+            'action': 'decision',
+            'candidate_id': str(candidate.pk),
+            f'decision_{candidate.pk}-outcome': '',
+        })
+        self.assertEqual(res.status_code, 400)
+        self.assertContains(res, 'outcome', status_code=400)
+
+    def test_panel_mandatory_fields_inline_validation_no_toast(self):
+        draft = PanelHearing.objects.create(
+            organization_id=self.org.id,
+            created_by=self.owner,
+            name='Validation Draft',
+            status=PanelHearing.Status.DRAFT,
+        )
+        manage_url = reverse('panel_hearing_manage', args=(draft.pk,))
+
+        res_get = self.request('get', manage_url)
+        self.assertEqual(res_get.status_code, 200)
+        self.assertContains(res_get, 'id="panel-unsaved-dialog"')
+        self.assertContains(res_get, '<form method="post" novalidate data-panel-form')
+
+        # Submitting candidate with empty mandatory display_name yields inline error without toast
+        res_post = self.request('post', manage_url, {
+            'action': 'candidate',
+            'display_name': '',
+        })
+        self.assertEqual(res_post.status_code, 400)
+        self.assertContains(res_post, 'class="field-error"', status_code=400)
+        self.assertContains(res_post, 'role="alert"', status_code=400)
+        self.assertContains(res_post, 'This field is required.', status_code=400)
+        self.assertNotContains(res_post, 'flash-region"><div class="alert', status_code=400)
+        self.assertNotContains(res_post, 'Please correct the highlighted fields and try again.', status_code=400)
+
+    def test_panel_step_one_save_no_top_toast(self):
+        draft = PanelHearing.objects.create(
+            organization_id=self.org.id,
+            created_by=self.owner,
+            name='Save Hearing No Toast',
+            status=PanelHearing.Status.DRAFT,
+        )
+        manage_url = reverse('panel_hearing_manage', args=(draft.pk,))
+
+        res_save = self.request('post', manage_url, {
+            'action': 'update_hearing',
+            'name': 'Updated Name',
+            'aggregation': 'mean',
+            'workflow': PanelHearing.Workflow.SCORED,
+        })
+        self.assertEqual(res_save.status_code, 302)
+        self.assertIn('step=details', res_save['Location'])
+        self.assertIn('saved=1', res_save['Location'])
+
+        res_follow = self.request('get', res_save['Location'])
+        self.assertEqual(res_follow.status_code, 200)
+        self.assertContains(res_follow, 'Hearing details saved successfully.')
+        self.assertNotContains(res_follow, 'flash-region"><div class="alert')
+
+    def test_import_warning_does_not_render_flash_messages(self):
+        draft = PanelHearing.objects.create(
+            organization_id=self.org.id,
+            created_by=self.owner,
+            name='Import Warning Isolation Draft',
+            status=PanelHearing.Status.DRAFT,
+        )
+        manage_url = reverse('panel_hearing_manage', args=(draft.pk,))
+        res_advance = self.request('post', manage_url, {
+            'action': 'update_hearing',
+            'name': 'Draft with Flash Message',
+            'aggregation': 'mean',
+            'workflow': PanelHearing.Workflow.SCORED,
+            'advance': '1',
+        })
+        self.assertEqual(res_advance.status_code, 302)
+        res_get = self.request('get', res_advance['Location'])
+        self.assertEqual(res_get.status_code, 200)
+        content = res_get.content.decode()
+        self.assertRegex(content, r'<div id="panel-candidate-import-warning"[^>]*hidden')
+        match = re.search(r'<div id="panel-candidate-import-warning"[^>]*>(.*?)</div>', content, re.DOTALL)
+        self.assertTrue(match)
+        self.assertNotIn('Assessment details saved.', match.group(1))

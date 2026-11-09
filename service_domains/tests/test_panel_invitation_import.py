@@ -487,3 +487,16 @@ class PanelInvitationImportTests(TestCase):
         invitation = PanelInvitation.objects.get(hearing=self.hearing)
         self.assertEqual(invitation.delivery_status, PanelInvitation.DeliveryStatus.FAILED)
         self.assertEqual(invitation.delivery_error, 'queue_unavailable')
+
+    def test_invitation_form_and_scoring_panel_display_name(self):
+        from service_domains.forms import PanelInvitationForm, PanelInvitationImportForm
+        self.assertEqual(str(self.panel), 'Oral panel')
+        single_form = PanelInvitationForm(panels=PanelScoringPanel.objects.filter(hearing=self.hearing))
+        rendered_single = str(single_form['panel'])
+        self.assertIn('Oral panel', rendered_single)
+        self.assertNotIn('PanelScoringPanel object', rendered_single)
+
+        import_form = PanelInvitationImportForm(panels=PanelScoringPanel.objects.filter(hearing=self.hearing))
+        rendered_import = str(import_form['panel'])
+        self.assertIn('Oral panel', rendered_import)
+        self.assertNotIn('PanelScoringPanel object', rendered_import)

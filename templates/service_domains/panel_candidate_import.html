@@ -4,6 +4,7 @@
 {% block content %}
 {% include 'service_domains/_workspace_styles.html' %}
 {% include 'service_domains/_panel_ui_styles.html' %}
+{% include 'assessments/_partials/import_dropzone_styles.html' %}
 <div class="container-fluid py-4 service-workspace panel-import-shell">
   <p><a class="btn btn-link px-0" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i>{{ hearing.name }}</a></p>
   <header class="panel-hero mb-4"><div class="panel-hero__copy"><p class="panel-eyebrow">Assessment setup</p><h1 class="page-title">Import candidates</h1><p class="page-subtitle mt-2">Upload a spreadsheet and check every row before adding it.</p></div></header>

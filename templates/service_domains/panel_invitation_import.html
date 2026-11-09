@@ -4,6 +4,7 @@
 {% block content %}
 {% include 'service_domains/_workspace_styles.html' %}
 {% include 'service_domains/_panel_ui_styles.html' %}
+{% include 'assessments/_partials/import_dropzone_styles.html' %}
 <div class="container-fluid py-4 service-workspace panel-import-shell">
   <p><a class="btn btn-link px-0" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i>{{ hearing.name }}</a></p>
   <header class="panel-hero mb-4"><div class="panel-hero__copy"><p class="panel-eyebrow">Assessment setup</p><h1 class="page-title">Invite examiners</h1><p class="page-subtitle mt-2">Upload email addresses, check the list, then send invitations.</p></div></header>
@@ -14,8 +15,8 @@
       <form method="post" enctype="multipart/form-data" class="service-flow-form">{% csrf_token %}
         {% for error in form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endfor %}
         {% include 'assessments/_partials/import_dropzone.html' with file_field=form.file dropzone_id='panel-invitation-dropzone' filename_id='panel-invitation-filename' %}
-        {% for error in form.file.errors %}<div class="text-danger small mt-2" role="alert">{{ error }}</div>{% endfor %}
-        <div class="panel-form-grid mt-3">{% for field in form %}{% if field.name != 'file' %}<div class="panel-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-text text-muted">{{ field.help_text }}</small>{% endif %}{% for error in field.errors %}<div class="text-danger small" role="alert">{{ error }}</div>{% endfor %}</div>{% endif %}{% endfor %}</div>
+        {% for error in form.file.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}
+        <div class="panel-form-grid mt-3">{% for field in form %}{% if field.name != 'file' %}{% include 'partials/_form_field.html' with field=field %}{% endif %}{% endfor %}</div>
         <button class="btn btn-primary mt-2" type="submit">Preview examiner list</button>
       </form>
     </div><aside class="panel-import-summary"><strong>Before you upload</strong><ul class="mb-0 mt-2 ps-3"><li>Use an .xlsx file.</li><li>Enter one examiner email per row.</li><li>Nothing is sent until you confirm.</li></ul></aside></div>

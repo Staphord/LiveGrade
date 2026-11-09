@@ -420,3 +420,280 @@ class CombinedAssessmentTests(TestCase):
         sign_in(unauth_client, self.other, self.org)
         response = unauth_client.get(reverse('combined_assessment_detail', args=[self.assessment.pk]))
         self.assertEqual(response.status_code, 404)
+
+    def test_combined_assessment_form_validation(self):
+        from service_domains.combined_views import CombinedAssessmentForm
+        # Missing one or both weights in WEIGHTED policy
+        form = CombinedAssessmentForm(organization=self.org.as_claim(), user=self.owner, data={
+            'name': 'Test Form',
+            'classroom_session': self.session.pk,
+            'panel_hearing': self.hearing.pk,
+            'result_policy': 'weighted',
+            'peer_weight': '',
+            'panel_weight': '40',
+            'moderation_threshold': '10',
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn('Enter both weights for a weighted combined mark.', form.non_field_errors())
+
+        # Weights not totaling 100%
+        form = CombinedAssessmentForm(organization=self.org.as_claim(), user=self.owner, data={
+            'name': 'Test Form',
+            'classroom_session': self.session.pk,
+            'panel_hearing': self.hearing.pk,
+            'result_policy': 'weighted',
+            'peer_weight': '60',
+            'panel_weight': '30',
+            'moderation_threshold': '10',
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn('Peer and Panel weights must total 100%.', form.non_field_errors())
+
+        # Non-numeric panel workflow in WEIGHTED policy
+        hearing_non_numeric = PanelHearing.objects.create(
+            organization_id=self.org.id, created_by=self.owner, name='Outcome hearing',
+            status=PanelHearing.Status.DRAFT, workflow=PanelHearing.Workflow.OUTCOME)
+        form = CombinedAssessmentForm(organization=self.org.as_claim(), user=self.owner, data={
+            'name': 'Test Form',
+            'classroom_session': self.session.pk,
+            'panel_hearing': hearing_non_numeric.pk,
+            'result_policy': 'weighted',
+            'peer_weight': '50',
+            'panel_weight': '50',
+            'moderation_threshold': '10',
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn('Weighted marks require numeric Panel rubric scoring.', form.errors['panel_hearing'])
+
+        # Create view error handling when mapping save fails
+        from unittest.mock import patch
+        sign_in(self.client, self.owner, self.org)
+        sess_fail = AssessmentSession.objects.create(
+            organization_id=self.org.id, created_by=self.owner, name='Fail Session',
+            service='classroom', status='draft', ungraded_penalty=0)
+        hearing_fail = PanelHearing.objects.create(
+            organization_id=self.org.id, created_by=self.owner, name='Fail Hearing',
+            status=PanelHearing.Status.DRAFT, workflow=PanelHearing.Workflow.SCORED)
+        grp_fail = sess_fail.groups.create(name='FailGrp')
+        cand_fail = PanelCandidate.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing_fail, display_name='FailGrp', source_group=grp_fail)
+        with patch.object(CombinedPresentationMapping, 'save', side_effect=ValidationError(['Simulated mapping failure'])):
+            res = self.client.post(reverse('combined_assessment_create'), {
+                'name': 'Mapping failure form',
+                'classroom_session': sess_fail.pk,
+                'panel_hearing': hearing_fail.pk,
+                'result_policy': 'separate',
+                'minimum_peer_ratings': '1',
+                'minimum_panel_raters': '1',
+            })
+            self.assertEqual(res.status_code, 200)
+            self.assertIn('Simulated mapping failure', res.content.decode())
+
+    def test_combined_assessment_form_labels_resolve_model_names(self):
+        from service_domains.combined_views import CombinedAssessmentForm
+        form = CombinedAssessmentForm(organization=self.org.as_claim(), user=self.owner)
+        rendered = str(form['panel_hearing'])
+        self.assertIn(self.hearing.name, rendered)
+        self.assertNotIn('PanelHearing object', rendered)
+        self.assertEqual(str(self.hearing), self.hearing.name)
+
+    def test_combined_assessment_detail_views_and_roster_snapshot(self):
+        sign_in(self.client, self.owner, self.org)
+        # Create view with initial GET parameters
+        url_create = reverse('combined_assessment_create') + f'?classroom_session={self.session.pk}&panel_hearing={self.hearing.pk}'
+        res = self.client.get(url_create)
+        self.assertEqual(res.status_code, 200)
+
+        # Detail view with weighted policy and results view queries
+        detail_url = reverse('combined_assessment_detail', args=[self.assessment.pk])
+        res = self.client.get(detail_url + '?results=combined')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.context['result_view'], 'combined')
+
+        res = self.client.get(detail_url + '?results=invalid_query')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.context['result_view'], 'all')
+
+        # Roster change triggers roster_changed_mappings
+        new_student = self.session.students.create(full_name='New Addition')
+        self.group.memberships.create(student=new_student)
+        res = self.client.get(detail_url)
+        self.assertEqual(res.status_code, 200)
+        self.assertGreater(len(res.context['roster_changed_mappings']), 0)
+
+    def test_combined_assessment_publishing_and_candidate_actions(self):
+        sign_in(self.client, self.owner, self.org)
+        sess = AssessmentSession.objects.create(
+            organization_id=self.org.id, created_by=self.owner, name='Draft peer',
+            service='classroom', status='draft', ungraded_penalty=0)
+        hearing = PanelHearing.objects.create(
+            organization_id=self.org.id, created_by=self.owner, name='Draft hearing',
+            status=PanelHearing.Status.DRAFT, workflow=PanelHearing.Workflow.SCORED)
+        draft = CombinedPresentationAssessment.objects.create(
+            organization_id=self.org.id, created_by=self.owner, name='Draft for actions',
+            classroom_session=sess, panel_hearing=hearing,
+            result_policy=CombinedPresentationAssessment.ResultPolicy.WEIGHTED,
+            peer_weight=Decimal('50'), panel_weight=Decimal('50'), moderation_threshold=Decimal('10'))
+        detail_url = reverse('combined_assessment_detail', args=[draft.pk])
+
+        from django.db.models import QuerySet
+        # Publish draft with unequal weights fails
+        QuerySet.update(CombinedPresentationAssessment.objects.filter(pk=draft.pk),
+            peer_weight=Decimal('60'), panel_weight=Decimal('30'))
+        res = self.client.post(detail_url, {'action': 'publish'})
+        self.assertEqual(res.status_code, 302)
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, CombinedPresentationAssessment.Status.DRAFT)
+
+        # Publish draft with non-numeric workflow fails
+        QuerySet.update(CombinedPresentationAssessment.objects.filter(pk=draft.pk),
+            peer_weight=Decimal('50'), panel_weight=Decimal('50'))
+        PanelHearing.objects.filter(pk=hearing.pk).update(workflow=PanelHearing.Workflow.OUTCOME)
+        draft.refresh_from_db()
+        hearing.refresh_from_db()
+        res = self.client.post(detail_url, {'action': 'publish'})
+        self.assertEqual(res.status_code, 302)
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, CombinedPresentationAssessment.Status.DRAFT)
+
+        # Incomplete mapping blocks publish
+        PanelHearing.objects.filter(pk=hearing.pk).update(workflow=PanelHearing.Workflow.SCORED)
+        hearing.refresh_from_db()
+        res = self.client.post(detail_url, {'action': 'publish'})
+        self.assertEqual(res.status_code, 302)
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, CombinedPresentationAssessment.Status.DRAFT)
+
+        # Create candidate from group: 404 for invalid group
+        res = self.client.post(detail_url, {'action': 'create_candidate_from_group', 'group_id': '99999'})
+        self.assertEqual(res.status_code, 404)
+
+        # Create candidate when hearing is not DRAFT
+        hearing.status = PanelHearing.Status.OPEN
+        hearing.save()
+        group = sess.groups.create(name='Grp 1')
+        res = self.client.post(detail_url, {'action': 'create_candidate_from_group', 'group_id': str(group.pk)})
+        self.assertEqual(res.status_code, 302)
+
+        # Create candidate when group already linked
+        hearing.status = PanelHearing.Status.DRAFT
+        hearing.save()
+        PanelCandidate.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, source_group=group, display_name=group.name)
+        res = self.client.post(detail_url, {'action': 'create_candidate_from_group', 'group_id': str(group.pk)})
+        self.assertEqual(res.status_code, 302)
+
+        # Create candidate when save raises IntegrityError
+        from unittest.mock import patch
+        from django.db import IntegrityError
+        group_fail = sess.groups.create(name='Grp Fail')
+        with patch.object(PanelCandidate, 'save', side_effect=IntegrityError('Duplicate candidate')):
+            res = self.client.post(detail_url, {'action': 'create_candidate_from_group', 'group_id': str(group_fail.pk)})
+            self.assertEqual(res.status_code, 302)
+
+    def test_combined_assessment_mapping_and_activation_edge_cases(self):
+        sign_in(self.client, self.owner, self.org)
+        sess = AssessmentSession.objects.create(
+            organization_id=self.org.id, created_by=self.owner, name='Pair session',
+            service='classroom', status=AssessmentSession.Status.LIVE, ungraded_penalty=0)
+        hearing = PanelHearing.objects.create(
+            organization_id=self.org.id, created_by=self.owner, name='Pair hearing',
+            status=PanelHearing.Status.OPEN, workflow=PanelHearing.Workflow.SCORED)
+        grp = sess.groups.create(name='PGroup')
+        cand = PanelCandidate.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, display_name='PCandidate')
+        comb = CombinedPresentationAssessment.objects.create(
+            organization_id=self.org.id, created_by=self.owner, name='Pair assessment',
+            classroom_session=sess, panel_hearing=hearing,
+            result_policy=CombinedPresentationAssessment.ResultPolicy.SEPARATE)
+        detail_url = reverse('combined_assessment_detail', args=[comb.pk])
+
+        # Add mapping with invalid group or candidate -> 404
+        res = self.client.post(detail_url, {'action': 'add_mapping', 'group_id': '99999', 'candidate_id': str(cand.pk)})
+        self.assertEqual(res.status_code, 404)
+
+        # Add mapping successfully linking unlinked candidate
+        res = self.client.post(detail_url, {'action': 'add_mapping', 'group_id': str(grp.pk), 'candidate_id': str(cand.pk)})
+        self.assertEqual(res.status_code, 302)
+        mapping = comb.mappings.first()
+        self.assertIsNotNone(mapping)
+
+        # Add duplicate mapping fails gracefully
+        res = self.client.post(detail_url, {'action': 'add_mapping', 'group_id': str(grp.pk), 'candidate_id': str(cand.pk)})
+        self.assertEqual(res.status_code, 302)
+
+        # Remove mapping: 404 for invalid id
+        res = self.client.post(detail_url, {'action': 'remove_mapping', 'mapping_id': '99999'})
+        self.assertEqual(res.status_code, 404)
+
+        # Activate entry: 404 for invalid mapping id
+        comb.status = CombinedPresentationAssessment.Status.ACTIVE
+        comb.save()
+        res = self.client.post(detail_url, {'action': 'activate_entry', 'mapping_id': '99999'})
+        self.assertEqual(res.status_code, 404)
+
+        # Activate entry: incomplete mapping error
+        unmapped_grp = sess.groups.create(name='Unmapped Group')
+        res = self.client.post(detail_url, {'action': 'activate_entry', 'mapping_id': str(mapping.pk)})
+        self.assertEqual(res.status_code, 302)
+        unmapped_grp.delete()
+
+        # Activate entry: session not live error
+        sess.status = AssessmentSession.Status.CLOSED
+        sess.save()
+        res = self.client.post(detail_url, {'action': 'activate_entry', 'mapping_id': str(mapping.pk)})
+        self.assertEqual(res.status_code, 302)
+        sess.status = AssessmentSession.Status.LIVE
+        sess.save()
+
+        # Detail view on separate policy assessment exercises result_policy != WEIGHTED branch
+        res = self.client.get(detail_url)
+        self.assertEqual(res.status_code, 200)
+
+        # Hearing candidate already active exercises candidate activation bypass branch
+        from service_domains.operations import activate_panel_candidate
+        activate_panel_candidate(hearing, cand, organization=self.org.as_claim(), user=self.owner)
+        res = self.client.post(detail_url, {'action': 'activate_entry', 'mapping_id': str(mapping.pk)})
+        self.assertEqual(res.status_code, 302)
+
+        # Classroom turn already active exercises turn activation bypass branch
+        from service_domains.operations import deactivate_panel_candidate
+        deactivate_panel_candidate(hearing, organization=self.org.as_claim(), user=self.owner)
+        res = self.client.post(detail_url, {'action': 'activate_entry', 'mapping_id': str(mapping.pk)})
+        self.assertEqual(res.status_code, 302)
+
+        # Activate entry when already active in both
+        res = self.client.post(detail_url, {'action': 'activate_entry', 'mapping_id': str(mapping.pk)})
+        self.assertEqual(res.status_code, 302)
+
+        # Pause active entry successfully when panel hearing is under review (skips candidate deactivation)
+        hearing.status = PanelHearing.Status.REVIEW
+        hearing.active_candidate = cand
+        hearing.save(update_fields=['status', 'active_candidate'])
+        res = self.client.post(detail_url, {'action': 'pause_entry'})
+        self.assertEqual(res.status_code, 302)
+        hearing.status = PanelHearing.Status.OPEN
+        hearing.save(update_fields=['status'])
+
+        # Close combined assessment with active turn
+        sess.presentation_turns.all().delete()
+        res = self.client.post(detail_url, {'action': 'activate_entry', 'mapping_id': str(mapping.pk)})
+        res = self.client.post(detail_url, {'action': 'close'})
+        self.assertEqual(res.status_code, 302)
+        comb.refresh_from_db()
+        self.assertEqual(comb.status, CombinedPresentationAssessment.Status.CLOSED)
+
+        # Reopen assessment to test closed turn check
+        comb.status = CombinedPresentationAssessment.Status.ACTIVE
+        comb.save()
+        sess.presentation_turns.create(group=grp, status=PresentationTurn.Status.CLOSED)
+        res = self.client.post(detail_url, {'action': 'activate_entry', 'mapping_id': str(mapping.pk)})
+        self.assertEqual(res.status_code, 302)
+
+        # Moderate: 404 for invalid mapping
+        res = self.client.post(detail_url, {'action': 'moderate', 'mapping_id': '99999', 'decision': 'approve'})
+        self.assertEqual(res.status_code, 404)
+
+        # Moderate: invalid decision sets error message
+        res = self.client.post(detail_url, {'action': 'moderate', 'mapping_id': str(mapping.pk), 'decision': 'invalid_decision'})
+        self.assertEqual(res.status_code, 302)

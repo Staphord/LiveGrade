@@ -67,8 +67,7 @@
     <p class="panel-eyebrow">New assessment</p><h2 class="h4" id="new-hearing-heading">Create a Panel assessment</h2>
     <p class="panel-muted">Name it and choose how examiners will take part. You can add candidates and reviewers next.</p>
     <form method="post" class="service-flow-form" novalidate>{% csrf_token %}
-      {% for error in form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endfor %}
-      {% for field in form %}<div class="panel-field">{{ field.label_tag }}{{ field }}{% if field.help_text %}<small class="form-text text-muted">{{ field.help_text }}</small>{% endif %}{% for error in field.errors %}<div class="text-danger small" role="alert">{{ error }}</div>{% endfor %}</div>{% endfor %}
+      {% include 'partials/_form_fields.html' with form=form %}
       <button class="btn btn-primary" type="submit">Create draft</button>
     </form>
   </section>
