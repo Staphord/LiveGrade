@@ -80,6 +80,7 @@ class ShowcaseLiveMonitorTests(TestCase):
         self.assertContains(page, 'not published awards')
         self.assertContains(page, 'Visitor feedback')
         self.assertContains(page, 'Judge average')
+        self.assertContains(page, 'Close ratings in event control')
         self.assertIn('no-store', page['Cache-Control'])
         self.assertEqual(data.status_code, 200)
         self.assertEqual(data.json()['rows'][0]['exhibit'], 'Solar pump')
