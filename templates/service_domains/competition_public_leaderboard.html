@@ -4,31 +4,74 @@
 {% block service_name %}Competition results{% endblock %}
 {% block content %}
 {% include 'service_domains/_team_competition_styles.html' %}
-<main id="public-main" class="public-service-content wide tc-results" data-live-leaderboard data-refresh-url="{{ request.path }}">
+<main id="public-main" class="public-service-content wide tc-results"
+      data-live-leaderboard data-refresh-url="{{ request.path }}"
+      data-websocket-url="/ws/competition/{{ competition.public_id }}/leaderboard/">
   <header class="tc-results-header mb-4">
+    <div class="tc-results-header-top">
+      <span class="tc-results-final-label">Final results</span>
+      <span class="tc-results-connection" data-leaderboard-connection
+            role="status" aria-live="polite">Connecting to live updates</span>
+    </div>
     <h1>{{ competition.name }}</h1>
-    <p>{{ round.name }} · Final results</p>
-    <p>{% if audience_weight %}Final score combines {{ judge_weight }}% judge scores and {{ audience_weight }}% audience rankings. The component scores and response counts are shown separately. Individual judges and voters are not identified.{% else %}Results are based on judge scores. Any audience-choice vote is separate and does not change these places.{% endif %}</p>
-    {% if has_head_judge_tie_decisions %}<p>Equal scores are ordered by the recorded head-judge decision.</p>{% endif %}
-    <p data-leaderboard-status role="status" aria-live="polite">Results revealed {{ competition.revealed_at|date:'DATETIME_FORMAT' }} · Refreshes every 30 seconds.</p>
+    <div class="tc-results-meta">
+      <span>{{ round.name }}</span>
+      <span>{{ track_results|length }} track{{ track_results|length|pluralize }}</span>
+      <span>Published {{ competition.revealed_at|date:'DATETIME_FORMAT' }}</span>
+    </div>
+    <p class="tc-results-method">
+      {% if audience_weight %}
+        Final score combines {{ judge_weight }}% judge scores and {{ audience_weight }}% audience rankings. Individual judges and voters are not identified.
+      {% else %}
+        Final score is based on judge scores. Audience choice is separate. Individual judges are not identified.
+      {% endif %}
+    </p>
+    {% if has_head_judge_tie_decisions %}
+      <p class="tc-results-tie-note">Equal scores are ordered by the recorded head-judge decision.</p>
+    {% endif %}
+    <p class="tc-results-availability" data-leaderboard-availability
+       role="status" aria-live="polite" hidden></p>
   </header>
+
   <div data-leaderboard-content>
-    {% for result in track_results %}<section class="tc-panel mb-3" aria-labelledby="track-{{ result.track.pk }}">
-      <header><div><h2 id="track-{{ result.track.pk }}">{{ result.track.name }}</h2><p>Final standings</p></div></header>
-      <ol class="list-unstyled mb-0">
-        {% for row in result.entries %}<li class="tc-results-rank {% if row.display_rank == 1 %}is-first{% endif %}">
-          <span class="tc-results-rank-number" aria-label="Place {{ row.display_rank }}">{{ row.display_rank }}</span>
-          <span><span class="tc-results-rank-name">{{ row.entry.name }}</span>
-            <details class="mt-1"><summary>Score details</summary><ul class="small mt-2 mb-0">
-              {% if judge_weight %}<li>Judge score: {{ row.judge_score|floatformat:2 }} · {{ row.judge_count }} judge{{ row.judge_count|pluralize }}</li>{% endif %}
-              {% if audience_weight %}<li>Audience score: {{ row.audience_score|floatformat:2 }} · {{ row.audience_ballot_count }} ballot{{ row.audience_ballot_count|pluralize }}</li>{% endif %}
-              {% for item in row.score_breakdown %}<li>{{ item.criterion }} ({{ item.weight }}%): {{ item.mean }} · {{ item.judge_count }} judge{{ item.judge_count|pluralize }}</li>{% endfor %}
-            </ul></details>
-          </span>
-          <span class="tc-results-score">{{ row.score|floatformat:2 }}<small class="d-block text-muted">{% if audience_weight %}Final score{% else %}Score{% endif %}</small></span>
-        </li>{% endfor %}
-      </ol>
-    </section>{% endfor %}
+    {% for result in track_results %}
+      <section class="tc-panel tc-results-track mb-3" aria-labelledby="track-{{ result.track.pk }}">
+        <header class="tc-results-track-header">
+          <div>
+            <p class="tc-results-eyebrow">Final standings</p>
+            <h2 id="track-{{ result.track.pk }}">{{ result.track.name }}</h2>
+          </div>
+          <span class="tc-chip">{{ result.entries|length }} entr{{ result.entries|length|pluralize:'y,ies' }}</span>
+        </header>
+        <ol class="tc-results-list">
+          {% for row in result.entries %}
+            <li class="tc-results-rank{% if row.display_rank == 1 %} is-winner{% elif row.display_rank == 2 %} is-runner-up{% elif row.display_rank == 3 %} is-third{% endif %}">
+              <span class="tc-results-rank-number" aria-label="Place {{ row.display_rank }}">{{ row.display_rank }}</span>
+              <div class="tc-results-entry">
+                <div class="tc-results-entry-heading">
+                  <span class="tc-results-rank-name">{{ row.entry.name }}</span>
+                  <span class="tc-results-badges">
+                    {% if row.display_rank == 1 %}<span class="tc-results-badge is-winner-badge">Winner</span>{% endif %}
+                    {% if row.tie_break %}<span class="tc-results-badge is-tie-badge">Head judge tie-break</span>{% endif %}
+                  </span>
+                </div>
+                <progress class="tc-results-meter" value="{{ row.score }}" max="100"
+                          aria-label="Score for {{ row.entry.name }}"></progress>
+                <details class="tc-results-breakdown">
+                  <summary>Score details</summary>
+                  <ul>
+                    {% if judge_weight %}<li>Judge score: {{ row.judge_score|floatformat:2 }} · {{ row.judge_count }} judge{{ row.judge_count|pluralize }}</li>{% endif %}
+                    {% if audience_weight %}<li>Audience score: {{ row.audience_score|floatformat:2 }} · {{ row.audience_ballot_count }} ballot{{ row.audience_ballot_count|pluralize }}</li>{% endif %}
+                    {% for item in row.score_breakdown %}<li>{{ item.criterion }} ({{ item.weight }}%): {{ item.mean }} · {{ item.judge_count }} judge{{ item.judge_count|pluralize }}</li>{% endfor %}
+                  </ul>
+                </details>
+              </div>
+              <span class="tc-results-score">{{ row.score|floatformat:2 }}<small>{% if audience_weight %}Final score / 100{% else %}Score / 100{% endif %}</small></span>
+            </li>
+          {% endfor %}
+        </ol>
+      </section>
+    {% endfor %}
   </div>
 </main>
 {% endblock %}

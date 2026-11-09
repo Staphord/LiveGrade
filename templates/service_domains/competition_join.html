@@ -10,7 +10,7 @@
   {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
   <form method="post" novalidate>
     {% csrf_token %}
-    {{ form.as_p }}
+    {% include 'partials/_form_fields.html' with form=form %}
     <button class="btn btn-primary btn-lg w-100" type="submit">Continue</button>
   </form>
   <p class="small text-muted mt-3 mb-0">The next screen shows the event and track before you submit a ballot. A code may stop working when the round closes.</p>

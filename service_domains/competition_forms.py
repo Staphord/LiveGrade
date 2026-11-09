@@ -1,12 +1,15 @@
 """Organizer forms for Competition draft setup."""
 
-from django import forms
 from decimal import Decimal
+from pathlib import Path
+
+from django import forms
 
 from .models import Competition, CompetitionCriterion, CompetitionEntry, CompetitionTrack
+from .form_mixins import StyledFormMixin, apply_form_field_styles
 
 
-class CompetitionForm(forms.ModelForm):
+class CompetitionForm(StyledFormMixin, forms.ModelForm):
     audience_weight = forms.DecimalField(
         min_value=0, max_value=100, max_digits=5, decimal_places=2,
         required=False, initial=0,
@@ -40,13 +43,13 @@ class CompetitionForm(forms.ModelForm):
         return cleaned
 
 
-class CompetitionTrackForm(forms.ModelForm):
+class CompetitionTrackForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = CompetitionTrack
         fields = ('name', 'advancement_rule', 'advancement_value')
 
 
-class CompetitionCriterionForm(forms.ModelForm):
+class CompetitionCriterionForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = CompetitionCriterion
         fields = ('track', 'name', 'description', 'weight', 'order')
@@ -58,7 +61,7 @@ class CompetitionCriterionForm(forms.ModelForm):
         self.fields['weight'].help_text = 'Percent of this track’s judge score; criteria must total 100%.'
 
 
-class CompetitionEntryForm(forms.ModelForm):
+class CompetitionEntryForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = CompetitionEntry
         fields = ('track', 'name', 'reference', 'order')
@@ -69,11 +72,11 @@ class CompetitionEntryForm(forms.ModelForm):
             .owned_by(user).filter(competition=competition))
 
 
-class CompetitionFirstRoundForm(forms.Form):
+class CompetitionFirstRoundForm(StyledFormMixin, forms.Form):
     name = forms.CharField(max_length=100, strip=True, label='Round name')
 
 
-class CompetitionAudienceJoinForm(forms.Form):
+class CompetitionAudienceJoinForm(StyledFormMixin, forms.Form):
     code = forms.CharField(max_length=9, min_length=8, strip=True,
         label='Audience join code',
         help_text='Enter the eight-character code shown by the event organizer.',
@@ -88,7 +91,7 @@ class CompetitionAudienceJoinForm(forms.Form):
         return code
 
 
-class CompetitionJudgeInvitationForm(forms.Form):
+class CompetitionJudgeInvitationForm(StyledFormMixin, forms.Form):
     track = forms.ModelChoiceField(queryset=CompetitionTrack.objects.none(), label='Track')
     email = forms.EmailField(max_length=254, label='Judge email address')
     expires_at = forms.DateTimeField(
@@ -100,7 +103,7 @@ class CompetitionJudgeInvitationForm(forms.Form):
             .owned_by(user).filter(competition=competition).order_by('pk'))
 
 
-class CompetitionJudgeScorecardForm(forms.Form):
+class CompetitionJudgeScorecardForm(StyledFormMixin, forms.Form):
     def __init__(self, *args, entries, criteria=(), **kwargs):
         super().__init__(*args, **kwargs)
         self.entries = list(entries)
@@ -126,6 +129,7 @@ class CompetitionJudgeScorecardForm(forms.Form):
                     help_text=(f"Score from 0 to 100. Criterion weight: {criterion.weight}%."
                         if criterion else 'Score from 0 to 100.'))
                 row.score_fields.append({'criterion': criterion, 'field': self[field_name]})
+        apply_form_field_styles(self.fields)
 
     def clean(self):
         cleaned = super().clean()
@@ -163,7 +167,7 @@ class CompetitionJudgeScorecardForm(forms.Form):
         return payload
 
 
-class CompetitionAdvanceRoundForm(forms.Form):
+class CompetitionAdvanceRoundForm(StyledFormMixin, forms.Form):
     name = forms.CharField(max_length=100, strip=True, label='Next round name')
 
     def __init__(self, *args, tie_requirements=None, **kwargs):
@@ -186,6 +190,7 @@ class CompetitionAdvanceRoundForm(forms.Form):
                 label=f'Reason for the {requirement["track"]} head-judge decision',
                 widget=forms.Textarea(attrs={'rows': 2}),
             )
+        apply_form_field_styles(self.fields)
 
     def clean(self):
         cleaned = super().clean()
@@ -236,7 +241,7 @@ def competition_head_judge_requirements(tracks, round_entries):
     return requirements
 
 
-class CompetitionFinalTieForm(forms.Form):
+class CompetitionFinalTieForm(StyledFormMixin, forms.Form):
     """Collect every tied entry's head-judge order and the reasons."""
 
     def __init__(self, *args, tie_groups=(), **kwargs):
@@ -252,6 +257,7 @@ class CompetitionFinalTieForm(forms.Form):
             self.fields[f'{prefix}_reason'] = forms.CharField(max_length=500,
                 label='Reason for the head-judge order',
                 widget=forms.Textarea(attrs={'rows': 2, 'autocomplete': 'off'}))
+        apply_form_field_styles(self.fields)
 
     @staticmethod
     def prefix_for(group):
@@ -303,3 +309,19 @@ class CompetitionFinalTieForm(forms.Form):
                 'reason_field': self[f'{prefix}_reason'],
             })
         return display
+
+
+class CompetitionEntryImportForm(StyledFormMixin, forms.Form):
+    file = forms.FileField(label='Entry spreadsheet (.xlsx)')
+
+    def clean_file(self):
+        uploaded = self.cleaned_data['file']
+        if Path(uploaded.name).suffix.lower() != '.xlsx':
+            raise forms.ValidationError('Choose an Excel .xlsx file.')
+        if uploaded.size > 10 * 1024 * 1024:
+            raise forms.ValidationError('The spreadsheet must be no larger than 10 MB.')
+        return uploaded
+
+
+class CompetitionEntryImportApplyForm(StyledFormMixin, forms.Form):
+    preview_token = forms.CharField(widget=forms.HiddenInput)

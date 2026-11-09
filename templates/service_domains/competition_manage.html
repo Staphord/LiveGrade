@@ -4,15 +4,17 @@
 {% block content %}
 {% include 'service_domains/_workspace_styles.html' %}
 {% include 'service_domains/_team_competition_styles.html' %}
+{% include 'service_domains/_panel_ui_styles.html' %}
 <div class="container-fluid py-4 service-workspace tc-workspace">
   <p><a href="{% url 'competition_list' %}">← Competitions</a></p>
-  <header class="tc-hero">
+  <header class="tc-hero" id="competition-overview">
     <div><h1>{{ competition.name }}</h1>
       <p>{% if competition.status == 'draft' %}Prepare tracks, entries and rounds before starting.{% elif competition.status == 'active' %}Manage judges, audience voting and round progress.{% elif competition.status == 'complete' %}Review final results and resolve any ties before revealing them.{% else %}Manage the public leaderboard for this completed event.{% endif %}</p>
       <div class="tc-context"><span class="tc-chip"><strong>{{ track_count }}</strong> tracks</span><span class="tc-chip"><strong>{{ entry_count }}</strong> entries</span><span class="tc-chip"><strong>{{ round_count }}</strong> rounds</span><span class="tc-chip">Audience {{ competition.effective_audience_weight }}% · Judges {{ competition.judge_weight }}%</span></div>
     </div>
     <span class="tc-status {% if competition.status == 'active' %}is-active{% elif competition.status == 'complete' %}is-warn{% elif competition.status == 'revealed' %}is-success{% endif %}">{{ competition.get_status_display }}</span>
   </header>
+  {% if messages %}<div aria-live="polite">{% for message in messages %}<p class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'warning' %}alert-warning{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %}">{{ message }}</p>{% endfor %}</div>{% endif %}
   {% if competition.status == 'complete' or competition.status == 'revealed' %}<p><a class="btn btn-outline-primary" href="{% url 'competition_results_export' competition.pk %}">Download results CSV</a></p>{% endif %}
   {% if action_error %}<div class="alert alert-danger" role="alert">{{ action_error }}</div>{% endif %}
   <p class="small text-muted">Organizer workspace · Public results stay hidden until you reveal them.</p>
@@ -24,11 +26,9 @@
     {% elif competition.status == 'complete' %}<p class="mb-0">Resolve any tied final scores with a reason. The public leaderboard appears only after you reveal it.</p>
     {% else %}<p class="mb-0">The leaderboard is {% if competition.public_leaderboard_enabled %}visible to the public{% else %}currently hidden{% endif %}. You can pause or enable its display below.</p>{% endif %}
   </section>
-  {% if competition.status == 'draft' %}<ol class="tc-step-nav" aria-label="Competition setup steps">
-    <li><a href="#tracks-section"><span class="tc-step-number">1</span>Tracks · {{ track_count }}</a></li>
-    {% if tracks and not rounds %}<li><a href="#criteria-section"><span class="tc-step-number">2</span>Judging rules</a></li><li><a href="#entries-section"><span class="tc-step-number">3</span>Entries · {{ entry_count }}</a></li>{% endif %}
-    {% if tracks and not rounds %}<li><a href="#first-round-section"><span class="tc-step-number">4</span>Create first round</a></li>{% elif rounds %}<li><a href="#rounds-section"><span class="tc-step-number">2</span>Rounds · {{ round_count }}</a></li><li><a href="#start-section"><span class="tc-step-number">3</span>Review and start</a></li>{% endif %}
-  </ol>{% endif %}
+  {% if competition.status == 'draft' %}<nav aria-label="Competition setup progress" class="mb-4"><ol class="tc-step-nav">
+    {% for step in setup_steps %}<li><a href="{{ step.href }}"{% if step.complete %} aria-label="{{ step.label }}, complete"{% endif %}><span class="tc-step-number">{{ forloop.counter }}</span>{{ step.label }}{% if step.complete %} · ✓{% endif %}</a></li>{% endfor %}
+  </ol></nav>{% endif %}
   {% if competition.status == 'active' and can_advance_round %}<section class="tc-panel mb-3" aria-labelledby="complete-heading">
     <h2 id="complete-heading" class="h4">Finish the event</h2>
     <p>All required results are ready. Completing freezes the final scores so you can review and publish them.</p>
@@ -41,8 +41,8 @@
         {% for section in final_tie_sections %}<fieldset class="border rounded p-3 mb-3">
           <legend class="h5">{{ section.track.name }} · score {{ section.score }}</legend>
           <p>Tied entries: {% for entry in section.entries %}{% if not forloop.first %}, {% endif %}{{ entry.entry.name }}{% endfor %}</p>
-          {% for field in section.rank_fields %}<div class="mb-3">{{ field.label_tag }}{{ field }}{% if field.errors %}<div class="text-danger" role="alert">{{ field.errors }}</div>{% endif %}</div>{% endfor %}
-          <div>{{ section.reason_field.label_tag }}{{ section.reason_field }}{% if section.reason_field.errors %}<div class="text-danger" role="alert">{{ section.reason_field.errors }}</div>{% endif %}</div>
+          {% for field in section.rank_fields %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>{{ field }}{% for error in field.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}</div>{% endfor %}
+          <div class="mb-3"><label class="form-label" for="{{ section.reason_field.id_for_label }}">{{ section.reason_field.label }}{% if section.reason_field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>{{ section.reason_field }}{% for error in section.reason_field.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}</div>
         </fieldset>{% endfor %}
         {% if final_tie_form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ final_tie_form.non_field_errors }}</div>{% endif %}
         <button class="btn btn-secondary" type="submit">Record head-judge order</button>
@@ -66,46 +66,276 @@
       {% endif %}
     </section>
   {% endif %}
-  {% if competition.status == 'draft' %}<details class="tc-disclosure mb-3" id="tracks-section" {% if not tracks or track_form.errors %}open{% endif %}><summary>Tracks and advancement · {{ track_count }}</summary><div class="tc-disclosure-body">
-  <section class="tc-panel" aria-labelledby="tracks-heading">
-    <h2 id="tracks-heading" class="h4">Tracks and advancement</h2>
-    {% if tracks %}<ul class="list-group mb-3">
-      {% for track in tracks %}<li class="list-group-item">
-        <h3 class="h5">{{ track.name }}</h3>
-        <p>Advancement: {{ track.get_advancement_rule_display }} · {{ track.advancement_value }}</p>
-        {% if track.organizer_entries %}<ol>{% for entry in track.organizer_entries %}<li>{{ entry.name }}{% if entry.reference %} · {{ entry.reference }}{% endif %}</li>{% endfor %}</ol>{% else %}<p>No entries in this track.</p>{% endif %}
-        <h4 class="h6">Judging criteria</h4>
-        {% if track.organizer_criteria %}<ul>{% for criterion in track.organizer_criteria %}<li>{{ criterion.name }} · {{ criterion.weight }}%{% if criterion.description %} - {{ criterion.description }}{% endif %}
-          {% if competition.status == 'draft' and not rounds %}<details class="tc-disclosure d-inline-block ms-2"><summary class="btn btn-sm btn-outline-danger">Remove</summary><form method="post" class="p-2">{% csrf_token %}<input type="hidden" name="action" value="delete_criterion"><input type="hidden" name="criterion_id" value="{{ criterion.pk }}"><p>Remove this judging criterion?</p><button class="btn btn-sm btn-danger" type="submit">Confirm remove</button></form></details>{% endif %}
-        </li>{% endfor %}</ul>
-        {% else %}<p>No custom criteria. Starting the event will add one overall-score criterion at 100%.</p>{% endif %}
-      </li>{% endfor %}
-    </ul>{% else %}<p>Add a track to begin building this competition.</p>{% endif %}
-    {% if competition.status == 'draft' and not rounds %}<form method="post" class="border-top pt-3">
-      {% csrf_token %}<input type="hidden" name="action" value="track">
-      <h3 class="h5">Add track</h3>{{ track_form.as_p }}
-      <button class="btn btn-secondary" type="submit">Add track</button>
-    </form>{% endif %}
-  </section></div></details>
-  {% elif tracks %}<section class="tc-panel mb-3" id="tracks-section" aria-labelledby="tracks-heading"><h2 id="tracks-heading" class="h4">Tracks</h2>{% for track in tracks %}<span class="tc-chip">{{ track.name }}</span>{% endfor %}</section>{% endif %}
-  {% if competition.status == 'draft' and not rounds and tracks %}<details class="tc-disclosure mb-3" id="criteria-section" {% if criterion_form.errors %}open{% endif %}><summary>Judging criteria · {{ criterion_count }}</summary><div class="tc-disclosure-body"><section class="tc-panel" aria-labelledby="criteria-heading">
-    <h2 id="criteria-heading" class="h4">Set up judge scorecards</h2>
-    <p>Add the dimensions judges should score for each track. Weights for each track must total 100%. If you skip this, judges receive one overall 0–100 score field.</p>
-    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="criterion">
-      {{ criterion_form.as_p }}<button class="btn btn-secondary" type="submit">Add judging criterion</button>
-    </form>
-  </section></div></details>{% endif %}
-  {% if rounds %}<details class="tc-disclosure mt-3 mb-3" id="rounds-section"><summary>Rounds · {{ round_count }}</summary><div class="tc-disclosure-body"><section class="tc-panel" aria-labelledby="rounds-heading">
-    <h2 id="rounds-heading" class="h4">Rounds</h2>
-    <ol>{% for round in rounds %}<li>{{ round.name }} · Round {{ round.order }}</li>{% endfor %}</ol>
-    {% if competition.status == 'draft' %}<p>This round has not been opened yet.</p>
-    {% else %}<p>Audience ballots and invited judge scorecards are available for the active round.</p>{% endif %}
-  </section></div></details>{% endif %}
-  {% if competition.status == 'draft' and rounds %}<section class="tc-panel mt-3" id="start-section" aria-labelledby="start-heading">
-    <h2 id="start-heading" class="h4">Start competition</h2>
-    <p>Starting opens the configured scoring paths for the initial round{% if competition.effective_audience_weight == 100 %}: audience ballots only.{% elif competition.effective_audience_weight == 0 %}: judge scorecards, with audience-choice voting available separately.{% else %}: judge scorecards and weighted audience ballots.{% endif %}</p>
-    <details class="tc-disclosure"><summary>Start competition</summary><div class="tc-disclosure-body"><p class="mt-2">This opens scoring for the first round and locks the competition’s scoring rules.</p><form method="post">{% csrf_token %}<input type="hidden" name="action" value="start"><button class="btn btn-primary" type="submit">Confirm and start</button></form></div></details>
-  </section>{% endif %}
+
+  {% if competition.status == 'draft' %}
+  <div class="panel-step-layout mt-3" data-panel-steps data-initial-step="{{ active_step|default:'details' }}">
+    <ol class="panel-step-nav" aria-label="Setup steps">
+      {% for step in setup_steps %}
+      <li>
+        <button type="button" class="panel-step-btn{% if forloop.first %} is-active{% endif %}{% if step.complete %} is-done{% endif %}" data-panel-step="{{ step.key }}">
+          <span class="panel-step-num">{% if step.complete %}<i class="bi bi-check-lg" aria-hidden="true"></i>{% else %}{{ forloop.counter }}{% endif %}</span>
+          <span>
+            <span class="panel-step-title">{{ step.label }}</span>
+            <span class="panel-step-meta">{% if step.complete %}Complete{% else %}In progress{% endif %}</span>
+          </span>
+        </button>
+      </li>
+      {% endfor %}
+    </ol>
+
+    <div data-panel-panel="details">
+      <section class="tc-panel mb-3" id="competition-details-section" aria-labelledby="competition-details-heading">
+        <header>
+          <div>
+            <h2 id="competition-details-heading" class="h4">1. Competition details</h2>
+            <p>Configure the competition name, audience weighting, and minimum scorecard coverage.</p>
+          </div>
+          <span class="tc-status is-success">Draft</span>
+        </header>
+        {% if request.GET.saved == '1' %}
+        <div class="alert alert-success d-flex align-items-center gap-2 mb-3" role="status">
+          <i class="bi bi-check-circle-fill" aria-hidden="true"></i>
+          <span>Competition details saved successfully.</span>
+        </div>
+        {% endif %}
+        {% if not rounds %}
+        <form method="post" class="service-flow-form" data-panel-form data-panel-details-form novalidate>
+          {% csrf_token %}
+          <input type="hidden" name="action" value="update_competition">
+          <input type="hidden" name="setup_step" value="details">
+          {% include 'partials/_form_fields.html' with form=details_form %}
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3 pt-3 border-top">
+            <button class="btn btn-outline-primary" type="submit">Save details</button>
+            <button class="btn btn-primary" type="submit" name="advance" value="1">Next: Tracks and categories <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button>
+          </div>
+        </form>
+        {% else %}
+        <p class="mb-0 text-muted">Competition details are locked after the initial round is created.</p>
+        <div class="d-flex justify-content-end mt-3 pt-3 border-top">
+          <button type="button" class="btn btn-primary" data-panel-next="tracks">Next: Tracks and categories <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button>
+        </div>
+        {% endif %}
+      </section>
+    </div>
+
+    <div data-panel-panel="tracks" hidden>
+      <details class="tc-disclosure mb-3" id="tracks-section" open><summary>Tracks and advancement · {{ track_count }}</summary><div class="tc-disclosure-body">
+      <section class="tc-panel" aria-labelledby="tracks-heading">
+        <h2 id="tracks-heading" class="h4">Tracks and advancement</h2>
+        {% if tracks %}<ul class="list-group mb-3">
+          {% for track in tracks %}<li class="list-group-item">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+              <div>
+                <h3 class="h5 mb-1">{{ track.name }}</h3>
+                <p class="mb-2">Advancement: {{ track.get_advancement_rule_display }} · {{ track.advancement_value }}</p>
+              </div>
+              {% if competition.status == 'draft' and not rounds %}
+              <form method="post" class="d-inline" data-panel-form>
+                {% csrf_token %}
+                <input type="hidden" name="action" value="remove_track">
+                <input type="hidden" name="setup_step" value="tracks">
+                <input type="hidden" name="track_id" value="{{ track.pk }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="Remove this track and its entries?">Remove track</button>
+              </form>
+              {% endif %}
+            </div>
+            {% if track.organizer_entries %}<ol>{% for entry in track.organizer_entries %}<li>{{ entry.name }}{% if entry.reference %} · {{ entry.reference }}{% endif %}</li>{% endfor %}</ol>{% else %}<p>No entries in this track.</p>{% endif %}
+            <h4 class="h6">Judging criteria</h4>
+            {% if track.organizer_criteria %}<ul>{% for criterion in track.organizer_criteria %}<li>{{ criterion.name }} · {{ criterion.weight }}%{% if criterion.description %} - {{ criterion.description }}{% endif %}
+              {% if competition.status == 'draft' and not rounds %}<details class="tc-disclosure d-inline-block ms-2"><summary class="btn btn-sm btn-outline-danger">Remove</summary><form method="post" class="p-2" data-panel-form>{% csrf_token %}<input type="hidden" name="action" value="delete_criterion"><input type="hidden" name="setup_step" value="criteria"><input type="hidden" name="criterion_id" value="{{ criterion.pk }}"><p>Remove this judging criterion?</p><button class="btn btn-sm btn-danger" type="submit" data-confirm="Remove this judging criterion?">Confirm remove</button></form></details>{% endif %}
+            </li>{% endfor %}</ul>
+            {% else %}<p>No custom criteria. Starting the event will add one overall-score criterion at 100%.</p>{% endif %}
+          </li>{% endfor %}
+        </ul>{% else %}<p>Add a track to begin building this competition.</p>{% endif %}
+        {% if competition.status == 'draft' and not rounds %}<form method="post" class="border-top pt-3" data-panel-form novalidate>
+          {% csrf_token %}<input type="hidden" name="action" value="track"><input type="hidden" name="setup_step" value="tracks">
+          <h3 class="h5">Add track</h3>{% include 'partials/_form_fields.html' with form=track_form %}
+          <button class="btn btn-secondary" type="submit">Add track</button>
+        </form>{% endif %}
+        <div class="d-flex justify-content-end mt-3 pt-3 border-top">
+          <button type="button" class="btn btn-primary" data-panel-next="entries">Next: Entries <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button>
+        </div>
+      </section></div></details>
+    </div>
+
+    <div data-panel-panel="entries" hidden>
+      {% if not rounds %}
+      <details class="tc-disclosure mt-3 mb-3" id="entries-section" open><summary>Entries · {{ entry_count }}</summary><div class="tc-disclosure-body"><section class="tc-panel" aria-labelledby="entries-heading">
+        <h2 id="entries-heading" class="h4">Entries</h2>
+        {% if tracks %}
+          {% for track in tracks %}
+            {% if track.organizer_entries %}
+            <div class="mb-3">
+              <h3 class="h6">{{ track.name }}</h3>
+              <ul class="list-group">
+                {% for entry in track.organizer_entries %}
+                <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
+                  <span><strong>{{ entry.name }}</strong>{% if entry.reference %} · <code>{{ entry.reference }}</code>{% endif %}</span>
+                  <form method="post" class="d-inline" data-panel-form>
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="remove_entry">
+                    <input type="hidden" name="setup_step" value="entries">
+                    <input type="hidden" name="entry_id" value="{{ entry.pk }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="Remove this entry from the track?">Remove</button>
+                  </form>
+                </li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+
+        <div class="border rounded p-3 mb-3 bg-light-subtle">
+          <h3 class="h6 mb-1">Import entries from spreadsheet (.xlsx)</h3>
+          <p class="small text-muted mb-2">Upload a spreadsheet with <code>Track</code>, <code>Entry</code>, and optional <code>Reference</code> columns to preview and import entries in bulk.</p>
+          <form method="post" action="{% url 'competition_entry_import' competition.pk %}?embedded=1" enctype="multipart/form-data" data-panel-form data-panel-import-form novalidate>
+            {% csrf_token %}
+            <input type="hidden" name="setup_step" value="entries">
+            {% include 'assessments/_partials/import_dropzone.html' with file_field=entry_import_form.file dropzone_id='competition-entry-dropzone' filename_id='competition-entry-filename' file_required=True %}
+            {% include 'partials/_inline_message.html' with message_id='competition-entry-import-error' tone='warning' %}
+            <div class="d-flex flex-wrap gap-2 mt-2">
+              <button class="btn btn-outline-primary btn-sm" type="submit">Upload &amp; preview</button>
+              <a class="btn btn-outline-secondary btn-sm" href="{% url 'competition_entry_import_sample' competition.pk %}">Download sample file</a>
+            </div>
+          </form>
+
+          {% if entry_import_plan %}
+          <div class="card border-primary mt-3" id="entry-inline-preview">
+            <div class="card-header bg-primary-subtle d-flex flex-wrap justify-content-between align-items-center gap-2">
+              <div>
+                <strong>Import preview:</strong> {{ entry_import_plan.entries_to_create }} entr{{ entry_import_plan.entries_to_create|pluralize:"y,ies" }} ready
+              </div>
+              <span class="badge {% if entry_import_plan.ok %}text-bg-success{% else %}text-bg-danger{% endif %}">{% if entry_import_plan.ok %}Ready to import{% else %}Needs attention{% endif %}</span>
+            </div>
+            <div class="card-body">
+              {% if entry_import_plan.errors %}
+              <div class="alert alert-danger py-2 mb-3" role="alert">
+                <strong class="d-block mb-1">Fix these spreadsheet issues before importing:</strong>
+                <ul class="mb-0 ps-3 small">
+                  {% for row_num, message in entry_import_plan.errors %}
+                  <li>{% if row_num %}Row {{ row_num }}: {% endif %}{{ message }}</li>
+                  {% endfor %}
+                </ul>
+              </div>
+              {% endif %}
+              {% if entry_import_plan.rows %}
+              <div class="table-responsive mb-3">
+                <table class="table table-sm align-middle mb-0">
+                  <thead><tr><th>Row</th><th>Track</th><th>Entry</th><th>Reference</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {% for row in entry_import_plan.rows %}
+                    <tr>
+                      <td>{{ row.row }}</td>
+                      <td>{{ row.track|default:'—' }}</td>
+                      <td>{{ row.name|default:'—' }}</td>
+                      <td><code>{{ row.reference|default:'—' }}</code></td>
+                      <td>
+                        {% if row.errors %}
+                          <span class="text-danger small">{{ row.errors|join:'; ' }}</span>
+                        {% else %}
+                          <span class="badge text-bg-success">Ready</span>
+                        {% endif %}
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              {% endif %}
+              <div class="d-flex flex-wrap gap-2">
+                <form method="post" action="{% url 'competition_entry_import' competition.pk %}?embedded=1" data-panel-form>
+                  {% csrf_token %}
+                  <input type="hidden" name="setup_step" value="entries">
+                  <input type="hidden" name="action" value="apply">
+                  <input type="hidden" name="preview_token" value="{{ entry_import_token }}">
+                  <button class="btn btn-primary btn-sm" type="submit" {% if not entry_import_plan.ok %}disabled{% endif %}>Import {{ entry_import_plan.entries_to_create }} entr{{ entry_import_plan.entries_to_create|pluralize:"y,ies" }}</button>
+                </form>
+                <form method="post" action="{% url 'competition_entry_import' competition.pk %}?embedded=1" data-panel-form>
+                  {% csrf_token %}
+                  <input type="hidden" name="setup_step" value="entries">
+                  <input type="hidden" name="action" value="cancel">
+                  <button class="btn btn-outline-secondary btn-sm" type="submit">Cancel preview</button>
+                </form>
+              </div>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+
+        {% if tracks %}<form method="post" data-panel-form novalidate>{% csrf_token %}<input type="hidden" name="action" value="entry"><input type="hidden" name="setup_step" value="entries">
+          <h3 class="h5">Add an entry</h3>
+          {% include 'partials/_form_fields.html' with form=entry_form %}<button class="btn btn-secondary" type="submit">Add entry</button>
+        </form>{% else %}<p>Add a track before adding entries.</p>{% endif %}
+        <div class="d-flex justify-content-end mt-3 pt-3 border-top">
+          <button type="button" class="btn btn-primary" data-panel-next="criteria">Next: Scoring criteria and judges <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button>
+        </div>
+      </section></div></details>
+      {% else %}
+      <section class="tc-panel mb-3" id="entries-section" aria-labelledby="entries-locked-heading">
+        <h2 id="entries-locked-heading" class="h4">Entries</h2>
+        <p class="mb-0 text-muted">Entry setup is locked after the initial round is created.</p>
+      </section>
+      {% endif %}
+    </div>
+
+    <div data-panel-panel="criteria" hidden>
+      {% if not rounds and tracks %}<details class="tc-disclosure mb-3" id="criteria-section" open><summary>Judging criteria · {{ criterion_count }}</summary><div class="tc-disclosure-body"><section class="tc-panel" aria-labelledby="criteria-heading">
+        <h2 id="criteria-heading" class="h4">Set up judge scorecards</h2>
+        <p>Add the dimensions judges should score for each track. Weights for each track must total 100%. If you skip this, judges receive one overall 0–100 score field.</p>
+        <form method="post" data-panel-form novalidate>{% csrf_token %}<input type="hidden" name="action" value="criterion"><input type="hidden" name="setup_step" value="criteria">
+          {% include 'partials/_form_fields.html' with form=criterion_form %}<button class="btn btn-secondary" type="submit">Add judging criterion</button>
+        </form>
+        <div class="d-flex justify-content-end mt-3 pt-3 border-top">
+          <button type="button" class="btn btn-primary" data-panel-next="launch">Next: Launch round <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button>
+        </div>
+      </section></div></details>
+      {% else %}
+      <section class="tc-panel mb-3" id="criteria-section" aria-labelledby="criteria-heading">
+        <h2 id="criteria-heading" class="h4">Set up judge scorecards</h2>
+        {% if not tracks %}<p>Add a track before configuring judging criteria.</p>{% else %}<p>Scoring criteria are locked after the initial round is created.</p>{% endif %}
+        <div class="d-flex justify-content-end mt-3 pt-3 border-top">
+          <button type="button" class="btn btn-primary" data-panel-next="launch">Next: Launch round <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button>
+        </div>
+      </section>
+      {% endif %}
+    </div>
+
+    <div data-panel-panel="launch" hidden>
+      {% if rounds %}<details class="tc-disclosure mt-3 mb-3" id="rounds-section" open><summary>Rounds · {{ round_count }}</summary><div class="tc-disclosure-body"><section class="tc-panel" aria-labelledby="rounds-heading">
+        <h2 id="rounds-heading" class="h4">Rounds</h2>
+        <ol>{% for round in rounds %}<li>{{ round.name }} · Round {{ round.order }}</li>{% endfor %}</ol>
+        <p>This round has not been opened yet.</p>
+      </section></div></details>{% endif %}
+      {% if not rounds and tracks %}<details class="tc-disclosure mt-3 mb-3" id="first-round-section" open><summary>Create the first round</summary><div class="tc-disclosure-body"><section class="tc-panel" aria-labelledby="first-round-heading">
+        <h2 id="first-round-heading" class="h4">Create the initial round</h2>
+        <p>This copies every configured entry into round one. You can review the private setup before scoring workflows are enabled.</p>
+        <form method="post" data-panel-form novalidate>{% csrf_token %}<input type="hidden" name="action" value="first_round"><input type="hidden" name="setup_step" value="launch">
+          {% include 'partials/_form_fields.html' with form=first_round_form %}<button class="btn btn-primary" type="submit">Create initial round</button>
+        </form>
+      </section></div></details>
+      {% elif not rounds %}
+      <section class="tc-panel mt-3 mb-3" id="first-round-section" aria-labelledby="first-round-heading">
+        <h2 id="first-round-heading" class="h4">Create the initial round</h2>
+        <p class="mb-0">Add at least one track and entry before creating the initial round.</p>
+      </section>
+      {% endif %}
+      {% if rounds %}<section class="tc-panel mt-3" id="start-section" aria-labelledby="start-heading">
+        <h2 id="start-heading" class="h4">Start competition</h2>
+        <p>Starting opens the configured scoring paths for the initial round{% if competition.effective_audience_weight == 100 %}: audience ballots only.{% elif competition.effective_audience_weight == 0 %}: judge scorecards, with audience-choice voting available separately.{% else %}: judge scorecards and weighted audience ballots.{% endif %}</p>
+        <details class="tc-disclosure" open><summary>Start competition</summary><div class="tc-disclosure-body"><p class="mt-2">This opens scoring for the first round and locks the competition’s scoring rules.</p><form method="post" data-panel-form>{% csrf_token %}<input type="hidden" name="action" value="start"><input type="hidden" name="setup_step" value="launch"><button class="btn btn-primary" type="submit">Confirm and start</button></form></div></details>
+      </section>{% endif %}
+    </div>
+  </div>
+  {% elif tracks %}
+    <section class="tc-panel mb-3" id="tracks-section" aria-labelledby="tracks-heading"><h2 id="tracks-heading" class="h4">Tracks</h2>{% for track in tracks %}<span class="tc-chip">{{ track.name }}</span>{% endfor %}</section>
+    {% if rounds %}<details class="tc-disclosure mt-3 mb-3" id="rounds-section"><summary>Rounds · {{ round_count }}</summary><div class="tc-disclosure-body"><section class="tc-panel" aria-labelledby="rounds-heading">
+      <h2 id="rounds-heading" class="h4">Rounds</h2>
+      <ol>{% for round in rounds %}<li>{{ round.name }} · Round {{ round.order }}</li>{% endfor %}</ol>
+      <p>Audience ballots and invited judge scorecards are available for the active round.</p>
+    </section></div></details>{% endif %}
+  {% endif %}
+
   {% if competition.status == 'active' and latest_round %}<section class="tc-panel mt-3" aria-labelledby="audience-links-heading">
     <h2 id="audience-links-heading" class="h4">Audience ballot links · {{ latest_round.name }}</h2>
     {% if audience_weighted_round %}<p>Audience votes count after you close voting. Each ballot ranks every entry; higher-ranked entries earn more points. The average is combined with judge scores using the percentages above.</p>
@@ -143,7 +373,7 @@
     <h2 id="advancement-heading" class="h4">Advance {{ latest_round.name }}</h2>
     {% if latest_round.advancement_locked_at %}<p>This round has already advanced.</p>
     {% elif can_advance_round %}<p>Advancement uses the score rules above and each track’s configured places or score threshold. If entries tie at the cutoff, choose who advances and record a reason.</p>
-      <details class="tc-disclosure"><summary>Prepare the next round</summary><div class="tc-disclosure-body"><form method="post" class="service-flow-form mt-2">{% csrf_token %}<input type="hidden" name="action" value="advance_round">{{ advance_round_form.as_p }}<button class="btn btn-primary" type="submit">Create next round</button></form></div></details>
+      <details class="tc-disclosure"><summary>Prepare the next round</summary><div class="tc-disclosure-body"><form method="post" class="service-flow-form mt-2">{% csrf_token %}<input type="hidden" name="action" value="advance_round">{% include 'partials/_form_fields.html' with form=advance_round_form %}<button class="btn btn-primary" type="submit">Create next round</button></form></div></details>
     {% elif audience_weighted_round %}<p>Finalize judge means for every entry, collect at least one complete audience ranking for every track, then close voting and calculate the weighted scores before advancing.</p>
     {% else %}<p>Tally judge scores for every entry in every track before advancing.</p>{% endif %}
   </section>{% endif %}
@@ -154,7 +384,7 @@
     {% if tally_results %}<div class="alert alert-success" role="status">Judge means recorded for {{ tally_results|length }} entries. Counts are shown below.</div>{% endif %}
     {% if manual_invitation_url %}<p><a href="{{ manual_invitation_url }}">Copy the one-time judge link</a></p>{% endif %}
     <form method="post">{% csrf_token %}<input type="hidden" name="action" value="invite_judge">
-      {{ judge_form.as_p }}<button class="btn btn-secondary" type="submit">Send judge invitation</button>
+      {% include 'partials/_form_fields.html' with form=judge_form %}<button class="btn btn-secondary" type="submit">Send judge invitation</button>
     </form>
     {% for track in tracks %}<h3 class="h5 mt-4">{{ track.name }} judge score tally</h3>
       {% if track.audience_entries %}<div class="table-responsive"><table class="table">
@@ -176,24 +406,15 @@
         <li>{{ invitation.email }} · expires {{ invitation.expires_at }}{% if invitation.submitted_at %} · scorecard submitted{% elif invitation.revoked_at %} · revoked{% else %} · awaiting scorecard
           <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="revoke_judge">
             <input type="hidden" name="invitation_id" value="{{ invitation.pk }}">
-            <details class="tc-disclosure d-inline-block ms-2"><summary class="btn btn-sm btn-outline-danger">Revoke</summary><div class="p-2"><p>Revoking stops this invitation link from accepting a scorecard.</p><button class="btn btn-sm btn-danger" type="submit">Confirm revoke</button></div></details>
+            <details class="tc-disclosure d-inline-block ms-2"><summary class="btn btn-sm btn-outline-danger">Revoke</summary><div class="p-2"><p>Revoking stops this invitation link from accepting a scorecard.</p><button class="btn btn-sm btn-danger" type="submit" data-confirm="Revoke this judge invitation?">Confirm revoke</button></div></details>
           </form>{% endif %}</li>
       {% endfor %}</ul>{% else %}<p>No judges invited for this track.</p>{% endif %}
     {% endfor %}
   </section>{% endif %}
-  {% if competition.status == 'draft' and not rounds %}<details class="tc-disclosure mt-3 mb-3" id="entries-section" {% if entry_form.errors or tracks and not entry_count %}open{% endif %}><summary>Entries · {{ entry_count }}</summary><div class="tc-disclosure-body"><section class="tc-panel" aria-labelledby="entries-heading">
-    <h2 id="entries-heading" class="h4">Add an entry</h2>
-    {% if tracks %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="entry">
-      {{ entry_form.as_p }}<button class="btn btn-secondary" type="submit">Add entry</button>
-    </form>{% else %}<p>Add a track before adding entries.</p>{% endif %}
-  </section></div></details>{% endif %}
-  {% if competition.status == 'draft' and not rounds and tracks %}<details class="tc-disclosure mt-3 mb-3" id="first-round-section" {% if entry_count %}open{% endif %}><summary>Create the first round</summary><div class="tc-disclosure-body"><section class="tc-panel" aria-labelledby="first-round-heading">
-    <h2 id="first-round-heading" class="h4">Create the initial round</h2>
-    <p>This copies every configured entry into round one. You can review the private setup before scoring workflows are enabled.</p>
-    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="first_round">
-      {{ first_round_form.as_p }}<button class="btn btn-primary" type="submit">Create initial round</button>
-    </form>
-  </section></div></details>{% endif %}
+
+  {% if competition.status == 'draft' %}
+  {% include 'partials/_unsaved_changes.html' with form_selector='form[data-panel-details-form]' dialog_id='competition-unsaved-dialog' title_id='competition-unsaved-title' dialog_title='Leave setup?' dialog_body='You have unsaved changes in setup details. Save your changes before leaving, or discard them.' save_btn_text='Save details' step_selector='[data-panel-step]' %}
+  {% endif %}
 </div>
 <script nonce="{{ csp_nonce }}">
 document.addEventListener('click',function(event){
@@ -204,5 +425,68 @@ document.addEventListener('click',function(event){
   var disclosure=target.matches('details')?target:target.closest('details');
   if(disclosure)disclosure.open=true;
 });
+(function () {
+  const stepRoot = document.querySelector('[data-panel-steps]');
+  if (stepRoot) {
+    const buttons = Array.from(stepRoot.querySelectorAll('[data-panel-step]'));
+    const panels = Array.from(stepRoot.querySelectorAll('[data-panel-panel]'));
+    const validKeys = buttons.map((b) => b.dataset.panelStep);
+
+    function activateStep(key, updateUrl) {
+      if (!validKeys.includes(key)) key = validKeys[0];
+      buttons.forEach((btn) => {
+        btn.classList.toggle('is-active', btn.dataset.panelStep === key);
+      });
+      panels.forEach((panel) => {
+        panel.hidden = panel.dataset.panelPanel !== key;
+      });
+      if (updateUrl && window.history && window.history.replaceState) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('step', key);
+        url.searchParams.delete('saved');
+        window.history.replaceState({}, '', url.toString());
+      }
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialKey = urlParams.get('step') || stepRoot.dataset.initialStep || validKeys[0];
+    activateStep(initialKey, false);
+
+    buttons.forEach((btn) => {
+      btn.addEventListener('click', () => activateStep(btn.dataset.panelStep, true));
+    });
+    stepRoot.querySelectorAll('[data-panel-next]').forEach((nextBtn) => {
+      nextBtn.addEventListener('click', () => {
+        activateStep(nextBtn.dataset.panelNext, true);
+        stepRoot.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+  }
+
+  document.querySelectorAll('form[data-panel-import-form]').forEach((form) => {
+    const fileInput = form.querySelector('input[type="file"]');
+    const errorBox = form.querySelector('.inline-message');
+    const errorText = errorBox ? errorBox.querySelector('[data-inline-message-text]') : null;
+    if (fileInput && errorBox) {
+      fileInput.addEventListener('change', () => {
+        if (fileInput.files && fileInput.files.length > 0) {
+          errorBox.classList.add('d-none');
+        }
+      });
+    }
+    form.addEventListener('submit', (event) => {
+      if (fileInput && (!fileInput.files || fileInput.files.length === 0)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (errorBox && errorText) {
+          errorText.textContent = 'Please choose a spreadsheet file (.xlsx) first.';
+          errorBox.classList.remove('d-none');
+        }
+        const dropzone = form.querySelector('[data-import-dropzone]');
+        if (dropzone) dropzone.focus();
+      }
+    });
+  });
+})();
 </script>
 {% endblock %}

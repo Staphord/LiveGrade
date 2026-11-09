@@ -1686,3 +1686,382 @@ class CompetitionWorkspaceTests(TestCase):
         res = self.request('post', reverse('competition_audience_join'), {'code': 'ABCD2345'})
         self.assertEqual(res.status_code, 400)
         self.assertIn('That code is unavailable or voting has closed.', res.context['error'])
+
+    def test_competition_step_navigation_update_remove_and_setup_step_redirects(self):
+        sign_in(self.client, self.owner, self.org)
+        manage_url = reverse('competition_manage', args=(self.competition.pk,))
+
+        saved_res = self.request('post', manage_url, {
+            'action': 'update_competition',
+            'name': 'National Robotics Updated',
+            'audience_weight': '15',
+            'minimum_judges_per_entry': '1',
+            'minimum_audience_ballots': '0',
+            'branding_tagline': 'Engineering excellence',
+            'branding_accent': 'blue',
+        })
+        self.assertEqual(saved_res.status_code, 302)
+        self.assertEqual(saved_res['Location'], f'{manage_url}?step=details&saved=1')
+        details_page = self.request('get', f'{manage_url}?step=details&saved=1')
+        self.assertContains(details_page, 'Competition details saved.')
+        self.assertContains(details_page, 'id="competition-unsaved-dialog"')
+        self.assertContains(details_page, 'data-panel-details-form')
+
+        advance_res = self.request('post', manage_url, {
+            'action': 'update_competition',
+            'name': 'National Robotics Advanced',
+            'audience_weight': '15',
+            'minimum_judges_per_entry': '1',
+            'minimum_audience_ballots': '0',
+            'branding_tagline': 'Engineering excellence',
+            'branding_accent': 'blue',
+            'advance': '1',
+        })
+        self.assertEqual(advance_res.status_code, 302)
+        self.assertEqual(advance_res['Location'], f'{manage_url}?step=tracks')
+
+        bad_details = self.request('post', manage_url, {
+            'action': 'update_competition',
+            'name': '',
+            'audience_weight': '15',
+            'minimum_judges_per_entry': '1',
+            'minimum_audience_ballots': '0',
+            'branding_accent': 'blue',
+        })
+        self.assertEqual(bad_details.status_code, 400)
+        self.assertEqual(bad_details.context['active_step'], 'details')
+
+        with patch.object(Competition, 'full_clean', side_effect=[None, ValidationError('Model rejected details')]):
+            clean_fail = self.request('post', manage_url, {
+                'action': 'update_competition',
+                'name': 'Valid Name',
+                'audience_weight': '15',
+                'minimum_judges_per_entry': '1',
+                'minimum_audience_ballots': '0',
+                'branding_accent': 'blue',
+            })
+        self.assertEqual(clean_fail.status_code, 400)
+        self.assertContains(clean_fail, 'Model rejected details', status_code=400)
+
+        track_res = self.request('post', manage_url, {
+            'action': 'track',
+            'name': 'Senior Division',
+            'advancement_rule': 'top_n',
+            'advancement_value': '2',
+            'setup_step': 'tracks',
+        })
+        self.assertEqual(track_res.status_code, 302)
+        self.assertEqual(track_res['Location'], f'{manage_url}?step=tracks')
+        track = CompetitionTrack.objects.get(competition=self.competition, name='Senior Division')
+
+        entry_res = self.request('post', manage_url, {
+            'action': 'entry',
+            'track': track.pk,
+            'name': 'Autonomous Drone',
+            'reference': 'DR-1',
+            'order': '1',
+            'setup_step': 'entries',
+        })
+        self.assertEqual(entry_res.status_code, 302)
+        self.assertEqual(entry_res['Location'], f'{manage_url}?step=entries')
+        entry = CompetitionEntry.objects.get(track=track, name='Autonomous Drone')
+
+        crit_res = self.request('post', manage_url, {
+            'action': 'criterion',
+            'track': track.pk,
+            'name': 'Stability',
+            'description': 'Flight stability',
+            'weight': '100',
+            'order': '1',
+            'setup_step': 'criteria',
+        })
+        self.assertEqual(crit_res.status_code, 302)
+        self.assertEqual(crit_res['Location'], f'{manage_url}?step=criteria')
+        crit = CompetitionCriterion.objects.get(track=track, name='Stability')
+
+        del_crit_step = self.request('post', manage_url, {
+            'action': 'delete_criterion',
+            'criterion_id': str(crit.pk),
+            'setup_step': 'criteria',
+        })
+        self.assertEqual(del_crit_step.status_code, 302)
+        self.assertEqual(del_crit_step['Location'], f'{manage_url}?step=criteria')
+
+        rm_entry_step = self.request('post', manage_url, {
+            'action': 'remove_entry',
+            'entry_id': str(entry.pk),
+            'setup_step': 'entries',
+        })
+        self.assertEqual(rm_entry_step.status_code, 302)
+        self.assertEqual(rm_entry_step['Location'], f'{manage_url}?step=entries')
+        self.assertFalse(CompetitionEntry.objects.filter(pk=entry.pk).exists())
+
+        entry2 = CompetitionEntry.objects.create(
+            organization_id=self.org.id, created_by=self.owner, track=track, name='Entry 2'
+        )
+        rm_entry_nostep = self.request('post', manage_url, {
+            'action': 'remove_entry',
+            'entry_id': str(entry2.pk),
+        })
+        self.assertEqual(rm_entry_nostep.status_code, 302)
+        self.assertEqual(rm_entry_nostep['Location'], manage_url)
+
+        rm_track_step = self.request('post', manage_url, {
+            'action': 'remove_track',
+            'track_id': str(track.pk),
+            'setup_step': 'tracks',
+        })
+        self.assertEqual(rm_track_step.status_code, 302)
+        self.assertEqual(rm_track_step['Location'], f'{manage_url}?step=tracks')
+        self.assertFalse(CompetitionTrack.objects.filter(pk=track.pk).exists())
+
+        track2 = CompetitionTrack.objects.create(
+            organization_id=self.org.id, created_by=self.owner, competition=self.competition, name='Track 2'
+        )
+        rm_track_nostep = self.request('post', manage_url, {
+            'action': 'remove_track',
+            'track_id': str(track2.pk),
+        })
+        self.assertEqual(rm_track_nostep.status_code, 302)
+        self.assertEqual(rm_track_nostep['Location'], manage_url)
+
+        track3 = CompetitionTrack.objects.create(
+            organization_id=self.org.id, created_by=self.owner, competition=self.competition, name='Track 3'
+        )
+        CompetitionEntry.objects.create(
+            organization_id=self.org.id, created_by=self.owner, track=track3, name='Launch Entry'
+        )
+        round_step = self.request('post', manage_url, {
+            'action': 'first_round',
+            'name': 'Opening Round',
+            'setup_step': 'launch',
+        })
+        self.assertEqual(round_step.status_code, 302)
+        self.assertEqual(round_step['Location'], f'{manage_url}?step=launch')
+
+    def test_competition_entry_import_parser_planner_apply_and_views(self):
+        import io
+        import zipfile
+        from django.core import signing
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from assessments.sheets import workbook_bytes
+        from service_domains.competition_import import (
+            MAX_ROWS,
+            MAX_UPLOAD_BYTES,
+            apply_competition_entry_import,
+            parse_competition_entries,
+            plan_competition_entry_import,
+            sample_competition_entries,
+        )
+        from service_domains.competition_views import (
+            COMPETITION_IMPORT_SESSION_KEY,
+            COMPETITION_IMPORT_TOKEN_SALT,
+        )
+
+        sample_buf = sample_competition_entries()
+        parsed_sample = parse_competition_entries(sample_buf)
+        self.assertIsNone(parsed_sample['fatal'])
+        self.assertEqual(len(parsed_sample['rows']), 2)
+
+        oversized = SimpleUploadedFile('big.xlsx', b'x', content_type='application/octet-stream')
+        oversized.size = MAX_UPLOAD_BYTES + 1
+        self.assertIsNotNone(parse_competition_entries(oversized)['fatal'])
+
+        corrupt = SimpleUploadedFile('corrupt.xlsx', b'not-a-zip')
+        self.assertIsNotNone(parse_competition_entries(corrupt)['fatal'])
+
+        bomb_buf = io.BytesIO()
+        with zipfile.ZipFile(bomb_buf, 'w') as zf:
+            for idx in range(1002):
+                zf.writestr(f'f{idx}.txt', 'a')
+        bomb_buf.seek(0)
+        self.assertIsNotNone(parse_competition_entries(bomb_buf)['fatal'])
+
+        fake_wb = SimpleNamespace(
+            worksheets=[SimpleNamespace(max_row=2005)],
+            close=lambda: None,
+        )
+        sample_buf.seek(0)
+        with patch('service_domains.competition_import.openpyxl.load_workbook', return_value=fake_wb):
+            many_phys = parse_competition_entries(sample_buf)
+        self.assertIn('more than 2000 spreadsheet rows', many_phys['fatal'])
+
+        empty_wb = workbook_bytes(['', ''], [])
+        self.assertEqual(parse_competition_entries(empty_wb)['fatal'], 'The file is empty.')
+
+        too_many_rows = workbook_bytes(['Track', 'Entry'], [['T', f'E{i}'] for i in range(MAX_ROWS + 1)])
+        self.assertIn(f'more than {MAX_ROWS} entry rows', parse_competition_entries(too_many_rows)['fatal'])
+
+        bad_headers = workbook_bytes(['CategoryOnly', 'Notes'], [['A', 'B']])
+        self.assertIn('Could not find the Track and Entry columns', parse_competition_entries(bad_headers)['fatal'])
+
+        headers_only = workbook_bytes(['Track', 'Entry', 'Reference'], [['   ', '   ', '   ']])
+        self.assertEqual(parse_competition_entries(headers_only)['fatal'], 'The file has no entry rows.')
+
+        validation_wb = workbook_bytes(
+            ['Track', 'Entry', 'Reference'],
+            [
+                ['', 'Missing Track Entry', 'R1'],
+                ['Track A', '', 'R2'],
+                ['T' * 101, 'E' * 161, 'R' * 81],
+                ['Track A', 'Dup Entry', 'DUP-REF'],
+                ['Track A', 'Dup Entry', 'DUP-REF'],
+            ],
+        )
+        parsed_val = parse_competition_entries(validation_wb)
+        self.assertFalse(plan_competition_entry_import(self.competition, parsed_val)['ok'])
+        self.assertFalse(plan_competition_entry_import(self.competition, {'fatal': 'Bad file'})['ok'])
+
+        existing_track = CompetitionTrack.objects.create(
+            organization_id=self.org.id, created_by=self.owner, competition=self.competition, name='Open Track'
+        )
+        CompetitionEntry.objects.create(
+            organization_id=self.org.id, created_by=self.owner,
+            track=existing_track, name='Solar Microgrid', reference='ENT-01', order=5,
+        )
+        sample_buf.seek(0)
+        parsed_collision = parse_competition_entries(sample_buf)
+        collision_plan = plan_competition_entry_import(self.competition, parsed_collision)
+        self.assertFalse(collision_plan['ok'])
+        self.assertTrue(any('already exists' in msg for _, msg in collision_plan['errors']))
+
+        with self.assertRaises(PermissionDenied):
+            apply_competition_entry_import(
+                self.competition, parsed_collision,
+                organization=self.org.as_claim(), user=self.other_owner,
+            )
+        with self.assertRaises(ValidationError):
+            apply_competition_entry_import(
+                self.competition, parsed_collision,
+                organization=self.org.as_claim(), user=self.owner,
+            )
+
+        clean_wb = workbook_bytes(
+            ['Track', 'Entry', 'Reference'],
+            [
+                ['Open Track', 'Wind Turbine', 'ENT-03'],
+                ['New Track', 'Hydro Generator', 'ENT-04'],
+            ],
+        )
+        parsed_clean = parse_competition_entries(clean_wb)
+        created_entries = apply_competition_entry_import(
+            self.competition, parsed_clean,
+            organization=self.org.as_claim(), user=self.owner,
+        )
+        self.assertEqual(len(created_entries), 2)
+
+        sign_in(self.client, self.owner, self.org)
+        sample_url = reverse('competition_entry_import_sample', args=(self.competition.pk,))
+        sample_res = self.request('get', sample_url)
+        self.assertEqual(sample_res.status_code, 200)
+        self.assertIn('competition-entries-sample.xlsx', sample_res['Content-Disposition'])
+
+        import_url = reverse('competition_entry_import', args=(self.competition.pk,))
+        manage_url = reverse('competition_manage', args=(self.competition.pk,))
+
+        get_res = self.request('get', f'{import_url}?embedded=1')
+        self.assertEqual(get_res.status_code, 302)
+        self.assertEqual(get_res['Location'], f'{manage_url}?step=entries')
+
+        bad_ext = SimpleUploadedFile('entries.csv', b'a,b', content_type='text/csv')
+        bad_ext_res = self.request('post', f'{import_url}?embedded=1', {'file': bad_ext})
+        self.assertEqual(bad_ext_res.status_code, 302)
+
+        big_upload = SimpleUploadedFile('entries.xlsx', b'x', content_type='application/octet-stream')
+        big_upload.size = MAX_UPLOAD_BYTES + 10
+        from service_domains.competition_forms import CompetitionEntryImportForm
+        big_form = CompetitionEntryImportForm(data={}, files={'file': big_upload})
+        self.assertFalse(big_form.is_valid())
+        self.assertIn('no larger than 10 MB', big_form.errors['file'][0])
+        big_res = self.request('post', f'{import_url}?embedded=1', {})
+        self.assertEqual(big_res.status_code, 302)
+
+        corrupt_upload = SimpleUploadedFile('entries.xlsx', b'not-zip', content_type='application/octet-stream')
+        corrupt_res = self.request('post', f'{import_url}?embedded=1', {'file': corrupt_upload})
+        self.assertEqual(corrupt_res.status_code, 302)
+
+        single_wb = workbook_bytes(['Track', 'Entry', 'Reference'], [['Imported Track', 'Battery Pack', 'BP-1']])
+        upload_file = SimpleUploadedFile('entries.xlsx', single_wb.getvalue(), content_type='application/octet-stream')
+        upload_res = self.request('post', f'{import_url}?embedded=1', {'file': upload_file})
+        self.assertEqual(upload_res.status_code, 302)
+        self.assertIn(COMPETITION_IMPORT_SESSION_KEY, self.client.session)
+
+        preview_page = self.request('get', manage_url)
+        self.assertEqual(preview_page.context['active_step'], 'entries')
+        self.assertContains(preview_page, 'id="entry-inline-preview"')
+        self.assertContains(preview_page, 'Battery Pack')
+
+        cancel_res = self.request('post', f'{import_url}?embedded=1', {'action': 'cancel'})
+        self.assertEqual(cancel_res.status_code, 302)
+        self.assertNotIn(COMPETITION_IMPORT_SESSION_KEY, self.client.session)
+
+        # Bad signature in session on manage GET
+        session = self.client.session
+        session[COMPETITION_IMPORT_SESSION_KEY] = 'bad-sig'
+        session.save()
+        self.request('get', manage_url)
+        self.assertNotIn(COMPETITION_IMPORT_SESSION_KEY, self.client.session)
+
+        # Wrong competition/owner in session on manage GET
+        wrong_token = signing.dumps(
+            {'competition_id': self.competition.pk, 'organization_id': self.org.id, 'owner_id': self.other_owner.pk, 'parsed': parsed_clean},
+            salt=COMPETITION_IMPORT_TOKEN_SALT, compress=True,
+        )
+        session = self.client.session
+        session[COMPETITION_IMPORT_SESSION_KEY] = wrong_token
+        session.save()
+        self.request('get', manage_url)
+        self.assertNotIn(COMPETITION_IMPORT_SESSION_KEY, self.client.session)
+
+        # Apply error cases: missing token, mismatched token, bad signature, wrong owner, PermissionDenied, ValidationError, success
+        self.assertEqual(self.request('post', import_url, {'action': 'apply', 'preview_token': 'x'}).status_code, 302)
+
+        valid_token = signing.dumps(
+            {'competition_id': self.competition.pk, 'organization_id': self.org.id, 'owner_id': self.owner.pk, 'parsed': parse_competition_entries(workbook_bytes(['Track', 'Entry', 'Reference'], [['Imported Track', 'Battery Pack', 'BP-1']]))},
+            salt=COMPETITION_IMPORT_TOKEN_SALT, compress=True,
+        )
+        session = self.client.session
+        session[COMPETITION_IMPORT_SESSION_KEY] = valid_token
+        session.save()
+        self.assertEqual(self.request('post', import_url, {'action': 'apply', 'preview_token': 'mismatch'}).status_code, 302)
+
+        session = self.client.session
+        session[COMPETITION_IMPORT_SESSION_KEY] = 'corrupt-token'
+        session.save()
+        self.assertEqual(self.request('post', import_url, {'action': 'apply', 'preview_token': 'corrupt-token'}).status_code, 302)
+
+        session = self.client.session
+        session[COMPETITION_IMPORT_SESSION_KEY] = wrong_token
+        session.save()
+        self.assertEqual(self.request('post', import_url, {'action': 'apply', 'preview_token': wrong_token}).status_code, 404)
+
+        session = self.client.session
+        session[COMPETITION_IMPORT_SESSION_KEY] = valid_token
+        session.save()
+        with patch('service_domains.competition_views.apply_competition_entry_import', side_effect=PermissionDenied):
+            self.assertEqual(self.request('post', import_url, {'action': 'apply', 'preview_token': valid_token}).status_code, 404)
+
+        session = self.client.session
+        session[COMPETITION_IMPORT_SESSION_KEY] = valid_token
+        session.save()
+        with patch('service_domains.competition_views.apply_competition_entry_import', side_effect=ValidationError('Cannot import')):
+            self.assertEqual(self.request('post', import_url, {'action': 'apply', 'preview_token': valid_token}).status_code, 302)
+
+        session = self.client.session
+        session[COMPETITION_IMPORT_SESSION_KEY] = valid_token
+        session.save()
+        apply_ok = self.request('post', f'{import_url}?embedded=1', {'action': 'apply', 'preview_token': valid_token})
+        self.assertEqual(apply_ok.status_code, 302)
+        self.assertTrue(CompetitionEntry.objects.filter(name='Battery Pack').exists())
+
+        # Non-draft competition blocks import
+        self.competition.status = Competition.Status.ACTIVE
+        self.competition.save(update_fields=('status',))
+        locked_import = self.request('post', import_url, {'action': 'cancel'})
+        self.assertEqual(locked_import.status_code, 302)
+        with self.assertRaises(ValidationError):
+            apply_competition_entry_import(
+                self.competition, parsed_clean,
+                organization=self.org.as_claim(), user=self.owner,
+            )
+

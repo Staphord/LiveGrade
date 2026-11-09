@@ -20,8 +20,13 @@
           {% csrf_token %}
           {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
           <ol class="tc-ballot-list">
-          {% for field in form %}<li class="tc-ballot-entry"><div><h2>{{ field.label|slice:'6:' }}</h2>{% if field.help_text %}<p class="form-text">{{ field.help_text }}</p>{% endif %}</div>
-            <div class="tc-rank-input">{{ field.label_tag }}{{ field }}<div class="text-danger small" data-duplicate-rank-error role="alert" hidden>Each rank can be used once.</div>{% for field_error in field.errors %}<div class="text-danger small" role="alert">{{ field_error }}</div>{% endfor %}</div>
+          {% for field in form %}<li class="tc-ballot-entry"><div><h2>{{ field.label|slice:'6:' }}</h2>{% if field.help_text %}<p class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</p>{% endif %}</div>
+            <div class="tc-rank-input">
+              <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>
+              {{ field }}
+              <div class="field-error" data-duplicate-rank-error role="alert" hidden>Each rank can be used once.</div>
+              {% for field_error in field.errors %}<div class="field-error" role="alert">{{ field_error }}</div>{% endfor %}
+            </div>
           </li>{% endfor %}
           </ol>
           <p class="small text-muted">Use each rank once. Rank 1 is your first choice. Review the numbers before submitting.</p>

@@ -28,7 +28,7 @@
   <details class="tc-disclosure" id="create-competition" {% if form.errors or not competitions %}open{% endif %}>
     <summary>Create a competition</summary><div class="tc-disclosure-body">
       <p class="text-muted mt-2">Choose how judges and audience votes contribute before the event starts. These scoring rules are then fixed for the event.</p>
-      <form method="post" class="service-flow-form" novalidate>{% csrf_token %}{{ form.as_p }}<button class="btn btn-primary" type="submit">Create draft</button></form>
+      <form method="post" class="service-flow-form" novalidate>{% csrf_token %}{% include 'partials/_form_fields.html' with form=form %}<button class="btn btn-primary" type="submit">Create draft</button></form>
     </div>
   </details>
 </div>

@@ -4,13 +4,15 @@ from functools import wraps
 import hmac
 
 from django.conf import settings
+from django.contrib import messages
+from django.core import signing
 from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.db.models import Count
-from django.http import Http404, JsonResponse
-from django.shortcuts import redirect, render
+from django.http import Http404, HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods
@@ -18,10 +20,13 @@ from django.views.decorators.http import require_safe
 
 from accounts.access import lecturer_required
 
-from .competition_forms import (CompetitionEntryForm, CompetitionFirstRoundForm,
+from .competition_forms import (CompetitionEntryForm, CompetitionEntryImportApplyForm,
+    CompetitionEntryImportForm, CompetitionFirstRoundForm,
     CompetitionAdvanceRoundForm, CompetitionAudienceJoinForm, CompetitionFinalTieForm, CompetitionForm,
     CompetitionCriterionForm, CompetitionJudgeInvitationForm,
     CompetitionTrackForm, competition_head_judge_requirements)
+from .competition_import import (apply_competition_entry_import, parse_competition_entries,
+    plan_competition_entry_import, sample_competition_entries)
 from .models import (Competition, CompetitionAudienceBallot, CompetitionCriterion, CompetitionEntry, CompetitionJudgeInvitation,
     CompetitionJudgeScore, CompetitionRound, CompetitionRoundEntry, CompetitionTrack)
 from .operations import (create_initial_competition_round,
@@ -38,6 +43,9 @@ from .onboarding import service_onboarding
 
 
 COMPETITION_LEADERBOARD_CACHE_SECONDS = 300
+COMPETITION_IMPORT_SESSION_KEY = 'competition_entry_import_preview'
+COMPETITION_IMPORT_TOKEN_SALT = 'service_domains.competition.entry_import'
+COMPETITION_IMPORT_TOKEN_MAX_AGE = 1800
 
 
 def _competition_owner(view):
@@ -91,17 +99,38 @@ def competition_list(request):
     })
 
 
+def _load_competition_import_preview(request, competition):
+    token = request.session.get(COMPETITION_IMPORT_SESSION_KEY)
+    if not token:
+        return None, None
+    try:
+        payload = signing.loads(
+            token, salt=COMPETITION_IMPORT_TOKEN_SALT, max_age=COMPETITION_IMPORT_TOKEN_MAX_AGE)
+    except signing.BadSignature:
+        request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
+        return None, None
+    if (payload.get('competition_id') != competition.pk
+            or payload.get('organization_id') != competition.organization_id
+            or payload.get('owner_id') != request.user.pk):
+        request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
+        return None, None
+    return token, plan_competition_entry_import(competition, payload['parsed'])
+
+
 @require_http_methods(['GET', 'POST'])
 @never_cache
 @_competition_owner
 def competition_manage(request, competition_id):
     competition = _owned_competition(request, competition_id)
-    track_form = CompetitionTrackForm()
-    first_round_form = CompetitionFirstRoundForm()
+    manage_url = reverse('competition_manage', kwargs={'competition_id': competition.pk})
+    details_form = CompetitionForm(instance=competition, auto_id='competition_details_%s')
+    entry_import_form = CompetitionEntryImportForm(auto_id='entry_import_%s')
+    track_form = CompetitionTrackForm(auto_id='track_%s')
+    first_round_form = CompetitionFirstRoundForm(auto_id='first_round_%s')
     criterion_form = CompetitionCriterionForm(organization=request.organization,
-        user=request.user, competition=competition)
+        user=request.user, competition=competition, auto_id='criterion_%s')
     entry_form = CompetitionEntryForm(competition=competition,
-        organization=request.organization, user=request.user)
+        organization=request.organization, user=request.user, auto_id='entry_%s')
     judge_form = None
     advance_round_form = None
     action_error = ''
@@ -321,14 +350,30 @@ def competition_manage(request, competition_id):
                         else:
                             judge_notice = ('Email delivery failed. Copy this private link now; '
                                 'it will not be shown again.')
-        elif has_rounds and action in ('track', 'entry', 'criterion', 'delete_criterion'):
+        elif has_rounds and action in ('update_competition', 'track', 'remove_track',
+                                       'entry', 'remove_entry', 'criterion', 'delete_criterion'):
             action_error = 'Track, entry and scoring-criterion setup is locked after the initial round is created.'
+        elif action == 'update_competition':
+            details_form = CompetitionForm(
+                request.POST, instance=competition, auto_id='competition_details_%s')
+            if details_form.is_valid():
+                updated = details_form.save(commit=False)
+                try:
+                    updated.full_clean()
+                except ValidationError as exc:
+                    details_form.add_error(None, '; '.join(exc.messages))
+                else:
+                    updated.save()
+                    messages.success(request, 'Competition details saved.')
+                    if request.POST.get('advance') == '1':
+                        return redirect(f'{manage_url}?step=tracks')
+                    return redirect(f'{manage_url}?step=details&saved=1')
         elif action == 'criterion':
             criterion = CompetitionCriterion(organization_id=competition.organization_id,
                 created_by=request.user)
             criterion_form = CompetitionCriterionForm(request.POST,
                 instance=criterion, organization=request.organization, user=request.user,
-                competition=competition)
+                competition=competition, auto_id='criterion_%s')
             if criterion_form.is_valid():
                 criterion = criterion_form.save(commit=False)
                 criterion.organization_id = competition.organization_id
@@ -343,6 +388,9 @@ def competition_manage(request, competition_id):
                     except IntegrityError:
                         criterion_form.add_error('name', 'This track already has a criterion with that name.')
                     else:
+                        messages.success(request, 'Judging criterion added.')
+                        if request.POST.get('setup_step'):
+                            return redirect(f"{manage_url}?step={request.POST['setup_step']}")
                         return redirect('competition_manage', competition_id=competition.pk)
         elif action == 'delete_criterion':
             criterion = (CompetitionCriterion.objects.for_organization(request.organization)
@@ -351,9 +399,12 @@ def competition_manage(request, competition_id):
             if criterion is None:
                 raise Http404
             criterion.delete()
+            messages.success(request, 'Judging criterion removed.')
+            if request.POST.get('setup_step'):
+                return redirect(f"{manage_url}?step={request.POST['setup_step']}")
             return redirect('competition_manage', competition_id=competition.pk)
         elif action == 'track':
-            track_form = CompetitionTrackForm(request.POST)
+            track_form = CompetitionTrackForm(request.POST, auto_id='track_%s')
             if track_form.is_valid():
                 track = track_form.save(commit=False)
                 track.competition = competition
@@ -370,12 +421,25 @@ def competition_manage(request, competition_id):
                     except IntegrityError:
                         track_form.add_error(None, 'A track with this name already exists.')
                     else:
+                        messages.success(request, 'Track added.')
+                        if request.POST.get('setup_step'):
+                            return redirect(f"{manage_url}?step={request.POST['setup_step']}")
                         return redirect('competition_manage', competition_id=competition.pk)
+        elif action == 'remove_track':
+            track = get_object_or_404(
+                CompetitionTrack.objects.for_organization(request.organization).owned_by(request.user),
+                competition=competition, pk=request.POST.get('track_id'))
+            track.delete()
+            messages.success(request, 'Track removed.')
+            if request.POST.get('setup_step'):
+                return redirect(f"{manage_url}?step={request.POST['setup_step']}")
+            return redirect('competition_manage', competition_id=competition.pk)
         elif action == 'entry':
             entry = CompetitionEntry(organization_id=competition.organization_id,
                 created_by=request.user)
             entry_form = CompetitionEntryForm(request.POST, instance=entry,
-                competition=competition, organization=request.organization, user=request.user)
+                competition=competition, organization=request.organization,
+                user=request.user, auto_id='entry_%s')
             if entry_form.is_valid():
                 entry = entry_form.save(commit=False)
                 try:
@@ -390,9 +454,21 @@ def competition_manage(request, competition_id):
                         entry_form.add_error(None,
                             'An entry with this reference already exists in the track.')
                     else:
+                        messages.success(request, 'Entry added.')
+                        if request.POST.get('setup_step'):
+                            return redirect(f"{manage_url}?step={request.POST['setup_step']}")
                         return redirect('competition_manage', competition_id=competition.pk)
+        elif action == 'remove_entry':
+            entry = get_object_or_404(
+                CompetitionEntry.objects.for_organization(request.organization).owned_by(request.user),
+                track__competition=competition, pk=request.POST.get('entry_id'))
+            entry.delete()
+            messages.success(request, 'Entry removed.')
+            if request.POST.get('setup_step'):
+                return redirect(f"{manage_url}?step={request.POST['setup_step']}")
+            return redirect('competition_manage', competition_id=competition.pk)
         elif action == 'first_round':
-            first_round_form = CompetitionFirstRoundForm(request.POST)
+            first_round_form = CompetitionFirstRoundForm(request.POST, auto_id='first_round_%s')
             if first_round_form.is_valid():
                 try:
                     create_initial_competition_round(competition, first_round_form.cleaned_data['name'],
@@ -400,6 +476,9 @@ def competition_manage(request, competition_id):
                 except ValidationError as exc:
                     first_round_form.add_error(None, '; '.join(exc.messages))
                 else:
+                    messages.success(request, 'Initial round created.')
+                    if request.POST.get('setup_step'):
+                        return redirect(f"{manage_url}?step={request.POST['setup_step']}")
                     return redirect('competition_manage', competition_id=competition.pk)
         elif action == 'start':
             try:
@@ -412,6 +491,7 @@ def competition_manage(request, competition_id):
         else:
             action_error = 'Choose a valid Competition setup action.'
 
+    entry_import_token, entry_import_plan = _load_competition_import_preview(request, competition)
     rounds = CompetitionRound.objects.for_organization(request.organization).owned_by(request.user)
     rounds = rounds.filter(competition=competition).order_by('order', 'pk')
     latest_round = rounds.last()
@@ -485,9 +565,47 @@ def competition_manage(request, competition_id):
     entry_count = sum(len(track.organizer_entries) for track in tracks)
     criterion_count = sum(len(track.organizer_criteria) for track in tracks)
     round_count = len(rounds)
+    tracks_ready = bool(tracks)
+    entries_ready = tracks_ready and all(bool(track.organizer_entries) for track in tracks)
+    criteria_ready = competition.judge_weight == 0 or (
+        tracks_ready and all(bool(track.organizer_criteria) for track in tracks))
+    judges_ready = competition.judge_weight == 0 or bool(latest_round and all(
+        track.judge_invitation_rows for track in tracks))
+    setup_steps = [
+        {'key': 'details', 'label': 'Competition overview', 'href': '#competition-overview', 'complete': True},
+        {'key': 'tracks', 'label': 'Tracks and categories', 'href': '#tracks-section', 'complete': tracks_ready},
+        {'key': 'entries', 'label': 'Entries', 'href': '#entries-section', 'complete': entries_ready},
+        {'key': 'criteria', 'label': 'Scoring criteria and judges', 'href': '#criteria-section',
+         'complete': criteria_ready and judges_ready},
+        {'key': 'launch', 'label': 'Launch round', 'href': '#first-round-section',
+         'complete': competition.status != Competition.Status.DRAFT},
+    ]
+    valid_steps = {step['key'] for step in setup_steps}
+    requested_step = request.POST.get('setup_step') or request.GET.get('step')
+    if requested_step in valid_steps:
+        active_step = requested_step
+    elif request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'update_competition':
+            active_step = 'details'
+        elif action in ('track', 'remove_track'):
+            active_step = 'tracks'
+        elif action in ('entry', 'remove_entry'):
+            active_step = 'entries'
+        elif action in ('criterion', 'delete_criterion'):
+            active_step = 'criteria'
+        else:
+            active_step = 'launch'
+    elif entry_import_plan is not None:
+        active_step = 'entries'
+    else:
+        active_step = 'details'
     response = render(request, 'service_domains/competition_manage.html', {
-        'competition': competition, 'tracks': tracks, 'track_form': track_form,
-        'entry_form': entry_form, 'first_round_form': first_round_form,
+        'competition': competition, 'details_form': details_form,
+        'tracks': tracks, 'track_form': track_form,
+        'entry_form': entry_form, 'entry_import_form': entry_import_form,
+        'entry_import_plan': entry_import_plan, 'entry_import_token': entry_import_token,
+        'first_round_form': first_round_form,
         'criterion_form': criterion_form,
         'rounds': rounds, 'latest_round': latest_round, 'action_error': action_error,
         'judge_form': judge_form, 'judge_notice': judge_notice,
@@ -504,11 +622,111 @@ def competition_manage(request, competition_id):
         'recorded_final_tie_decisions': recorded_final_tie_decisions,
         'track_count': len(tracks), 'entry_count': entry_count,
         'criterion_count': criterion_count, 'round_count': round_count,
-    }, status=400 if action_error or track_form.errors or entry_form.errors
+        'setup_steps': setup_steps,
+        'active_step': active_step,
+        'setup_ready': all(step['complete'] for step in setup_steps[:-1]),
+    }, status=400 if action_error or details_form.errors or track_form.errors or entry_form.errors
         or first_round_form.errors or criterion_form.errors or (judge_form is not None and judge_form.errors)
         or (advance_round_form is not None and advance_round_form.errors)
         or (final_tie_form is not None and final_tie_form.errors) else 200)
     response['Cache-Control'] = 'private, no-store'
+    return response
+
+
+@require_http_methods(['GET', 'POST'])
+@never_cache
+@_competition_owner
+def competition_entry_import(request, competition_id):
+    competition = _owned_competition(request, competition_id)
+    manage_url = reverse('competition_manage', kwargs={'competition_id': competition.pk})
+    embedded = request.GET.get('embedded') == '1' or bool(request.POST.get('setup_step'))
+    target_manage_url = f'{manage_url}?step=entries' if embedded else manage_url
+    if competition.status != Competition.Status.DRAFT or competition.rounds.exists():
+        messages.error(request,
+            'Entries can only be imported while the competition is a draft before rounds are created.')
+        return redirect(target_manage_url)
+
+    if request.method == 'POST' and request.POST.get('action') == 'cancel':
+        request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
+        messages.info(request, 'Entry import preview cleared.')
+        return redirect(target_manage_url)
+
+    if request.method == 'POST' and request.POST.get('action') == 'apply':
+        apply_form = CompetitionEntryImportApplyForm(request.POST)
+        session_token = request.session.get(COMPETITION_IMPORT_SESSION_KEY)
+        if not apply_form.is_valid() or not session_token:
+            request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
+            messages.error(request, 'The import preview expired. Upload the spreadsheet again.')
+            return redirect(target_manage_url)
+        submitted = apply_form.cleaned_data['preview_token']
+        if not hmac.compare_digest(submitted, session_token):
+            request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
+            messages.error(request, 'The import preview is no longer current. Upload the spreadsheet again.')
+            return redirect(target_manage_url)
+        try:
+            payload = signing.loads(
+                session_token, salt=COMPETITION_IMPORT_TOKEN_SALT,
+                max_age=COMPETITION_IMPORT_TOKEN_MAX_AGE)
+        except signing.BadSignature:
+            request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
+            messages.error(request, 'The import preview expired. Upload the spreadsheet again.')
+            return redirect(target_manage_url)
+        if (payload.get('competition_id') != competition.pk
+                or payload.get('organization_id') != competition.organization_id
+                or payload.get('owner_id') != request.user.pk):
+            request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
+            raise Http404
+        try:
+            created = apply_competition_entry_import(
+                competition, payload['parsed'],
+                organization=request.organization, user=request.user)
+        except PermissionDenied:
+            request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
+            raise Http404
+        except ValidationError as exc:
+            request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
+            messages.error(request, '; '.join(exc.messages))
+            return redirect(target_manage_url)
+        request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
+        count = len(created)
+        messages.success(request, f'Imported {count} entr{"y" if count == 1 else "ies"}.')
+        return redirect(target_manage_url)
+
+    if request.method == 'POST':
+        form = CompetitionEntryImportForm(request.POST, request.FILES, auto_id='entry_import_%s')
+        if form.is_valid():
+            parsed = parse_competition_entries(form.cleaned_data['file'])
+            if parsed.get('fatal'):
+                request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
+                messages.error(request, parsed['fatal'])
+                return redirect(target_manage_url)
+            token = signing.dumps({
+                'competition_id': competition.pk,
+                'organization_id': competition.organization_id,
+                'owner_id': request.user.pk,
+                'parsed': parsed,
+            }, salt=COMPETITION_IMPORT_TOKEN_SALT, compress=True)
+            request.session[COMPETITION_IMPORT_SESSION_KEY] = token
+            return redirect(target_manage_url)
+        error_msg = '; '.join(err for errs in form.errors.values() for err in errs)
+        messages.error(request, error_msg or 'Choose an Excel .xlsx file.')
+        return redirect(target_manage_url)
+
+    return redirect(target_manage_url)
+
+
+@require_safe
+@never_cache
+@_competition_owner
+def competition_entry_import_sample(request, competition_id):
+    _owned_competition(request, competition_id)
+    response = HttpResponse(
+        sample_competition_entries().getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = 'attachment; filename="competition-entries-sample.xlsx"'
+    response['Cache-Control'] = 'private, no-store'
+    response['X-Content-Type-Options'] = 'nosniff'
     return response
 
 
@@ -576,7 +794,7 @@ def competition_public_leaderboard(request, competition_id):
     latest = CompetitionRound.objects.filter(competition=competition).order_by('-order').first()
     if latest is None:
         raise Http404
-    cache_key = (f'livegrade:competition:leaderboard:v2:{competition.public_id.hex}:'
+    cache_key = (f'livegrade:competition:leaderboard:v3:{competition.public_id.hex}:'
                  f'{latest.pk}:{int(competition.revealed_at.timestamp())}')
     try:
         projection = cache.get(cache_key)
@@ -617,6 +835,7 @@ def competition_public_leaderboard(request, competition_id):
                     {'display_rank': position, 'entry': {'name': row.entry.name},
                      'score': row.score, 'judge_score': row.judge_score,
                      'audience_score': row.audience_score,
+                     'tie_break': (row.track_id, row.score) in decisions,
                      'judge_count': row.judge_count,
                      'score_breakdown': row.score_breakdown,
                      'audience_ballot_count': audience_counts.get(row.track_id, 0)}

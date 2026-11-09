@@ -29,14 +29,22 @@
         <summary><span>{{ forloop.counter }}. {{ row.entry.name }}</span><span class="tc-outcome is-pending" data-entry-status>Not scored</span></summary>
         <fieldset class="border-0 tc-judge-entry-body">
           <legend class="visually-hidden">Scores for {{ row.entry.name }}</legend>
-          <div class="mb-3">{{ row.decision_field.label_tag }}{{ row.decision_field }}{{ row.decision_field.errors }}</div>
-          <div class="mb-3">{{ row.reason_field.label_tag }}{{ row.reason_field }}{{ row.reason_field.errors }}</div>
+          <div class="mb-3">
+            <label class="form-label" for="{{ row.decision_field.id_for_label }}">{{ row.decision_field.label }}</label>
+            {{ row.decision_field }}
+            {% for error in row.decision_field.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="{{ row.reason_field.id_for_label }}">{{ row.reason_field.label }}</label>
+            {{ row.reason_field }}
+            {% for error in row.reason_field.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}
+          </div>
           {% for item in row.score_fields %}<div class="mb-3 tc-score-input">
-            {{ item.field.label_tag }}
+            <label class="form-label" for="{{ item.field.id_for_label }}">{{ item.field.label }}{% if item.field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>
             {{ item.field }}
-            {% if item.criterion.description %}<div class="form-text">{{ item.criterion.description }}</div>{% endif %}
-            {% if item.field.help_text %}<div class="form-text">{{ item.field.help_text }}</div>{% endif %}
-            {% for field_error in item.field.errors %}<div class="text-danger" role="alert">{{ field_error }}</div>{% endfor %}
+            {% if item.criterion.description %}<div class="form-text text-muted">{{ item.criterion.description }}</div>{% endif %}
+            {% if item.field.help_text %}<div class="form-text text-muted" id="{{ item.field.auto_id }}_helptext">{{ item.field.help_text }}</div>{% endif %}
+            {% for field_error in item.field.errors %}<div class="field-error" role="alert">{{ field_error }}</div>{% endfor %}
           </div>{% endfor %}
         </fieldset>
       </details>{% endfor %}
