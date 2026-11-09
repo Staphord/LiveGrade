@@ -2,28 +2,39 @@
 {% block title %}Live results - {{ poll.question }}{% endblock %}
 {% block hero_sub %}Live poll results{% endblock %}
 {% block main_class %} public-poll-main{% endblock %}
-{% block extra_css %}<style nonce="{{ csp_nonce }}">
-.student-shell.public-poll-main{max-width:72rem;width:min(100% - 2rem,72rem);margin:1.5rem auto;padding:0}
-.public-poll-screen{width:100%;margin:0 auto}
-.public-poll-screen .s-card{padding:clamp(1.25rem,3vw,2.5rem)}
-.public-poll-screen .poll-screen-title{font-size:clamp(1.6rem,3vw,2.5rem);line-height:1.15;font-weight:800;margin-bottom:.75rem}
-.public-poll-screen .table{font-size:1.05rem}
-.public-poll-screen .table th,.public-poll-screen .table td{padding:.8rem}
-</style>{% endblock %}
+{% block extra_css %}{% include 'assessments/polls/_participant_ui_styles.html' %}{% endblock %}
 {% block content %}
-<div class="public-poll-screen">
-  <section class="s-card">
-    <p id="public-poll-state" class="text-muted mb-2" role="status">Live poll results · {% if poll.accepting_responses %}Voting is open{% else %}Voting is closed{% endif %}</p>
-    <h2 class="poll-screen-title">{{ poll.question }}</h2>
-    {% if questions|length > 1 %}<p class="text-muted">{{ questions|length }} questions</p>{% endif %}
-    {% if poll.deadline %}<p class="small text-muted">Deadline: <time data-local-deadline datetime="{{ poll.deadline|date:'c' }}">{{ poll.deadline|date:'j M Y, H:i' }}</time></p>{% endif %}
-    <p class="text-muted">Results show aggregate votes only. Voter names and individual ballots are private.</p>
-    <div id="public-poll-results">{% include 'assessments/polls/_results.html' with questions=questions responded=responded invited=None unanswered=None public_results=True %}</div>
-    <p id="public-poll-refresh-status" class="small text-muted mb-0" role="status">Live results refresh automatically.</p>
-    <a class="btn btn-outline-primary mt-3" href="{% if poll.standalone %}{% url 'standalone_poll_public' poll.uuid %}{% else %}{% url 'classroom_poll' poll.uuid %}{% endif %}">Open voting page</a>
+<div class="public-poll-screen public-poll-results">
+  <section class="s-card" aria-labelledby="public-poll-title">
+    <header class="public-poll-header">
+      <div class="public-poll-header-copy">
+        <div class="public-poll-screen-status">{% include 'assessments/polls/_status_badge.html' %}<span id="public-poll-state" role="status">{% if poll.accepting_responses %}Live results{% else %}Final results{% endif %}</span></div>
+        <h2 class="public-poll-title" id="public-poll-title">{{ poll.question }}</h2>
+        <div class="public-poll-meta">
+          {% if questions|length > 1 %}<span><i class="bi bi-list-ol" aria-hidden="true"></i>{{ questions|length }} questions</span>{% endif %}
+          {% if poll.deadline %}<span><i class="bi bi-clock" aria-hidden="true"></i>Closes <time data-local-deadline datetime="{{ poll.deadline|date:'c' }}">{{ poll.deadline|date:'j M Y, H:i' }}</time></span>{% endif %}
+        </div>
+        <p class="public-poll-privacy">Only totals and combined choices are shown. Individual votes are private.</p>
+      </div>
+      {% if poll.accepting_responses %}<section class="public-poll-qr-share" id="public-poll-qr-share" aria-labelledby="public-poll-qr-heading">
+        {% if poll.standalone or not poll.personal_links_only %}
+          <img src="{% if poll.standalone %}{% url 'standalone_poll_qr' poll.uuid %}?display=1{% else %}{% url 'classroom_poll_qr' poll.uuid %}{% endif %}" width="192" height="192" alt="QR code to open the poll voting page">
+          <div><h3 id="public-poll-qr-heading">Scan to vote</h3><p>Open your phone camera and scan the code to respond.</p><a class="btn btn-outline-secondary btn-sm mt-2" href="{% if poll.standalone %}{% url 'standalone_poll_qr' poll.uuid %}{% else %}{% url 'classroom_poll_qr' poll.uuid %}{% endif %}"{% if not poll.standalone %} download="classroom-poll-qr.png"{% endif %}>Download QR image</a></div>
+        {% else %}
+          <div><h3 id="public-poll-qr-heading">Use your personal voting link</h3><p>This poll requires individual links. Ask your teacher for yours.</p></div>
+        {% endif %}
+      </section>{% endif %}
+    </header>
+    <div id="public-poll-results" class="public-poll-results-content">
+      {% include 'assessments/polls/_results.html' with poll=poll questions=questions responded=responded invited=None unanswered=None public_results=True hide_option_bars=True hide_option_percentages=True %}
+    </div>
+    <footer class="public-poll-footer">
+      <p id="public-poll-refresh-status" class="poll-live-connection mb-0" role="status">{% if poll.accepting_responses %}Live results refresh automatically.{% else %}Final results{% endif %}</p>
+      <a class="btn btn-outline-primary public-poll-open-voting" href="{% if poll.standalone %}{% url 'standalone_poll_public' poll.uuid %}{% else %}{% url 'classroom_poll' poll.uuid %}{% endif %}">Open voting page</a>
+    </footer>
   </section>
 </div>
 {% if poll.accepting_responses %}{{ state_url|json_script:'public-poll-state-url' }}
-<script nonce="{{ csp_nonce }}">(function(){const url=JSON.parse(document.getElementById('public-poll-state-url').textContent);let busy=false,timer;async function refresh(){if(busy)return;busy=true;try{const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw new Error('Refresh failed');const s=await r.json();const results=document.getElementById('poll-results');if(results)results.outerHTML=s.html;if(!s.accepting){const state=document.getElementById('public-poll-state');if(state)state.textContent='Live poll results · Voting is closed';const status=document.getElementById('public-poll-refresh-status');if(status)status.textContent='Voting is closed. Final results are shown.';clearInterval(timer)}}catch(e){const status=document.getElementById('public-poll-refresh-status');if(status)status.textContent='Connection interrupted. Displayed results may be out of date; retrying.'}finally{busy=false}}timer=setInterval(refresh,3000)})();</script>{% endif %}
+<script nonce="{{ csp_nonce }}">(function(){const url=JSON.parse(document.getElementById('public-poll-state-url').textContent);let busy=false,timer;async function refresh(){if(busy)return;busy=true;try{const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw new Error('Refresh failed');const s=await r.json();const results=document.getElementById('poll-results');if(results)results.outerHTML=s.html;if(!s.accepting){const qrShare=document.getElementById('public-poll-qr-share');if(qrShare)qrShare.hidden=true;const state=document.getElementById('public-poll-state');if(state)state.textContent='Final results';const badge=document.querySelector('.public-poll-screen-status .poll-status-badge');if(badge){const states={closed:['poll-status-closed','bi-lock-fill','Closed'],confirmed:['poll-status-confirmed','bi-check-circle-fill','Decision confirmed'],cancelled:['poll-status-cancelled','bi-slash-circle-fill','Cancelled']};const next=states[s.status]||states.closed;badge.className='poll-status-badge '+next[0];const icon=document.createElement('i');icon.className='bi '+next[1];icon.setAttribute('aria-hidden','true');badge.replaceChildren(icon,document.createTextNode(' '+next[2]))}const status=document.getElementById('public-poll-refresh-status');if(status)status.textContent='Voting is closed. Final results are shown.';clearInterval(timer)}}catch(e){const status=document.getElementById('public-poll-refresh-status');if(status)status.textContent='Connection interrupted. Displayed results may be out of date; retrying.'}finally{busy=false}}timer=setInterval(refresh,3000)})();</script>{% endif %}
 {% include 'assessments/polls/_local_deadline.html' %}
 {% endblock %}

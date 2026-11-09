@@ -45,11 +45,14 @@ MARKER = 'ORG-A-CONFIDENTIAL'
 #: URL name -> (method, {url kwarg: object key in ``Fixture.objects``}).
 #: A bare string stands for {every kwarg: that object}.
 TARGETS = {
+    'assessment_poll_delete': (POST, 'session'),
     'assessment_polls': (GET, 'session'),
     'assessment_poll_questions_sample': (GET, 'session'),
     'assessment_leaderboard_scores': (POST, 'session'),
     'showcase_event_labels': (GET, 'showcase_event'),
     'competition_manage': (GET, 'competition'),
+    'competition_entry_import': (POST, {'competition_id': 'competition'}),
+    'competition_entry_import_sample': (GET, {'competition_id': 'competition'}),
     'panel_hearing_manage': (GET, 'panel_hearing'),
     'panel_candidate_import': (GET, 'draft_panel_hearing'),
     'panel_candidate_import_sample': (GET, 'draft_panel_hearing'),
@@ -125,11 +128,13 @@ EXEMPT = {
     'classroom_poll': 'public UUID identifies a published poll; roster or personal-link identity is required to vote or see totals',
     'classroom_poll_results': 'public poll UUID reveals aggregate results only; classroom poll result privacy is covered by poll tests',
     'classroom_poll_qr': 'published poll UUID QR contains only the shared poll URL',
+    'classroom_poll_qr_screen': 'published poll UUID QR screen is a public display route',
     'classroom_poll_invitation': 'revocable personal poll invitation; roster, token and poll binding are tested in test_classroom_polls',
     'standalone_poll_live_results': 'public standalone poll UUID reveals aggregate results only; standalone poll tests cover publication and privacy',
     'standalone_poll_live_state': 'public standalone poll UUID reveals aggregate state only; standalone poll tests cover result projection',
     'standalone_poll_public': 'public standalone poll UUID is a voting page; anonymous ballot uniqueness and identity privacy are covered by poll tests',
     'standalone_poll_qr': 'public standalone poll UUID QR contains only its shared voting URL',
+    'standalone_poll_qr_screen': 'public standalone poll UUID QR screen is a public display route',
     'standalone_poll_state': 'owner-only standalone poll state is scoped by organization and creator; standalone poll tests cover ownership',
     'student_join': 'session link, no login',
     'student_privacy_notice': 'session link, no login; notice version is scoped to the joined participant',

@@ -1,0 +1,29 @@
+<header class="poll-detail-header">
+  <div class="poll-detail-heading">
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+      {% include 'assessments/polls/_status_badge.html' %}
+      <span class="poll-detail-question-count">{{ results.questions|length }} question{{ results.questions|length|pluralize }}</span>
+    </div>
+    <h2 class="h4 mb-2">{{ poll.question }}</h2>
+    <p class="poll-detail-time mb-0">
+      {% if poll.deadline %}<span>Deadline: <time datetime="{{ poll.deadline|date:'c' }}" data-local-deadline>{{ poll.deadline|date:'j M Y, H:i' }}</time></span>
+      {% elif poll.status == 'open' and poll.accepting_responses %}<span>No response deadline</span>{% endif %}
+      {% if poll.status == 'closed' and poll.closed_at %}<span>Closed <time datetime="{{ poll.closed_at|date:'c' }}" data-local-deadline>{{ poll.closed_at|date:'j M Y, H:i' }}</time></span>{% endif %}
+      {% if poll.status == 'confirmed' and poll.confirmed_at %}<span>Finalized <time datetime="{{ poll.confirmed_at|date:'c' }}" data-local-deadline>{{ poll.confirmed_at|date:'j M Y, H:i' }}</time></span>{% endif %}
+    </p>
+  </div>
+  {% if poll.status == 'open' %}
+    <form method="post" class="poll-detail-primary-action">{% csrf_token %}<input type="hidden" name="poll" value="{{ poll.uuid }}"><button class="btn btn-primary" name="action" value="close"><i class="bi bi-stop-circle me-1" aria-hidden="true"></i>Close voting</button></form>
+  {% endif %}
+  <div class="poll-detail-metrics">
+    {% if classroom %}
+      <div class="poll-detail-metric"><strong data-poll-response-count data-poll-total="{{ results.invited }}">{{ results.responded }}<span> / {{ results.invited }}</span></strong><span>responded</span></div>
+      <div class="poll-detail-metric"><strong data-poll-unanswered>{{ results.unanswered }}</strong><span>{% if poll.accepting_responses %}awaiting{% else %}no response{% endif %}</span></div>
+      {% if results.invited %}{% widthratio results.responded results.invited 100 as response_rate %}<div class="poll-detail-metric"><strong data-poll-response-rate>{{ response_rate }}%</strong><span>response rate</span></div>{% endif %}
+      <div class="poll-detail-progress" data-poll-progress role="progressbar" aria-label="{{ results.responded }} of {{ results.invited }} students responded" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{% if results.invited %}{% widthratio results.responded results.invited 100 %}{% else %}0{% endif %}"><span data-poll-progress-fill style="width:{% if results.invited %}{% widthratio results.responded results.invited 100 %}{% else %}0{% endif %}%"></span></div>
+    {% else %}
+      <div class="poll-detail-metric"><strong data-poll-response-count>{{ results.responded }}</strong><span>total responses</span></div>
+    {% endif %}
+  </div>
+  <p id="poll-connection" class="poll-connection" role="status">{% if poll.accepting_responses %}<i class="bi bi-arrow-repeat" aria-hidden="true"></i> Updating live{% elif poll.status == 'open' %}Deadline passed{% elif poll.status == 'closed' or poll.status == 'confirmed' %}Final results{% else %}Results{% endif %}</p>
+</header>

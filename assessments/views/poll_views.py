@@ -14,6 +14,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.crypto import salted_hmac
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods, require_POST
@@ -32,6 +33,11 @@ from .lecturer_views import _session
 
 POLL_IDENTITIES = 'classroom_poll_voters'
 POLL_IMPORT_KEY = 'classroom_poll_question_import'
+
+
+def _poll_json_requested(request):
+    return (request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+            or 'application/json' in request.headers.get('Accept', '').lower())
 
 
 def _poll(queryset, value):
@@ -86,6 +92,7 @@ def classroom_polls(request, pk):
     stash = request.session.get(POLL_IMPORT_KEY)
     if stash and stash.get('session') != session.pk:
         stash = None
+    question_import_form = PollQuestionImportForm(auto_id='id_poll_question_import_%s')
     form = PollForm(instance=poll if poll and poll.status == 'draft' else None)
     if request.method == 'POST':
         action = request.POST.get('action')
@@ -106,6 +113,7 @@ def classroom_polls(request, pk):
                         error = 'Please correct the poll below.'
                 elif action == 'upload-questions':
                     upload_form = PollQuestionImportForm(request.POST, request.FILES)
+                    question_import_form = upload_form
                     if upload_form.is_valid():
                         parsed = poll_import.parse_questions(upload_form.cleaned_data['file'])
                         if parsed['fatal']:
@@ -155,7 +163,16 @@ def classroom_polls(request, pk):
                     raise ValidationError('Choose a poll first.')
             except ValidationError as exc:
                 error = ' '.join(exc.messages)
+        if action == 'upload-questions' and _poll_json_requested(request):
+            preview_html = render_to_string('assessments/polls/_question_import_preview.html', {
+                'poll': poll, 'pending_question_import': stash,
+            }, request=request)
+            return _private(JsonResponse({
+                'ok': not bool(error), 'error': error or '', 'html': preview_html,
+            }, status=400 if error else 200))
         if error:
+            if _poll_json_requested(request) and action == 'save':
+                return JsonResponse({'ok': False, 'error': error}, status=400)
             messages.error(request, error)
         elif action in {'upload-questions', 'cancel-question-import'}:
             url = reverse('assessment_polls', args=[pk])
@@ -167,7 +184,13 @@ def classroom_polls(request, pk):
                 messages.success(request, f'Created one poll draft with {len(stash["questions"])} questions.')
             return redirect(reverse('assessment_polls', args=[pk]) + '?poll=' + str(imported_poll.uuid))
         else:
+            if action == 'save' and _poll_json_requested(request):
+                return JsonResponse({'ok': True, 'message': 'Poll saved.', 'uuid': str(poll.uuid)})
             messages.success(request, 'Poll saved.' if action == 'save' else 'Poll updated.')
+            leave_to = request.POST.get('leave_to', '')
+            if action == 'save' and leave_to and url_has_allowed_host_and_scheme(
+                    leave_to, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+                return redirect(leave_to)
             return redirect(reverse('assessment_polls', args=[pk]) + '?poll=' + str(poll.uuid))
     results = poll_results(poll) if poll else None
     polls = session.polls.annotate(
@@ -178,7 +201,7 @@ def classroom_polls(request, pk):
     if poll and request.GET.get('state') == '1':
         return _private(JsonResponse({'status': poll.status, 'accepting': poll.accepting_responses,
             'html': render_to_string('assessments/polls/_results.html',
-                {'poll': poll, **results}, request=request),
+                {'poll': poll, **results, 'hide_option_bars': True, 'hide_option_percentages': True}, request=request),
             'responded_voters': list(poll.voters.filter(response__isnull=False).values_list('pk', flat=True))}))
     voters = list(poll.voters.select_related('response')) if poll else []
     for voter in voters:
@@ -195,10 +218,32 @@ def classroom_polls(request, pk):
         'session': session, 'polls': polls, 'poll': poll, 'form': form,
         'results': results, 'voters': voters,
         'pending_question_import': stash,
-        'question_import_form': PollQuestionImportForm(auto_id='id_poll_question_import_%s'),
+        'question_import_form': question_import_form,
         'poll_question_sample_url': reverse('assessment_poll_questions_sample', args=[session.pk]),
         'poll_url': public_url(request, reverse('classroom_poll', args=[poll.uuid])) if poll else '',
     }))
+
+
+@lecturer_required
+@require_POST
+def classroom_poll_delete(request, pk):
+    session = _session(request, pk)
+    if session.service != 'classroom':
+        raise Http404
+    action = request.POST.get('action')
+    ids = request.POST.getlist('polls')
+    if action == 'delete' and request.POST.get('poll'):
+        ids = [request.POST['poll']]
+    try:
+        poll_ids = [uuid.UUID(value) for value in ids]
+    except (ValueError, TypeError, AttributeError):
+        raise Http404
+    with transaction.atomic():
+        polls = session.polls.select_for_update().filter(uuid__in=poll_ids)
+        count = polls.count()
+        polls.delete()
+    messages.success(request, f'{count} poll{"s" if count != 1 else ""} deleted.')
+    return redirect(reverse('assessment_polls', args=[pk]))
 
 
 @lecturer_required
@@ -228,6 +273,22 @@ def public_poll_results(request, poll_uuid):
     return _private(render(request, 'assessments/polls/public_results.html', {
         'poll': poll, **results, 'public_results': True,
         'state_url': reverse('classroom_poll', args=[poll.uuid]) + '?public_state=1',
+    }))
+
+
+@never_cache
+@require_http_methods(['GET'])
+@public_poll_budget
+def poll_qr_screen(request, poll_uuid):
+    """Public, projector-friendly entry point for a classroom poll."""
+    poll = _public_poll(poll_uuid)
+    return _private(render(request, 'assessments/polls/qr_screen.html', {
+        'poll': poll,
+        'qr_image_url': reverse('classroom_poll_qr', args=[poll.uuid]),
+        'voting_url': reverse('classroom_poll', args=[poll.uuid]),
+        'results_url': reverse('classroom_poll_results', args=[poll.uuid]),
+        'state_url': reverse('classroom_poll', args=[poll.uuid]) + '?public_state=1',
+        'qr_available': poll.accepting_responses and not poll.personal_links_only,
     }))
 
 
@@ -312,13 +373,15 @@ def public_poll(request, poll_uuid):
     if request.GET.get('public_state') == '1':
         return _private(JsonResponse({'status': poll.status, 'accepting': poll.accepting_responses,
             'html': render_to_string('assessments/polls/_results.html',
-                {'poll': poll, **results, 'public_results': True}, request=request)}))
+                {'poll': poll, **results, 'public_results': True,
+                 'hide_option_bars': True, 'hide_option_percentages': True}, request=request)}))
     if request.GET.get('state') == '1':
         if not voter:
             return _private(JsonResponse({'error': 'Identify yourself first.'}, status=403))
         return _private(JsonResponse({'status': poll.status, 'accepting': poll.accepting_responses,
             'html': render_to_string('assessments/polls/_results.html',
-                {'poll': poll, **results, 'public_results': True}, request=request)}))
+                {'poll': poll, **results, 'public_results': True,
+                 'hide_option_bars': True, 'hide_option_percentages': True}, request=request)}))
     response = getattr(voter, 'response', None) if voter else None
     questions = list(poll.questions.prefetch_related('options').all())
     saved_answers = response.answers if response else {}

@@ -1,4 +1,5 @@
 """Read and validate a batch of classroom poll questions from an Excel file."""
+import csv
 from collections import OrderedDict
 
 from .sheets import UNREADABLE, cell, clean, map_headers, read_rows, workbook_bytes
@@ -10,7 +11,7 @@ MAX_ROWS = MAX_QUESTIONS * MAX_OPTIONS
 HEADERS = {
     'question': {'question', 'poll question'},
     'type': {'type', 'question type', 'answer type'},
-    'option': {'option', 'answer option', 'choice', 'answer'},
+    'option': {'option', 'answer option', 'answer options', 'choices', 'choice', 'answer'},
 }
 
 TYPE_ALIASES = {
@@ -18,14 +19,12 @@ TYPE_ALIASES = {
     'multiple choice': True, 'multiple': True, 'select all': True,
 }
 
-SAMPLE_HEADERS = ['Question', 'Question Type', 'Answer Option']
+SAMPLE_HEADERS = ['Question', 'Question Type', 'Answer Options']
 SAMPLE_ROWS = [
-    ['When should we hold the presentation?', 'Single choice', 'Monday morning'],
-    ['When should we hold the presentation?', 'Single choice', 'Wednesday afternoon'],
-    ['When should we hold the presentation?', 'Single choice', 'Friday morning'],
-    ['Which topics should we include?', 'Multiple choice', 'Project progress'],
-    ['Which topics should we include?', 'Multiple choice', 'Challenges and solutions'],
-    ['Which topics should we include?', 'Multiple choice', 'Next steps'],
+    ['When should we hold the presentation?', 'Single choice',
+     'Monday morning, Wednesday afternoon, Friday morning'],
+    ['Which topics should we include?', 'Multiple choice',
+     'Project progress, Challenges and solutions, Next steps'],
 ]
 
 
@@ -47,7 +46,7 @@ def parse_questions(uploaded_file):
 
     mapping = map_headers(rows[0], HEADERS)
     missing = [label for field, label in (
-        ('question', 'Question'), ('type', 'Question Type'), ('option', 'Answer Option'))
+        ('question', 'Question'), ('type', 'Question Type'), ('option', 'Answer Options'))
         if field not in mapping]
     if missing:
         result['fatal'] = (f'Could not find the {", ".join(missing)} column(s). '
@@ -61,7 +60,11 @@ def parse_questions(uploaded_file):
     for number, row in enumerate(rows[1:], start=2):
         question = clean(cell(row, mapping, 'question'))
         type_label = clean(cell(row, mapping, 'type')).casefold()
-        option = clean(cell(row, mapping, 'option'))
+        options_text = clean(cell(row, mapping, 'option'))
+        try:
+            row_options = [clean(value) for value in next(csv.reader([options_text], skipinitialspace=True, strict=True))]
+        except (csv.Error, StopIteration):
+            row_options = []
         if not question:
             result['errors'].append((number, 'Enter the question.'))
             continue
@@ -71,10 +74,10 @@ def parse_questions(uploaded_file):
         if type_label not in TYPE_ALIASES:
             result['errors'].append((number, 'Use Single choice or Multiple choice for the question type.'))
             continue
-        if not option:
-            result['errors'].append((number, 'Enter an answer option.'))
+        if not options_text or not row_options or any(not option for option in row_options):
+            result['errors'].append((number, 'Enter answer options separated by commas.'))
             continue
-        if len(option) > 250:
+        if any(len(option) > 250 for option in row_options):
             result['errors'].append((number, 'Keep each answer option within 250 characters.'))
             continue
 
@@ -91,10 +94,12 @@ def parse_questions(uploaded_file):
         elif entry['allow_multiple'] != allow_multiple:
             result['errors'].append((number, 'Use the same question type for every option of a question.'))
             continue
-        if option.casefold() in {existing.casefold() for existing in entry['options']}:
+        existing_options = {existing.casefold() for existing in entry['options']}
+        row_keys = [option.casefold() for option in row_options]
+        if len(set(row_keys)) != len(row_keys) or any(key in existing_options for key in row_keys):
             result['errors'].append((number, 'Answer options must be different within a question.'))
             continue
-        entry['options'].append(option)
+        entry['options'].extend(row_options)
 
     for entry in questions.values():
         if len(entry['options']) < 2:

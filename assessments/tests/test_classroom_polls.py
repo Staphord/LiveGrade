@@ -2,16 +2,18 @@
 import json
 import uuid
 from datetime import timedelta
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from accounts.testing import make_org, make_user, sign_in
+from assessments import poll_import
 from assessments.models import (AssessmentSession, ClassroomPoll, ClassroomPollOption,
     ClassroomPollResponse, ClassroomPollVoter, ParticipationRecord)
 from assessments.polls import PollForm, poll_results, save_response, transition
@@ -61,7 +63,28 @@ class ClassroomPollTests(TestCase):
         return self.student.post(self.page(poll), {'action': 'vote', 'options': list(options), **extra})
 
     def test_any_topic_can_be_created_edited_and_published_from_a_draft_session(self):
-        self.assertContains(self.client.get(self.manage), 'Ask your class one question or several in the same poll')
+        response = self.client.get(self.manage)
+        self.assertContains(response, 'Ask your class one question or several in the same poll')
+        self.assertContains(response, 'data-confirm-title="Delete polls"')
+        self.assertContains(response, 'data-poll-delete-one')
+        self.assertNotContains(response, 'window.confirm(')
+        self.assertContains(response, 'Unsaved changes in the poll editor will also be discarded.')
+        self.assertContains(response, 'novalidate data-poll-deadline-form data-poll-editor')
+        self.assertContains(response, 'window.validatePollEditor = validate')
+        self.assertContains(response, 'window.snapshotPollEditorState')
+        self.assertContains(response, 'window.DevPerf.confirm')
+        self.assertContains(response, 'Keep as draft')
+        self.assertContains(response, "event.target.matches('[data-poll-question-import], [data-poll-import-cancel], [data-poll-import-action], [data-poll-bulk-form]')")
+        self.assertContains(response, 'form.addEventListener(\'submit\', async function (event)')
+        self.assertContains(response, "headers: {'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json'}")
+        self.assertContains(response, "form.getAttribute('action') || window.location.href")
+        self.assertContains(response, "warningText.dataset.inlineMessageText = ''")
+        self.assertContains(response, 'custom-select-menu')
+        self.assertContains(response, "option.value===''&&select.hasAttribute('data-hide-empty-option')")
+        self.assertContains(response, 'window.initCustomSelects(typeGroup)')
+        self.assertNotContains(response, 'poll-answer-type-menu')
+        self.assertNotContains(response, 'window.enhancePollAnswerType')
+        self.assertRegex(response.content.decode(), r'<select(?=[^>]*name="allow_multiple")(?=[^>]*hidden)[^>]*>')
         poll = self.create()
         self.assertEqual(list(poll.options.values_list('label', flat=True)), ['Main hall', 'Library', 'Online'])
         self.client.post(self.manage, self.data(poll=poll.uuid, question='Which project theme?', option_lines='Health\nTransport'))
@@ -69,6 +92,8 @@ class ClassroomPollTests(TestCase):
         self.assertEqual(poll.question, 'Which project theme?')
         page = self.client.get(self.manage, {'poll': poll.uuid})
         self.assertContains(page, 'Publish poll')
+        self.assertContains(page, 'data-confirm-title="Publish poll?"')
+        self.assertContains(page, 'name="action" value="publish"')
         self.client.post(self.manage, {'poll': poll.uuid, 'action': 'publish'})
         self.assertEqual(poll.voters.count(), 2)
         self.session.refresh_from_db()
@@ -83,6 +108,23 @@ class ClassroomPollTests(TestCase):
                 self.assertFalse(self.session.polls.exists())
         for date in ('not-a-date', '2000-01-01T10:00', '2027-01-01T10:00+03:00'):
             self.assertEqual(self.client.post(self.manage, self.data(deadline_local=date)).status_code, 200)
+        self.assertFalse(self.session.polls.exists())
+
+    def test_ajax_save_draft_and_delete_single_and_bulk(self):
+        headers = {'HTTP_X_REQUESTED_WITH': 'XMLHttpRequest'}
+        result = self.client.post(self.manage, self.data(), **headers)
+        self.assertEqual(result.status_code, 200)
+        self.assertTrue(result.json()['ok'])
+        accept_result = self.client.post(self.manage, self.data(question='JSON accept poll?'),
+            HTTP_ACCEPT='application/json')
+        self.assertEqual(accept_result.status_code, 200)
+        self.assertTrue(accept_result.json()['ok'])
+        accept_poll = self.session.polls.get(uuid=accept_result.json()['uuid'])
+        poll = self.session.polls.get(uuid=result.json()['uuid'])
+        second = self.create(question='Second question?')
+        deleted = self.client.post(reverse('assessment_poll_delete', args=[self.session.pk]),
+            {'action': 'bulk-delete', 'polls': [str(poll.uuid), str(accept_poll.uuid), str(second.uuid)]})
+        self.assertEqual(deleted.status_code, 302)
         self.assertFalse(self.session.polls.exists())
 
     def test_extra_question_validation_is_shown_inline_and_preserves_submitted_question(self):
@@ -121,6 +163,50 @@ class ClassroomPollTests(TestCase):
         self.assertEqual((results['responded'], results['unanswered']), (1, 1))
         self.assertFalse(ParticipationRecord.objects.exists())
         self.assertContains(self.student.get(self.page(poll)), 'Update response')
+
+    def test_closed_and_confirmed_poll_states_do_not_ask_for_identity(self):
+        poll = self.publish()
+        question = poll.questions.first()
+        option = question.options.first()
+
+        self.identify(poll)
+        self.assertEqual(self.vote(poll, [option.pk]).status_code, 302)
+        transition(poll, 'close', self.owner)
+        closed_page = self.student.get(self.page(poll))
+        self.assertContains(closed_page, 'Voting is closed.')
+        self.assertNotContains(closed_page, 'Your roster name or student ID')
+
+        transition(poll, 'confirm', self.owner, question_id=question.pk)
+        confirmed_page = self.student.get(self.page(poll))
+        self.assertContains(confirmed_page, 'Decision confirmed')
+        self.assertNotContains(confirmed_page, f'Teacher’s decision: {option.label}')
+        self.assertContains(confirmed_page, f'Decision: {option.label}')
+        self.assertNotContains(confirmed_page, 'Your roster name or student ID')
+
+    def test_closed_poll_repairs_stale_result_projection_from_saved_ballots(self):
+        poll = self.publish()
+        voter = poll.voters.first()
+        question = poll.questions.first()
+        option = question.options.first()
+        ClassroomPollResponse.objects.create(
+            voter=voter,
+            answers={str(question.pk): [option.pk]},
+        )
+        transition(poll, 'close', self.owner)
+
+        result = poll_results(poll)
+        self.assertEqual(result['responded'], 1)
+        self.assertEqual(result['unanswered'], 1)
+        self.assertEqual(result['questions'][0]['responded'], 1)
+        self.assertEqual(result['questions'][0]['options'][0].vote_count, 1)
+        poll.refresh_from_db()
+        self.assertEqual(poll.result_counts['responded'], 1)
+
+        detail = self.client.get(self.manage, {'poll': poll.uuid})
+        self.assertEqual(detail.context['results']['responded'], 1)
+        self.assertContains(detail, 'Approve poll results')
+        self.assertContains(detail, 'Approve “Main hall”')
+        self.assertNotContains(detail, 'data-poll-decision-option')
 
     def test_multiple_answers_abstention_and_update_rules(self):
         poll = self.publish(allow_multiple='on')
@@ -165,15 +251,20 @@ class ClassroomPollTests(TestCase):
         poll = self.publish()
         self.identify(poll)
         choice = poll.options.last()
+        self.assertEqual(self.vote(poll, [choice.pk]).status_code, 302)
         self.client.post(self.manage, {'poll': poll.uuid, 'action': 'close'})
         self.assertContains(self.vote(poll, [choice.pk]), 'This poll is closed')
         self.client.post(self.manage, {'poll': poll.uuid, 'action': 'confirm',
-            'option': choice.pk, 'decision_note': 'Bring your laptop.'})
+            'decision_note': 'Bring your laptop.'})
         poll.refresh_from_db()
         self.assertEqual(poll.confirmed_option, choice)
         self.assertEqual(poll.status, 'confirmed')
         page = self.student.get(self.page(poll))
-        self.assertContains(page, 'Teacher’s decision: Online')
+        left_panel = page.content.decode().split(
+            '<section class="s-card poll-response-card"', 1)[1].split(
+                '<aside class="s-card poll-live-results-panel"', 1)[0]
+        self.assertNotIn('Teacher’s decision: Online', left_panel)
+        self.assertContains(page, 'Decision: Online')
         self.assertContains(page, 'Bring your laptop.')
         closed_saved_page = self.student.get(f'{self.page(poll)}?saved=1')
         self.assertContains(closed_saved_page, 'Your response was saved.')
@@ -181,7 +272,7 @@ class ClassroomPollTests(TestCase):
         self.assertIsNotNone(poll.closed_at)
         self.assertIsNotNone(poll.confirmed_at)
 
-    def test_open_poll_can_be_confirmed_and_cancelled_poll_keeps_responses(self):
+    def test_open_poll_must_close_before_approval_and_cancel_keeps_responses(self):
         poll = self.publish()
         self.identify(poll)
         self.vote(poll, [poll.options.first().pk])
@@ -189,9 +280,82 @@ class ClassroomPollTests(TestCase):
         self.assertTrue(ClassroomPollResponse.objects.exists())
         self.assertContains(self.student.get(self.page(poll)), 'This poll was cancelled')
         other = self.publish()
-        self.client.post(self.manage, {'poll': other.uuid, 'action': 'confirm', 'option': other.options.first().pk})
+        leader = other.options.first()
+        self.identify(other, 'Ben')
+        self.assertEqual(self.vote(other, [leader.pk]).status_code, 302)
+        active_result = self.client.post(self.manage, {'poll': other.uuid, 'action': 'confirm'})
+        self.assertContains(active_result, 'Close voting before approving a final result.')
+        other.refresh_from_db()
+        self.assertEqual(other.status, 'open')
+        self.client.post(self.manage, {'poll': other.uuid, 'action': 'close'})
+        self.client.post(self.manage, {'poll': other.uuid, 'action': 'confirm'})
         other.refresh_from_db()
         self.assertEqual(other.status, 'confirmed')
+        self.assertEqual(other.confirmed_option, leader)
+
+    def test_teacher_can_only_approve_the_unique_top_voted_option(self):
+        poll = self.publish()
+        question = poll.questions.first()
+        leader, other = list(question.options.all())[:2]
+        self.identify(poll)
+        self.assertEqual(self.vote(poll, [leader.pk]).status_code, 302)
+        self.client.post(self.manage, {'poll': poll.uuid, 'action': 'close'})
+
+        rejected = self.client.post(self.manage, {
+            'poll': poll.uuid, 'action': 'confirm', 'question': question.pk,
+            'option': other.pk,
+        })
+        self.assertContains(rejected, 'You can only approve the option with the most selections.')
+        poll.refresh_from_db()
+        question.refresh_from_db()
+        self.assertEqual(poll.status, 'closed')
+        self.assertIsNone(question.confirmed_option)
+
+        accepted = self.client.post(self.manage, {
+            'poll': poll.uuid, 'action': 'confirm', 'question': question.pk,
+        })
+        self.assertEqual(accepted.status_code, 302)
+        poll.refresh_from_db()
+        question.refresh_from_db()
+        self.assertEqual(poll.status, 'confirmed')
+        self.assertEqual(question.confirmed_option, leader)
+
+    def test_teacher_can_break_a_tie_only_by_choosing_a_tied_top_option(self):
+        poll = self.publish()
+        question = poll.questions.first()
+        options = list(question.options.all())
+        voters = list(poll.voters.all())
+        for voter, option in zip(voters, options[:2]):
+            save_response(poll.pk, voter.pk, [], token=voter.token,
+                question_answers={str(question.pk): [option.pk]})
+        self.client.post(self.manage, {'poll': poll.uuid, 'action': 'close'})
+
+        detail = self.client.get(self.manage, {'poll': poll.uuid})
+        self.assertContains(detail, 'The top options are tied at 1 selection.')
+        self.assertContains(detail, 'Choose among the tied top options')
+        self.assertContains(detail, 'name="option"')
+        tied_options = detail.context['results']['questions'][0]['tied_options']
+        self.assertEqual({option.pk for option in tied_options}, {options[0].pk, options[1].pk})
+        rejected = self.client.post(self.manage, {
+            'poll': poll.uuid, 'action': 'confirm', 'question': question.pk,
+            'option': options[2].pk,
+        })
+        self.assertContains(rejected, 'For a tie, choose only among the tied top options.')
+        poll.refresh_from_db()
+        question.refresh_from_db()
+        self.assertEqual(poll.status, 'closed')
+        self.assertIsNone(question.confirmed_option)
+
+        accepted = self.client.post(self.manage, {
+            'poll': poll.uuid, 'action': 'confirm', 'question': question.pk,
+            'option': options[1].pk, 'decision_note': 'Teacher broke the tie.',
+        })
+        self.assertEqual(accepted.status_code, 302)
+        poll.refresh_from_db()
+        question.refresh_from_db()
+        self.assertEqual(poll.status, 'confirmed')
+        self.assertEqual(question.confirmed_option, options[1])
+        self.assertEqual(question.decision_note, 'Teacher broke the tie.')
 
     def test_no_roster_or_expired_deadline_prevents_publication(self):
         poll = self.create()
@@ -263,9 +427,13 @@ class ClassroomPollTests(TestCase):
         public_html = result.json()['html']
         self.assertIn('Main hall', public_html)
         self.assertIn('total response', public_html)
+        self.assertNotIn('poll-answer-track', public_html)
+        self.assertNotIn('%', public_html)
         self.assertNotIn('Anna', public_html)
         self.assertNotIn('Awaiting response', public_html)
         self.assertTrue(result.json()['accepting'])
+        response_page = self.student.get(url)
+        self.assertNotContains(response_page, 'role="progressbar"')
         self.assertContains(self.client.get(self.manage, {'poll': poll.uuid, 'state': '1'}), 'Main hall')
 
     def test_shared_qr_draft_secrecy_and_forgetting_identity(self):
@@ -409,3 +577,209 @@ class ClassroomPollTests(TestCase):
             self.assertTrue(_may_identify(anna, poll))
         self.assertFalse(_may_identify(anna, poll))
         self.assertTrue(_may_identify(ben, poll))
+
+    def test_classroom_poll_question_import_workflow(self):
+        sample_file = SimpleUploadedFile(
+            'sample.xlsx',
+            poll_import.sample_workbook().getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+
+        # Upload question sample
+        res = self.client.post(self.manage, {'action': 'upload-questions', 'file': sample_file},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.json()['ok'])
+        self.assertIn('Review import', res.json()['html'])
+        stash = self.client.session.get('classroom_poll_question_import')
+        self.assertIsNotNone(stash)
+        self.assertEqual(stash['session'], self.session.pk)
+        preview_page = self.client.get(self.manage)
+        self.assertContains(preview_page, 'data-poll-import-cancel')
+        self.assertContains(preview_page, 'data-poll-import-action>', count=2)
+        self.assertFalse(self.session.polls.exists(), 'Previewing an import must not save poll questions.')
+
+        # Accessing with stash from another session resets stash
+        session_other = self.client.session
+        session_other['classroom_poll_question_import'] = {'session': 999999}
+        session_other.save()
+        res = self.client.get(self.manage)
+        self.assertEqual(res.status_code, 200)
+
+        # Re-upload and cancel question import
+        sample_file.seek(0)
+        self.client.post(self.manage, {'action': 'upload-questions', 'file': sample_file})
+        res = self.client.post(self.manage, {'action': 'cancel-question-import'})
+        self.assertEqual(res.status_code, 302)
+        self.assertNotIn('classroom_poll_question_import', self.client.session)
+
+        # Re-upload and apply to create new draft
+        sample_file.seek(0)
+        self.client.post(self.manage, {'action': 'upload-questions', 'file': sample_file})
+        res = self.client.post(self.manage, {'action': 'apply-question-import'})
+        self.assertEqual(res.status_code, 302)
+        new_poll = self.session.polls.first()
+        self.assertIsNotNone(new_poll)
+        self.assertEqual(new_poll.status, 'draft')
+        self.assertGreater(new_poll.questions.count(), 0)
+
+        # Upload questions targeted to existing draft poll and apply
+        sample_file.seek(0)
+        res = self.client.post(self.manage, {'action': 'upload-questions', 'poll': str(new_poll.uuid), 'file': sample_file})
+        self.assertEqual(res.status_code, 302)
+        res = self.client.post(self.manage, {'action': 'apply-question-import', 'poll': str(new_poll.uuid)})
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'already in this poll')
+        self.assertEqual(new_poll.questions.count(), 2)
+
+        # Apply question import error branches
+        session_stash = self.client.session
+        session_stash['classroom_poll_question_import'] = {'session': self.session.pk, 'errors': [(2, 'Error')]}
+        session_stash.save()
+        res = self.client.post(self.manage, {'action': 'apply-question-import', 'poll': str(new_poll.uuid)})
+        self.assertEqual(res.status_code, 200)
+
+        session_stash['classroom_poll_question_import'] = {'session': self.session.pk, 'target_poll': 999999, 'questions': [{'q': 'q'}]}
+        session_stash.save()
+        res = self.client.post(self.manage, {'action': 'apply-question-import', 'poll': str(new_poll.uuid)})
+        self.assertEqual(res.status_code, 200)
+
+        # Apply question import without stash in session
+        self.client.session.pop('classroom_poll_question_import', None)
+        res = self.client.post(self.manage, {'action': 'apply-question-import'})
+        self.assertEqual(res.status_code, 200)
+
+        # Upload empty questions file (triggers fatal error)
+        from assessments.sheets import workbook_bytes
+        empty_upload = SimpleUploadedFile('empty.xlsx', workbook_bytes([], []).getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        res = self.client.post(self.manage, {'action': 'upload-questions', 'file': empty_upload})
+        self.assertEqual(res.status_code, 200)
+
+        # Upload non-xlsx file (triggers invalid upload form)
+        txt_upload = SimpleUploadedFile('bad.txt', b'plain text', content_type='text/plain')
+        res = self.client.post(self.manage, {'action': 'upload-questions', 'file': txt_upload})
+        self.assertEqual(res.status_code, 200)
+
+    def test_classroom_poll_import_sample_and_public_results(self):
+        # Sample file download
+        sample_url = reverse('assessment_poll_questions_sample', args=[self.session.pk])
+        res = self.client.get(sample_url)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res['Content-Type'], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+        # Sample file 404 on wrong service via view handler
+        from django.test import RequestFactory
+        from django.http import Http404
+        from assessments.views import poll_views
+        rf = RequestFactory()
+        req = rf.get('/')
+        req.user = self.owner
+        req.session = self.client.session
+        req.organization = self.org.as_claim()
+        with patch('assessments.views.poll_views._session') as mock_sess:
+            mock_sess_obj = Mock()
+            mock_sess_obj.service = 'team'
+            mock_sess.return_value = mock_sess_obj
+            with self.assertRaises(Http404):
+                poll_views.classroom_poll_import_sample(req, self.session.pk)
+
+        # Apply question import with no stash triggers expired preview error
+        res = self.client.post(self.manage, {'action': 'apply-question-import'})
+        self.assertEqual(res.status_code, 200)
+
+        # Public poll results view
+        poll = self.publish()
+        results_url = reverse('classroom_poll_results', args=[poll.uuid])
+        res = self.client.get(results_url)
+        self.assertEqual(res.status_code, 200)
+        self.assertIn('public_results', res.context)
+
+        # Public state projection
+        res = self.client.get(self.page(poll) + '?public_state=1')
+        self.assertEqual(res.status_code, 200)
+
+        # QR code download route
+        res = self.client.get(reverse('classroom_poll_qr', args=[poll.uuid]))
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res['Content-Type'], 'image/png')
+
+        # Non-digit question id in transition POST raises error
+        res = self.client.post(self.manage, {'poll': str(poll.uuid), 'action': 'start-question', 'question': 'not-a-number'})
+        self.assertEqual(res.status_code, 200)
+
+        # Legacy options parameter in vote for single question poll
+        single_voter = poll.voters.first()
+        single_opt = poll.questions.first().options.first()
+        self.client.get(reverse('classroom_poll_invitation', args=[single_voter.token]))
+        res = self.client.post(self.page(poll), {
+            'action': 'vote',
+            'options': [str(single_opt.pk)],
+        })
+        self.assertEqual(res.status_code, 302)
+
+        # Modern question-specific vote option
+        res = self.client.post(self.page(poll), {
+            'action': 'vote',
+            f'question-{poll.questions.first().pk}': [str(single_opt.pk)],
+        })
+        self.assertEqual(res.status_code, 302)
+
+    def test_poll_import_parser_error_scenarios(self):
+        from assessments.sheets import workbook_bytes
+
+        # Empty rows
+        empty_wb = SimpleUploadedFile('empty.xlsx', workbook_bytes([], []).getvalue())
+        self.assertIn('empty', poll_import.parse_questions(empty_wb)['fatal'].lower())
+
+        # Header only, no data rows
+        header_only = SimpleUploadedFile('header_only.xlsx', workbook_bytes(
+            ['Question', 'Question Type', 'Answer Option'], []).getvalue())
+        self.assertEqual(poll_import.parse_questions(header_only)['fatal'], 'No questions were found in the file.')
+
+        # Missing headers
+        bad_headers = SimpleUploadedFile('bad.xlsx', workbook_bytes(['WrongHeader'], [['val']]).getvalue())
+        self.assertIn('Could not find', poll_import.parse_questions(bad_headers)['fatal'])
+
+        # Unreadable file
+        corrupt = SimpleUploadedFile('corrupt.xlsx', b'not a zip')
+        self.assertEqual(poll_import.parse_questions(corrupt)['fatal'], poll_import.UNREADABLE)
+
+        # Max rows exceeded
+        too_many_rows = SimpleUploadedFile('too_many_rows.xlsx', workbook_bytes(
+            ['Question', 'Question Type', 'Answer Option'],
+            [['Q', 'Single choice', 'Opt']] * (poll_import.MAX_ROWS + 1)).getvalue())
+        self.assertIn(f'at most {poll_import.MAX_ROWS}', poll_import.parse_questions(too_many_rows)['fatal'])
+
+        # Max questions exceeded
+        q_rows = []
+        for i in range(poll_import.MAX_QUESTIONS + 1):
+            q_rows.append([f'Question {i}', 'Single choice', 'Opt 1'])
+            q_rows.append([f'Question {i}', 'Single choice', 'Opt 2'])
+        too_many_q = SimpleUploadedFile('too_many_q.xlsx', workbook_bytes(
+            ['Question', 'Question Type', 'Answer Option'], q_rows).getvalue())
+        self.assertGreater(len(poll_import.parse_questions(too_many_q)['errors']), 0)
+
+        # Max options exceeded
+        too_many_opt = SimpleUploadedFile('too_many_opt.xlsx', workbook_bytes(
+            ['Question', 'Question Type', 'Answer Option'],
+            [['Q1', 'Single choice', f'Opt {i}'] for i in range(poll_import.MAX_OPTIONS + 1)]).getvalue())
+        self.assertGreater(len(poll_import.parse_questions(too_many_opt)['errors']), 0)
+
+        # Row validation errors
+        headers = ['Question', 'Question Type', 'Answer Option']
+        rows = [
+            ['', 'Single choice', 'Opt 1'],  # Missing question
+            ['A' * 251, 'Single choice', 'Opt 1'],  # Question too long
+            ['Valid question', 'Invalid type', 'Opt 1'],  # Bad type
+            ['Valid question 2', 'Single choice', ''],  # Missing option
+            ['Valid question 3', 'Single choice', 'B' * 251],  # Option too long
+            ['Mixed type', 'Single choice', 'Opt 1'],
+            ['Mixed type', 'Multiple choice', 'Opt 2'],  # Mismatched type
+            ['Duplicate opt', 'Single choice', 'Same'],
+            ['Duplicate opt', 'Single choice', 'Same'],  # Duplicate option
+            ['Single opt question', 'Single choice', 'Only one opt'],  # Fewer than 2 options
+        ]
+        wb = SimpleUploadedFile('rows.xlsx', workbook_bytes(headers, rows).getvalue())
+        result = poll_import.parse_questions(wb)
+        self.assertGreater(len(result['errors']), 0)

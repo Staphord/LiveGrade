@@ -748,6 +748,7 @@ class ClassroomPollQuestion(models.Model):
     poll = models.ForeignKey(ClassroomPoll, on_delete=models.CASCADE, related_name='questions')
     prompt = models.CharField(max_length=250)
     allow_multiple = models.BooleanField(default=False)
+    allow_abstain = models.BooleanField(default=True)
     order = models.PositiveIntegerField(default=0)
     confirmed_option = models.ForeignKey('ClassroomPollOption', null=True, blank=True,
         on_delete=models.SET_NULL, related_name='confirmed_for_questions')

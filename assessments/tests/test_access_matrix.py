@@ -33,11 +33,13 @@ LECTURER_PAGES = {
     'assessment_rubric_onboarding_sample': (GET, LOGIN, 403, 200),
     'standalone_poll_list': (GET, LOGIN, 403, 200),
     'standalone_poll_sample': (GET, LOGIN, 403, 200),
+    'standalone_poll_delete': (POST, LOGIN, 403, '/polls/app/'),
     'assessment_walkthrough_start': (POST, LOGIN, 403, '/classroom/app/new/'),
     'assessment_walkthrough_dismiss': (POST, LOGIN, 403, '/classroom/app/'),
 }
 LECTURER_ROW_ROUTES = {
     'standalone_poll_state': GET,
+    'assessment_poll_delete': POST,
     'assessment_polls': GET, 'assessment_leaderboard_scores': POST,
     'assessment_poll_questions_sample': GET,
     'assessment_session_duplicate': GET,
@@ -69,9 +71,9 @@ LECTURER_ROW_ROUTES = {
 }
 STUDENT_ROUTES = {
     'classroom_poll': GET, 'classroom_poll_results': GET,
-    'classroom_poll_qr': GET, 'classroom_poll_invitation': GET,
+    'classroom_poll_qr': GET, 'classroom_poll_qr_screen': GET, 'classroom_poll_invitation': GET,
     'standalone_poll_live_results': GET, 'standalone_poll_live_state': GET,
-    'standalone_poll_public': GET, 'standalone_poll_qr': GET,
+    'standalone_poll_public': GET, 'standalone_poll_qr': GET, 'standalone_poll_qr_screen': GET,
     # Reached by participant link, no login: an unknown link is a 404 for everybody.
     'assessment_join_screen': GET, 'assessment_join_screen_state': GET,
     'assessment_join_screen_qr': GET, 'student_join': GET, 'student_privacy_notice': GET,
@@ -129,6 +131,8 @@ CLOSED_SERVICE_ROUTES = {
     'panel_results_export': GET,
     'competition_list': GET,
     'competition_manage': GET,
+    'competition_entry_import': POST,
+    'competition_entry_import_sample': GET,
     'competition_results_export': GET,
     'competition_judge_scorecard': GET,
 }

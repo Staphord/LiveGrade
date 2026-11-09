@@ -43,6 +43,31 @@ class StandalonePollsEndToEndTests(TestCase):
         url = reverse('standalone_poll_list')
         res = self.client.get(url)
         self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'data-confirm-title="Delete polls"')
+        self.assertContains(res, 'data-poll-select-all')
+        self.assertContains(res, 'data-poll-delete-selected hidden')
+        self.assertContains(res, 'remove.hidden = selected.length === 0')
+        self.assertContains(res, 'form.addEventListener(\'submit\', async function (event)')
+        self.assertContains(res, "headers: {'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json'}")
+        self.assertContains(res, "form.getAttribute('action') || window.location.href")
+        self.assertContains(res, "warningText.dataset.inlineMessageText = ''")
+        self.assertContains(res, 'data-unsaved-ignore')
+        self.assertContains(res, "if (event.target.hasAttribute('data-unsaved-ignore')) return;")
+        self.assertNotContains(res, 'window.confirm(')
+        self.assertContains(res, 'Unsaved changes in the poll editor will also be discarded.')
+        self.assertContains(res, 'novalidate data-poll-deadline-form data-poll-editor')
+        self.assertContains(res, 'window.validatePollEditor = validate')
+        self.assertContains(res, 'window.snapshotPollEditorState')
+        self.assertContains(res, 'window.DevPerf.confirm')
+        self.assertContains(res, 'Keep as draft')
+        self.assertContains(res, "editor.getAttribute('action') || window.location.href")
+        self.assertNotContains(res, 'fetch(editor.action')
+        self.assertContains(res, 'custom-select-menu')
+        self.assertContains(res, "option.value===''&&select.hasAttribute('data-hide-empty-option')")
+        self.assertContains(res, 'window.initCustomSelects(typeGroup)')
+        self.assertNotContains(res, 'poll-answer-type-menu')
+        self.assertNotContains(res, 'window.enhancePollAnswerType')
+        self.assertRegex(res.content.decode(), r'<select(?=[^>]*name="allow_multiple")(?=[^>]*hidden)[^>]*>')
 
         # POST create draft with errors
         bad_post = {'action': 'save', 'question': '', 'option_lines': 'OnlyOne'}
@@ -67,6 +92,9 @@ class StandalonePollsEndToEndTests(TestCase):
 
     def test_standalone_poll_edit_and_transition(self):
         poll = self._create_poll()
+        edit_page = self.client.get(reverse('standalone_poll_list'), {'poll': str(poll.uuid)})
+        self.assertContains(edit_page, 'data-confirm-title="Publish poll?"')
+        self.assertContains(edit_page, 'name="action" value="publish"')
 
         # Update draft
         post_data = {
@@ -97,6 +125,94 @@ class StandalonePollsEndToEndTests(TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()['status'], 'open')
 
+    def test_confirmed_decision_is_shown_in_results_panel_only(self):
+        poll = self._create_poll(status='open')
+        question = poll.questions.first()
+        option = question.options.first()
+        manage_url = reverse('standalone_poll_list')
+        public_url = reverse('standalone_poll_public', args=[poll.uuid])
+        self.public_client.get(public_url)
+        self.public_client.post(public_url, {
+            'action': 'vote', f'question-{question.pk}': [str(option.pk)],
+        })
+        self.client.post(manage_url, {'action': 'close', 'poll': str(poll.uuid)})
+        self.client.post(manage_url, {
+            'action': 'confirm', 'poll': str(poll.uuid), 'question': question.pk,
+            'decision_note': 'Use the selected option.',
+        })
+
+        page = self.public_client.get(public_url)
+        left_panel = page.content.decode().split(
+            '<section class="s-card poll-response-card"', 1)[1].split(
+                '<aside class="s-card poll-live-results-panel"', 1)[0]
+        self.assertNotIn(f'Decision: {option.label}', left_panel)
+        self.assertContains(page, f'Decision: {option.label}')
+        self.assertContains(page, 'Use the selected option.')
+
+    def test_standalone_teacher_can_break_a_tie_only_among_tied_top_options(self):
+        poll = self._create_poll(status='open')
+        question = poll.questions.first()
+        options = list(question.options.all())
+        public_url = reverse('standalone_poll_public', args=[poll.uuid])
+        for index, option in enumerate(options[:2]):
+            voter_client = self.public_client if index == 0 else Client()
+            voter_client.get(public_url)
+            voter_client.post(public_url, {
+                'action': 'vote', f'question-{question.pk}': [str(option.pk)],
+            })
+        manage_url = reverse('standalone_poll_list')
+        self.client.post(manage_url, {'action': 'close', 'poll': str(poll.uuid)})
+
+        detail = self.client.get(manage_url, {'poll': str(poll.uuid)})
+        self.assertContains(detail, 'The top options are tied at 1 selection.')
+        self.assertContains(detail, 'Choose among the tied top options')
+        tied_options = detail.context['results']['questions'][0]['tied_options']
+        self.assertEqual({option.pk for option in tied_options}, {options[0].pk, options[1].pk})
+        rejected = self.client.post(manage_url, {
+            'action': 'confirm', 'poll': str(poll.uuid), 'question': question.pk,
+            'option': options[2].pk,
+        })
+        self.assertContains(rejected, 'For a tie, choose only among the tied top options.')
+        poll.refresh_from_db()
+        question.refresh_from_db()
+        self.assertEqual(poll.status, 'closed')
+        self.assertIsNone(question.confirmed_option)
+
+        accepted = self.client.post(manage_url, {
+            'action': 'confirm', 'poll': str(poll.uuid), 'question': question.pk,
+            'option': options[0].pk, 'decision_note': 'Teacher broke the tie.',
+        })
+        self.assertEqual(accepted.status_code, 302)
+        poll.refresh_from_db()
+        question.refresh_from_db()
+        self.assertEqual(poll.status, 'confirmed')
+        self.assertEqual(question.confirmed_option, options[0])
+        self.assertEqual(question.decision_note, 'Teacher broke the tie.')
+
+    def test_ajax_save_and_owner_scoped_poll_delete(self):
+        url = reverse('standalone_poll_list')
+        data = {'action': 'save', 'question': 'AJAX poll?', 'option_lines': 'A\nB',
+            'timezone_name': 'UTC', 'allow_abstain': 'on'}
+        response = self.client.post(url, data, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(response.status_code, 200)
+        poll = ClassroomPoll.objects.get(uuid=response.json()['uuid'])
+        accept_response = self.client.post(url, {
+            **data, 'question': 'Accept header poll?'}, HTTP_ACCEPT='application/json')
+        self.assertEqual(accept_response.status_code, 200)
+        self.assertTrue(accept_response.json()['ok'])
+        other_poll = self._create_poll(question='Other poll?')
+        single_delete = self.client.post(reverse('standalone_poll_delete'), {
+            'action': 'delete', 'poll': str(other_poll.uuid)})
+        self.assertEqual(single_delete.status_code, 302)
+        self.assertFalse(ClassroomPoll.objects.filter(pk=other_poll.pk).exists())
+        sign_in(self.client, self.other_user, self.org)
+        self.client.post(reverse('standalone_poll_delete'), {'action': 'delete', 'poll': str(poll.uuid)})
+        self.assertTrue(ClassroomPoll.objects.filter(pk=poll.pk).exists())
+        sign_in(self.client, self.user, self.org)
+        self.client.post(reverse('standalone_poll_delete'), {'action': 'bulk-delete',
+            'polls': [str(poll.uuid), str(other_poll.uuid)]})
+        self.assertFalse(ClassroomPoll.objects.filter(pk__in=[poll.pk, other_poll.pk]).exists())
+
     def test_standalone_poll_question_import_flow(self):
         url = reverse('standalone_poll_list')
         # Generate valid XLSX matching expected headers
@@ -115,8 +231,11 @@ class StandalonePollsEndToEndTests(TestCase):
         res = self.client.post(url, {'action': 'upload-questions'})
         self.assertEqual(res.status_code, 200)
 
-        res = self.client.post(url, {'action': 'upload-questions', 'file': buf})
-        self.assertEqual(res.status_code, 302)
+        res = self.client.post(url, {'action': 'upload-questions', 'file': buf},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.json()['ok'])
+        self.assertIn('Review import', res.json()['html'])
 
         # Cancel question import
         res = self.client.post(url, {'action': 'cancel-question-import'})
@@ -133,6 +252,14 @@ class StandalonePollsEndToEndTests(TestCase):
         imported_poll = ClassroomPoll.objects.filter(standalone=True, question='What is your role?').first()
         self.assertIsNotNone(imported_poll)
         self.assertEqual(imported_poll.questions.first().options.count(), 3)
+        original_question_count = imported_poll.questions.count()
+        buf.seek(0)
+        self.client.post(url, {'action': 'upload-questions', 'poll': str(imported_poll.uuid), 'file': buf})
+        repeated_import = self.client.post(url, {'action': 'apply-question-import', 'poll': str(imported_poll.uuid)})
+        self.assertEqual(repeated_import.status_code, 200)
+        self.assertContains(repeated_import, 'already in this poll')
+        imported_poll.refresh_from_db()
+        self.assertEqual(imported_poll.questions.count(), original_question_count)
 
         # Test append to existing draft
         draft = self._create_poll()
@@ -193,6 +320,10 @@ class StandalonePollsEndToEndTests(TestCase):
         res = self.public_client.get(vote_url + '?state=1')
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()['status'], 'open')
+        self.assertNotIn('poll-answer-track', res.json()['html'])
+        self.assertNotIn('%', res.json()['html'])
+        response_page = self.public_client.get(vote_url)
+        self.assertNotContains(response_page, 'role="progressbar"')
 
     def test_standalone_poll_live_state_and_results(self):
         poll = self._create_poll(status='open')

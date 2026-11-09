@@ -1,0 +1,154 @@
+<section class="card h-100 poll-list-panel" aria-labelledby="poll-list-heading">
+  <div class="card-body">
+    <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+      <div>
+        <h2 class="h5 mb-1" id="poll-list-heading">Polls</h2>
+        <p class="small text-muted mb-0">{{ polls|length }} total</p>
+      </div>
+      <a class="btn btn-primary btn-sm" href="{{ create_url }}" aria-label="Create a new poll"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>New poll</a>
+    </div>
+    <div class="poll-list-filters" role="group" aria-label="Filter polls">
+      <button class="poll-list-filter is-active" type="button" data-poll-filter="all" aria-pressed="true">All</button>
+      <button class="poll-list-filter" type="button" data-poll-filter="live" aria-pressed="false">Live</button>
+      <button class="poll-list-filter" type="button" data-poll-filter="draft" aria-pressed="false">Drafts</button>
+      <button class="poll-list-filter" type="button" data-poll-filter="closed" aria-pressed="false">Closed</button>
+    </div>
+    <form method="post" action="{% if classroom %}{% url 'assessment_poll_delete' session.pk %}{% else %}{% url 'standalone_poll_delete' %}{% endif %}" data-poll-bulk-form
+          data-confirm="Delete this poll or the selected polls? All associated responses will also be permanently deleted."
+          data-confirm-title="Delete polls" data-confirm-label="Delete" data-confirm-tone="danger">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="bulk-delete" data-poll-delete-action>
+    <input type="hidden" name="poll" value="" data-poll-delete-id>
+    <div class="d-flex align-items-center justify-content-between gap-2 my-2">
+      <label class="form-check mb-0"><input class="form-check-input" type="checkbox" data-poll-select-all aria-label="Select all polls"><span class="form-check-label small">Select all</span></label>
+      <button class="btn btn-outline-danger btn-sm" type="submit" name="action" value="bulk-delete" data-poll-delete-selected hidden>Delete selected</button>
+    </div>
+    <nav class="poll-list" aria-label="Poll list" data-poll-list>
+      {% for item in polls %}
+        <div class="poll-list-row" data-poll-list-row>
+        <input class="form-check-input mt-3" type="checkbox" name="polls" value="{{ item.uuid }}" data-poll-select aria-label="Select {{ item.question }}">
+        <a href="?poll={{ item.uuid }}" title="{{ item.question }}"
+           class="poll-list-card{% if poll.pk == item.pk %} is-selected{% endif %}"
+           data-poll-list-item
+           data-poll-filter-state="{% if item.status == 'draft' %}draft{% elif item.status == 'open' and item.accepting_responses %}live{% else %}closed{% endif %}"
+           {% if poll.pk == item.pk %}aria-current="page"{% endif %}>
+          <span class="poll-list-card-title">{{ item.question }}</span>
+          <span class="poll-list-card-meta">
+            <span>{{ item.question_count }} question{{ item.question_count|pluralize }}</span>
+            {% if item.status == 'open' and item.accepting_responses %}
+              <span class="poll-status-badge poll-status-live"><i class="bi bi-broadcast" aria-hidden="true"></i> Live</span>
+            {% elif item.status == 'open' %}
+              <span class="poll-status-badge poll-status-deadline"><i class="bi bi-clock-history" aria-hidden="true"></i> Deadline passed</span>
+            {% elif item.status == 'draft' %}
+              <span class="poll-status-badge poll-status-draft"><i class="bi bi-pencil-square" aria-hidden="true"></i> Draft</span>
+            {% elif item.status == 'closed' %}
+              <span class="poll-status-badge poll-status-closed"><i class="bi bi-lock-fill" aria-hidden="true"></i> Closed</span>
+            {% elif item.status == 'confirmed' %}
+              <span class="poll-status-badge poll-status-confirmed"><i class="bi bi-check-circle-fill" aria-hidden="true"></i> Decision set</span>
+            {% else %}
+              <span class="poll-status-badge poll-status-cancelled"><i class="bi bi-slash-circle-fill" aria-hidden="true"></i> Cancelled</span>
+            {% endif %}
+          </span>
+          {% if classroom %}
+            {% if item.invited_count %}
+              <span class="poll-list-response-label" data-poll-list-response-label data-poll-total="{{ item.invited_count }}">{{ item.responded_count }} of {{ item.invited_count }} responded</span>
+              <span class="poll-list-progress" data-poll-list-progress role="progressbar" aria-label="{{ item.responded_count }} of {{ item.invited_count }} students responded" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{% widthratio item.responded_count item.invited_count 100 %}">
+                <span style="width:{% widthratio item.responded_count item.invited_count 100 %}%"></span>
+              </span>
+            {% else %}<span class="poll-list-response-label">No invitees</span>{% endif %}
+          {% elif item.status != 'draft' %}
+            <span class="poll-list-response-label" data-poll-list-response-label>{{ item.response_count }} response{{ item.response_count|pluralize }}</span>
+          {% endif %}
+        </a>
+        <button class="btn btn-link text-danger p-1 mt-2" type="submit" data-poll-delete-one data-poll-id="{{ item.uuid }}" data-poll-title="{{ item.question }}" aria-label="Delete {{ item.question }}" title="Delete poll"><i class="bi bi-trash" aria-hidden="true"></i></button>
+        </div>
+      {% empty %}
+        <div class="poll-list-empty">
+          <i class="bi bi-bar-chart-line" aria-hidden="true"></i>
+          <p class="mb-1 fw-semibold">No polls yet</p>
+          <p class="small text-muted mb-0">Create a poll to get started.</p>
+        </div>
+      {% endfor %}
+      <p class="poll-list-no-match" data-poll-filter-empty aria-live="polite" hidden>No polls in this group.</p>
+    </nav>
+    </form>
+  </div>
+</section>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  document.querySelectorAll('[data-poll-list]').forEach(function (list) {
+    if (list.dataset.filterReady) return;
+    list.dataset.filterReady = 'true';
+    const items = Array.from(list.querySelectorAll('[data-poll-list-item]'));
+    const panel = list.closest('.poll-list-panel');
+    const buttons = panel ? panel.querySelectorAll('[data-poll-filter]') : [];
+    const emptyState = list.querySelector('[data-poll-filter-empty]');
+    buttons.forEach(function (button) {
+      button.addEventListener('click', function () {
+        const filter = button.dataset.pollFilter;
+        let visible = 0;
+        items.forEach(function (item) {
+          const show = filter === 'all' || item.dataset.pollFilterState === filter;
+          const row = item.closest('[data-poll-list-row]');
+          if (row) row.hidden = !show;
+          else item.hidden = !show;
+          if (show) visible += 1;
+        });
+        buttons.forEach(function (candidate) {
+          const active = candidate === button;
+          candidate.classList.toggle('is-active', active);
+          candidate.setAttribute('aria-pressed', String(active));
+        });
+        if (emptyState) emptyState.hidden = items.length === 0 || visible > 0;
+      });
+    });
+  });
+  document.querySelectorAll('[data-poll-bulk-form]').forEach(function (form) {
+    if (form.dataset.selectionReady) return;
+    form.dataset.selectionReady = 'true';
+    const boxes = Array.from(form.querySelectorAll('[data-poll-select]'));
+    const all = form.querySelector('[data-poll-select-all]');
+    const remove = form.querySelector('[data-poll-delete-selected]');
+    const action = form.querySelector('[data-poll-delete-action]');
+    const pollId = form.querySelector('[data-poll-delete-id]');
+    function sync() {
+      const selected = boxes.filter(function (box) { return box.checked; });
+      if (remove) remove.hidden = selected.length === 0;
+      if (all) { all.checked = boxes.length > 0 && selected.length === boxes.length; all.indeterminate = selected.length > 0 && selected.length < boxes.length; }
+    }
+    if (all) all.addEventListener('change', function () { boxes.forEach(function (box) { box.checked = all.checked; }); sync(); });
+    boxes.forEach(function (box) { box.addEventListener('change', sync); });
+    form.addEventListener('submit', function (event) {
+      if (form.dataset.confirmed === '1') return;
+      const deletingOne = event.submitter && event.submitter.hasAttribute('data-poll-delete-one');
+      const editor = document.querySelector('form[data-poll-editor]');
+      const hasUnsavedChanges = editor &&
+        (editor.dataset.formDirty === 'true' || editor.dataset.pollDirty === 'true');
+      const unsavedWarning = hasUnsavedChanges
+        ? ' Unsaved changes in the poll editor will also be discarded.' : '';
+      if (deletingOne) {
+        action.value = 'delete';
+        pollId.value = event.submitter.dataset.pollId || '';
+        form.dataset.confirm = 'Delete “' + (event.submitter.dataset.pollTitle || 'this poll') +
+          '” and all its responses? This cannot be undone.' + unsavedWarning;
+        form.dataset.confirmTitle = 'Delete poll';
+        form.dataset.confirmLabel = 'Delete poll';
+      } else {
+        const selected = boxes.filter(function (box) { return box.checked; });
+        if (!selected.length) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        action.value = 'bulk-delete';
+        pollId.value = '';
+        form.dataset.confirm = 'Delete ' + selected.length + ' selected poll' +
+          (selected.length === 1 ? '' : 's') + ' and all their responses? This cannot be undone.' + unsavedWarning;
+        form.dataset.confirmTitle = 'Delete selected polls';
+        form.dataset.confirmLabel = 'Delete selected';
+      }
+    });
+    sync();
+  });
+})();
+</script>

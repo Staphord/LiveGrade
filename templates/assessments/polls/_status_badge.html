@@ -1,0 +1,13 @@
+{% if poll.status == 'open' and poll.accepting_responses %}
+  <span class="poll-status-badge poll-status-live"><i class="bi bi-broadcast" aria-hidden="true"></i> Voting open</span>
+{% elif poll.status == 'open' %}
+  <span class="poll-status-badge poll-status-deadline"><i class="bi bi-clock-history" aria-hidden="true"></i> Deadline passed</span>
+{% elif poll.status == 'closed' %}
+  <span class="poll-status-badge poll-status-closed"><i class="bi bi-lock-fill" aria-hidden="true"></i> Closed</span>
+{% elif poll.status == 'confirmed' %}
+  <span class="poll-status-badge poll-status-confirmed"><i class="bi bi-check-circle-fill" aria-hidden="true"></i> Decision confirmed</span>
+{% elif poll.status == 'cancelled' %}
+  <span class="poll-status-badge poll-status-cancelled"><i class="bi bi-slash-circle-fill" aria-hidden="true"></i> Cancelled</span>
+{% else %}
+  <span class="poll-status-badge poll-status-draft"><i class="bi bi-pencil-square" aria-hidden="true"></i> Draft</span>
+{% endif %}

@@ -1,38 +1,52 @@
 {% extends 'assessments/student/_student_base.html' %}
 {% block title %}{{ poll.question }} - Anonymous poll{% endblock %}
 {% block hero_sub %}Anonymous poll{% endblock %}
+{% block main_class %} poll-participant-shell{% endblock %}
+{% block extra_css %}{% include 'assessments/polls/_participant_ui_styles.html' %}{% endblock %}
 {% block content %}
-<div class="s-center-viewport">
-  <section class="s-card">
-    <p class="text-muted">Anonymous poll</p>
-    <h2 class="h4">{{ poll.question }}</h2>
-    {% if questions|length > 1 %}<p class="text-muted">{{ questions|length }} questions · One anonymous response.</p>{% endif %}
-    {% if poll.deadline %}<p>Respond by <time data-local-deadline datetime="{{ poll.deadline|date:'c' }}">{{ poll.deadline|date:'j M Y, H:i' }}</time>.</p>{% endif %}
-    <p class="small text-muted">No name, email or roster entry is collected. The poll owner sees only aggregate answers and the total number of responses.</p>
-    {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
-    {% if saved %}<div class="alert alert-success" role="status">Your anonymous response was saved.{% if poll.accepting_responses %} You can revise it from this browser while voting is open.{% endif %}</div>{% endif %}
+<div class="poll-participant-grid">
+  <section class="s-card poll-response-card" aria-labelledby="poll-response-title">
+    <header class="poll-response-heading">
+      <div class="poll-response-status">
+        {% include 'assessments/polls/_status_badge.html' %}
+        {% if questions|length > 1 %}<span class="poll-detail-question-count">{{ questions|length }} questions · One response covers all</span>{% endif %}
+      </div>
+      <h2 id="poll-response-title">{{ poll.question }}</h2>
+      {% if poll.deadline %}<div class="poll-response-meta"><span><i class="bi bi-clock" aria-hidden="true"></i>Respond by <time datetime="{{ poll.deadline|date:'c' }}" data-local-deadline>{{ poll.deadline|date:'j M Y, H:i' }}</time></span></div>{% endif %}
+      <p class="poll-privacy-note"><i class="bi bi-incognito" aria-hidden="true"></i><span>No name or roster information is collected. The poll owner sees totals and combined answers only.</span></p>
+    </header>
+
+    {% if error %}<div class="alert alert-danger poll-state-alert" role="alert"><i class="bi bi-exclamation-circle-fill" aria-hidden="true"></i><span>{{ error }}</span></div>{% endif %}
+    {% if saved %}<div class="alert alert-success poll-state-alert" role="status"><i class="bi bi-check-circle-fill" aria-hidden="true"></i><span>Your anonymous response was saved.{% if poll.accepting_responses %} You can update it from this browser while voting is open.{% endif %}</span></div>{% endif %}
+
     {% if poll.accepting_responses %}
-      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="vote">
+      <form method="post" class="poll-vote-form">{% csrf_token %}<input type="hidden" name="action" value="vote">
         {% for question in questions %}
-          <fieldset class="border rounded-3 p-3 mb-3"><legend class="h6">{{ forloop.counter }}. {{ question.prompt }}</legend>
-            <p class="small text-muted">{% if question.allow_multiple %}Select all that apply.{% else %}Select one answer.{% endif %}</p>
-            {% for option in question.options.all %}<div class="form-check mb-2"><input class="form-check-input" type="{% if question.allow_multiple %}checkbox{% else %}radio{% endif %}" name="question-{{ question.pk }}" id="option-{{ option.pk }}" value="{{ option.pk }}" {% if option.pk in question.user_selections %}checked{% endif %}><label class="form-check-label" for="option-{{ option.pk }}">{{ option.label }}</label></div>{% endfor %}
-            {% if poll.allow_abstain %}<div class="form-check"><input class="form-check-input" type="checkbox" name="abstain-{{ question.pk }}" id="abstain-{{ question.pk }}" value="yes" {% if question.user_abstained %}checked{% endif %}><label class="form-check-label" for="abstain-{{ question.pk }}">None of these options</label></div>{% endif %}
+          <fieldset class="poll-question-card" data-question-vote="{{ question.pk }}" aria-describedby="poll-question-help-{{ question.pk }}">
+            <legend>{{ forloop.counter }}. {{ question.prompt }}</legend>
+            <p class="poll-question-help" id="poll-question-help-{{ question.pk }}">{% if question.allow_multiple %}Select all that apply.{% else %}Select one answer.{% endif %}</p>
+            <div class="poll-answer-choices">
+              {% for option in question.options.all %}
+                <label class="poll-answer-choice" for="option-{{ option.pk }}"><input class="form-check-input" type="{% if question.allow_multiple %}checkbox{% else %}radio{% endif %}" name="question-{{ question.pk }}" id="option-{{ option.pk }}" value="{{ option.pk }}" {% if option.pk in question.user_selections %}checked{% endif %}><span>{{ option.label }}</span></label>
+              {% endfor %}
+              {% if question.allow_abstain %}<label class="poll-answer-choice poll-answer-choice-abstain" for="abstain-{{ question.pk }}"><input class="form-check-input" type="checkbox" name="abstain-{{ question.pk }}" id="abstain-{{ question.pk }}" value="yes" {% if question.user_abstained %}checked{% endif %}><span>None of these options</span></label>{% endif %}
+            </div>
           </fieldset>
         {% endfor %}
-        <button class="btn btn-primary w-100">{% if response %}Update anonymous response{% else %}Submit anonymous response{% endif %}</button>
+        <button class="btn btn-primary w-100 poll-vote-submit">{% if response %}Update anonymous response{% else %}Submit anonymous response{% endif %}</button>
       </form>
     {% else %}
-      <div class="alert alert-secondary">{% if poll.status == 'cancelled' %}This poll was cancelled.{% else %}Voting is closed.{% endif %}</div>
-      {% for question in questions %}
-        {% if question.confirmed_option %}<p><strong>Decision: {{ question.confirmed_option.label }}</strong>{% if question.decision_note %}<br>{{ question.decision_note|linebreaksbr }}{% endif %}</p>{% endif %}
-      {% endfor %}
-      {% if response %}<h2 class="h6">Your anonymous response</h2>{% for question in questions %}<p><strong>{{ forloop.counter }}. {{ question.prompt }}</strong><br>{{ question.user_answer_display }}</p>{% endfor %}{% endif %}
+      <div class="alert alert-secondary poll-state-alert"><i class="bi bi-lock-fill" aria-hidden="true"></i><span>{% if poll.status == 'cancelled' %}This poll was cancelled.{% else %}Voting is closed.{% endif %}</span></div>
+      {% if response %}<section class="poll-your-response" aria-labelledby="poll-your-response-title"><h3 id="poll-your-response-title">Your anonymous response</h3>{% for question in questions %}<div class="poll-your-response-item"><p><strong>{{ forloop.counter }}. {{ question.prompt }}</strong><br>{{ question.user_answer_display }}</p></div>{% endfor %}</section>{% endif %}
     {% endif %}
   </section>
-  <section class="s-card mt-3" aria-labelledby="live-poll-results-heading"><div class="d-flex align-items-center justify-content-between gap-2 mb-2"><h2 class="h5 mb-0" id="live-poll-results-heading">Live poll results</h2><a class="btn btn-sm btn-outline-primary" href="{{ results_url }}" target="_blank" rel="noopener">Open display screen</a></div>{% include 'assessments/polls/_results.html' with questions=results.questions responded=results.responded invited=None unanswered=None public_results=True %}</section>
+
+  <aside class="s-card poll-live-results-panel" aria-labelledby="live-poll-results-heading">
+    <header class="poll-live-results-heading"><div><div class="public-poll-screen-status">{% include 'assessments/polls/_status_badge.html' %}<span>{% if poll.accepting_responses %}Live results{% else %}Final results{% endif %}</span></div><h2 id="live-poll-results-heading">Poll results</h2></div><a class="btn btn-sm btn-outline-primary" href="{{ results_url }}" target="_blank" rel="noopener">Open display screen</a></header>
+    {% include 'assessments/polls/_results.html' with poll=poll questions=results.questions responded=results.responded invited=None unanswered=None public_results=True hide_option_bars=True hide_option_percentages=True %}
+    <p id="poll-connection" role="status" class="poll-live-connection">{% if poll.accepting_responses %}Live results update automatically.{% else %}Final results{% endif %}</p>
+  </aside>
 </div>
-<p id="poll-connection" role="status" class="small text-muted">Results update automatically.</p>
 {% if poll.accepting_responses %}{{ state_url|json_script:'anonymous-poll-state' }}
 <script nonce="{{ csp_nonce }}">
 (function(){

@@ -1,41 +1,64 @@
 {% extends 'assessments/student/_student_base.html' %}
 {% block title %}{{ poll.question }} - Classroom poll{% endblock %}
 {% block hero_sub %}Classroom poll{% endblock %}
+{% block main_class %} poll-participant-shell{% endblock %}
+{% block extra_css %}{% include 'assessments/polls/_participant_ui_styles.html' %}{% endblock %}
 {% block content %}
-<div class="s-center-viewport">
-<section class="s-card">
-  <p class="text-muted">{{ session.name }} · Classroom poll</p>
-  <h2 class="h4">{{ poll.question }}</h2>
-  {% if questions|length > 1 %}<p class="text-muted">{{ questions|length }} questions · Submit one response for the whole poll.</p>{% endif %}
-  {% if poll.deadline %}<p class="text-muted">Respond by <time datetime="{{ poll.deadline|date:'c' }}" data-local-deadline>{{ poll.deadline|date:'j M Y, H:i' }}</time>.</p>{% endif %}
-  <p class="small text-muted">Your teacher can see whether you responded, but your choices are not shown to classmates. This poll does not affect your grade.</p>
-  {% if error %}<div role="alert" class="alert alert-danger">{{ error }}</div>{% endif %}
-  {% if saved %}<div role="status" class="alert alert-success">Your response was saved.{% if poll.accepting_responses %} You can change it while voting remains open.{% endif %}</div>{% endif %}
-  {% if voter %}
-    <p>Responding as <strong>{{ voter.name }}</strong></p>
-    {% if poll.accepting_responses %}
-    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="vote">
-      {% for question in questions %}
-      <fieldset class="border rounded-3 p-3 mb-3" data-question-vote="{{ question.pk }}">
-        <legend class="h6">{{ forloop.counter }}. {{ question.prompt }}</legend>
-        <p class="small text-muted">{% if question.allow_multiple %}Select all answers that apply.{% else %}Select one answer.{% endif %}</p>
-        {% for option in question.options.all %}<div class="form-check mb-2"><input class="form-check-input" type="{% if question.allow_multiple %}checkbox{% else %}radio{% endif %}" name="question-{{ question.pk }}" id="option-{{ option.pk }}" value="{{ option.pk }}" {% if option.pk in question.user_selections %}checked{% endif %}><label class="form-check-label" for="option-{{ option.pk }}">{{ option.label }}</label></div>{% endfor %}
-        {% if poll.allow_abstain %}<div class="form-check mt-2"><input class="form-check-input" type="checkbox" id="abstain-{{ question.pk }}" name="abstain-{{ question.pk }}" value="yes" {% if question.user_abstained %}checked{% endif %}><label class="form-check-label" for="abstain-{{ question.pk }}">None of these options</label></div>{% endif %}
-      </fieldset>
-      {% endfor %}
-      <button class="btn btn-primary w-100">{% if response %}Update response{% else %}Submit response{% endif %}</button>
-    </form>
-    {% else %}<div class="alert alert-secondary">{% if poll.status == 'cancelled' %}This poll was cancelled.{% else %}Voting is closed.{% endif %}</div>
-      {% for question in questions %}{% if question.confirmed_option %}<div class="alert alert-success" role="status"><strong>Teacher’s decision{% if questions|length > 1 %} for question {{ forloop.counter }}{% endif %}: {{ question.confirmed_option.label }}</strong>{% if question.decision_note %}<p class="mb-0">{{ question.decision_note|linebreaksbr }}</p>{% endif %}</div>{% endif %}{% endfor %}
-      {% if response %}<h2 class="h6">Your responses</h2>{% for question in questions %}<p><strong>{{ forloop.counter }}. {{ question.prompt }}</strong><br>{{ question.user_answer_display }}</p>{% endfor %}{% endif %}
+<div class="poll-participant-grid">
+  <section class="s-card poll-response-card" aria-labelledby="poll-response-title">
+    <header class="poll-response-heading">
+      <div class="poll-response-status">
+        {% include 'assessments/polls/_status_badge.html' %}
+        {% if questions|length > 1 %}<span class="poll-detail-question-count">{{ questions|length }} questions · One response covers all</span>{% endif %}
+      </div>
+      <h2 id="poll-response-title">{{ poll.question }}</h2>
+      {% if poll.deadline %}<div class="poll-response-meta"><span><i class="bi bi-clock" aria-hidden="true"></i>Respond by <time datetime="{{ poll.deadline|date:'c' }}" data-local-deadline>{{ poll.deadline|date:'j M Y, H:i' }}</time></span></div>{% endif %}
+      <p class="poll-privacy-note"><i class="bi bi-shield-lock" aria-hidden="true"></i><span>Your teacher can see who responded, but not individual answers. This poll does not affect your grade.</span></p>
+    </header>
+
+    {% if error %}<div role="alert" class="alert alert-danger poll-state-alert"><i class="bi bi-exclamation-circle-fill" aria-hidden="true"></i><span>{{ error }}</span></div>{% endif %}
+    {% if saved %}<div role="status" class="alert alert-success poll-state-alert"><i class="bi bi-check-circle-fill" aria-hidden="true"></i><span>Your response was saved.{% if poll.accepting_responses %} You can update it while voting is open.{% endif %}</span></div>{% endif %}
+
+    {% if voter %}<p class="poll-voter-chip"><i class="bi bi-person-check me-1" aria-hidden="true"></i>Responding as <strong>{{ voter.name }}</strong></p>{% endif %}
+    {% if not poll.accepting_responses %}
+      <div class="alert alert-secondary poll-state-alert"><i class="bi bi-lock-fill" aria-hidden="true"></i><span>{% if poll.status == 'cancelled' %}This poll was cancelled.{% elif poll.status == 'confirmed' %}The teacher has confirmed the poll decisions. Voting is closed.{% else %}Voting is closed.{% endif %}</span></div>
+      {% if voter and response %}<section class="poll-your-response" aria-labelledby="poll-your-response-title"><h3 id="poll-your-response-title">Your responses</h3>{% for question in questions %}<div class="poll-your-response-item"><p><strong>{{ forloop.counter }}. {{ question.prompt }}</strong><br>{{ question.user_answer_display }}</p></div>{% endfor %}</section>{% endif %}
+    {% elif voter %}
+        <form method="post" class="poll-vote-form">{% csrf_token %}<input type="hidden" name="action" value="vote">
+          {% for question in questions %}
+            <fieldset class="poll-question-card" data-question-vote="{{ question.pk }}" aria-describedby="poll-question-help-{{ question.pk }}">
+              <legend>{{ forloop.counter }}. {{ question.prompt }}</legend>
+              <p class="poll-question-help" id="poll-question-help-{{ question.pk }}">{% if question.allow_multiple %}Select all that apply.{% else %}Select one answer.{% endif %}</p>
+              <div class="poll-answer-choices">
+                {% for option in question.options.all %}
+                  <label class="poll-answer-choice" for="option-{{ option.pk }}"><input class="form-check-input" type="{% if question.allow_multiple %}checkbox{% else %}radio{% endif %}" name="question-{{ question.pk }}" id="option-{{ option.pk }}" value="{{ option.pk }}" {% if option.pk in question.user_selections %}checked{% endif %}><span>{{ option.label }}</span></label>
+                {% endfor %}
+                {% if question.allow_abstain %}<label class="poll-answer-choice poll-answer-choice-abstain" for="abstain-{{ question.pk }}"><input class="form-check-input" type="checkbox" id="abstain-{{ question.pk }}" name="abstain-{{ question.pk }}" value="yes" {% if question.user_abstained %}checked{% endif %}><span>None of these options</span></label>{% endif %}
+              </div>
+            </fieldset>
+          {% endfor %}
+          <button class="btn btn-primary w-100 poll-vote-submit">{% if response %}Update response{% else %}Submit response{% endif %}</button>
+        </form>
+    {% elif poll.personal_links_only %}
+      <div class="alert alert-info poll-state-alert"><i class="bi bi-link-45deg" aria-hidden="true"></i><span>Use the personal voting link your teacher sent you. Ask for a replacement if needed.</span></div>
+    {% else %}
+      <form method="post" class="poll-identity-form">{% csrf_token %}<input type="hidden" name="action" value="identify">
+        <label class="form-label" for="identifier">Your roster name or student ID</label>
+        <input id="identifier" name="identifier" class="form-control" maxlength="150" required autocomplete="off" aria-describedby="identity-help">
+        <div id="identity-help" class="form-text mb-3">Use the same name or ID from your class roster. If another student shares your name, ask for a personal link.</div>
+        <button class="btn btn-primary w-100 poll-vote-submit">Continue to poll</button>
+      </form>
     {% endif %}
-  {% elif poll.personal_links_only %}<p>Use the personal voting link your teacher sent you. Ask your teacher for a replacement if needed.</p>
-  {% else %}
-    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="identify"><label class="form-label" for="identifier">Your roster name or student ID</label><input id="identifier" name="identifier" class="form-control mb-3" maxlength="150" required autocomplete="off" aria-describedby="identity-help"><p id="identity-help" class="form-text">Enter the identifier your teacher used for this poll’s roster. If your name is shared by another student, ask for your personal voting link.</p><button class="btn btn-primary w-100">Continue to poll</button></form>
+  </section>
+
+  {% if poll.status != 'draft' %}
+    <aside class="s-card poll-live-results-panel" aria-labelledby="live-poll-results-heading">
+      <header class="poll-live-results-heading"><div><div class="public-poll-screen-status">{% include 'assessments/polls/_status_badge.html' %}<span>{% if poll.accepting_responses %}Live results{% else %}Final results{% endif %}</span></div><h2 id="live-poll-results-heading">Poll results</h2></div><a class="btn btn-sm btn-outline-primary" href="{{ results_url }}" target="_blank" rel="noopener">Open display screen</a></header>
+      {% include 'assessments/polls/_results.html' with poll=poll questions=results.questions responded=results.responded invited=None unanswered=None public_results=True hide_option_bars=True hide_option_percentages=True %}
+      {% if poll.accepting_responses %}<p id="poll-connection" class="poll-live-connection" role="status">{% if voter %}Live results update automatically.{% else %}Open the display screen for live updates.{% endif %}</p>{% else %}<p id="poll-connection" class="poll-live-connection" role="status">Final results</p>{% endif %}
+    </aside>
   {% endif %}
-</section>
-{% if poll.status != 'draft' %}<section class="s-card mt-3" aria-labelledby="live-poll-results-heading"><div class="d-flex align-items-center justify-content-between gap-2 mb-2"><h2 class="h5 mb-0" id="live-poll-results-heading">Live poll results</h2><a class="btn btn-sm btn-outline-primary" href="{{ results_url }}" target="_blank" rel="noopener">Open display screen</a></div>{% include 'assessments/polls/_results.html' with questions=results.questions responded=results.responded invited=None unanswered=None public_results=True %}</section>{% endif %}
+</div>
 {% if voter %}{% include 'assessments/polls/_updates.html' %}{% endif %}
 {% include 'assessments/polls/_local_deadline.html' %}
-</div>
 {% endblock %}
