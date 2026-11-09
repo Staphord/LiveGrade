@@ -24,7 +24,7 @@ from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpResponse, JsonResponse
 from django.contrib import messages
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.cache import never_cache
@@ -376,8 +376,38 @@ def panel_hearing_manage(request, hearing_id):
                             form.add_error(None, '; '.join(exc.messages))
                         else:
                             item.save()
-                            messages.success(request, 'Assessment details saved.')
-                            return redirect('panel_hearing_manage', hearing_id=hearing.pk)
+                            if request.POST.get('advance') == '1':
+                                messages.success(request, 'Assessment details saved.')
+                                return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=candidates")
+                            return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=details&saved=1")
+        elif action == 'remove_candidate':
+            with transaction.atomic():
+                locked_hearing = (PanelHearing.objects.for_organization(request.organization)
+                    .owned_by(request.user).select_for_update().filter(pk=hearing.pk).first())
+                if locked_hearing is None:
+                    raise Http404
+                if locked_hearing.status != PanelHearing.Status.DRAFT:
+                    action_error = 'Candidates can only be removed while the hearing is a draft.'
+                else:
+                    cand = locked_hearing.candidates.filter(pk=request.POST.get('candidate_id')).first()
+                    if cand:
+                        cand.delete()
+                        messages.success(request, 'Candidate removed.')
+                        return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=candidates")
+        elif action == 'remove_criterion':
+            with transaction.atomic():
+                locked_hearing = (PanelHearing.objects.for_organization(request.organization)
+                    .owned_by(request.user).select_for_update().filter(pk=hearing.pk).first())
+                if locked_hearing is None:
+                    raise Http404
+                if locked_hearing.status != PanelHearing.Status.DRAFT:
+                    action_error = 'Criteria can only be removed while the hearing is a draft.'
+                else:
+                    crit = locked_hearing.criteria.filter(pk=request.POST.get('criterion_id')).first()
+                    if crit:
+                        crit.delete()
+                        messages.success(request, 'Criterion removed.')
+                        return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=scoring")
         elif action in ('activate_candidate', 'end_candidate'):
             try:
                 if action == 'activate_candidate':
@@ -471,7 +501,8 @@ def panel_hearing_manage(request, hearing_id):
                                 'panel': 'Examiner group added.',
                                 'update_panel': 'Examiner group settings saved.',
                             }[action])
-                            return redirect('panel_hearing_manage', hearing_id=hearing.pk)
+                            step_target = 'candidates' if action == 'candidate' else 'scoring'
+                            return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step={step_target}")
         elif action == 'open':
             try:
                 open_panel_hearing(hearing, organization=request.organization, user=request.user)
@@ -518,7 +549,8 @@ def panel_hearing_manage(request, hearing_id):
                 action_error = '; '.join(getattr(exc, 'messages', [])) or 'The display link could not be revoked.'
             else:
                 messages.success(request, 'The public live display link was revoked.')
-                return redirect('panel_hearing_manage', hearing_id=hearing.pk)
+                step_target = '?step=ready' if hearing.status == PanelHearing.Status.DRAFT else ''
+                return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}{step_target}")
         elif action == 'invite':
             if not requires_examiners:
                 action_error = 'This chair-recorded process does not use examiner invitations.'
@@ -547,7 +579,8 @@ def panel_hearing_manage(request, hearing_id):
                             mark_panel_invitation_enqueue_failed(invitation.pk)
                     transaction.on_commit(enqueue_invitation)
                     messages.success(request, 'Examiner invitation queued for delivery.')
-                    return redirect('panel_hearing_manage', hearing_id=hearing.pk)
+                    step_target = '?step=examiners' if hearing.status == PanelHearing.Status.DRAFT else ''
+                    return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}{step_target}")
         elif action == 'resend':
             invitation = PanelInvitation.objects.filter(hearing=hearing,
                 pk=request.POST.get('invitation_id')).first()
@@ -568,7 +601,8 @@ def panel_hearing_manage(request, hearing_id):
                         mark_panel_invitation_enqueue_failed(invitation.pk)
                 transaction.on_commit(enqueue_resend)
                 messages.success(request, 'Invitation resend queued for delivery.')
-                return redirect('panel_hearing_manage', hearing_id=hearing.pk)
+                step_target = '?step=examiners' if hearing.status == PanelHearing.Status.DRAFT else ''
+                return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}{step_target}")
         elif action == 'revoke':
             invitation = PanelInvitation.objects.filter(hearing=hearing,
                 pk=request.POST.get('invitation_id')).first()
@@ -582,7 +616,8 @@ def panel_hearing_manage(request, hearing_id):
                                 'This invitation cannot be revoked.')
             else:
                 messages.success(request, 'Invitation revoked.')
-                return redirect('panel_hearing_manage', hearing_id=hearing.pk)
+                step_target = '?step=examiners' if hearing.status == PanelHearing.Status.DRAFT else ''
+                return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}{step_target}")
         else:
             return HttpResponse('Invalid Panel organizer action.', status=400)
 
@@ -660,8 +695,6 @@ def panel_hearing_manage(request, hearing_id):
     active_panel_step = (request.GET.get('step') or request.POST.get('setup_step') or 'details')
     if active_panel_step not in {'details', 'candidates', 'scoring', 'examiners', 'ready'}:
         active_panel_step = 'details'
-    if request.method == 'POST' and (action_error or any(form.errors for form in forms.values())):
-        messages.error(request, action_error or 'Please correct the highlighted fields and try again.')
     candidate_import_form = PanelCandidateImportForm()
     rubric_import_form = PanelRubricImportForm()
     invitation_import_form = PanelInvitationImportForm(
@@ -708,6 +741,13 @@ def panel_hearing_manage(request, hearing_id):
         request.session.pop(PANEL_INVITATION_IMPORT_SESSION_KEY, None)
         candidate_import_token = rubric_import_token = invitation_import_token = ''
         messages.info(request, 'An import preview expired. Please upload the spreadsheet again.')
+    if 'step' not in request.GET and 'setup_step' not in request.POST:
+        if candidate_import_plan:
+            active_panel_step = 'candidates'
+        elif rubric_import_plan:
+            active_panel_step = 'scoring'
+        elif invitation_import_plan:
+            active_panel_step = 'examiners'
     response = render(request, 'service_domains/panel_hearing_manage.html', {
         'hearing': hearing, 'candidates': candidates, 'criteria': criteria,
         'active_panel_step': active_panel_step,
@@ -759,7 +799,7 @@ def panel_candidate_import(request, hearing_id):
     embedded = request.GET.get('embedded') == '1'
     if request.method == 'POST' and request.POST.get('action') == 'cancel':
         request.session.pop(PANEL_CANDIDATE_IMPORT_SESSION_KEY, None)
-        return redirect('panel_hearing_manage', hearing_id=hearing.pk)
+        return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=candidates")
     if request.method == 'POST' and request.POST.get('action') == 'apply':
         form = PanelCandidateImportApplyForm(request.POST)
         if form.is_valid():
@@ -800,7 +840,7 @@ def panel_candidate_import(request, hearing_id):
                 else:
                     request.session.pop(PANEL_CANDIDATE_IMPORT_SESSION_KEY, None)
                     messages.success(request, 'Presenter and entry list imported.')
-                    return redirect('panel_hearing_manage', hearing_id=hearing.pk)
+                    return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=candidates")
         else:
             status = 400
         if embedded:
@@ -845,6 +885,8 @@ def panel_candidate_import(request, hearing_id):
             for errors in form.errors.values():
                 for error in errors:
                     messages.error(request, error)
+            if not form.errors:
+                messages.error(request, 'Please choose a valid .xlsx spreadsheet file.')
             return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=candidates")
         messages.error(request, 'Choose a valid spreadsheet to preview.')
     response = render(request, 'service_domains/panel_candidate_import.html', {
@@ -884,7 +926,7 @@ def panel_rubric_import(request, hearing_id):
     embedded = request.GET.get('embedded') == '1'
     if request.method == 'POST' and request.POST.get('action') == 'cancel':
         request.session.pop(PANEL_RUBRIC_IMPORT_SESSION_KEY, None)
-        return redirect('panel_hearing_manage', hearing_id=hearing.pk)
+        return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=scoring")
     if request.method == 'POST' and request.POST.get('action') == 'apply':
         form = PanelRubricImportApplyForm(request.POST)
         if form.is_valid():
@@ -914,7 +956,7 @@ def panel_rubric_import(request, hearing_id):
                 else:
                     request.session.pop(PANEL_RUBRIC_IMPORT_SESSION_KEY, None)
                     messages.success(request, 'Scoring rubric imported.')
-                    return redirect('panel_hearing_manage', hearing_id=hearing.pk)
+                    return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=scoring")
         else:
             status = 400
         if embedded:
@@ -949,6 +991,8 @@ def panel_rubric_import(request, hearing_id):
             for errors in form.errors.values():
                 for error in errors:
                     messages.error(request, error)
+            if not form.errors:
+                messages.error(request, 'Please choose a valid .xlsx spreadsheet file.')
             return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=scoring")
         messages.error(request, 'Choose a valid rubric spreadsheet to preview.')
     response = render(request, 'service_domains/panel_rubric_import.html', {
@@ -993,7 +1037,7 @@ def panel_invitation_import(request, hearing_id):
     embedded = request.GET.get('embedded') == '1'
     if request.method == 'POST' and request.POST.get('action') == 'cancel':
         request.session.pop(PANEL_INVITATION_IMPORT_SESSION_KEY, None)
-        return redirect('panel_hearing_manage', hearing_id=hearing.pk)
+        return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=examiners")
     if request.method == 'POST' and request.POST.get('action') == 'apply':
         form = PanelInvitationImportApplyForm(request.POST)
         if form.is_valid():
@@ -1035,7 +1079,7 @@ def panel_invitation_import(request, hearing_id):
                                 mark_panel_invitation_enqueue_failed(invitation.pk)
                     transaction.on_commit(enqueue_imported_invitations)
                     messages.success(request, f'{len(invitations)} examiner invitation(s) queued for delivery.')
-                    return redirect('panel_hearing_manage', hearing_id=hearing.pk)
+                    return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=examiners")
         else:
             status = 400
         if embedded:
@@ -1074,6 +1118,8 @@ def panel_invitation_import(request, hearing_id):
             for errors in form.errors.values():
                 for error in errors:
                     messages.error(request, error)
+            if not form.errors:
+                messages.error(request, 'Please choose a valid .xlsx spreadsheet file.')
             return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=examiners")
         messages.error(request, 'Choose a valid examiner spreadsheet to preview.')
     response = render(request, 'service_domains/panel_invitation_import.html', {
@@ -1187,7 +1233,8 @@ def panel_results_export(request, hearing_id):
             decision_sheet.append([safe_text(decision.candidate.display_name),
                 decision.get_outcome_display(), safe_text(decision.rationale),
                 safe_text(decision.conditions), safe_text(decision.dissent), decision.revision,
-                safe_text(decision.decided_by), decision.created_at])
+                safe_text(decision.decided_by),
+                decision.created_at.replace(tzinfo=None) if decision.created_at else None])
         decision_sheet.freeze_panes = 'A2'
         decision_sheet.auto_filter.ref = decision_sheet.dimensions
     if hearing.workflow in (PanelHearing.Workflow.VOTE, PanelHearing.Workflow.HYBRID,
@@ -1212,7 +1259,7 @@ def panel_results_export(request, hearing_id):
             for report in reports:
                 report_sheet.append([safe_text(report.candidate.display_name),
                     safe_text(report.report), report.revision, safe_text(report.revision_reason),
-                    report.created_at])
+                    report.created_at.replace(tzinfo=None) if report.created_at else None])
         report_sheet.freeze_panes = 'A2'
         report_sheet.auto_filter.ref = report_sheet.dimensions
     abstentions = (PanelAbstention.objects.for_organization(request.organization)
@@ -2127,9 +2174,11 @@ def training_series_list(request):
 @_team_owner
 def training_series_manage(request, series_id):
     series = _owned_training_series(request, series_id)
+    manage_url = reverse('training_series_manage', kwargs={'series_id': series.pk})
     participant_form = competency_form = launch_form = privacy_form = None
     roster_import_form = TrainingRosterImportForm()
     roster_import_pending = False
+    roster_import_plan = None
     roster_token = request.session.get(TEAM_ROSTER_IMPORT_SESSION_KEY)
     roster_payload = None
     if roster_token:
@@ -2141,6 +2190,9 @@ def training_series_manage(request, series_id):
                 and roster_payload.get('organization_id') == series.organization_id
                 and roster_payload.get('owner_id') == request.user.pk):
             roster_import_pending = True
+            roster_import_plan = plan_training_roster_import(
+                series, roster_payload['parsed'],
+                organization=request.organization, user=request.user)
         else:
             request.session.pop(TEAM_ROSTER_IMPORT_SESSION_KEY, None)
     details_form = None
@@ -2151,12 +2203,18 @@ def training_series_manage(request, series_id):
                 request.POST, instance=series, auto_id='series_details_%s')
             if details_form.is_valid():
                 details_form.save()
-                return redirect('training_series_manage', series_id=series.pk)
+                messages.success(request, 'Series details saved.')
+                if request.POST.get('advance') == '1':
+                    return redirect(f'{manage_url}?step=roster')
+                return redirect(f'{manage_url}?step=details&saved=1')
         elif action == 'feedback_privacy':
             privacy_form = TrainingFeedbackPrivacyForm(request.POST)
             if privacy_form.is_valid():
                 series.feedback_minimum_responses = privacy_form.cleaned_data['minimum_responses']
                 series.save(update_fields=('feedback_minimum_responses', 'updated_at'))
+                messages.success(request, 'Feedback privacy setting saved.')
+                if request.POST.get('setup_step'):
+                    return redirect(f"{manage_url}?step={request.POST['setup_step']}")
                 return redirect('training_series_manage', series_id=series.pk)
         elif action == 'participant':
             participant_form = TrainingParticipantForm(request.POST, auto_id='participant_%s')
@@ -2171,7 +2229,17 @@ def training_series_manage(request, series_id):
                     participant_form.add_error(None, '; '.join(exc.messages))
                 else:
                     participant.save(force_insert=True)
+                    messages.success(request, 'Team member added.')
+                    if request.POST.get('setup_step'):
+                        return redirect(f"{manage_url}?step={request.POST['setup_step']}")
                     return redirect('training_series_manage', series_id=series.pk)
+        elif action == 'remove_participant':
+            participant = get_object_or_404(
+                TrainingParticipant.objects.for_organization(request.organization).owned_by(request.user),
+                series=series, pk=request.POST.get('participant_id'))
+            participant.delete()
+            messages.success(request, 'Team member removed.')
+            return redirect(f'{manage_url}?step=roster')
         elif action == 'competency':
             competency_form = TrainingCompetencyForm(request.POST, auto_id='competency_%s')
             if competency_form.is_valid():
@@ -2185,7 +2253,17 @@ def training_series_manage(request, series_id):
                     competency_form.add_error(None, '; '.join(exc.messages))
                 else:
                     competency.save(force_insert=True)
+                    messages.success(request, 'Competency criterion added.')
+                    if request.POST.get('setup_step'):
+                        return redirect(f"{manage_url}?step={request.POST['setup_step']}")
                     return redirect('training_series_manage', series_id=series.pk)
+        elif action == 'remove_competency':
+            competency = get_object_or_404(
+                TrainingCompetency.objects.for_organization(request.organization).owned_by(request.user),
+                series=series, pk=request.POST.get('competency_id'))
+            competency.delete()
+            messages.success(request, 'Competency criterion removed.')
+            return redirect(f'{manage_url}?step=competencies')
         elif action == 'create_session':
             launch_form = CreateTrainingSessionForm(request.POST,
                 organization=request.organization, user=request.user, auto_id='launch_%s')
@@ -2227,6 +2305,34 @@ def training_series_manage(request, series_id):
         request.user).filter(series=series)
     sessions = (series.series_sessions.select_related('assessment_session')
                 .order_by('sequence'))
+    setup_steps = [
+        {'key': 'details', 'label': 'Series setup', 'href': '#series-details', 'complete': True},
+        {'key': 'roster', 'label': 'Roster', 'href': '#team-roster', 'complete': participants.exists()},
+        {'key': 'competencies', 'label': 'Competencies', 'href': '#competency-criteria', 'complete': competencies.exists()},
+        {'key': 'demos', 'label': 'Session evaluation', 'href': '#series-demos', 'complete': sessions.exists()},
+        {'key': 'certification', 'label': 'Certification', 'href': '#feedback-privacy',
+         'complete': sessions.filter(assessment_session__status=AssessmentSession.Status.CLOSED).exists()},
+    ]
+    valid_steps = {step['key'] for step in setup_steps}
+    requested_step = request.POST.get('setup_step') or request.GET.get('step')
+    if requested_step in valid_steps:
+        active_step = requested_step
+    elif request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'series_details':
+            active_step = 'details'
+        elif action in ('participant', 'remove_participant'):
+            active_step = 'roster'
+        elif action in ('competency', 'remove_competency'):
+            active_step = 'competencies'
+        elif action == 'create_session':
+            active_step = 'demos'
+        else:
+            active_step = 'certification'
+    elif roster_import_plan is not None:
+        active_step = 'roster'
+    else:
+        active_step = 'details'
     has_team_templates = (SessionTemplate.objects.for_organization(request.organization)
         .for_service('team').owned_by(request.user).exists())
     return render(request, 'service_domains/team_series_manage.html', {
@@ -2236,6 +2342,9 @@ def training_series_manage(request, series_id):
         'privacy_form': privacy_form, 'has_team_templates': has_team_templates,
         'roster_import_form': roster_import_form, 'details_form': details_form,
         'roster_import_pending': roster_import_pending,
+        'roster_import_plan': roster_import_plan,
+        'setup_steps': setup_steps,
+        'active_step': active_step,
         'team_starters': starters_for('team'),
     })
 
@@ -2248,16 +2357,21 @@ def _team_roster_import_cache_key(token):
 @never_cache
 @_team_owner
 def training_series_roster_import(request, series_id):
+    if request.POST.get('action') in ('apply', 'cancel'):
+        return training_series_roster_preview(request, series_id)
     series = _owned_training_series(request, series_id)
+    manage_url = reverse('training_series_manage', kwargs={'series_id': series.pk})
+    embedded = request.GET.get('embedded') == '1' or bool(request.POST.get('setup_step'))
+    target_manage_url = f'{manage_url}?step=roster' if embedded else manage_url
     form = TrainingRosterImportForm(request.POST, request.FILES)
     if not form.is_valid():
         messages.error(request, '; '.join(
             message for errors in form.errors.values() for message in errors))
-        return redirect('training_series_manage', series_id=series.pk)
+        return redirect(target_manage_url)
     parsed = parse_training_roster(form.cleaned_data['file'])
     if parsed['fatal']:
         messages.error(request, parsed['fatal'])
-        return redirect('training_series_manage', series_id=series.pk)
+        return redirect(target_manage_url)
     token = secrets.token_urlsafe(32)
     payload = {'series_id': series.pk, 'organization_id': series.organization_id,
                'owner_id': request.user.pk, 'parsed': parsed}
@@ -2265,12 +2379,14 @@ def training_series_roster_import(request, series_id):
         cache.set(_team_roster_import_cache_key(token), payload, timeout=TEAM_ROSTER_IMPORT_TTL)
     except Exception:
         messages.error(request, 'The roster preview is temporarily unavailable. Please try again.')
-        return redirect('training_series_manage', series_id=series.pk)
+        return redirect(target_manage_url)
     old_token = request.session.get(TEAM_ROSTER_IMPORT_SESSION_KEY)
     if old_token:
         cache.delete(_team_roster_import_cache_key(old_token))
     request.session[TEAM_ROSTER_IMPORT_SESSION_KEY] = token
     request.session.modified = True
+    if embedded:
+        return redirect(target_manage_url)
     return redirect('training_series_roster_preview', series_id=series.pk)
 
 
@@ -2279,6 +2395,9 @@ def training_series_roster_import(request, series_id):
 @_team_owner
 def training_series_roster_preview(request, series_id):
     series = _owned_training_series(request, series_id)
+    manage_url = reverse('training_series_manage', kwargs={'series_id': series.pk})
+    embedded = request.GET.get('embedded') == '1' or bool(request.POST.get('setup_step'))
+    target_manage_url = f'{manage_url}?step=roster' if embedded else manage_url
     token = request.session.get(TEAM_ROSTER_IMPORT_SESSION_KEY)
     try:
         payload = cache.get(_team_roster_import_cache_key(token)) if token else None
@@ -2294,7 +2413,7 @@ def training_series_roster_preview(request, series_id):
                 pass
         request.session.pop(TEAM_ROSTER_IMPORT_SESSION_KEY, None)
         messages.info(request, 'Choose a roster file to preview before importing.')
-        return redirect('training_series_manage', series_id=series.pk)
+        return redirect(target_manage_url)
     try:
         plan = plan_training_roster_import(series, payload['parsed'],
             organization=request.organization, user=request.user)
@@ -2308,7 +2427,7 @@ def training_series_roster_preview(request, series_id):
             except Exception:
                 pass
             request.session.pop(TEAM_ROSTER_IMPORT_SESSION_KEY, None)
-            return redirect('training_series_manage', series_id=series.pk)
+            return redirect(target_manage_url)
         if request.POST.get('action') != 'apply':
             raise Http404
         try:
@@ -2329,7 +2448,7 @@ def training_series_roster_preview(request, series_id):
             messages.success(request,
                 f"Imported {result['created']} learner(s) across {result['teams']} team(s); "
                 f"{result['skipped']} row(s) were skipped.")
-            return redirect('training_series_manage', series_id=series.pk)
+            return redirect(target_manage_url)
     return render(request, 'service_domains/team_roster_import_preview.html', {
         'series': series, 'plan': plan, 'error': error,
     }, status=400 if error else 200)
@@ -2546,6 +2665,27 @@ def showcase_event_create(request):
     }, status=400 if request.method == 'POST' and form.errors else 200)
 
 
+def _load_showcase_import_preview(request, event):
+    """Load an active signed exhibit import preview from session if valid."""
+    raw_token = request.session.get(SHOWCASE_IMPORT_SESSION_KEY, '')
+    if not raw_token or event.status != ShowcaseEvent.Status.DRAFT or len(raw_token) > 150_000:
+        return None, ''
+    try:
+        preview = signing.loads(raw_token, salt=SHOWCASE_IMPORT_TOKEN_SALT,
+                                max_age=SHOWCASE_IMPORT_TOKEN_MAX_AGE)
+    except (signing.BadSignature, signing.SignatureExpired, TypeError, ValueError):
+        request.session.pop(SHOWCASE_IMPORT_SESSION_KEY, None)
+        return None, ''
+    if (not isinstance(preview, dict) or preview.get('event') != event.pk
+            or preview.get('organization') != request.organization['id']
+            or preview.get('user') != request.user.pk
+            or not isinstance(preview.get('parsed'), dict)):
+        request.session.pop(SHOWCASE_IMPORT_SESSION_KEY, None)
+        return None, ''
+    plan = plan_import(event, preview['parsed'])
+    return plan, (raw_token if plan['ok'] else '')
+
+
 @require_http_methods(['GET', 'POST'])
 @never_cache
 @_showcase_owner
@@ -2578,6 +2718,24 @@ def showcase_event_manage(request, event_id):
                 messages.success(request, f'“{event_name}” was deleted.')
                 return redirect('showcase_event_list')
         return redirect('showcase_event_manage', event_id=event.pk)
+    if request.method == 'POST' and request.POST.get('action') == 'remove_exhibit':
+        if event.status != ShowcaseEvent.Status.DRAFT:
+            raise Http404
+        exhibit = event.exhibits.filter(pk=request.POST.get('exhibit_id')).first()
+        if exhibit is None:
+            raise Http404
+        exhibit.delete()
+        messages.success(request, 'Exhibit removed.')
+        return redirect(f"{reverse('showcase_event_manage', kwargs={'event_id': event.pk})}?step=exhibits")
+    if request.method == 'POST' and request.POST.get('action') == 'remove_criterion':
+        if event.status != ShowcaseEvent.Status.DRAFT:
+            raise Http404
+        criterion = event.judge_criteria.filter(pk=request.POST.get('criterion_id')).first()
+        if criterion is None:
+            raise Http404
+        criterion.delete()
+        messages.success(request, 'Judging criterion removed.')
+        return redirect(f"{reverse('showcase_event_manage', kwargs={'event_id': event.pk})}?step=criteria")
     event_form = None
     invite_form = None
     criteria_formset = None
@@ -2597,6 +2755,7 @@ def showcase_event_manage(request, event_id):
                 consent_form.add_error(None, '; '.join(getattr(exc, 'messages', []))
                     or 'Consent confirmation could not be recorded.')
             else:
+                messages.success(request, 'Minor participant consent confirmed.')
                 return redirect('showcase_event_manage', event_id=event.pk)
     elif request.method == 'POST' and request.POST.get('action') == 'edit':
         if event.status != ShowcaseEvent.Status.DRAFT:
@@ -2610,7 +2769,9 @@ def showcase_event_manage(request, event_id):
                 'includes_minors', 'minimum_judges_per_exhibit', 'branding',
                 'consent_confirmed_at', 'updated_at'))
             messages.success(request, 'Event details updated.')
-            return redirect('showcase_event_manage', event_id=event.pk)
+            if request.POST.get('advance') == '1':
+                return redirect(f"{reverse('showcase_event_manage', kwargs={'event_id': event.pk})}?step=exhibits")
+            return redirect(f"{reverse('showcase_event_manage', kwargs={'event_id': event.pk})}?step=details&saved=1")
     elif request.method == 'POST' and request.POST.get('action') == 'judge_criteria':
         criteria_formset = ShowcaseJudgeCriterionFormSet(request.POST, prefix='criteria')
         if event.status != ShowcaseEvent.Status.DRAFT:
@@ -2628,6 +2789,7 @@ def showcase_event_manage(request, event_id):
                     raise Http404
                 criteria_formset._non_form_errors = criteria_formset.error_class(exc.messages)
             else:
+                messages.success(request, 'Judge rubric saved.')
                 return redirect('showcase_event_manage', event_id=event.pk)
     elif request.method == 'POST' and request.POST.get('action') == 'invite_judge':
         invite_form = ShowcaseJudgeInvitationForm(request.POST, event=event)
@@ -2714,21 +2876,18 @@ def showcase_event_manage(request, event_id):
     setup_steps = [
         {'key': 'details', 'label': 'Event details', 'description': 'Name, dates, and event settings',
          'href': '#overview', 'complete': True},
-        {'key': 'exhibits', 'label': 'Add exhibits', 'description': 'Add at least one exhibit',
+        {'key': 'exhibits', 'label': 'Exhibits', 'description': 'Add at least one exhibit',
          'href': '#exhibits-heading', 'complete': exhibit_count > 0},
-        {'key': 'criteria', 'label': 'Set judging criteria',
+        {'key': 'criteria', 'label': 'Rubric',
          'description': 'Build the rubric judges will use' if scoring_required else 'Judging is turned off for this event', 'href': '#judge-criteria-heading',
          'complete': criteria_complete, 'optional': not scoring_required},
-        {'key': 'judges', 'label': 'Invite and assign judges',
-         'description': ('No minimum coverage required' if event.minimum_judges_per_exhibit == 0
-                         else f"Cover all {exhibit_count} exhibits"),
-         'href': '#judge-coverage-heading', 'complete': coverage_complete,
-         'optional': event.minimum_judges_per_exhibit == 0},
-        {'key': 'consent', 'label': 'Check participant consent',
-         'description': 'Required only when minors take part',
-         'href': '#minor-consent-heading' if not consent_complete else '#overview',
-         'complete': consent_complete, 'optional': not event.includes_minors},
-        {'key': 'open', 'label': 'Review and open event',
+        {'key': 'judges-consent', 'label': 'Judge assignments and consent',
+         'description': ('Confirm participant consent' if not consent_complete else
+                         'Complete judge coverage and consent checks'),
+         'href': '#minor-consent-heading' if not consent_complete else '#judge-coverage-heading',
+         'complete': coverage_complete and consent_complete,
+         'optional': event.minimum_judges_per_exhibit == 0 and not event.includes_minors},
+        {'key': 'open', 'label': 'Open Showcase',
          'description': 'Start accepting visitor ratings', 'href': '#lifecycle-heading',
          'complete': event.status != ShowcaseEvent.Status.DRAFT},
     ]
@@ -2781,6 +2940,24 @@ def showcase_event_manage(request, event_id):
     if (event.status == ShowcaseEvent.Status.DRAFT and event.includes_minors
             and event.consent_confirmed_at is None and consent_form is None):
         consent_form = ShowcaseMinorConsentForm(auto_id='consent_%s')
+    exhibit_import_plan, exhibit_import_token = _load_showcase_import_preview(request, event)
+    valid_steps = {step['key'] for step in setup_steps}
+    requested_step = request.POST.get('setup_step') or request.GET.get('step')
+    if requested_step in valid_steps:
+        active_step = requested_step
+    elif request.method == 'POST':
+        action = request.POST.get('action')
+        active_step = {
+            'edit': 'details',
+            'judge_criteria': 'criteria',
+            'invite_judge': 'judges-consent',
+            'revoke_judge': 'judges-consent',
+            'confirm_consent': 'judges-consent',
+        }.get(action, 'details')
+    elif exhibit_import_plan is not None:
+        active_step = 'exhibits'
+    else:
+        active_step = 'details'
     response = render(request, 'service_domains/showcase_event_manage.html', {
         'event': event, 'exhibits': exhibits, 'event_form': event_form,
         'invite_form': invite_form,
@@ -2797,6 +2974,10 @@ def showcase_event_manage(request, event_id):
         'setup_steps': setup_steps,
         'setup_completed_count': setup_completed_count,
         'next_setup_step': next_setup_step,
+        'active_step': active_step,
+        'exhibit_import_form': ShowcaseImportForm(),
+        'exhibit_import_plan': exhibit_import_plan,
+        'exhibit_import_token': exhibit_import_token,
         'event_ready': event_ready,
         'event_can_be_deleted': event_can_be_deleted,
         'transition_choices': transition_choices,
@@ -3027,6 +3208,8 @@ def showcase_event_transition(request, event_id):
             event, minimum_judges=event.minimum_judges_per_exhibit),
         'transition_form': form,
         'transition_choices': _showcase_transition_choices(event),
+        'active_step': 'open',
+        'exhibit_import_form': ShowcaseImportForm(),
         'consent_form': (ShowcaseMinorConsentForm(auto_id='consent_%s')
             if event.status == ShowcaseEvent.Status.DRAFT and event.includes_minors
             and event.consent_confirmed_at is None else None),

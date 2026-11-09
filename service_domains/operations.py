@@ -44,6 +44,7 @@ from .models import (
     CompetitionJudgeAudit,
     CompetitionWeightedResultAudit,
 )
+from .realtime import schedule_competition_leaderboard_update
 from .rules import (advance_entries, aggregate_anonymous_feedback, aggregate_scores,
                    ranked_choice_result, showcase_judge_score)
 
@@ -1203,6 +1204,9 @@ def transition_showcase_event(event, target_status, *, organization, user, reaso
     if (target_status == ShowcaseEvent.Status.OPEN
             and not ShowcaseExhibit.objects.filter(event=locked_event).exists()):
         raise ValidationError('Add at least one exhibit before opening this Showcase event.')
+    if (target_status == ShowcaseEvent.Status.OPEN and locked_event.includes_minors
+            and locked_event.consent_confirmed_at is None):
+        raise ValidationError('Confirm participant consent before opening this Showcase event.')
     if target_status == ShowcaseEvent.Status.OPEN:
         active_assignments = ShowcaseJudgeExhibitAssignment.objects.filter(
             event=locked_event, active=True, invitation__revoked_at__isnull=True,
@@ -1586,10 +1590,12 @@ def reveal_competition_leaderboard(competition, *, organization, user, at=None):
                    .select_for_update().filter(pk=competition.pk).first())
     if competition is None:
         raise PermissionDenied
-    return _transition_competition(competition, organization=organization, user=user,
+    competition = _transition_competition(competition, organization=organization, user=user,
         expected_status=Competition.Status.COMPLETE,
         target_status=Competition.Status.REVEALED,
         reason='Owner revealed the finalized competition leaderboard.', at=at)
+    schedule_competition_leaderboard_update(competition.public_id, True)
+    return competition
 
 
 @transaction.atomic
@@ -1614,6 +1620,7 @@ def set_competition_public_leaderboard(competition, enabled, *, organization, us
         organization_id=competition.organization_id, created_by=user)
     event.full_clean()
     event.save(force_insert=True)
+    schedule_competition_leaderboard_update(competition.public_id, enabled)
     return competition
 
 

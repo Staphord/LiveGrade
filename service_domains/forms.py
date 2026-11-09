@@ -9,9 +9,10 @@ from .models import (CompetitionRoundEntry, PanelCandidate, PanelCriterion,
                      PanelDecision, PanelHearing, PanelScoringPanel, PanelVote,
                      PanelWrittenReview, SHOWCASE_BRAND_ACCENTS,
                      ShowcaseEvent, ShowcaseExhibit, ShowcaseJudgeCriterion)
+from .form_mixins import StyledFormMixin, apply_form_field_styles
 
 
-class PanelHearingForm(forms.ModelForm):
+class PanelHearingForm(StyledFormMixin, forms.ModelForm):
     hearing_date = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date'}))
 
     def __init__(self, *args, **kwargs):
@@ -27,7 +28,7 @@ class PanelHearingForm(forms.ModelForm):
         fields = ('name', 'hearing_date', 'venue', 'workflow')
 
 
-class PanelCandidateForm(forms.ModelForm):
+class PanelCandidateForm(StyledFormMixin, forms.ModelForm):
     scheduled_time = forms.TimeField(required=False, widget=forms.TimeInput(attrs={'type': 'time'}))
 
     class Meta:
@@ -42,7 +43,7 @@ class PanelCandidateForm(forms.ModelForm):
         self.fields['scheduled_time'].label = 'Start time (optional)'
 
 
-class PanelCriterionForm(forms.ModelForm):
+class PanelCriterionForm(StyledFormMixin, forms.ModelForm):
     level_descriptors = forms.CharField(required=False, max_length=MAX_DESCRIPTOR_TEXT,
         label='Score level guidance',
         help_text='Optional. One continuous-score anchor per line: “point value | guidance”, from 0 to 100.',
@@ -84,7 +85,7 @@ class PanelCriterionForm(forms.ModelForm):
         return cleaned
 
 
-class PanelScoringPanelForm(forms.ModelForm):
+class PanelScoringPanelForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = PanelScoringPanel
         fields = ('name', 'admission_method', 'share', 'aggregation', 'minimum_examiners')
@@ -112,7 +113,7 @@ class PanelScoringPanelForm(forms.ModelForm):
         return cleaned
 
 
-class PanelInvitationForm(forms.Form):
+class PanelInvitationForm(StyledFormMixin, forms.Form):
     email = forms.EmailField(max_length=254, label='Examiner email address')
     expires_at = forms.DateTimeField(widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}))
     panel = forms.ModelChoiceField(queryset=PanelScoringPanel.objects.none(), required=False,
@@ -123,7 +124,7 @@ class PanelInvitationForm(forms.Form):
         self.fields['panel'].queryset = panels if panels is not None else PanelScoringPanel.objects.none()
 
 
-class PanelDecisionForm(forms.ModelForm):
+class PanelDecisionForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = PanelDecision
         fields = ('outcome', 'rationale', 'conditions', 'dissent')
@@ -134,11 +135,11 @@ class PanelDecisionForm(forms.ModelForm):
         }
 
 
-class PanelVoteForm(forms.Form):
+class PanelVoteForm(StyledFormMixin, forms.Form):
     choice = forms.ChoiceField(choices=PanelVote.Choice.choices, widget=forms.RadioSelect)
 
 
-class PanelWrittenReviewForm(forms.ModelForm):
+class PanelWrittenReviewForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = PanelWrittenReview
         fields = ('report', 'revision_reason')
@@ -152,7 +153,7 @@ class PanelWrittenReviewForm(forms.ModelForm):
                    'revision_reason': forms.TextInput(attrs={'maxlength': 500})}
 
 
-class PanelCandidateImportForm(forms.Form):
+class PanelCandidateImportForm(StyledFormMixin, forms.Form):
     file = forms.FileField(label='Candidate spreadsheet (.xlsx)',
         widget=forms.FileInput(attrs={'id': 'id_panel_candidate_file'}))
 
@@ -165,11 +166,11 @@ class PanelCandidateImportForm(forms.Form):
         return uploaded
 
 
-class PanelCandidateImportApplyForm(forms.Form):
+class PanelCandidateImportApplyForm(StyledFormMixin, forms.Form):
     preview_token = forms.CharField(widget=forms.HiddenInput)
 
 
-class PanelRubricImportForm(forms.Form):
+class PanelRubricImportForm(StyledFormMixin, forms.Form):
     file = forms.FileField(label='Rubric spreadsheet (.xlsx)',
         widget=forms.FileInput(attrs={'id': 'id_panel_rubric_file'}))
 
@@ -182,11 +183,11 @@ class PanelRubricImportForm(forms.Form):
         return uploaded
 
 
-class PanelRubricImportApplyForm(forms.Form):
+class PanelRubricImportApplyForm(StyledFormMixin, forms.Form):
     preview_token = forms.CharField(widget=forms.HiddenInput)
 
 
-class PanelInvitationImportForm(forms.Form):
+class PanelInvitationImportForm(StyledFormMixin, forms.Form):
     file = forms.FileField(label='Examiner spreadsheet (.xlsx)',
         widget=forms.FileInput(attrs={'id': 'id_panel_invitation_file'}))
     expires_at = forms.DateTimeField(widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}))
@@ -206,11 +207,11 @@ class PanelInvitationImportForm(forms.Form):
         return uploaded
 
 
-class PanelInvitationImportApplyForm(forms.Form):
+class PanelInvitationImportApplyForm(StyledFormMixin, forms.Form):
     preview_token = forms.CharField(widget=forms.HiddenInput)
 
 
-class PanelResultAdjustmentForm(forms.Form):
+class PanelResultAdjustmentForm(StyledFormMixin, forms.Form):
     adjusted_score = forms.DecimalField(min_value=0, max_value=100, max_digits=9,
         decimal_places=6, label='Adjusted result')
     reason = forms.CharField(max_length=1000, required=False,
@@ -224,7 +225,7 @@ class PanelResultAdjustmentForm(forms.Form):
         return reason
 
 
-class PanelCommentRedactionForm(forms.Form):
+class PanelCommentRedactionForm(StyledFormMixin, forms.Form):
     reason = forms.CharField(max_length=1000, required=False,
         widget=forms.Textarea(attrs={'rows': 2, 'autocomplete': 'off'}),
         label='Reason for removing this comment')
@@ -236,7 +237,7 @@ class PanelCommentRedactionForm(forms.Form):
         return reason
 
 
-class PanelCommentReleaseForm(forms.Form):
+class PanelCommentReleaseForm(StyledFormMixin, forms.Form):
     reason = forms.CharField(max_length=1000, required=False,
         widget=forms.Textarea(attrs={'rows': 2, 'autocomplete': 'off'}),
         label='Reason for sharing this anonymous comment')
@@ -248,14 +249,14 @@ class PanelCommentReleaseForm(forms.Form):
         return reason
 
 
-class ShowcaseRatingForm(forms.Form):
+class ShowcaseRatingForm(StyledFormMixin, forms.Form):
     stars = forms.ChoiceField(
         choices=((str(value), f'{value} star' if value == 1 else f'{value} stars')
                  for value in range(1, 6)),
         widget=forms.RadioSelect,
         label='Your rating',
     )
-class ShowcaseEventForm(forms.ModelForm):
+class ShowcaseEventForm(StyledFormMixin, forms.ModelForm):
     branding_tagline = forms.CharField(required=False, max_length=160,
         label='Event tagline', help_text='Optional short line shown on public event pages.')
     branding_accent = forms.ChoiceField(required=False,
@@ -315,7 +316,7 @@ class ShowcaseEventForm(forms.ModelForm):
         return event
 
 
-class ShowcaseEventTransitionForm(forms.Form):
+class ShowcaseEventTransitionForm(StyledFormMixin, forms.Form):
     target_status = forms.ChoiceField(label='Next event state')
     reason = forms.CharField(max_length=500, label='Reason',
         widget=forms.Textarea(attrs={'rows': 2, 'autocomplete': 'off'}))
@@ -325,7 +326,7 @@ class ShowcaseEventTransitionForm(forms.Form):
         self.fields['target_status'].choices = choices
 
 
-class ShowcaseMinorConsentForm(forms.Form):
+class ShowcaseMinorConsentForm(StyledFormMixin, forms.Form):
     confirmation = forms.BooleanField(
         required=True,
         label='I confirm that the required consent for participating minors has been collected.',
@@ -338,7 +339,7 @@ class ShowcaseMinorConsentForm(forms.Form):
     )
 
 
-class ShowcaseJudgeAssignmentsForm(forms.Form):
+class ShowcaseJudgeAssignmentsForm(StyledFormMixin, forms.Form):
     minimum_judges = forms.IntegerField(min_value=0, max_value=50, initial=1,
         label='Minimum assigned judges per exhibit',
         help_text='Use 0 for an audience-only event.')
@@ -359,6 +360,7 @@ class ShowcaseJudgeAssignmentsForm(forms.Form):
             )
         if not self.is_bound:
             self.initial['minimum_judges'] = event.minimum_judges_per_exhibit
+        apply_form_field_styles(self.fields)
 
     @staticmethod
     def field_name(exhibit_id):
@@ -374,7 +376,7 @@ class ShowcaseJudgeAssignmentsForm(forms.Form):
         }
 
 
-class ShowcaseJudgeInvitationForm(forms.Form):
+class ShowcaseJudgeInvitationForm(StyledFormMixin, forms.Form):
     email = forms.EmailField(max_length=254, label='Judge email address')
     expires_at = forms.DateTimeField(
         widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}), label='Link expiry')
@@ -387,7 +389,7 @@ class ShowcaseJudgeInvitationForm(forms.Form):
         self.fields['exhibits'].queryset = event.exhibits.order_by('category__order', 'order', 'pk')
 
 
-class ShowcaseJudgeCriterionForm(forms.Form):
+class ShowcaseJudgeCriterionForm(StyledFormMixin, forms.Form):
     name = forms.CharField(max_length=120, label='Criterion')
     description = forms.CharField(max_length=1000, required=False,
         widget=forms.Textarea(attrs={'rows': 2}), label='What to assess')
@@ -444,7 +446,7 @@ ShowcaseJudgeCriterionFormSet = formset_factory(ShowcaseJudgeCriterionForm,
     validate_max=True)
 
 
-class ShowcaseJudgeScorecardForm(forms.Form):
+class ShowcaseJudgeScorecardForm(StyledFormMixin, forms.Form):
     """One invited judge's scores for every event criterion on one exhibit."""
 
     def __init__(self, *args, criteria, **kwargs):
@@ -473,6 +475,7 @@ class ShowcaseJudgeScorecardForm(forms.Form):
                     label=criterion.name, help_text=criterion.description)
             else:
                 raise ValueError(f'Unsupported Showcase judge scale: {criterion.scale}')
+        apply_form_field_styles(self.fields)
 
     def score_payload(self):
         if not self.is_valid():
@@ -480,13 +483,13 @@ class ShowcaseJudgeScorecardForm(forms.Form):
         return {str(item.pk): self.cleaned_data[f'criterion_{item.pk}'] for item in self.criteria}
 
 
-class ShowcaseJudgeConflictForm(forms.Form):
+class ShowcaseJudgeConflictForm(StyledFormMixin, forms.Form):
     reason = forms.CharField(max_length=500, label='Why you have a conflict',
         help_text='Briefly explain the conflict. Do not include sensitive personal details.',
         widget=forms.Textarea(attrs={'rows': 2, 'autocomplete': 'off'}))
 
 
-class ShowcaseImportForm(forms.Form):
+class ShowcaseImportForm(StyledFormMixin, forms.Form):
     file = forms.FileField(label='Exhibit spreadsheet (.xlsx)')
 
     def clean_file(self):
@@ -498,11 +501,11 @@ class ShowcaseImportForm(forms.Form):
         return uploaded
 
 
-class ShowcaseImportApplyForm(forms.Form):
+class ShowcaseImportApplyForm(StyledFormMixin, forms.Form):
     preview_token = forms.CharField(widget=forms.HiddenInput)
 
 
-class CompetitionAudienceBallotForm(forms.Form):
+class CompetitionAudienceBallotForm(StyledFormMixin, forms.Form):
     """Explicit audience ranking; weighted events require a complete ranking."""
 
     def __init__(self, *args, round_obj, track, require_complete=False, **kwargs):
@@ -517,6 +520,7 @@ class CompetitionAudienceBallotForm(forms.Form):
                 label=f'Rank: {row.entry.name}',
                 help_text=('1 is your first choice; rank every entry.' if require_complete else
                     '1 is your first choice; leave blank to omit this entry.'))
+        apply_form_field_styles(self.fields)
 
     def clean(self):
         cleaned = super().clean()

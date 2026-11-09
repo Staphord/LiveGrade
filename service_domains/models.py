@@ -104,6 +104,9 @@ class PanelHearing(OwnedDomainRecord):
     class Meta:
         ordering = ('-created_at',)
 
+    def __str__(self):
+        return self.name
+
     def clean(self):
         super().clean()
         if (self.active_candidate_id and self.pk
@@ -142,6 +145,9 @@ class PanelScoringPanel(OwnedDomainRecord):
         constraints = [models.UniqueConstraint(fields=('hearing', 'name'),
             name='panel_scoring_panel_name_unique')]
 
+    def __str__(self):
+        return self.name
+
     def clean(self):
         super().clean()
         if self.aggregation == PanelHearing.Aggregation.TRIMMED_MEAN and self.trim_fraction is None:
@@ -167,6 +173,9 @@ class PanelCandidate(OwnedDomainRecord):
                 condition=Q(source_group__isnull=False), name='panel_candidate_source_group_once'),
         ]
 
+    def __str__(self):
+        return self.display_name
+
     def clean(self):
         super().clean()
         if self.source_group_id:
@@ -191,6 +200,9 @@ class PanelCriterion(OwnedDomainRecord):
     class Meta:
         ordering = ('order', 'pk')
         constraints = [models.UniqueConstraint(fields=('hearing', 'name'), name='panel_criterion_name_unique')]
+
+    def __str__(self):
+        return self.name
 
 
 class PanelCriterionLevel(OwnedDomainRecord):
@@ -873,7 +885,7 @@ class PanelAuditEvent(OwnedDomainRecord):
     invitation = models.ForeignKey(PanelInvitation, null=True, blank=True,
         on_delete=models.PROTECT, related_name='audit_events')
     candidate = models.ForeignKey(PanelCandidate, null=True, blank=True,
-        on_delete=models.PROTECT, related_name='audit_events')
+        on_delete=models.SET_NULL, related_name='audit_events')
     actor_user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
         on_delete=models.SET_NULL, related_name='panel_audit_events')
     action = models.CharField(max_length=24, choices=Action.choices)
@@ -924,6 +936,9 @@ class ShowcaseEvent(OwnedDomainRecord):
 
     class Meta:
         ordering = ('-created_at',)
+
+    def __str__(self):
+        return self.name
 
     @property
     def brand_accent_color(self):
@@ -1093,6 +1108,9 @@ class ShowcaseCategory(OwnedDomainRecord):
         ordering = ('order', 'pk')
         constraints = [models.UniqueConstraint(fields=('event', 'name'), name='showcase_category_name_unique')]
 
+    def __str__(self):
+        return self.name
+
 
 class ShowcaseExhibit(OwnedDomainRecord):
     event = models.ForeignKey(ShowcaseEvent, on_delete=models.CASCADE, related_name='exhibits')
@@ -1105,6 +1123,9 @@ class ShowcaseExhibit(OwnedDomainRecord):
 
     class Meta:
         ordering = ('order', 'pk')
+
+    def __str__(self):
+        return self.name
 
     def clean(self):
         super().clean()
@@ -1221,6 +1242,9 @@ class ShowcaseJudgeCriterion(OwnedDomainRecord):
         ordering = ('order', 'pk')
         constraints = [models.UniqueConstraint(fields=('event', 'name'),
             name='showcase_judge_criterion_name_unique')]
+
+    def __str__(self):
+        return self.name
 
     def clean(self):
         super().clean()
@@ -1383,6 +1407,9 @@ class TrainingSeries(OwnedDomainRecord):
     class Meta:
         ordering = ('name', 'pk')
 
+    def __str__(self):
+        return self.name
+
 
 class TrainingCompetency(OwnedDomainRecord):
     series = models.ForeignKey(TrainingSeries, on_delete=models.CASCADE, related_name='competencies')
@@ -1395,6 +1422,9 @@ class TrainingCompetency(OwnedDomainRecord):
     class Meta:
         ordering = ('order', 'pk')
         constraints = [models.UniqueConstraint(fields=('series', 'name'), name='training_competency_name_unique')]
+
+    def __str__(self):
+        return self.name
 
 
 class TrainingParticipant(OwnedDomainRecord):
@@ -1411,6 +1441,9 @@ class TrainingParticipant(OwnedDomainRecord):
         constraints = [models.UniqueConstraint(fields=('series', 'reference'), condition=~Q(reference=''),
             name='training_participant_reference_unique')]
 
+    def __str__(self):
+        return self.display_name
+
 
 class TrainingSeriesSession(OwnedDomainRecord):
     series = models.ForeignKey(TrainingSeries, on_delete=models.CASCADE, related_name='series_sessions')
@@ -1423,6 +1456,9 @@ class TrainingSeriesSession(OwnedDomainRecord):
     class Meta:
         ordering = ('sequence',)
         constraints = [models.UniqueConstraint(fields=('series', 'sequence'), name='training_series_sequence_unique')]
+
+    def __str__(self):
+        return str(self.assessment_session)
 
     def clean(self):
         super().clean()
@@ -1694,6 +1730,9 @@ class Competition(OwnedDomainRecord):
     class Meta:
         ordering = ('-created_at',)
 
+    def __str__(self):
+        return self.name
+
     @property
     def effective_audience_weight(self):
         """Return the published weight frozen at event start, or the draft value."""
@@ -1860,6 +1899,9 @@ class CompetitionTrack(OwnedDomainRecord):
     class Meta:
         constraints = [models.UniqueConstraint(fields=('competition', 'name'), name='competition_track_name_unique')]
 
+    def __str__(self):
+        return self.name
+
     def clean(self):
         super().clean()
         if self.advancement_rule == 'top_n' and (
@@ -1885,6 +1927,9 @@ class CompetitionCriterion(OwnedDomainRecord):
         constraints = [models.UniqueConstraint(fields=('track', 'name'),
             name='competition_criterion_name_unique')]
 
+    def __str__(self):
+        return self.name
+
     def clean(self):
         super().clean()
         if not self.name or not self.name.strip():
@@ -1904,6 +1949,9 @@ class CompetitionEntry(OwnedDomainRecord):
         constraints = [models.UniqueConstraint(fields=('track', 'reference'), condition=~Q(reference=''),
             name='competition_entry_reference_unique')]
 
+    def __str__(self):
+        return self.name
+
 
 class CompetitionRound(OwnedDomainRecord):
     competition = models.ForeignKey(Competition, on_delete=models.CASCADE, related_name='rounds')
@@ -1915,6 +1963,9 @@ class CompetitionRound(OwnedDomainRecord):
     class Meta:
         ordering = ('order', 'pk')
         constraints = [models.UniqueConstraint(fields=('competition', 'order'), name='competition_round_order_unique')]
+
+    def __str__(self):
+        return self.name
 
 
 class CompetitionAudienceJoinCode(models.Model):
@@ -2388,6 +2439,9 @@ class CombinedPresentationAssessment(OwnedDomainRecord):
 
     class Meta:
         ordering = ('-created_at',)
+
+    def __str__(self):
+        return self.name
 
     objects = OwnedManager.from_queryset(CombinedAssessmentQuerySet)()
 
