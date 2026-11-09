@@ -5,6 +5,7 @@ from .views import poll_views
 
 urlpatterns = [
     path('<int:pk>/polls/', poll_views.classroom_polls, name='assessment_polls'),
+    path('<int:pk>/polls/delete/', poll_views.classroom_poll_delete, name='assessment_poll_delete'),
     path('<int:pk>/polls/questions/sample.xlsx', poll_views.classroom_poll_import_sample,
          name='assessment_poll_questions_sample'),
     path('<int:pk>/leaderboard-scores/', poll_views.leaderboard_scores, name='assessment_leaderboard_scores'),

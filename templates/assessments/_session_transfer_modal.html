@@ -1,0 +1,34 @@
+<div class="mb-3">
+{% if is_owner %}
+  <div class="d-flex align-items-start gap-2 p-3 rounded-3 border border-warning-subtle bg-warning-subtle text-warning-emphasis" role="note">
+    <i class="bi bi-exclamation-triangle mt-1" aria-hidden="true"></i>
+    <p class="mb-0">You will lose access after transfer. Students in the room won’t be affected.</p>
+  </div>
+{% else %}
+  <div class="d-flex align-items-start gap-2 p-3 rounded-3 border border-info-subtle bg-info-subtle text-info-emphasis" role="note">
+    <i class="bi bi-info-circle mt-1" aria-hidden="true"></i>
+    <p class="mb-0">This session belongs to <strong>{% if session.created_by %}{{ session.created_by.display_name }}{% else %}nobody{% endif %}</strong>. The current owner will lose access after transfer.</p>
+  </div>
+{% endif %}
+  <p class="small text-muted mt-3 mb-0">{{ session.name }}</p>
+</div>
+{% if recipients %}
+  <form method="post" action="{% url 'assessment_transfer' session.pk %}" data-session-action-form novalidate>
+    {% csrf_token %}
+    <div class="session-action-field{% if transfer_error %} has-error{% endif %}">
+      <label class="form-label" for="new_owner">New owner</label>
+      <select name="new_owner" id="new_owner" class="form-select{% if transfer_error %} is-invalid{% endif %}" required aria-describedby="new-owner-help new-owner-error"{% if transfer_error %} aria-invalid="true"{% endif %}>
+        <option value="">Choose a colleague…</option>
+        {% for person in recipients %}<option value="{{ person.pk }}"{% if selected_owner == person.pk|stringformat:'s' %} selected{% endif %}>{{ person.get_full_name|default:person.username }}{% if person.email %} ({{ person.email }}){% endif %}</option>{% endfor %}
+      </select>
+      <div class="form-text" id="new-owner-help">Choose a colleague from this organization.</div>
+      {% include 'partials/_inline_message.html' with message=transfer_error tone='danger' message_id='new-owner-error' %}
+    </div>
+    <div class="session-action-form-actions">
+      <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+      <button type="submit" class="btn btn-primary">Transfer ownership</button>
+    </div>
+  </form>
+{% else %}
+  <p class="text-muted mb-0">No other colleague has signed in yet.</p>
+{% endif %}

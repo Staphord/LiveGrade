@@ -48,7 +48,8 @@ class SessionTemplateTests(TestCase):
 
     def saved(self):
         response = self.client.post(self.save_url, {'name': 'Reusable class', 'description': 'For next term'})
-        self.assertRedirects(response, self.list_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'ok': True, 'message': 'Template saved.'})
         return SessionTemplate.objects.get(name='Reusable class')
 
     def create(self, template, **overrides):
@@ -61,7 +62,7 @@ class SessionTemplateTests(TestCase):
 
     def test_save_confirmation_is_read_only_and_explains_scope(self):
         response = self.client.get(self.save_url)
-        self.assertContains(response, 'Students, groups, submissions and results are not included.')
+        self.assertContains(response, 'Save setup only. Students, groups, and results are excluded.')
         self.assertContains(response, 'name="name"')
         self.assertContains(response, 'name="description"')
         self.assertFalse(SessionTemplate.objects.exists())
@@ -401,8 +402,8 @@ class SessionTemplateTests(TestCase):
 
     def test_owner_navigation_exposes_save_and_library_actions(self):
         for route in ('assessment_session_detail', 'assessment_session_edit'):
-            self.assertContains(self.client.get(reverse(route, args=[self.source.pk]), follow=True), f'href="{self.save_url}"')
-        self.assertContains(self.client.get(reverse('assessment_session_list')), f'href="{self.save_url}"')
+            self.assertContains(self.client.get(reverse(route, args=[self.source.pk]), follow=True), f'data-action-url="{self.save_url}"')
+        self.assertContains(self.client.get(reverse('assessment_session_list')), f'data-action-url="{self.save_url}"')
         self.assertContains(self.client.get(reverse('assessment_session_list')), f'href="{self.list_url}"')
 
 

@@ -241,7 +241,9 @@ def assessment_session_duplicate(request, pk):
                 return redirect('assessment_groups', pk=duplicate.pk)
     else:
         form = DuplicateSessionForm(initial={'name': f'{source.name[:143]} (copy)'})
-    return render(request, 'assessments/session_duplicate.html', {'session': source, 'form': form})
+    return render(request, 'assessments/_session_duplicate_modal.html', {
+        'session': source, 'form': form,
+    })
 
 
 BASICS_LABELS = {'name': 'name', 'identify_by': 'how students join', 'ungraded_penalty': 'penalty per group not graded', 'instructions': 'evaluator notice'}
@@ -1457,24 +1459,40 @@ def session_transfer(request, pk):
     session = _session(request, pk, oversight=True)
     recipients = list(eligible_recipients(session))
     is_owner = session.created_by_id == request.user.pk
-    back = reverse('assessment_session_list') + ('?scope=all' if can_oversee(request) else '')
+    transfer_error = ''
+    selected_owner = ''
 
     if request.method == 'POST':
+        selected_owner = request.POST.get('new_owner', '')
         try:
-            chosen = next(user for user in recipients if str(user.pk) == request.POST.get('new_owner', ''))
+            chosen = next(user for user in recipients if str(user.pk) == selected_owner)
         except StopIteration:
-            messages.error(request, 'Choose one of the lecturers in the list.')
+            transfer_error = 'Choose one of the lecturers in the list.'
         else:
             try:
                 transfer_session(session, chosen, by_user=request.user)
             except TransferError as error:
                 # Only if the recipient stopped being eligible between the list
                 # being drawn and this request.
-                messages.error(request, str(error))
+                transfer_error = str(error)
             else:
+                # Former owners return to My sessions, where the handed-over
+                # session is no longer listed. An overseer who transferred a
+                # different person's session stays on the organization-wide list,
+                # unless they took ownership themselves.
+                show_all = can_oversee(request) and not is_owner and chosen.pk != request.user.pk
+                back = reverse('assessment_session_list') + ('?scope=all' if show_all else '')
                 messages.success(
                     request, f'"{session.name}" now belongs to {chosen.get_full_name() or chosen.username}.')
+                if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                    # Let the browser perform the redirect. If fetch follows
+                    # this redirect, the list page consumes the message before
+                    # the actual navigation can display it.
+                    return JsonResponse({'redirect_url': back})
                 return redirect(back)
 
-    return render(request, 'assessments/session_transfer.html', {
-        'session': session, 'recipients': recipients, 'is_owner': is_owner, 'back': back})
+    context = {
+        'session': session, 'recipients': recipients, 'is_owner': is_owner,
+        'transfer_error': transfer_error, 'selected_owner': selected_owner,
+    }
+    return render(request, 'assessments/_session_transfer_modal.html', context)

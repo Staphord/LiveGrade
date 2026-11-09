@@ -6,11 +6,14 @@
 {% if session and session.service == 'classroom' %}<a href="{% url 'assessment_polls' session.pk %}" class="btn btn-outline-primary btn-sm">Classroom polls</a>{% endif %}
 {% if session and session.service == 'classroom' %}<a href="{% url 'combined_assessment_create' %}?classroom_session={{ session.pk }}" class="btn btn-outline-primary btn-sm">Add Panel grading</a>{% endif %}
 {% if request.service == 'team' %}<a href="{% url 'training_session_competencies' session.pk %}" class="btn btn-outline-secondary btn-sm">Competency outcomes</a>{% endif %}
-{% if session %}<a href="{% url 'assessment_template_save' session.pk %}" class="btn btn-outline-secondary btn-sm">Save as template</a>{% endif %}
-{% if session %}<a href="{% url 'assessment_session_duplicate' session.pk %}" class="btn btn-outline-secondary btn-sm">Duplicate session</a>{% endif %}
-{% if not active_org.public %}<a href="{% url 'assessment_transfer' session.pk %}" class="btn btn-outline-secondary btn-sm">
-  <i class="bi bi-arrow-left-right me-1"></i>Transfer ownership
-</a>{% endif %}
+{% if session %}<div class="dropdown">
+  <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Session actions</button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item" type="button" aria-haspopup="dialog" aria-controls="session-action-modal" data-session-action-modal data-action-url="{% url 'assessment_template_save' session.pk %}" data-action-modal-title="Save as template"><i class="bi bi-bookmark-plus me-2" aria-hidden="true"></i>Save as template</button></li>
+    <li><button class="dropdown-item" type="button" aria-haspopup="dialog" aria-controls="session-action-modal" data-session-action-modal data-action-url="{% url 'assessment_session_duplicate' session.pk %}" data-action-modal-title="Duplicate session"><i class="bi bi-copy me-2" aria-hidden="true"></i>Duplicate session</button></li>
+    {% if not active_org.public %}<li><button class="dropdown-item" type="button" aria-haspopup="dialog" aria-controls="session-action-modal" data-session-action-modal data-action-url="{% url 'assessment_transfer' session.pk %}" data-action-modal-title="Transfer ownership"><i class="bi bi-arrow-left-right me-2" aria-hidden="true"></i>Transfer ownership</button></li>{% endif %}
+  </ul>
+</div>{% endif %}
 <a href="{% url 'assessment_session_list' %}" class="btn btn-outline-secondary btn-sm">
   <i class="bi bi-arrow-left me-1"></i>All sessions
 </a>
@@ -647,9 +650,12 @@
 </div>
 {% endif %}
 
+{% include 'assessments/_session_action_modal.html' %}
+
 {% endblock %}
 
 {% block scripts %}
+{% include 'assessments/_session_action_modal_script.html' %}
 {% if session.status == 'live' %}
 <script nonce="{{ csp_nonce }}">
 // The live control panel updates itself in place - a websocket push (or a

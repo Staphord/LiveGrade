@@ -258,18 +258,18 @@ class HandOverTests(OversightTestCase):
     def test_the_page_tells_an_overseer_who_owns_it_now(self):
         self.as_overseer()
         page = self.client.get(self.url(self.anns_closed))
-        self.assertContains(page, 'belongs to <strong>Ann Owner</strong>')
-        self.assertNotContains(page, 'you will no longer see or control it')
-        self.assertContains(page, 'href="' + reverse('assessment_session_list') + '?scope=all"')
+        self.assertContains(page, 'This session belongs to <strong>Ann Owner</strong>.')
+        self.assertContains(page, 'The current owner will lose access after transfer.')
+        self.assertContains(page, 'Transfer ownership')
 
     def test_an_unowned_session_is_described_as_belonging_to_nobody(self):
         self.as_overseer()
-        self.assertContains(self.client.get(self.url(self.unowned)), 'belongs to <strong>nobody</strong>')
+        self.assertContains(self.client.get(self.url(self.unowned)), 'This session belongs to <strong>nobody</strong>.')
 
-    def test_the_owners_own_page_keeps_its_warning_and_plain_back_link(self):
+    def test_the_owner_dialog_warns_that_access_will_end(self):
         sign_in(self.client, self.ann, self.plain)
         page = self.client.get(self.url(self.anns_closed))
-        self.assertContains(page, 'you will no longer see or control it')
+        self.assertContains(page, 'You will lose access after transfer.')
         self.assertNotContains(page, '?scope=all')
 
     def test_an_ordinary_colleague_cannot_hand_over_somebody_elses(self):

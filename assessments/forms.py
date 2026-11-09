@@ -37,9 +37,15 @@ class AssessmentSessionForm(forms.ModelForm):
 
 class SaveSessionTemplateForm(forms.Form):
     name = forms.CharField(max_length=150, label='Template name',
-                           widget=forms.TextInput(attrs={'class': 'form-control'}))
+                           widget=forms.TextInput(attrs={
+                               'class': 'form-control',
+                               'aria-describedby': 'id_name_inline_message',
+                           }))
     description = forms.CharField(max_length=500, required=False, label='Description',
-        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 3}))
+        widget=forms.Textarea(attrs={
+            'class': 'form-control', 'rows': 3,
+            'aria-describedby': 'id_description_inline_message',
+        }))
 
 
 class TemplateChoiceForm(forms.Form):
@@ -58,13 +64,22 @@ class TemplateChoiceForm(forms.Form):
 
 class DuplicateSessionForm(forms.Form):
     name = forms.CharField(max_length=150, label='New session name',
-                           widget=forms.TextInput(attrs={'class': 'form-control'}))
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'aria-describedby': 'id_name_inline_message',
+        }))
     include_roster = forms.BooleanField(required=False, label='Copy the student roster',
-        help_text='Includes names, identifiers, email addresses and programmes.',
-        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}))
+        help_text='Copies names, IDs, emails and programmes.',
+        widget=forms.CheckboxInput(attrs={
+            'class': 'form-check-input',
+            'aria-describedby': 'id_include_roster_helptext id_include_roster_inline_message',
+        }))
     include_groups = forms.BooleanField(required=False, label='Copy the presentation groups',
-        help_text='Group membership is copied only when the student roster is also selected.',
-        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}))
+        help_text='Group members copy only with the roster.',
+        widget=forms.CheckboxInput(attrs={
+            'class': 'form-check-input',
+            'aria-describedby': 'id_include_groups_helptext id_include_groups_inline_message',
+        }))
 
 
 class RubricCategoryForm(forms.ModelForm):
@@ -209,9 +224,16 @@ class RubricImportForm(forms.Form):
 
 class PollQuestionImportForm(forms.Form):
     file = forms.FileField(
+        required=False,
         validators=[validate_workbook],
         widget=forms.ClearableFileInput(attrs={'class': 'form-control', 'accept': '.xlsx'}),
-        help_text='Use one row per answer option. Include Question, Question Type and Answer Option columns.')
+        help_text='Use one row per question with Question, Question Type and Answer Options columns.')
+
+    def clean_file(self):
+        uploaded_file = self.cleaned_data.get('file')
+        if uploaded_file is None:
+            raise ValidationError('Please select a file.')
+        return uploaded_file
 
 
 class PresentationGroupForm(forms.ModelForm):

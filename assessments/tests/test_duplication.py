@@ -60,7 +60,7 @@ class DuplicateTests(TestCase):
         self.assertContains(response, 'name="include_roster"')
         self.assertContains(response, 'name="include_groups"')
         self.assertContains(response, 'Original (copy)')
-        self.assertContains(response, 'Scores, submitted assessments, participation and presentation history are not copied.')
+        self.assertContains(response, 'Creates a draft with this session’s setup.')
         self.assertFalse(response.context['form']['include_roster'].value())
         self.assertFalse(response.context['form']['include_groups'].value())
         self.assertEqual(AssessmentSession.objects.count(), 1)
@@ -211,8 +211,8 @@ class DuplicateTests(TestCase):
         self.assertEqual(AssessmentSession.objects.count(), 1)
 
     def test_owner_sees_copy_action_in_list_and_session(self):
-        self.assertContains(self.client.get(reverse('assessment_session_list')), f'href="{self.url}"')
-        self.assertContains(self.client.get(reverse('assessment_session_detail', args=[self.source.pk])), f'href="{self.url}"')
+        self.assertContains(self.client.get(reverse('assessment_session_list')), f'data-action-url="{self.url}"')
+        self.assertContains(self.client.get(reverse('assessment_session_detail', args=[self.source.pk])), f'data-action-url="{self.url}"')
 
     def test_max_length_source_name_has_valid_default_copy_name(self):
         self.source.name = 'x' * 150

@@ -1,6 +1,7 @@
 """Owner-only reusable setup workflows. No template grants oversight access."""
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods, require_POST
 
@@ -37,9 +38,10 @@ def session_template_save(request, pk):
         except ValidationError as error:
             form.add_error(None, ' '.join(error.messages))
         else:
-            messages.success(request, 'Template saved. It is ready to use for a new session.')
-            return redirect('assessment_template_list')
-    return render(request, 'assessments/template_save.html', {'session': source, 'form': form})
+            return JsonResponse({'ok': True, 'message': 'Template saved.'})
+    return render(request, 'assessments/_session_template_save_modal.html', {
+        'session': source, 'form': form,
+    })
 
 
 @lecturer_required

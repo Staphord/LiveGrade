@@ -1,7 +1,7 @@
 
 <div class="import-dropzone" id="{{ dropzone_id }}" data-import-dropzone>
   <i class="bi bi-cloud-arrow-up" aria-hidden="true"></i>
-  <label class="dz-text" for="{{ file_field.id_for_label }}">Choose a file or drag it here</label>
+  <label class="dz-text" for="{{ file_field.id_for_label }}">Choose a file or drag it here{% if file_required or file_field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>
   <div class="dz-filename" id="{{ filename_id }}" data-import-filename aria-live="polite"></div>
   {{ file_field }}
 </div>
