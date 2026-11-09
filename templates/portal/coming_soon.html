@@ -22,7 +22,7 @@
   <form method="post" action="{% url 'service_interest' service.slug %}" class="text-start mt-3">
     {% csrf_token %}
     <p>Get one email when {{ service.name }} opens.</p>
-    {{ interest_form.as_p }}
+    {% include 'partials/_form_fields.html' with form=interest_form %}
     <button type="submit" class="btn btn-primary">Notify me</button>
   </form>
   {% endif %}

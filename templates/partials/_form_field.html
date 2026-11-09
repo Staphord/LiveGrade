@@ -1,0 +1,44 @@
+{% if field.field.widget.input_type == 'checkbox' %}
+  <div class="form-check mb-3">
+    {{ field }}
+    <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>
+    {% if field.help_text %}<div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}
+    {% include 'partials/_inline_message.html' with messages=field.errors tone='danger' message_id=field.auto_id|add:'_inline_message' %}
+  </div>
+{% elif field.field.widget.attrs.type == 'date' or field.field.widget.attrs.type == 'time' or field.field.widget.attrs.type == 'datetime-local' or field.field.widget.input_type == 'date' or field.field.widget.input_type == 'time' or field.field.widget.input_type == 'datetime-local' %}
+  <div class="mb-3">
+    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>
+    {% if field.field.widget.attrs.type == 'datetime-local' or field.field.widget.input_type == 'datetime-local' %}
+      <div class="deadline-picker" data-datetime-picker data-datetime-mode="split">
+        {{ field }}
+        <div class="deadline-picker-fields" hidden>
+          <div class="deadline-picker-part"><label for="{{ field.id_for_label }}_date">Date</label><input class="form-control" id="{{ field.id_for_label }}_date" type="date" data-deadline-date aria-label="{{ field.label }} date"></div>
+          <div class="deadline-picker-part"><label for="{{ field.id_for_label }}_time">Time</label><input class="form-control" id="{{ field.id_for_label }}_time" type="time" data-deadline-time aria-label="{{ field.label }} time"></div>
+        </div>
+        <button type="button" class="deadline-picker-clear" data-datetime-clear hidden aria-label="Clear {{ field.label }}"><i class="bi bi-x-lg" aria-hidden="true"></i><span>Clear deadline</span></button>
+      </div>
+    {% else %}
+      <div class="datetime-picker-control" data-datetime-picker>
+        {{ field }}
+        <div class="datetime-picker-actions">
+          {% if not field.field.required %}<button type="button" class="datetime-picker-button" data-datetime-clear hidden aria-label="Clear {{ field.label }}" title="Clear"><i class="bi bi-x-lg" aria-hidden="true"></i></button>{% endif %}
+          <button type="button" class="datetime-picker-button" data-datetime-open hidden
+            aria-label="{% if field.field.widget.attrs.type == 'time' or field.field.widget.input_type == 'time' %}Choose time for{% elif field.field.widget.attrs.type == 'date' or field.field.widget.input_type == 'date' %}Choose date for{% else %}Choose date and time for{% endif %} {{ field.label }}"
+            title="{% if field.field.widget.attrs.type == 'time' or field.field.widget.input_type == 'time' %}Choose time{% elif field.field.widget.attrs.type == 'date' or field.field.widget.input_type == 'date' %}Choose date{% else %}Choose date and time{% endif %}">
+            <i class="bi {% if field.field.widget.attrs.type == 'time' or field.field.widget.input_type == 'time' %}bi-clock{% else %}bi-calendar-event{% endif %}" aria-hidden="true"></i>
+          </button>
+        </div>
+      </div>
+    {% endif %}
+    {% if field.help_text %}<div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}
+    {% include 'partials/_inline_message.html' with messages=field.errors tone='danger' message_id=field.auto_id|add:'_inline_message' %}
+  </div>
+{% else %}
+  <div class="mb-3">
+    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>
+    {{ field }}
+    {% if field.help_text %}<div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}
+    {% include 'partials/_inline_message.html' with messages=field.errors tone='danger' message_id=field.auto_id|add:'_inline_message' %}
+  </div>
+{% endif %}
+

@@ -53,7 +53,7 @@ display:none!important;
 .nav-section{padding:var(--sp-1) var(--sp-4);font-size:var(--fs-micro);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-subtle);margin-top:var(--sp-4)}
 .nav-section:first-child{margin-top:0}
 .main-wrap{margin-left:var(--sidebar);min-height:100vh;display:flex;flex-direction:column;background:var(--canvas)}
-.topbar{height:var(--topbar-h);background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--border);padding:var(--sp-2) var(--sp-5);display:flex;align-items:center;gap:var(--sp-4);position:sticky;top:0;z-index:var(--z-sticky)}
+.topbar{height:var(--topbar-h);background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--border);padding:var(--sp-2) var(--sp-5);display:flex;align-items:center;gap:var(--sp-4);position:sticky;top:0;z-index:calc(var(--z-sticky) + 1)}
 .topbar-title{font-weight:600;font-size:var(--fs-strong);color:var(--ink)}
 .page-body{padding:var(--sp-5) var(--page-gutter) var(--sp-7);flex:1;max-width:1440px;width:100%;margin:0 auto}
 .topbar-title{flex:0 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -187,11 +187,11 @@ display:none!important;
   .sidebar.collapsed .sidebar-footer-text,
   .sidebar.collapsed .nav-link .nav-text{display:revert!important}
   .sidebar.collapsed .nav-link{justify-content:flex-start;padding:var(--sp-2)}
-  .main-wrap, .sidebar.collapsed ~ .main-wrap{margin-left:0;max-width:100vw;overflow-x:hidden}
+  .main-wrap, .sidebar.collapsed ~ .main-wrap{margin-left:0;max-width:100vw;overflow-x:clip;overflow-y:visible}
   .sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:var(--z-backdrop)}
   .sidebar-backdrop.show{display:block}
   .topbar{height:auto;min-height:var(--topbar-h);flex-wrap:wrap;gap:var(--sp-2);padding:var(--sp-3);max-width:100%}
-  .topbar-actions-wrap{width:100%;overflow-x:auto;flex-wrap:wrap}
+  .topbar-actions-wrap{width:100%;overflow:visible;flex-wrap:wrap}
   .page-body{padding:var(--sp-3);min-width:0;max-width:100%;overflow-x:hidden}
   .kanban-col{flex:0 0 82vw}
 }
@@ -320,6 +320,8 @@ display:none!important;
 <script src="{% static 'js/overlay.js' %}"></script>
 <script src="{% static 'js/chart-theme.js' %}"></script>
 <script src="{% static 'js/inline-actions.js' %}"></script>
+<script src="{% static 'js/datetime-picker.js' %}"></script>
+{% include 'partials/_custom_select.html' %}
 
 <script nonce="{{ csp_nonce }}">
 (function () {

@@ -1,0 +1,25 @@
+<div class="deadline-picker">
+  {{ field }}
+  <div class="form-label deadline-picker-title">{{ field.label }}</div>
+  <div class="deadline-picker-fields">
+    <div class="deadline-picker-part">
+      <label class="form-label" for="{{ date_field.id_for_label }}">{{ date_field.label }}</label>
+      <div class="deadline-entry" data-deadline-entry="date">
+        {{ date_field }}
+        <input class="deadline-native-picker" type="date" data-deadline-native tabindex="-1" aria-hidden="true">
+        <button class="deadline-picker-button" type="button" data-deadline-open hidden aria-label="Choose date" title="Choose date"><i class="bi bi-calendar3" aria-hidden="true"></i></button>
+      </div>
+      {% include 'partials/_inline_message.html' with messages=date_field.errors tone='danger' message_id=date_field.auto_id|add:'_inline_message' %}
+    </div>
+    <div class="deadline-picker-part">
+      <label class="form-label" for="{{ time_field.id_for_label }}">{{ time_field.label }}</label>
+      <div class="deadline-entry" data-deadline-entry="time">
+        {{ time_field }}
+        <input class="deadline-native-picker" type="time" data-deadline-native tabindex="-1" aria-hidden="true">
+        <button class="deadline-picker-button" type="button" data-deadline-open hidden aria-label="Choose time" title="Choose time"><i class="bi bi-clock" aria-hidden="true"></i></button>
+      </div>
+      {% include 'partials/_inline_message.html' with messages=time_field.errors tone='danger' message_id=time_field.auto_id|add:'_inline_message' %}
+    </div>
+  </div>
+  {% include 'partials/_inline_message.html' with messages=field.errors tone='danger' message_id=field.auto_id|add:'_inline_message' %}
+</div>
