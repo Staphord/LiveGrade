@@ -1123,27 +1123,30 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
 
         # 2. Classroom dashboard: empty, between/scheduled, and live states
         with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'classroom'):
-            empty_cls = self.client.get(reverse('assessment_session_list'))
+            empty_cls = self.client.get(reverse('assessment_dashboard'))
             self.assertEqual(empty_cls.status_code, 200)
-            self.assertContains(empty_cls, 'empty-hero')
-            self.assertContains(empty_cls, 'WELCOME TO CLASSROOM')
+            self.assertContains(empty_cls, 'You haven’t created a classroom session yet')
+            self.assertContains(empty_cls, 'Session stages')
 
             cls_session = AssessmentSession.objects.create(
                 organization_id=self.org.id, created_by=self.owner,
                 service='classroom', name='Capstone Defense',
                 status=AssessmentSession.Status.DRAFT,
             )
-            between_cls = self.client.get(reverse('assessment_session_list'))
-            self.assertContains(between_cls, 'BETWEEN SESSIONS — SCHEDULED')
-            self.assertContains(between_cls, 'Stage Breakdown &amp; Resources')
-            self.assertContains(between_cls, 'data-session-filter')
-            self.assertContains(between_cls, 'data-session-search')
+            between_cls = self.client.get(reverse('assessment_dashboard'))
+            self.assertContains(between_cls, 'Total sessions')
+            self.assertContains(between_cls, 'In setup')
+            self.assertContains(between_cls, 'Capstone Defense')
+            session_list = self.client.get(reverse('assessment_session_list'))
+            self.assertContains(session_list, 'data-session-auto-filter')
+            self.assertContains(session_list, 'id="session-search"')
 
             cls_session.status = AssessmentSession.Status.LIVE
             cls_session.save(update_fields=('status',))
-            live_cls = self.client.get(reverse('assessment_session_list'))
-            self.assertContains(live_cls, 'LIVE NOW — ACTIVE IN ROOM')
-            self.assertContains(live_cls, 'Open Live Console')
+            live_cls = self.client.get(reverse('assessment_dashboard'))
+            self.assertContains(live_cls, 'Live in the classroom')
+            self.assertContains(live_cls, '1 active session')
+            self.assertContains(live_cls, 'Capstone Defense')
 
         # 3. Panel dashboard: empty, draft attention, and live states
         with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
