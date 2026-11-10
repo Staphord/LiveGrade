@@ -426,3 +426,172 @@ class StandalonePollsEndToEndTests(TestCase):
         req.service = 'classroom'
         with self.assertRaises(Http404):
             standalone_poll_public(req, poll.uuid)
+
+    def test_real_csrf_form_submissions_for_import_cancel_logout_and_voting(self):
+        import re
+
+        def browser_origin_for_response(response, default_origin='http://testserver'):
+            # Per WHATWG Fetch, browsers serialize Origin as "null" on form POST
+            # navigations when the document Referrer-Policy is "no-referrer".
+            if response.headers.get('Referrer-Policy') == 'no-referrer':
+                return 'null'
+            return default_origin
+
+        def extract_csrf_token(response):
+            match = re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"', response.content.decode())
+            self.assertIsNotNone(match)
+            return match.group(1)
+
+        csrf_client = Client(enforce_csrf_checks=True)
+        sign_in(csrf_client, self.user, self.org)
+
+        manage_url = reverse('standalone_poll_list')
+        page = csrf_client.get(manage_url)
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page['Referrer-Policy'], 'same-origin')
+        origin = browser_origin_for_response(page)
+        csrf_token = extract_csrf_token(page)
+
+        sample_res = csrf_client.get(reverse('standalone_poll_sample'))
+        self.assertEqual(sample_res.status_code, 200)
+        sample_file = io.BytesIO(sample_res.content)
+        sample_file.name = 'poll-questions-sample.xlsx'
+
+        preview_res = csrf_client.post(
+            manage_url,
+            {'action': 'upload-questions', 'file': sample_file, 'csrfmiddlewaretoken': csrf_token},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+            HTTP_ACCEPT='application/json',
+            HTTP_ORIGIN='http://testserver',
+        )
+        self.assertEqual(preview_res.status_code, 200)
+        self.assertTrue(preview_res.json()['ok'])
+
+        apply_res = csrf_client.post(
+            manage_url,
+            {'action': 'apply-question-import', 'csrfmiddlewaretoken': csrf_token},
+            HTTP_ORIGIN=origin,
+        )
+        self.assertEqual(apply_res.status_code, 302)
+        created_poll = ClassroomPoll.objects.filter(standalone=True, created_by=self.user).first()
+        self.assertIsNotNone(created_poll)
+
+        page = csrf_client.get(f'{manage_url}?poll={created_poll.uuid}')
+        self.assertEqual(page['Referrer-Policy'], 'same-origin')
+        origin = browser_origin_for_response(page)
+        csrf_token = extract_csrf_token(page)
+
+        sample_file_2 = io.BytesIO(sample_res.content)
+        sample_file_2.name = 'poll-questions-sample.xlsx'
+        csrf_client.post(
+            manage_url,
+            {
+                'action': 'upload-questions',
+                'poll': str(created_poll.uuid),
+                'file': sample_file_2,
+                'csrfmiddlewaretoken': csrf_token,
+            },
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+            HTTP_ACCEPT='application/json',
+            HTTP_ORIGIN='http://testserver',
+        )
+
+        cancel_res = csrf_client.post(
+            manage_url,
+            {
+                'action': 'cancel-question-import',
+                'poll': str(created_poll.uuid),
+                'csrfmiddlewaretoken': csrf_token,
+            },
+            HTTP_ORIGIN=origin,
+        )
+        self.assertEqual(cancel_res.status_code, 302)
+        self.assertNotIn(IMPORT_KEY, csrf_client.session)
+
+        publish_res = csrf_client.post(
+            manage_url,
+            {
+                'action': 'publish',
+                'poll': str(created_poll.uuid),
+                'csrfmiddlewaretoken': csrf_token,
+            },
+            HTTP_ORIGIN=origin,
+        )
+        self.assertEqual(publish_res.status_code, 302)
+
+        public_csrf_client = Client(enforce_csrf_checks=True)
+        vote_url = reverse('standalone_poll_public', args=[created_poll.uuid])
+        vote_page = public_csrf_client.get(vote_url)
+        self.assertEqual(vote_page.status_code, 200)
+        self.assertEqual(vote_page['Referrer-Policy'], 'same-origin')
+        vote_origin = browser_origin_for_response(vote_page)
+        vote_csrf = extract_csrf_token(vote_page)
+        vote_payload = {
+            'action': 'vote',
+            'csrfmiddlewaretoken': vote_csrf,
+        }
+        for q in created_poll.questions.all():
+            vote_payload[f'question-{q.pk}'] = [str(q.options.first().pk)]
+        vote_res = public_csrf_client.post(
+            vote_url,
+            vote_payload,
+            HTTP_ORIGIN=vote_origin,
+        )
+        self.assertEqual(vote_res.status_code, 302)
+
+        logout_res = csrf_client.post(
+            reverse('oidc_logout'),
+            {'csrfmiddlewaretoken': csrf_token},
+            HTTP_ORIGIN=origin,
+        )
+        self.assertEqual(logout_res.status_code, 302)
+
+    def test_standalone_poll_detail_design_and_confirm_action_hidden_inputs(self):
+        poll = self._create_poll(status='open')
+        question = poll.questions.first()
+        option = question.options.first()
+        vote_url = reverse('standalone_poll_public', args=[poll.uuid])
+        self.public_client.get(vote_url)
+        self.public_client.post(vote_url, {
+            'action': 'vote', f'question-{question.pk}': [str(option.pk)],
+        })
+
+        manage_url = reverse('standalone_poll_list')
+        open_detail = self.client.get(manage_url, {'poll': str(poll.uuid)})
+        self.assertEqual(open_detail.status_code, 200)
+        self.assertContains(open_detail, 'class="poll-detail-nav"')
+        self.assertContains(open_detail, 'href="#poll-detail-results"')
+        self.assertContains(open_detail, 'href="#poll-detail-decisions"')
+        self.assertContains(open_detail, 'href="#poll-detail-sharing"')
+        self.assertContains(open_detail, 'id="poll-detail-results"')
+        self.assertContains(open_detail, 'id="poll-detail-decisions"')
+        self.assertContains(open_detail, 'id="poll-detail-sharing"')
+        self.assertContains(open_detail, 'data-copy-poll-link')
+        self.assertContains(open_detail, 'id="poll-actions-heading"')
+        self.assertContains(open_detail, '<input type="hidden" name="action" value="cancel">', html=True)
+
+        state_res = self.client.get(reverse('standalone_poll_state', args=[poll.uuid]))
+        self.assertEqual(state_res.status_code, 200)
+        self.assertNotIn('poll-answer-track', state_res.json()['html'])
+        self.assertNotIn('%', state_res.json()['html'])
+
+        close_res = self.client.post(manage_url, {'action': 'close', 'poll': str(poll.uuid)}, follow=True)
+        self.assertContains(close_res, 'Poll updated.')
+
+        closed_detail = self.client.get(manage_url, {'poll': str(poll.uuid)})
+        self.assertContains(closed_detail, '<input type="hidden" name="action" value="confirm">', html=True)
+        self.assertContains(closed_detail, f'Approve “{option.label}”')
+
+        confirm_res = self.client.post(manage_url, {
+            'action': 'confirm',
+            'poll': str(poll.uuid),
+            'question': str(question.pk),
+            'decision_note': 'Approved outcome.',
+        }, follow=True)
+        self.assertContains(confirm_res, 'Poll updated.')
+        poll.refresh_from_db()
+        question.refresh_from_db()
+        self.assertEqual(poll.status, 'confirmed')
+        self.assertEqual(question.confirmed_option, option)
+        self.assertEqual(question.decision_note, 'Approved outcome.')
+

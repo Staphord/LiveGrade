@@ -37,7 +37,7 @@ def _poll_json_requested(request):
 
 def _private(response):
     response['Cache-Control'] = 'private, no-store'
-    response['Referrer-Policy'] = 'no-referrer'
+    response['Referrer-Policy'] = 'same-origin'
     response['X-Robots-Tag'] = 'noindex, nofollow'
     return response
 
@@ -181,6 +181,7 @@ def standalone_poll_list(request):
             if action == 'save' and leave_to and url_has_allowed_host_and_scheme(
                     leave_to, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
                 return redirect(leave_to)
+            messages.success(request, 'Poll saved.' if action == 'save' else 'Poll updated.')
             return redirect(reverse('standalone_poll_list') + '?poll=' + str(poll.uuid))
     polls = ClassroomPoll.objects.filter(standalone=True, organization_id=request.organization['id'],
         created_by=request.user).annotate(response_count=Count('anonymous_responses', distinct=True),
@@ -347,4 +348,5 @@ def standalone_poll_state(request, poll_uuid):
         raise Http404
     return _private(JsonResponse({'status': poll.status, 'accepting': poll.accepting_responses,
         'html': render_to_string('assessments/polls/_results.html', {
-            'poll': poll, **poll_results(poll)}, request=request)}))
+            'poll': poll, **poll_results(poll),
+            'hide_option_bars': True, 'hide_option_percentages': True}, request=request)}))

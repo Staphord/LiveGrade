@@ -92,20 +92,20 @@
           <p class="text-muted mb-0">Voting is still open. Close voting before approving a result.</p>
         {% elif item.decision_state == 'unique_leader' %}
           <div class="alert alert-info" role="status"><strong>Top-voted option:</strong> {{ item.leading_option.label }} · {{ item.leading_vote_count }} selection{{ item.leading_vote_count|pluralize }}</div>
-          <form method="post" class="poll-decision-form" data-confirm="Approve the top-voted option “{{ item.leading_option.label }}” and finalize this question?" data-confirm-title="Approve poll result?" data-confirm-label="Approve result" data-confirm-tone="primary">{% csrf_token %}<input type="hidden" name="poll" value="{{ poll.uuid }}"><input type="hidden" name="question" value="{{ item.question.pk }}">
+          <form method="post" class="poll-decision-form" data-confirm="Approve the top-voted option “{{ item.leading_option.label }}” and finalize this question?" data-confirm-title="Approve poll result?" data-confirm-label="Approve result" data-confirm-tone="primary">{% csrf_token %}<input type="hidden" name="poll" value="{{ poll.uuid }}"><input type="hidden" name="question" value="{{ item.question.pk }}"><input type="hidden" name="action" value="confirm">
             <label for="decision-note-{{ item.question.pk }}" class="form-label">Approval note (optional)</label><textarea id="decision-note-{{ item.question.pk }}" name="decision_note" maxlength="2000" rows="2" class="form-control mb-2">{{ item.decision_note }}</textarea>
-            <button class="btn btn-primary" name="action" value="confirm">Approve “{{ item.leading_option.label }}”</button>
+            <button class="btn btn-primary" type="submit">Approve “{{ item.leading_option.label }}”</button>
           </form>
         {% elif item.decision_state == 'tie' %}
           <div class="alert alert-warning" role="status">The top options are tied at {{ item.leading_vote_count }} selection{{ item.leading_vote_count|pluralize }}. Choose one of the tied options to break the tie.</div>
-          <form method="post" class="poll-decision-form" data-confirm="Approve your selected tied option and finalize this question?" data-confirm-title="Approve poll result?" data-confirm-label="Approve result" data-confirm-tone="primary">{% csrf_token %}<input type="hidden" name="poll" value="{{ poll.uuid }}"><input type="hidden" name="question" value="{{ item.question.pk }}">
+          <form method="post" class="poll-decision-form" data-confirm="Approve your selected tied option and finalize this question?" data-confirm-title="Approve poll result?" data-confirm-label="Approve result" data-confirm-tone="primary">{% csrf_token %}<input type="hidden" name="poll" value="{{ poll.uuid }}"><input type="hidden" name="question" value="{{ item.question.pk }}"><input type="hidden" name="action" value="confirm">
             <label for="tie-option-{{ item.question.pk }}" class="form-label">Choose among the tied top options</label>
             <select id="tie-option-{{ item.question.pk }}" name="option" class="form-select mb-2" required>
               <option value="" selected disabled>Select a tied option</option>
               {% for option in item.tied_options %}<option value="{{ option.pk }}">{{ option.label }} · {{ option.vote_count }} selection{{ option.vote_count|pluralize }}</option>{% endfor %}
             </select>
             <label for="tie-note-{{ item.question.pk }}" class="form-label">Tie-break note (optional)</label><textarea id="tie-note-{{ item.question.pk }}" name="decision_note" maxlength="2000" rows="2" class="form-control mb-2">{{ item.decision_note }}</textarea>
-            <button class="btn btn-primary" name="action" value="confirm">Approve selected tied option</button>
+            <button class="btn btn-primary" type="submit">Approve selected tied option</button>
           </form>
         {% elif item.decision_state == 'no_votes' %}
           <div class="alert alert-secondary mb-0" role="status">No option received votes for this question, so there is no result to approve.</div>

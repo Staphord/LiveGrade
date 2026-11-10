@@ -89,10 +89,11 @@
       if (preview) preview.removeAttribute('aria-busy');
     }
   });
-  const cancelForm = document.querySelector('[data-poll-import-cancel]');
-  if (cancelForm) cancelForm.addEventListener('submit', function () {
-    if (window.snapshotPollEditorState) window.snapshotPollEditorState();
-    window.pollImportPreviewPending = true;
+  document.addEventListener('submit', function (event) {
+    if (event.target && event.target.matches && event.target.matches('[data-poll-import-cancel]')) {
+      if (window.snapshotPollEditorState) window.snapshotPollEditorState();
+      window.pollImportPreviewPending = true;
+    }
   });
   input.addEventListener('change', function () { warning.hidden = true; });
 })();
