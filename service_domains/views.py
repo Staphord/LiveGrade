@@ -276,11 +276,14 @@ def panel_hearing_list(request):
         else:
             hearing.dashboard_invitation_issue = ''
     dashboard_stats = {
+        'total': len(hearings),
         'live': sum(hearing.status == PanelHearing.Status.OPEN for hearing in hearings),
         'drafts': sum(hearing.status == PanelHearing.Status.DRAFT for hearing in hearings),
         'review': sum(hearing.status == PanelHearing.Status.REVIEW for hearing in hearings),
         'release': sum(hearing.status == PanelHearing.Status.SIGNED_OFF for hearing in hearings),
         'completed': sum(hearing.status == PanelHearing.Status.RELEASED for hearing in hearings),
+        'total_candidates': sum(hearing.candidate_count for hearing in hearings),
+        'total_examiners': sum(hearing.accepted_examiner_count for hearing in hearings),
     }
     latest_hearing = hearings[0] if hearings else None
     form = PanelHearingForm(request.POST or None)
@@ -2149,6 +2152,13 @@ def training_series_list(request):
               .order_by('-created_at', 'pk'))
     latest_series = series.first()
     page = Paginator(series, 20).get_page(request.GET.get('page'))
+    series_items = list(page.object_list)
+    dashboard_stats = {
+        'total_series': page.paginator.count,
+        'total_participants': sum(item.participant_count for item in series_items),
+        'total_competencies': sum(item.competency_count for item in series_items),
+        'total_demos': sum(item.demo_count for item in series_items),
+    }
     if request.method == 'POST':
         form = TrainingSeriesForm(request.POST)
         if form.is_valid():
@@ -2162,6 +2172,7 @@ def training_series_list(request):
         form = TrainingSeriesForm()
     return render(request, 'service_domains/team_series.html', {
         'series': page, 'series_total': page.paginator.count, 'form': form,
+        'dashboard_stats': dashboard_stats,
         'onboarding': service_onboarding('team',
             resume_url=(reverse('training_series_manage', args=(latest_series.pk,))
                         if latest_series else ''),

@@ -1089,3 +1089,117 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
         self.assertEqual(step_preserve.status_code, 200)
         self.assertEqual(step_preserve.context['active_step'], 'details')
 
+    def test_enterprise_service_dashboard_states_across_services(self):
+        from django.test import override_settings
+        from assessments.models import AssessmentSession
+        from service_domains.models import Competition, PanelHearing, TrainingSeries
+
+        self.sign_in()
+
+        # 1. Showcase dashboard: between/scheduled, live/open, and empty states
+        between_sc = self.request('get', reverse('showcase_event_list'))
+        self.assertEqual(between_sc.status_code, 200)
+        self.assertContains(between_sc, 'hero-banner between-banner')
+        self.assertContains(between_sc, 'bento-grid')
+        self.assertContains(between_sc, 'Exhibition Hall Rating &amp; Scorecard Telemetry')
+        self.assertContains(between_sc, 'data-event-search')
+        self.assertContains(between_sc, 'data-filter-trigger')
+
+        with override_settings(LIVEGRADE_LIVE_SERVICES=['showcase']):
+            create_sc = self.client.get(reverse('showcase_event_create'))
+            self.assertContains(create_sc, f'href="{reverse("showcase_event_create")}" class="nav-link active" aria-current="page"')
+
+        self.event.status = ShowcaseEvent.Status.OPEN
+        self.event.save(update_fields=('status',))
+        live_sc = self.request('get', reverse('showcase_event_list'))
+        self.assertContains(live_sc, 'EXHIBITION FLOOR OPEN')
+        self.assertContains(live_sc, 'live-dot')
+
+        self.event.delete()
+        empty_sc = self.request('get', reverse('showcase_event_list'))
+        self.assertContains(empty_sc, 'empty-hero')
+        self.assertContains(empty_sc, 'empty-steps')
+        self.assertNotContains(empty_sc, 'sc-kpis')
+
+        # 2. Classroom dashboard: empty, between/scheduled, and live states
+        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'classroom'):
+            empty_cls = self.client.get(reverse('assessment_session_list'))
+            self.assertEqual(empty_cls.status_code, 200)
+            self.assertContains(empty_cls, 'empty-hero')
+            self.assertContains(empty_cls, 'WELCOME TO CLASSROOM')
+
+            cls_session = AssessmentSession.objects.create(
+                organization_id=self.org.id, created_by=self.owner,
+                service='classroom', name='Capstone Defense',
+                status=AssessmentSession.Status.DRAFT,
+            )
+            between_cls = self.client.get(reverse('assessment_session_list'))
+            self.assertContains(between_cls, 'BETWEEN SESSIONS — SCHEDULED')
+            self.assertContains(between_cls, 'Stage Breakdown &amp; Resources')
+            self.assertContains(between_cls, 'data-session-filter')
+            self.assertContains(between_cls, 'data-session-search')
+
+            cls_session.status = AssessmentSession.Status.LIVE
+            cls_session.save(update_fields=('status',))
+            live_cls = self.client.get(reverse('assessment_session_list'))
+            self.assertContains(live_cls, 'LIVE NOW — ACTIVE IN ROOM')
+            self.assertContains(live_cls, 'Open Live Console')
+
+        # 3. Panel dashboard: empty, draft attention, and live states
+        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
+            empty_pnl = self.client.get(reverse('panel_hearing_list'))
+            self.assertEqual(empty_pnl.status_code, 200)
+            self.assertContains(empty_pnl, 'empty-hero')
+
+            hearing = PanelHearing.objects.create(
+                organization_id=self.org.id, created_by=self.owner,
+                name='Doctoral Defense Chamber', status=PanelHearing.Status.OPEN,
+            )
+            live_pnl = self.client.get(reverse('panel_hearing_list'))
+            self.assertContains(live_pnl, 'LIVE HEARING IN PROGRESS')
+            self.assertContains(live_pnl, 'attention-card')
+            self.assertContains(live_pnl, 'Examiner Consensus &amp; Score Convergence')
+            self.assertContains(live_pnl, 'data-hearing-filter')
+            self.assertContains(live_pnl, 'data-hearing-search')
+            self.assertEqual(live_pnl.context['dashboard_stats']['total'], 1)
+
+        # 4. Team and Training dashboard: empty and active cohort states
+        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'team'):
+            empty_tm = self.client.get(reverse('training_series_list'))
+            self.assertEqual(empty_tm.status_code, 200)
+            self.assertContains(empty_tm, 'empty-hero')
+
+            TrainingSeries.objects.create(
+                organization_id=self.org.id, created_by=self.owner,
+                name='Engineering Residency Cohort',
+            )
+            active_tm = self.client.get(reverse('training_series_list'))
+            self.assertContains(active_tm, 'ACTIVE TRAINING WORKSPACE')
+            self.assertContains(active_tm, 'Longitudinal Competency Growth')
+            self.assertContains(active_tm, 'data-series-search')
+            self.assertEqual(active_tm.context['dashboard_stats']['total_series'], 1)
+
+        # 5. Competition dashboard: empty, scheduled, and active attention states
+        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'competition'):
+            empty_cmp = self.client.get(reverse('competition_list'))
+            self.assertEqual(empty_cmp.status_code, 200)
+            self.assertContains(empty_cmp, 'empty-hero')
+
+            comp = Competition.objects.create(
+                organization_id=self.org.id, created_by=self.owner,
+                name='Global Pitch Finals', status=Competition.Status.ACTIVE,
+                audience_weight=35,
+            )
+            active_cmp = self.client.get(reverse('competition_list'))
+            self.assertContains(active_cmp, 'ACTIVE TOURNAMENT ROUND')
+            self.assertContains(active_cmp, 'attention-card')
+            self.assertContains(active_cmp, 'Advancement Differential &amp; Composite Scoring')
+            self.assertContains(active_cmp, 'Scoring Formula Architecture')
+            self.assertContains(active_cmp, '65 / 35')
+            self.assertContains(active_cmp, 'data-comp-filter')
+            self.assertContains(active_cmp, 'data-comp-search')
+            self.assertEqual(active_cmp.context['dashboard_stats']['active'], 1)
+            self.assertEqual(active_cmp.context['dashboard_stats']['judge_pct'], 65)
+            self.assertEqual(active_cmp.context['dashboard_stats']['audience_pct'], 35)
+
+

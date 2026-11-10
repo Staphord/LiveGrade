@@ -72,12 +72,35 @@ def _owned_competition(request, competition_id):
 @never_cache
 @_competition_owner
 def competition_list(request):
-    competitions = (Competition.objects.for_organization(request.organization)
-                    .owned_by(request.user)
-                    .annotate(track_count=Count('tracks', distinct=True),
-                              round_count=Count('rounds', distinct=True))
-                    .order_by('-created_at', 'pk'))
-    latest_competition = competitions.first()
+    competitions = list(Competition.objects.for_organization(request.organization)
+                        .owned_by(request.user)
+                        .annotate(track_count=Count('tracks', distinct=True),
+                                  round_count=Count('rounds', distinct=True))
+                        .order_by('-created_at', 'pk'))
+    latest_competition = competitions[0] if competitions else None
+    audience_pct = int(round(float(latest_competition.effective_audience_weight))) if latest_competition else 20
+    judge_pct = max(0, 100 - audience_pct)
+    circumference = 339
+    judge_dash = round(circumference * judge_pct / 100)
+    audience_dash = circumference - judge_dash
+    dashboard_stats = {
+        'total': len(competitions),
+        'active': sum(c.status == Competition.Status.ACTIVE for c in competitions),
+        'draft': sum(c.status == Competition.Status.DRAFT for c in competitions),
+        'complete': sum(c.status == Competition.Status.COMPLETE for c in competitions),
+        'revealed': sum(c.status == Competition.Status.REVEALED for c in competitions),
+        'total_tracks': sum(c.track_count for c in competitions),
+        'total_rounds': sum(c.round_count for c in competitions),
+        'judge_pct': judge_pct,
+        'audience_pct': audience_pct,
+        'judge_dash': judge_dash,
+        'audience_dash': audience_dash,
+        'audience_offset': -judge_dash,
+    }
+    attention_competitions = [
+        c for c in competitions
+        if c.status in (Competition.Status.ACTIVE, Competition.Status.COMPLETE)
+    ]
     form = CompetitionForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
         competition = form.save(commit=False)
@@ -92,6 +115,8 @@ def competition_list(request):
             return redirect('competition_manage', competition_id=competition.pk)
     return render(request, 'service_domains/competition_list.html', {
         'competitions': competitions, 'form': form,
+        'dashboard_stats': dashboard_stats,
+        'attention_competitions': attention_competitions,
         'onboarding': service_onboarding('competition',
             resume_url=(reverse('competition_manage', args=(latest_competition.pk,))
                         if latest_competition else ''),

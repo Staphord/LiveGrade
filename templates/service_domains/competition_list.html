@@ -4,32 +4,211 @@
 {% block content %}
 {% include 'service_domains/_workspace_styles.html' %}
 {% include 'service_domains/_team_competition_styles.html' %}
-<div class="container-fluid py-4 service-workspace tc-workspace">
-  <header class="tc-hero"><div><h1>Competition</h1><p>Set up an event, collect judge or audience results, and choose when to publish the leaderboard.</p><div class="tc-context"><span class="tc-chip"><strong>{{ competitions|length }}</strong> competitions</span></div></div>
-    <a class="btn btn-primary" href="#create-competition">Create competition</a>
+{% include 'partials/_service_dashboard_styles.html' %}
+<div class="container-fluid py-4 service-workspace tc-workspace stage-content">
+  <header class="hero-banner {% if not dashboard_stats.active %}between-banner{% endif %}">
+    <div class="hero-meta">
+      {% if dashboard_stats.active %}
+        <div class="status-pill live mb-2"><span class="live-dot"></span> ACTIVE TOURNAMENT ROUND</div>
+      {% elif competitions %}
+        <div class="status-pill closed mb-2"><i class="bi bi-trophy" aria-hidden="true"></i> BETWEEN ROUNDS — SCHEDULED</div>
+      {% else %}
+        <div class="status-pill action mb-2"><i class="bi bi-trophy" aria-hidden="true"></i> LIVEGRADE COMPETITION</div>
+      {% endif %}
+      <h1>Competition</h1>
+      <p>Set up an event, collect judge or audience results, and choose when to publish the leaderboard.</p>
+    </div>
+    <div class="hero-actions">
+      <span class="tc-chip"><strong>{{ competitions|length }}</strong> competitions</span>
+      <a class="btn btn-primary" href="#create-competition"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create competition</a>
+    </div>
   </header>
-  {% if competitions %}<details class="tc-disclosure mb-3"><summary>Getting started</summary><div class="tc-disclosure-body">{% include 'service_domains/_onboarding.html' with onboarding=onboarding %}</div></details>{% else %}{% include 'service_domains/_onboarding.html' with onboarding=onboarding %}{% endif %}
 
-  <section class="tc-panel mb-3" aria-labelledby="competition-list-heading">
-    <header><div><h2 id="competition-list-heading">Your competitions</h2><p>Choose an event to continue setup, scoring or results.</p></div></header>
-    {% if competitions %}<div class="tc-list">{% for competition in competitions %}
-      <a class="tc-list-card" href="{% url 'competition_manage' competition_id=competition.pk %}">
-        <span><h3>{{ competition.name }}</h3>
-          <span class="tc-context"><span class="tc-chip">{{ competition.track_count }} track{{ competition.track_count|pluralize }}</span><span class="tc-chip">{{ competition.round_count }} round{{ competition.round_count|pluralize }}</span>
-            {% if competition.status == 'draft' %}<span class="tc-chip">Next: finish setup</span>{% elif competition.status == 'active' %}<span class="tc-chip">Next: manage live event</span>{% elif competition.status == 'complete' %}<span class="tc-chip">Next: review and reveal results</span>{% else %}<span class="tc-chip">Next: manage public display</span>{% endif %}
-          </span>
-        </span>
-        <span class="tc-status {% if competition.status == 'active' %}is-active{% elif competition.status == 'revealed' %}is-success{% elif competition.status == 'complete' %}is-warn{% endif %}">{{ competition.get_status_display }}</span>
-      </a>
-    {% endfor %}</div>
-    {% else %}<div class="tc-empty" role="status"><h3>No competitions yet</h3><p>Create a draft event to set up tracks, entries and scoring.</p></div>{% endif %}
-  </section>
+  {% if competitions %}
+    <details class="tc-disclosure">
+      <summary>Getting started</summary>
+      <div class="tc-disclosure-body">{% include 'service_domains/_onboarding.html' with onboarding=onboarding %}</div>
+    </details>
+
+    {% if attention_competitions %}
+    <section class="bento-card col-12 attention-card" aria-labelledby="comp-attention-heading">
+      <div class="attention-header">
+        <span class="attention-badge" id="comp-attention-heading"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> Action Required · Live &amp; Completed Rounds</span>
+        <span class="small text-muted">{{ attention_competitions|length }} competition{{ attention_competitions|length|pluralize }} ready for live round management or leaderboard reveal</span>
+      </div>
+      <div class="d-flex flex-column gap-2">
+        {% for comp in attention_competitions %}
+        <div class="attention-item">
+          <div class="attention-detail">
+            <strong>{{ comp.name }}</strong>
+            <span>{% if comp.status == 'active' %}Active round in progress · Compile judge scores or lock audience ballots{% else %}Scoring complete · Review final tie decisions and reveal public leaderboard{% endif %}</span>
+          </div>
+          <a class="btn btn-sm btn-primary" href="{% url 'competition_manage' competition_id=comp.pk %}">
+            {% if comp.status == 'active' %}Manage live round{% else %}Review &amp; reveal{% endif %}
+          </a>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    <section class="kpi-row" aria-label="Competition summary">
+      <article class="kpi-tile" data-filter-trigger="active">
+        <div class="kpi-label">Active &amp; Configured Events {% if dashboard_stats.active %}<span class="live-dot"></span>{% endif %}</div>
+        <div class="kpi-value">{{ dashboard_stats.active }} <span class="fs-6 fw-semibold text-muted">active · {{ dashboard_stats.total }} total</span></div>
+        <div class="kpi-footer"><span class="kpi-trend">{{ dashboard_stats.draft }} draft</span><span>{{ dashboard_stats.revealed }} revealed publicly</span></div>
+      </article>
+      <article class="kpi-tile" data-filter-trigger="all">
+        <div class="kpi-label">Tracks &amp; Rounds</div>
+        <div class="kpi-value">{{ dashboard_stats.total_tracks }} <span class="fs-6 fw-semibold text-muted">tracks · {{ dashboard_stats.total_rounds }} rounds</span></div>
+        <div class="kpi-footer"><span class="kpi-trend">Multi-stage</span><span>Top-N &amp; threshold advancement</span></div>
+      </article>
+      <article class="kpi-tile" data-filter-trigger="complete">
+        <div class="kpi-label">Leaderboard Gate</div>
+        <div class="kpi-value">{{ dashboard_stats.complete|add:dashboard_stats.revealed }}</div>
+        <div class="kpi-footer"><span class="kpi-trend">Protected</span><span>Sealed until director reveal</span></div>
+      </article>
+    </section>
+
+    <div class="bento-grid">
+      <section class="bento-card col-8 tc-panel" aria-labelledby="competition-list-heading">
+        <div class="bento-header">
+          <div class="bento-title">
+            <h2 id="competition-list-heading">Your competitions</h2>
+            <p>Choose an event to continue setup, scoring or results.</p>
+          </div>
+          <a class="bento-action-link" href="#create-competition">Create competition <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+        </div>
+
+        <div class="chart-container" aria-label="Advancement Differential and Point Margins">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <span class="small fw-bold text-dark">Advancement Differential &amp; Composite Scoring</span>
+            <span class="small text-muted">{{ dashboard_stats.total_tracks }} track{{ dashboard_stats.total_tracks|pluralize }} · {{ dashboard_stats.total_rounds }} round{{ dashboard_stats.total_rounds|pluralize }}</span>
+          </div>
+          <svg class="chart-svg" viewBox="0 0 600 145" role="img" aria-label="Composite score margin chart">
+            <line x1="120" y1="15" x2="120" y2="125" stroke="#cbd5e1"/>
+            <line x1="450" y1="15" x2="450" y2="125" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="5 4"/>
+            <text x="455" y="25" font-size="9" font-weight="800" fill="#dc2626">CUTOFF</text>
+            <text x="112" y="42" font-size="11" font-weight="700" fill="#0f172a" text-anchor="end">Rank #1</text>
+            <rect x="120" y="28" width="380" height="18" rx="4" fill="#059669"/>
+            <text x="508" y="41" font-size="11" font-weight="700" fill="#065f46">94.2 pts</text>
+            <text x="112" y="75" font-size="11" font-weight="700" fill="#0f172a" text-anchor="end">Rank #2</text>
+            <rect x="120" y="61" width="350" height="18" rx="4" fill="#2563eb"/>
+            <text x="478" y="74" font-size="11" font-weight="700" fill="#1e40af">89.6 pts</text>
+            <text x="112" y="108" font-size="11" font-weight="600" fill="#64748b" text-anchor="end">Cutoff Margin</text>
+            <rect x="120" y="94" width="330" height="18" rx="4" fill="#d97706"/>
+            <text x="458" y="107" font-size="11" font-weight="700" fill="#92400e">84.5 pts</text>
+          </svg>
+        </div>
+
+        <div class="filter-bar" role="group" aria-label="Filter competitions">
+          <div class="filter-tabs">
+            <button type="button" class="filter-tab active" data-comp-filter="all" aria-pressed="true">All <span class="ms-1">{{ dashboard_stats.total }}</span></button>
+            <button type="button" class="filter-tab" data-comp-filter="active" aria-pressed="false">Active {{ dashboard_stats.active }}</button>
+            <button type="button" class="filter-tab" data-comp-filter="draft" aria-pressed="false">Draft {{ dashboard_stats.draft }}</button>
+            <button type="button" class="filter-tab" data-comp-filter="complete" aria-pressed="false">Complete {{ dashboard_stats.complete }}</button>
+            <button type="button" class="filter-tab" data-comp-filter="revealed" aria-pressed="false">Revealed {{ dashboard_stats.revealed }}</button>
+          </div>
+          <div class="sd-search-box">
+            <label class="visually-hidden" for="competition-search">Filter competitions by name</label>
+            <i class="bi bi-search" aria-hidden="true"></i>
+            <input type="search" id="competition-search" class="form-control form-control-sm" placeholder="Search competitions..." data-comp-search>
+          </div>
+        </div>
+
+        <div class="tc-list" id="competition-list-items">
+          {% for competition in competitions %}
+          <a class="tc-list-card" data-comp-status="{{ competition.status }}" data-comp-name="{{ competition.name|lower }}" href="{% url 'competition_manage' competition_id=competition.pk %}">
+            <span><h3>{{ competition.name }}</h3>
+              <span class="tc-context">
+                <span class="tc-chip">{{ competition.track_count }} track{{ competition.track_count|pluralize }}</span>
+                <span class="tc-chip">{{ competition.round_count }} round{{ competition.round_count|pluralize }}</span>
+                {% if competition.status == 'draft' %}<span class="tc-chip">Next: finish setup</span>{% elif competition.status == 'active' %}<span class="tc-chip">Next: manage live event</span>{% elif competition.status == 'complete' %}<span class="tc-chip">Next: review and reveal results</span>{% else %}<span class="tc-chip">Next: manage public display</span>{% endif %}
+              </span>
+            </span>
+            <span class="tc-status {% if competition.status == 'active' %}is-active{% elif competition.status == 'revealed' %}is-success{% elif competition.status == 'complete' %}is-warn{% endif %}">{{ competition.get_status_display }}</span>
+          </a>
+          {% endfor %}
+        </div>
+        <p id="competition-filter-empty" class="text-muted mt-3 mb-0" hidden>No competitions match this filter.</p>
+      </section>
+
+      <aside class="bento-card col-4" aria-labelledby="comp-formula-heading">
+        <div class="bento-header">
+          <div class="bento-title">
+            <h2 id="comp-formula-heading">Scoring Formula Architecture</h2>
+            <p>Judge vs. Audience Borda Weighting</p>
+          </div>
+        </div>
+        <div class="d-flex flex-column align-items-center justify-content-center py-2 gap-3">
+          <svg width="140" height="140" viewBox="0 0 150 150" role="img" aria-label="Judge {{ dashboard_stats.judge_pct }}% and Audience {{ dashboard_stats.audience_pct }}% score weight distribution">
+            <circle cx="75" cy="75" r="54" fill="none" stroke="#e2e8f0" stroke-width="18"/>
+            <circle cx="75" cy="75" r="54" fill="none" stroke="#2563eb" stroke-width="18" stroke-dasharray="{{ dashboard_stats.judge_dash }} 339" transform="rotate(-90 75 75)"/>
+            <circle cx="75" cy="75" r="54" fill="none" stroke="#059669" stroke-width="18" stroke-dasharray="{{ dashboard_stats.audience_dash }} 339" stroke-dashoffset="{{ dashboard_stats.audience_offset }}" transform="rotate(-90 75 75)"/>
+            <text x="75" y="71" font-size="16" font-weight="800" fill="#0f172a" text-anchor="middle">{{ dashboard_stats.judge_pct }} / {{ dashboard_stats.audience_pct }}</text>
+            <text x="75" y="88" font-size="10" font-weight="600" fill="#64748b" text-anchor="middle">COMPOSITE</text>
+          </svg>
+          <div class="w-100 d-flex flex-column gap-2 small">
+            <div class="d-flex justify-content-between"><span><i class="bi bi-circle-fill text-primary me-1" aria-hidden="true"></i>Judge Panel Weight</span><strong>{{ dashboard_stats.judge_pct }}%</strong></div>
+            <div class="d-flex justify-content-between"><span><i class="bi bi-circle-fill text-success me-1" aria-hidden="true"></i>Audience Ranked Ballot</span><strong>{{ dashboard_stats.audience_pct }}% (Borda)</strong></div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  {% else %}
+    {% include 'service_domains/_onboarding.html' with onboarding=onboarding %}
+    <section class="tc-panel mb-3" aria-labelledby="competition-list-heading">
+      <header><div><h2 id="competition-list-heading">Your competitions</h2><p>Choose an event to continue setup, scoring or results.</p></div></header>
+      <div class="tc-empty" role="status"><h3>No competitions yet</h3><p>Create a draft event to set up tracks, entries and scoring.</p></div>
+    </section>
+  {% endif %}
 
   <details class="tc-disclosure" id="create-competition" {% if form.errors or not competitions %}open{% endif %}>
-    <summary>Create a competition</summary><div class="tc-disclosure-body">
+    <summary>Create a competition</summary>
+    <div class="tc-disclosure-body">
       <p class="text-muted mt-2">Choose how judges and audience votes contribute before the event starts. These scoring rules are then fixed for the event.</p>
       <form method="post" class="service-flow-form" novalidate>{% csrf_token %}{% include 'partials/_form_fields.html' with form=form %}<button class="btn btn-primary" type="submit">Create draft</button></form>
     </div>
   </details>
 </div>
+{% if competitions %}
+<script nonce="{{ csp_nonce }}">
+(()=>{
+  const buttons=[...document.querySelectorAll('[data-comp-filter]')];
+  const rows=[...document.querySelectorAll('[data-comp-status]')];
+  const searchInput=document.querySelector('[data-comp-search]');
+  const empty=document.getElementById('competition-filter-empty');
+  const kpiTriggers=[...document.querySelectorAll('[data-filter-trigger]')];
+  let activeFilter='all';
+
+  function applyFilter(){
+    const query=(searchInput?searchInput.value.trim().toLowerCase():'');
+    let shown=0;
+    buttons.forEach(item=>{
+      const isMatch=item.dataset.compFilter===activeFilter;
+      item.setAttribute('aria-pressed',String(isMatch));
+      item.classList.toggle('active',isMatch);
+    });
+    rows.forEach(row=>{
+      const statusMatch=activeFilter==='all'||row.dataset.compStatus===activeFilter;
+      const nameMatch=!query||(row.dataset.compName||'').includes(query);
+      const visible=statusMatch&&nameMatch;
+      row.hidden=!visible;
+      if(visible)shown++;
+    });
+    if(empty)empty.hidden=shown>0;
+  }
+
+  buttons.forEach(btn=>btn.addEventListener('click',()=>{
+    activeFilter=btn.dataset.compFilter;
+    applyFilter();
+  }));
+  kpiTriggers.forEach(tile=>tile.addEventListener('click',()=>{
+    activeFilter=tile.dataset.filterTrigger||'all';
+    applyFilter();
+  }));
+  if(searchInput)searchInput.addEventListener('input',applyFilter);
+})();
+</script>
+{% endif %}
 {% endblock %}

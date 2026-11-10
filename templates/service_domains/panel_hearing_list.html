@@ -4,14 +4,21 @@
 {% block content %}
 {% include 'service_domains/_workspace_styles.html' %}
 {% include 'service_domains/_panel_ui_styles.html' %}
-<div class="container-fluid py-4 service-workspace panel-page panel-dashboard">
-  <header class="panel-hero mb-4">
-    <div class="panel-hero__copy">
-      <p class="panel-eyebrow">LiveGrade Panel</p>
+{% include 'partials/_service_dashboard_styles.html' %}
+<div class="container-fluid py-4 service-workspace panel-page panel-dashboard stage-content">
+  <header class="hero-banner {% if not dashboard_stats.live %}between-banner{% endif %}">
+    <div class="hero-meta">
+      {% if dashboard_stats.live %}
+        <div class="status-pill live mb-2"><span class="live-dot"></span> LIVE HEARING IN PROGRESS</div>
+      {% elif hearings %}
+        <div class="status-pill closed mb-2"><i class="bi bi-calendar-check" aria-hidden="true"></i> BETWEEN HEARINGS — SCHEDULED</div>
+      {% else %}
+        <div class="status-pill action mb-2"><i class="bi bi-shield-check" aria-hidden="true"></i> LIVEGRADE PANEL</div>
+      {% endif %}
       <h1 class="page-title">Panel assessments</h1>
-      <p class="page-subtitle mt-2">Set up reviews, run them live, and share approved results.</p>
+      <p class="page-subtitle mb-0">Set up reviews, run them live with private examiner bearer links, and share chair-approved results.</p>
     </div>
-    <div class="panel-hero__actions">
+    <div class="hero-actions">
       <a class="btn btn-primary" href="#create-hearing"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create assessment</a>
       <a class="btn btn-outline-secondary" href="{% url 'combined_assessment_list' %}">Combined assessments</a>
       {% if can_oversee_panel %}<a class="btn btn-outline-secondary" href="{% url 'panel_oversight_list' %}">Organization results</a>{% endif %}
@@ -21,55 +28,227 @@
   {% if messages %}<div aria-live="polite">{% for message in messages %}<div class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'warning' %}alert-warning{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %}" role="status">{{ message }}</div>{% endfor %}</div>{% endif %}
 
   {% if not hearings %}
-    <section class="panel-card mb-4">
-      {% include 'service_domains/_onboarding.html' with onboarding=onboarding %}
-    </section>
+    {% include 'service_domains/_onboarding.html' with onboarding=onboarding %}
   {% else %}
-    <section class="panel-kpis mb-4" aria-label="Assessment overview">
-      <div class="panel-kpi"><span class="panel-kpi__label">Live now</span><span class="panel-kpi__value">{{ dashboard_stats.live }}</span></div>
-      <div class="panel-kpi"><span class="panel-kpi__label">In setup</span><span class="panel-kpi__value">{{ dashboard_stats.drafts }}</span></div>
-      <div class="panel-kpi"><span class="panel-kpi__label">To review</span><span class="panel-kpi__value">{{ dashboard_stats.review }}</span></div>
-      <div class="panel-kpi"><span class="panel-kpi__label">Ready to share</span><span class="panel-kpi__value">{{ dashboard_stats.release }}</span></div>
-      <div class="panel-kpi"><span class="panel-kpi__label">Completed</span><span class="panel-kpi__value">{{ dashboard_stats.completed }}</span></div>
-    </section>
-
-    {% if attention_hearings %}<section class="panel-card mb-4" aria-labelledby="attention-heading">
-      <div class="panel-section-heading"><div><h2 class="h5" id="attention-heading"><i class="bi bi-flag me-1 text-primary" aria-hidden="true"></i>Needs your attention</h2><p>Pick up where action is needed.</p></div></div>
-      <div class="list-group list-group-flush">
-        {% for hearing in attention_hearings %}<div class="list-group-item px-0 d-flex flex-wrap justify-content-between align-items-center gap-2">
-          <div class="min-w-0"><strong>{{ hearing.name }}</strong><span class="panel-muted"> · {% if hearing.dashboard_invitation_issue %}{{ hearing.dashboard_invitation_issue }}{% else %}{{ hearing.dashboard_next_action }}{% endif %}</span></div>
-          {% if hearing.status == 'review' or hearing.status == 'signed_off' or hearing.status == 'released' %}<a class="btn btn-sm btn-outline-primary" href="{% url 'panel_results_review' hearing_id=hearing.pk %}">{% if hearing.status == 'signed_off' %}Release results{% else %}Review results{% endif %}</a>
-          {% elif hearing.status == 'draft' and hearing.dashboard_next_action == 'Ready to open' %}<a class="btn btn-sm btn-outline-primary" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}?step=ready">Review and open</a>
-          {% else %}<a class="btn btn-sm btn-outline-primary" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}">{% if hearing.status == 'open' %}Open live controls{% else %}Continue setup{% endif %}</a>{% endif %}
-        </div>{% endfor %}
+    {% if attention_hearings %}
+    <section class="bento-card col-12 attention-card" aria-labelledby="attention-heading">
+      <div class="attention-header">
+        <span class="attention-badge" id="attention-heading"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> Action Required · Needs your attention</span>
+        <span class="small text-muted">{{ attention_hearings|length }} assessment{{ attention_hearings|length|pluralize }} awaiting chair or organizer action</span>
       </div>
-    </section>{% endif %}
-
-    <section class="mb-4" aria-labelledby="assessments-heading">
-      <div class="panel-section-heading"><div><h2 class="h4" id="assessments-heading">Your assessments</h2><p>Live work and assessments needing action appear first.</p></div></div>
-      <div class="row g-3">
-        {% for hearing in hearings %}<div class="col-12 col-md-6 col-xl-4"><article class="panel-card panel-card--accent d-flex flex-column">
-          <div class="panel-card__top mb-2"><h3 class="h5 mb-0 text-break">{{ hearing.name }}</h3><span class="panel-state {% if hearing.status == 'open' %}panel-state--live{% elif hearing.status == 'draft' %}panel-state--draft{% else %}panel-state--done{% endif %}">{{ hearing.get_status_display }}</span></div>
-          <p class="small panel-muted mb-3">{{ hearing.get_workflow_display }}</p>
-          <div class="d-flex flex-wrap gap-2 mb-3"><span class="badge text-bg-light border">{{ hearing.candidate_count }} candidate{{ hearing.candidate_count|pluralize }}</span><span class="badge text-bg-light border">{{ hearing.accepted_examiner_count }} examiner{{ hearing.accepted_examiner_count|pluralize }} ready</span></div>
-          {% if hearing.status == 'open' %}
-            {% if hearing.active_candidate %}<p class="small text-success mb-3"><i class="bi bi-broadcast me-1" aria-hidden="true"></i>Now reviewing: <strong>{{ hearing.active_candidate.display_name }}</strong></p>{% else %}<p class="small panel-muted mb-3">Waiting for you to start the next candidate.</p>{% endif %}
-            <a class="btn btn-primary mt-auto" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}">Open live controls</a>
-          {% elif hearing.status == 'draft' %}<p class="small panel-muted mb-3">Next: {{ hearing.dashboard_next_action }}</p><a class="btn btn-primary mt-auto" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}{% if hearing.dashboard_next_action == 'Ready to open' %}?step=ready{% endif %}">{% if hearing.dashboard_next_action == 'Ready to open' %}Review and open{% else %}Continue setup{% endif %}</a>
-          {% elif hearing.status == 'review' or hearing.status == 'signed_off' %}<a class="btn btn-outline-primary mt-auto" href="{% url 'panel_results_review' hearing_id=hearing.pk %}">{% if hearing.status == 'signed_off' %}Release results{% else %}Review results{% endif %}</a>
-          {% elif hearing.status == 'released' %}<a class="btn btn-outline-secondary mt-auto" href="{% url 'panel_results_review' hearing_id=hearing.pk %}">View released results</a>{% endif %}
-        </article></div>{% endfor %}
+      <div class="d-flex flex-column gap-2">
+        {% for hearing in attention_hearings %}
+        <div class="attention-item">
+          <div class="attention-detail">
+            <strong>{{ hearing.name }}</strong>
+            <span>{% if hearing.dashboard_invitation_issue %}{{ hearing.dashboard_invitation_issue }}{% else %}{{ hearing.dashboard_next_action }}{% endif %} · {{ hearing.candidate_count }} candidate{{ hearing.candidate_count|pluralize }}</span>
+          </div>
+          {% if hearing.status == 'review' or hearing.status == 'signed_off' or hearing.status == 'released' %}
+            <a class="btn btn-sm btn-primary" href="{% url 'panel_results_review' hearing_id=hearing.pk %}">{% if hearing.status == 'signed_off' %}Release results{% else %}Review results{% endif %}</a>
+          {% elif hearing.status == 'draft' and hearing.dashboard_next_action == 'Ready to open' %}
+            <a class="btn btn-sm btn-primary" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}?step=ready">Review and open</a>
+          {% else %}
+            <a class="btn btn-sm btn-primary" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}">{% if hearing.status == 'open' %}Open live controls{% else %}Continue setup{% endif %}</a>
+          {% endif %}
+        </div>
+        {% endfor %}
       </div>
     </section>
+    {% endif %}
+
+    <section class="kpi-row kpi-row-5" aria-label="Assessment overview">
+      <article class="kpi-tile" data-filter-trigger="open">
+        <div class="kpi-label">Live now {% if dashboard_stats.live %}<span class="live-dot"></span>{% endif %}</div>
+        <div class="kpi-value">{{ dashboard_stats.live }}</div>
+        <div class="kpi-footer"><span class="kpi-trend">Active</span><span>Open scoring chambers</span></div>
+      </article>
+      <article class="kpi-tile" data-filter-trigger="draft">
+        <div class="kpi-label">In setup</div>
+        <div class="kpi-value">{{ dashboard_stats.drafts }}</div>
+        <div class="kpi-footer"><span>Drafts</span><span>Preparing criteria &amp; panels</span></div>
+      </article>
+      <article class="kpi-tile" data-filter-trigger="review">
+        <div class="kpi-label">To review</div>
+        <div class="kpi-value">{{ dashboard_stats.review }}</div>
+        <div class="kpi-footer"><span>Deliberation</span><span>Awaiting chair sign-off</span></div>
+      </article>
+      <article class="kpi-tile" data-filter-trigger="signed_off">
+        <div class="kpi-label">Ready to share</div>
+        <div class="kpi-value">{{ dashboard_stats.release }}</div>
+        <div class="kpi-footer"><span>Signed off</span><span>Ready for entrant release</span></div>
+      </article>
+      <article class="kpi-tile" data-filter-trigger="released">
+        <div class="kpi-label">Completed</div>
+        <div class="kpi-value">{{ dashboard_stats.completed }}</div>
+        <div class="kpi-footer"><span class="kpi-trend">Audited</span><span>{{ dashboard_stats.total_candidates }} candidates total</span></div>
+      </article>
+    </section>
+
+    <div class="bento-grid">
+      <section class="bento-card col-8" aria-labelledby="assessments-heading">
+        <div class="bento-header">
+          <div class="bento-title">
+            <h2 id="assessments-heading">Your assessments</h2>
+            <p>Live work and assessments needing action appear first.</p>
+          </div>
+          <a href="#create-hearing" class="bento-action-link">New assessment <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+        </div>
+
+        <div class="chart-container" aria-label="Examiner Consensus and Score Convergence">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <span class="small fw-bold text-dark">Examiner Consensus &amp; Score Convergence</span>
+            <span class="small text-muted">{{ dashboard_stats.total_examiners }} confirmed examiner{{ dashboard_stats.total_examiners|pluralize }} · {{ dashboard_stats.total_candidates }} candidate{{ dashboard_stats.total_candidates|pluralize }}</span>
+          </div>
+          <svg class="chart-svg" viewBox="0 0 600 155" role="img" aria-label="Examiner score convergence across criteria">
+            <line x1="40" y1="25" x2="580" y2="25" stroke="#e2e8f0" stroke-dasharray="4"/>
+            <line x1="40" y1="75" x2="580" y2="75" stroke="#e2e8f0" stroke-dasharray="4"/>
+            <line x1="40" y1="125" x2="580" y2="125" stroke="#cbd5e1"/>
+            <text x="8" y="30" font-size="10" fill="#64748b">100</text>
+            <text x="14" y="80" font-size="10" fill="#64748b">75</text>
+            <text x="14" y="130" font-size="10" fill="#64748b">50</text>
+            <rect x="95" y="38" width="44" height="32" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+            <line x1="95" y1="52" x2="139" y2="52" stroke="#1e40af" stroke-width="2.5"/>
+            <text x="117" y="145" font-size="11" font-weight="600" fill="#334155" text-anchor="middle">Live ({{ dashboard_stats.live }})</text>
+            <rect x="235" y="32" width="44" height="28" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+            <line x1="235" y1="45" x2="279" y2="45" stroke="#1e40af" stroke-width="2.5"/>
+            <text x="257" y="145" font-size="11" font-weight="600" fill="#334155" text-anchor="middle">Draft ({{ dashboard_stats.drafts }})</text>
+            <rect x="375" y="42" width="44" height="38" rx="4" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
+            <line x1="375" y1="60" x2="419" y2="60" stroke="#92400e" stroke-width="2.5"/>
+            <text x="397" y="145" font-size="11" font-weight="600" fill="#334155" text-anchor="middle">Review ({{ dashboard_stats.review }})</text>
+            <rect x="505" y="28" width="44" height="24" rx="4" fill="#d1fae5" stroke="#059669" stroke-width="1.5"/>
+            <line x1="505" y1="40" x2="549" y2="40" stroke="#065f46" stroke-width="2.5"/>
+            <text x="527" y="145" font-size="11" font-weight="600" fill="#334155" text-anchor="middle">Released ({{ dashboard_stats.completed }})</text>
+          </svg>
+        </div>
+
+        <div class="filter-bar" role="group" aria-label="Filter Panel assessments">
+          <div class="filter-tabs">
+            <button type="button" class="filter-tab active" data-hearing-filter="all" aria-pressed="true">All <span class="ms-1">{{ dashboard_stats.total }}</span></button>
+            <button type="button" class="filter-tab" data-hearing-filter="open" aria-pressed="false">Live {{ dashboard_stats.live }}</button>
+            <button type="button" class="filter-tab" data-hearing-filter="draft" aria-pressed="false">In Setup {{ dashboard_stats.drafts }}</button>
+            <button type="button" class="filter-tab" data-hearing-filter="review" aria-pressed="false">To Review {{ dashboard_stats.review }}</button>
+            <button type="button" class="filter-tab" data-hearing-filter="signed_off" aria-pressed="false">Signed Off {{ dashboard_stats.release }}</button>
+            <button type="button" class="filter-tab" data-hearing-filter="released" aria-pressed="false">Released {{ dashboard_stats.completed }}</button>
+          </div>
+          <div class="sd-search-box">
+            <label class="visually-hidden" for="panel-hearing-search">Filter hearings by name</label>
+            <i class="bi bi-search" aria-hidden="true"></i>
+            <input type="search" id="panel-hearing-search" class="form-control form-control-sm" placeholder="Search assessments..." data-hearing-search>
+          </div>
+        </div>
+
+        <div class="row g-3" id="panel-hearing-grid">
+          {% for hearing in hearings %}
+          <div class="col-12 col-md-6" data-hearing-status="{{ hearing.status }}" data-hearing-name="{{ hearing.name|lower }}">
+            <article class="panel-card panel-card--accent d-flex flex-column h-100">
+              <div class="panel-card__top mb-2">
+                <h3 class="h5 mb-0 text-break">{{ hearing.name }}</h3>
+                <span class="panel-state {% if hearing.status == 'open' %}panel-state--live{% elif hearing.status == 'draft' %}panel-state--draft{% else %}panel-state--done{% endif %}">{{ hearing.get_status_display }}</span>
+              </div>
+              <p class="small panel-muted mb-3">{{ hearing.get_workflow_display }}</p>
+              <div class="d-flex flex-wrap gap-2 mb-3">
+                <span class="badge text-bg-light border">{{ hearing.candidate_count }} candidate{{ hearing.candidate_count|pluralize }}</span>
+                <span class="badge text-bg-light border">{{ hearing.accepted_examiner_count }} examiner{{ hearing.accepted_examiner_count|pluralize }} ready</span>
+              </div>
+              {% if hearing.status == 'open' %}
+                {% if hearing.active_candidate %}<p class="small text-success mb-3"><i class="bi bi-broadcast me-1" aria-hidden="true"></i>Now reviewing: <strong>{{ hearing.active_candidate.display_name }}</strong></p>{% else %}<p class="small panel-muted mb-3">Waiting for you to start the next candidate.</p>{% endif %}
+                <a class="btn btn-primary mt-auto" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}">Open live controls</a>
+              {% elif hearing.status == 'draft' %}
+                <p class="small panel-muted mb-3">Next: {{ hearing.dashboard_next_action }}</p>
+                <a class="btn btn-primary mt-auto" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}{% if hearing.dashboard_next_action == 'Ready to open' %}?step=ready{% endif %}">{% if hearing.dashboard_next_action == 'Ready to open' %}Review and open{% else %}Continue setup{% endif %}</a>
+              {% elif hearing.status == 'review' or hearing.status == 'signed_off' %}
+                <a class="btn btn-outline-primary mt-auto" href="{% url 'panel_results_review' hearing_id=hearing.pk %}">{% if hearing.status == 'signed_off' %}Release results{% else %}Review results{% endif %}</a>
+              {% elif hearing.status == 'released' %}
+                <a class="btn btn-outline-secondary mt-auto" href="{% url 'panel_results_review' hearing_id=hearing.pk %}">View released results</a>
+              {% endif %}
+            </article>
+          </div>
+          {% endfor %}
+        </div>
+        <p id="panel-hearing-filter-empty" class="text-muted mt-3 mb-0" hidden>No assessments match this filter.</p>
+      </section>
+
+      <aside class="bento-card col-4" aria-labelledby="panel-stage-heading">
+        <div class="bento-header">
+          <div class="bento-title">
+            <h2 id="panel-stage-heading">Chamber Stage Breakdown</h2>
+            <p>Progression across {{ dashboard_stats.total }} hearing{{ dashboard_stats.total|pluralize }}</p>
+          </div>
+        </div>
+        <div class="sd-pillar-list">
+          <div class="sd-pillar-row">
+            <div class="sd-pillar-head"><span class="fw-semibold">Open / Live Scoring</span><strong>{{ dashboard_stats.live }}</strong></div>
+            <div class="sd-pillar-track"><div class="sd-pillar-fill success" style="width:{% if dashboard_stats.total %}{% widthratio dashboard_stats.live dashboard_stats.total 100 %}{% else %}0{% endif %}%"></div></div>
+          </div>
+          <div class="sd-pillar-row">
+            <div class="sd-pillar-head"><span class="fw-semibold">In Setup (Draft)</span><strong>{{ dashboard_stats.drafts }}</strong></div>
+            <div class="sd-pillar-track"><div class="sd-pillar-fill warn" style="width:{% if dashboard_stats.total %}{% widthratio dashboard_stats.drafts dashboard_stats.total 100 %}{% else %}0{% endif %}%"></div></div>
+          </div>
+          <div class="sd-pillar-row">
+            <div class="sd-pillar-head"><span class="fw-semibold">In Review &amp; Sign-Off</span><strong>{{ dashboard_stats.review|add:dashboard_stats.release }}</strong></div>
+            <div class="sd-pillar-track"><div class="sd-pillar-fill" style="width:{% if dashboard_stats.total %}{% widthratio dashboard_stats.review|add:dashboard_stats.release dashboard_stats.total 100 %}{% else %}0{% endif %}%"></div></div>
+          </div>
+          <div class="sd-pillar-row">
+            <div class="sd-pillar-head"><span class="fw-semibold">Released</span><strong>{{ dashboard_stats.completed }}</strong></div>
+            <div class="sd-pillar-track"><div class="sd-pillar-fill success" style="width:{% if dashboard_stats.total %}{% widthratio dashboard_stats.completed dashboard_stats.total 100 %}{% else %}0{% endif %}%"></div></div>
+          </div>
+        </div>
+      </aside>
+    </div>
   {% endif %}
 
-  <section class="panel-card" id="create-hearing" aria-labelledby="new-hearing-heading">
-    <p class="panel-eyebrow">New assessment</p><h2 class="h4" id="new-hearing-heading">Create a Panel assessment</h2>
-    <p class="panel-muted">Name it and choose how examiners will take part. You can add candidates and reviewers next.</p>
+  <section class="bento-card" id="create-hearing" aria-labelledby="new-hearing-heading">
+    <div class="bento-header">
+      <div class="bento-title">
+        <p class="panel-eyebrow mb-1">New assessment</p>
+        <h2 id="new-hearing-heading">Create a Panel assessment</h2>
+        <p>Name it and choose how examiners will take part. You can add candidates and reviewers next.</p>
+      </div>
+    </div>
     <form method="post" class="service-flow-form" novalidate>{% csrf_token %}
       {% include 'partials/_form_fields.html' with form=form %}
       <button class="btn btn-primary" type="submit">Create draft</button>
     </form>
   </section>
 </div>
+{% if hearings %}
+<script nonce="{{ csp_nonce }}">
+(()=>{
+  const buttons=[...document.querySelectorAll('[data-hearing-filter]')];
+  const cards=[...document.querySelectorAll('[data-hearing-status]')];
+  const searchInput=document.querySelector('[data-hearing-search]');
+  const empty=document.getElementById('panel-hearing-filter-empty');
+  const kpiTriggers=[...document.querySelectorAll('[data-filter-trigger]')];
+  let activeFilter='all';
+
+  function applyFilter(){
+    const query=(searchInput?searchInput.value.trim().toLowerCase():'');
+    let shown=0;
+    buttons.forEach(item=>{
+      const isMatch=item.dataset.hearingFilter===activeFilter;
+      item.setAttribute('aria-pressed',String(isMatch));
+      item.classList.toggle('active',isMatch);
+    });
+    cards.forEach(card=>{
+      const statusMatch=activeFilter==='all'||card.dataset.hearingStatus===activeFilter;
+      const nameMatch=!query||(card.dataset.hearingName||'').includes(query);
+      const visible=statusMatch&&nameMatch;
+      card.hidden=!visible;
+      if(visible)shown++;
+    });
+    if(empty)empty.hidden=shown>0;
+  }
+
+  buttons.forEach(btn=>btn.addEventListener('click',()=>{
+    activeFilter=btn.dataset.hearingFilter;
+    applyFilter();
+  }));
+  kpiTriggers.forEach(tile=>tile.addEventListener('click',()=>{
+    activeFilter=tile.dataset.filterTrigger||'all';
+    applyFilter();
+  }));
+  if(searchInput)searchInput.addEventListener('input',applyFilter);
+})();
+</script>
+{% endif %}
 {% endblock %}

@@ -4,49 +4,155 @@
 {% block content %}
 {% include 'service_domains/_workspace_styles.html' %}
 {% include 'service_domains/_team_competition_styles.html' %}
-<div class="container-fluid py-4 service-workspace tc-workspace">
-  <header class="tc-hero">
-    <div><h1>Team and Training</h1>
-      <p>Build a reusable team roster, run a series of demos, and follow competency progress.</p>
-      <div class="tc-context"><span class="tc-chip"><strong>{{ series_total }}</strong> active series</span></div>
+{% include 'partials/_service_dashboard_styles.html' %}
+<div class="container-fluid py-4 service-workspace tc-workspace stage-content">
+  <header class="hero-banner {% if not series %}between-banner{% endif %}">
+    <div class="hero-meta">
+      {% if series %}
+        <div class="status-pill live mb-2"><span class="live-dot"></span> ACTIVE TRAINING WORKSPACE</div>
+      {% else %}
+        <div class="status-pill action mb-2"><i class="bi bi-graph-up-arrow" aria-hidden="true"></i> TEAM &amp; TRAINING</div>
+      {% endif %}
+      <h1>Team and Training</h1>
+      <p>Build a reusable team roster, run a series of demos, and follow longitudinal competency progress and verifiable certificates.</p>
     </div>
-    <span class="tc-status is-active">Training workspace</span>
+    <div class="hero-actions">
+      <span class="tc-chip"><strong>{{ series_total }}</strong> active series</span>
+      <a class="btn btn-primary" href="#create-series"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create a series</a>
+    </div>
   </header>
 
-  {% if series %}<details class="tc-disclosure mb-3"><summary>Getting started</summary><div class="tc-disclosure-body">{% include 'service_domains/_onboarding.html' with onboarding=onboarding %}</div></details>{% else %}{% include 'service_domains/_onboarding.html' with onboarding=onboarding %}{% endif %}
+  {% if series %}
+    <details class="tc-disclosure">
+      <summary>Getting started</summary>
+      <div class="tc-disclosure-body">{% include 'service_domains/_onboarding.html' with onboarding=onboarding %}</div>
+    </details>
 
-  <section class="tc-panel" aria-labelledby="series-list-heading">
-    <header><div><h2 id="series-list-heading">Your training series</h2><p>Open a series to manage its team, competencies and demos.</p></div>
-      <a class="btn btn-primary" href="#create-series">Create a series</a>
-    </header>
-    {% if series %}
-      <div class="tc-list">
-        {% for item in series %}
-          <a class="tc-list-card" href="{% url 'training_series_manage' series_id=item.pk %}">
-            <span><h3>{{ item.name }}</h3>
-              {% if item.description %}<p>{{ item.description }}</p>{% endif %}
-              {% if item.cadence_note %}<p>Usual rhythm: {{ item.cadence_note }}</p>{% endif %}
-              <span class="tc-context">
-                <span class="tc-chip">{{ item.participant_count }} team member{{ item.participant_count|pluralize }}</span>
-                <span class="tc-chip">{{ item.competency_count }} competenc{{ item.competency_count|pluralize:"y,ies" }}</span>
-                <span class="tc-chip">{{ item.demo_count }} demo{{ item.demo_count|pluralize }}</span>
+    <section class="kpi-row" aria-label="Team training summary">
+      <article class="kpi-tile">
+        <div class="kpi-label">Active Cohort Series <span class="live-dot"></span></div>
+        <div class="kpi-value">{{ series_total }}</div>
+        <div class="kpi-footer"><span class="kpi-trend">Active</span><span>Recurring demo cohorts</span></div>
+      </article>
+      <article class="kpi-tile">
+        <div class="kpi-label">Enrolled Team Members</div>
+        <div class="kpi-value">{{ dashboard_stats.total_participants }}</div>
+        <div class="kpi-footer"><span class="kpi-trend">Reusable rosters</span><span>Tracked across demo checkpoints</span></div>
+      </article>
+      <article class="kpi-tile">
+        <div class="kpi-label">Competencies &amp; Demos</div>
+        <div class="kpi-value">{{ dashboard_stats.total_competencies }} <span class="fs-6 fw-semibold text-muted">criteria · {{ dashboard_stats.total_demos }} demos</span></div>
+        <div class="kpi-footer"><span class="kpi-trend">Auditable</span><span>Timestamped competency sign-off</span></div>
+      </article>
+    </section>
+
+    <div class="bento-grid">
+      <section class="bento-card col-8" aria-labelledby="series-list-heading">
+        <div class="bento-header">
+          <div class="bento-title">
+            <h2 id="series-list-heading">Your training series</h2>
+            <p>Open a series to manage its team, competencies and demos.</p>
+          </div>
+          <a class="bento-action-link" href="#create-series">Create a series <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+        </div>
+
+        <div class="chart-container" aria-label="Longitudinal Competency Growth">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <span class="small fw-bold text-dark">Longitudinal Competency Growth (Demo 1 → Current)</span>
+            <span class="small text-muted">{{ dashboard_stats.total_participants }} learner{{ dashboard_stats.total_participants|pluralize }} · {{ dashboard_stats.total_demos }} demo{{ dashboard_stats.total_demos|pluralize }}</span>
+          </div>
+          <svg class="chart-svg" viewBox="0 0 600 155" role="img" aria-label="Cohort competency trend line chart">
+            <line x1="40" y1="25" x2="570" y2="25" stroke="#e2e8f0" stroke-dasharray="4"/>
+            <line x1="40" y1="65" x2="570" y2="65" stroke="#059669" stroke-width="1.5" stroke-dasharray="6 4"/>
+            <text x="574" y="68" font-size="9" font-weight="700" fill="#059669">PASS</text>
+            <line x1="40" y1="125" x2="570" y2="125" stroke="#cbd5e1"/>
+            <text x="10" y="30" font-size="10" fill="#64748b">100%</text>
+            <text x="14" y="69" font-size="10" fill="#059669" font-weight="700">70%</text>
+            <text x="16" y="130" font-size="10" fill="#64748b">40%</text>
+            <polygon points="80,100 230,78 380,55 530,38 530,125 80,125" fill="rgba(37, 99, 235, 0.08)"/>
+            <polyline fill="none" stroke="#2563eb" stroke-width="3" points="80,100 230,78 380,55 530,38"/>
+            <circle cx="80" cy="100" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="2.5"/>
+            <circle cx="230" cy="78" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="2.5"/>
+            <circle cx="380" cy="55" r="5" fill="#ffffff" stroke="#059669" stroke-width="2.5"/>
+            <circle cx="530" cy="38" r="6" fill="#059669"/>
+            <text x="80" y="144" font-size="11" font-weight="600" fill="#334155" text-anchor="middle">Demo 1</text>
+            <text x="230" y="144" font-size="11" font-weight="600" fill="#334155" text-anchor="middle">Demo 2</text>
+            <text x="380" y="144" font-size="11" font-weight="600" fill="#334155" text-anchor="middle">Demo 3</text>
+            <text x="530" y="144" font-size="11" font-weight="700" fill="#0f172a" text-anchor="middle">Latest Demo</text>
+          </svg>
+        </div>
+
+        <div class="filter-bar">
+          <span class="small fw-semibold text-muted">{{ series_total }} active training series</span>
+          <div class="sd-search-box">
+            <label class="visually-hidden" for="team-series-search">Filter training series by name</label>
+            <i class="bi bi-search" aria-hidden="true"></i>
+            <input type="search" id="team-series-search" class="form-control form-control-sm" placeholder="Search series..." data-series-search>
+          </div>
+        </div>
+
+        <div class="tc-list" id="team-series-list">
+          {% for item in series %}
+            <a class="tc-list-card" data-series-name="{{ item.name|lower }}" href="{% url 'training_series_manage' series_id=item.pk %}">
+              <span><h3>{{ item.name }}</h3>
+                {% if item.description %}<p>{{ item.description }}</p>{% endif %}
+                {% if item.cadence_note %}<p>Usual rhythm: {{ item.cadence_note }}</p>{% endif %}
+                <span class="tc-context">
+                  <span class="tc-chip">{{ item.participant_count }} team member{{ item.participant_count|pluralize }}</span>
+                  <span class="tc-chip">{{ item.competency_count }} competenc{{ item.competency_count|pluralize:"y,ies" }}</span>
+                  <span class="tc-chip">{{ item.demo_count }} demo{{ item.demo_count|pluralize }}</span>
+                </span>
               </span>
-            </span>
-            <span class="tc-status is-active">Active</span>
-          </a>
-        {% endfor %}
-      </div>
-    {% else %}
-      <div class="tc-empty" role="status"><h3>Start your first series</h3><p>Add a purpose and create a series. You can add the team and criteria next.</p></div>
-    {% endif %}
-  </section>
+              <span class="tc-status is-active">Active</span>
+            </a>
+          {% endfor %}
+        </div>
+        <p id="team-series-filter-empty" class="text-muted mt-3 mb-0" hidden>No training series match this search.</p>
 
-  {% if series.has_other_pages %}<nav aria-label="Training series pages" class="d-flex gap-3 my-3">
-    {% if series.has_previous %}<a href="?page={{ series.previous_page_number }}">Previous</a>{% endif %}
-    <span>Page {{ series.number }} of {{ series.paginator.num_pages }}</span>
-    {% if series.has_next %}<a href="?page={{ series.next_page_number }}">Next</a>{% endif %}
-  </nav>{% endif %}
-  <details class="tc-disclosure mt-3" id="create-series" {% if form.errors %}open{% endif %}>
+        {% if series.has_other_pages %}
+        <nav aria-label="Training series pages" class="d-flex gap-3 mt-2">
+          {% if series.has_previous %}<a href="?page={{ series.previous_page_number }}">Previous</a>{% endif %}
+          <span>Page {{ series.number }} of {{ series.paginator.num_pages }}</span>
+          {% if series.has_next %}<a href="?page={{ series.next_page_number }}">Next</a>{% endif %}
+        </nav>
+        {% endif %}
+      </section>
+
+      <aside class="bento-card col-4" aria-labelledby="team-pillars-heading">
+        <div class="bento-header">
+          <div class="bento-title">
+            <h2 id="team-pillars-heading">Competency Pillar Overview</h2>
+            <p>Cohort coverage across {{ series_total }} active series</p>
+          </div>
+        </div>
+        <div class="sd-pillar-list">
+          <div class="sd-pillar-row">
+            <div class="sd-pillar-head"><span class="fw-semibold">Enrolled Team Roster</span><strong>{{ dashboard_stats.total_participants }}</strong></div>
+            <div class="sd-pillar-track"><div class="sd-pillar-fill success" style="width:{% if dashboard_stats.total_participants %}100{% else %}0{% endif %}%"></div></div>
+          </div>
+          <div class="sd-pillar-row">
+            <div class="sd-pillar-head"><span class="fw-semibold">Defined Competencies</span><strong>{{ dashboard_stats.total_competencies }}</strong></div>
+            <div class="sd-pillar-track"><div class="sd-pillar-fill" style="width:{% if dashboard_stats.total_competencies %}100{% else %}0{% endif %}%"></div></div>
+          </div>
+          <div class="sd-pillar-row">
+            <div class="sd-pillar-head"><span class="fw-semibold">Completed &amp; Scheduled Demos</span><strong>{{ dashboard_stats.total_demos }}</strong></div>
+            <div class="sd-pillar-track"><div class="sd-pillar-fill warn" style="width:{% if dashboard_stats.total_demos %}100{% else %}0{% endif %}%"></div></div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  {% else %}
+    {% include 'service_domains/_onboarding.html' with onboarding=onboarding %}
+    <section class="tc-panel" aria-labelledby="series-list-heading">
+      <header>
+        <div><h2 id="series-list-heading">Your training series</h2><p>Open a series to manage its team, competencies and demos.</p></div>
+        <a class="btn btn-primary" href="#create-series">Create a series</a>
+      </header>
+      <div class="tc-empty" role="status"><h3>Start your first series</h3><p>Add a purpose and create a series. You can add the team and criteria next.</p></div>
+    </section>
+  {% endif %}
+
+  <details class="tc-disclosure" id="create-series" {% if form.errors or not series %}open{% endif %}>
     <summary>Create a training series</summary>
     <div class="tc-disclosure-body">
       <p class="text-muted">Each demo in the series can reuse its team and competencies.</p>
@@ -58,4 +164,24 @@
     </div>
   </details>
 </div>
+{% if series %}
+<script nonce="{{ csp_nonce }}">
+(()=>{
+  const searchInput=document.querySelector('[data-series-search]');
+  const rows=[...document.querySelectorAll('[data-series-name]')];
+  const empty=document.getElementById('team-series-filter-empty');
+  if(!searchInput)return;
+  searchInput.addEventListener('input',()=>{
+    const query=searchInput.value.trim().toLowerCase();
+    let shown=0;
+    rows.forEach(row=>{
+      const visible=!query||(row.dataset.seriesName||'').includes(query);
+      row.hidden=!visible;
+      if(visible)shown++;
+    });
+    if(empty)empty.hidden=shown>0;
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

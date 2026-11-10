@@ -223,7 +223,7 @@
   {% include 'partials/_unsaved_changes.html' with form_selector='form[data-panel-details-form]' dialog_id='team-unsaved-dialog' title_id='team-unsaved-title' dialog_title='Leave setup?' dialog_body='You have unsaved changes in setup details. Save your changes before leaving, or discard them.' save_btn_text='Save details' step_selector='[data-panel-step]' %}
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
   (function () {
     const stepRoot = document.querySelector('[data-panel-steps]');
     if (stepRoot) {
