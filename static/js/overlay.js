@@ -186,6 +186,7 @@
   document.addEventListener('submit', function (e) {
     const form = e.target;
     if (!form.matches || !form.matches('form[data-confirm]') || form.dataset.confirmed) return;
+    const submitter = e.submitter || null;
     e.preventDefault();
     confirmDialog({ title: form.dataset.confirmTitle, message: form.dataset.confirm,
                     confirmLabel: form.dataset.confirmLabel, tone: form.dataset.confirmTone }).then(function (ok) {
@@ -200,13 +201,22 @@
         return;
       }
       form.dataset.confirmed = '1';
-      // requestSubmit() (not the native submit()) — it re-fires the
-      // 'submit' event, which is what a page's own AJAX submit listener
-      // (e.g. session_detail.html's live-ajax-form handler) needs to see
-      // in order to actually run. The old submit() call bypassed that
-      // event entirely, so confirming never reached an AJAX-intercepted
-      // form's real handler at all.
-      if (form.requestSubmit) form.requestSubmit(); else form.submit();
+      // requestSubmit(submitter) preserves the submitter button's name/value
+      // pair in the submitted form data and re-fires the 'submit' event so
+      // AJAX-intercepted forms see the submission.
+      if (form.requestSubmit) {
+        if (submitter && form.contains(submitter)) form.requestSubmit(submitter);
+        else form.requestSubmit();
+      } else {
+        if (submitter && submitter.name && !form.querySelector('input[type="hidden"][name="' + submitter.name + '"]')) {
+          const hidden = document.createElement('input');
+          hidden.type = 'hidden';
+          hidden.name = submitter.name;
+          hidden.value = submitter.value;
+          form.appendChild(hidden);
+        }
+        form.submit();
+      }
     });
   });
 
