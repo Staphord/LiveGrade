@@ -79,6 +79,13 @@ class FriendlyPagesTests(TestCase):
         self.assertContains(response, 'href="/switch-organization/"', status_code=403)
         self.assertNotContains(response, 'CSRF verification failed', status_code=403)
 
+        logout_expired = client.post('/oidc/logout/')
+        self.assertContains(logout_expired, 'This page has expired', status_code=403)
+        self.assertContains(logout_expired, 'href="/"', status_code=403)
+
+        logout_from_polls = client.post('/oidc/logout/', HTTP_REFERER='http://testserver/polls/app/?poll=123')
+        self.assertContains(logout_from_polls, 'href="/polls/app/?poll=123"', status_code=403)
+
 
 class InstallTests(SimpleTestCase):
 

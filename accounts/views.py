@@ -89,4 +89,17 @@ def csrf_failure(request, reason=''):
     """The security token on a form did not match: almost always a page left open
     across a sign-out or sign-in elsewhere. Not the person's fault, and nothing
     was changed - the page says so and offers a fresh start."""
-    return render(request, 'errors/csrf.html', {'reload_url': request.get_full_path()}, status=403)
+    from urllib.parse import urlsplit
+    from django.urls import reverse
+    from django.utils.http import url_has_allowed_host_and_scheme
+
+    reload_url = request.get_full_path()
+    if request.path == reverse('oidc_logout'):
+        referer = request.META.get('HTTP_REFERER', '')
+        if referer and url_has_allowed_host_and_scheme(
+                referer, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+            parts = urlsplit(referer)
+            reload_url = f'{parts.path}?{parts.query}' if parts.query else (parts.path or reverse('home'))
+        else:
+            reload_url = reverse('home')
+    return render(request, 'errors/csrf.html', {'reload_url': reload_url}, status=403)
