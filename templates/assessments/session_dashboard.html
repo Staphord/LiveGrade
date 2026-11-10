@@ -1,0 +1,188 @@
+{% extends 'base.html' %}
+{% block title %}Classroom dashboard - LiveGrade{% endblock %}
+{% block page_title %}Classroom dashboard{% endblock %}
+
+{% block extra_css %}
+{% include 'partials/_service_dashboard_styles.html' %}
+<style nonce="{{ csp_nonce }}">
+.classroom-dashboard{gap:var(--sp-4)}
+.classroom-dashboard a,.classroom-dashboard a:hover{text-decoration:none}
+.classroom-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:var(--sp-3)}
+.classroom-kpi{min-width:0;padding:var(--sp-4);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);box-shadow:var(--elev-1)}
+.classroom-kpi-label{color:var(--text-muted);font-size:var(--fs-sm);font-weight:650}
+.classroom-kpi-value{margin-top:var(--sp-2);font-size:1.8rem;line-height:1.1;font-weight:800;letter-spacing:-.04em;color:var(--ink)}
+.classroom-kpi-note{margin-top:var(--sp-2);color:var(--text-muted);font-size:var(--fs-micro);line-height:1.45}
+.classroom-live-panel{padding:var(--sp-4);border:1px solid var(--tone-success-bg);border-radius:var(--radius-card);background:var(--surface)}
+.classroom-live-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:var(--sp-3);margin-top:var(--sp-3)}
+.classroom-live-card-link{display:block;height:100%;border-radius:var(--radius-control);color:var(--text)}
+.classroom-live-card-link:focus-visible{outline:0;box-shadow:var(--focus-ring)}
+.classroom-live-item{height:100%;padding:var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface-hover);transition:border-color var(--motion-fast) var(--ease),background var(--motion-fast) var(--ease),transform var(--motion-fast) var(--ease)}
+.classroom-live-card-link:hover .classroom-live-item{border-color:var(--accent);background:var(--surface);transform:translateY(-1px)}
+.classroom-live-item h3{margin:0;color:var(--ink);font-size:var(--fs-strong);font-weight:750}
+.classroom-live-meta{display:flex;flex-wrap:wrap;gap:var(--sp-2) var(--sp-4);margin-top:var(--sp-2);color:var(--text-muted);font-size:var(--fs-sm)}
+.classroom-live-now{display:inline-flex;align-items:center;gap:6px;color:var(--tone-success-fg);font-size:var(--fs-micro);font-weight:750;text-transform:uppercase;letter-spacing:.04em}
+.classroom-live-dot{width:8px;height:8px;border-radius:50%;background:var(--success)}
+.classroom-visual-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-3)}
+.classroom-data-card{min-width:0;padding:var(--sp-4);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.classroom-data-card h2{margin:0;font-size:var(--fs-heading);font-weight:750}
+.classroom-data-subtitle{margin:var(--sp-1) 0 var(--sp-4);color:var(--text-muted);font-size:var(--fs-sm)}
+.classroom-stage-chart{display:grid;grid-template-columns:minmax(140px,180px) minmax(0,1fr);align-items:center;gap:var(--sp-4)}
+.classroom-stage-pie{width:100%;aspect-ratio:1;border:1px solid var(--border);border-radius:50%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.4)}
+.classroom-stage-legend{display:grid;gap:var(--sp-3);margin:0;padding:0;list-style:none}
+.classroom-stage-legend li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:var(--sp-2);font-size:var(--fs-sm)}
+.classroom-stage-swatch{width:11px;height:11px;border-radius:3px;background:var(--text-subtle)}
+.classroom-stage-swatch.live{background:var(--success)}
+.classroom-stage-swatch.draft{background:#d28a08}
+.classroom-stage-swatch.closed{background:var(--text-subtle)}
+.classroom-stage-legend strong{white-space:nowrap;color:var(--ink)}
+.classroom-stage-legend small{color:var(--text-muted);font-weight:500}
+.classroom-roster-list{display:grid;gap:var(--sp-3);margin:0;padding:0;list-style:none}
+.classroom-roster-label{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2);margin-bottom:var(--sp-1);font-size:var(--fs-sm)}
+.classroom-roster-label a{overflow:hidden;color:var(--text);font-weight:650;text-overflow:ellipsis;white-space:nowrap}
+.classroom-roster-label a:hover,.classroom-recent-name:hover{color:var(--accent)}
+.classroom-roster-label strong{flex:0 0 auto}
+.classroom-roster-track{height:12px;overflow:hidden;border-radius:var(--radius-pill);background:var(--surface-sunken);background-image:linear-gradient(to right,transparent calc(50% - .5px),var(--border) calc(50% - .5px),var(--border) calc(50% + .5px),transparent calc(50% + .5px))}
+.classroom-roster-fill{height:100%;border-radius:inherit;background:var(--accent);transition:width var(--motion) var(--ease)}
+.classroom-roster-axis{display:flex;justify-content:space-between;margin-top:var(--sp-1);padding-left:0;color:var(--text-muted);font-size:var(--fs-micro)}
+.classroom-recent{overflow:hidden;padding:0;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.classroom-recent-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);padding:var(--sp-4);border-bottom:1px solid var(--border)}
+.classroom-recent-head h2{margin:0;font-size:var(--fs-heading);font-weight:750}
+.classroom-recent .table{margin:0;vertical-align:middle}
+.classroom-recent .table th{color:var(--text-muted);font-size:var(--fs-micro);font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.classroom-recent .table td{font-size:var(--fs-sm)}
+.classroom-recent-name{color:var(--text);font-size:var(--fs-body);font-weight:700;text-decoration:none}
+.classroom-recent-name:hover{text-decoration:none}
+.classroom-recent .session-actions-cell{width:1%;white-space:nowrap}
+.classroom-recent .session-actions-cell .dropdown-menu{z-index:var(--z-dropdown)}
+.classroom-empty{padding:var(--sp-5);text-align:center;color:var(--text-muted)}
+.classroom-empty h2{margin:0 0 var(--sp-2);color:var(--ink);font-size:var(--fs-title)}
+@media(max-width:1199.98px){.classroom-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:767.98px){.classroom-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.classroom-visual-grid{grid-template-columns:1fr}}
+@media(max-width:575.98px){.classroom-kpi{padding:var(--sp-3)}.classroom-kpi-value{font-size:1.5rem}.classroom-stage-chart{grid-template-columns:minmax(120px,150px) minmax(0,1fr);gap:var(--sp-3)}.classroom-recent-head{align-items:flex-start;flex-direction:column}.classroom-recent .table{min-width:680px}}
+</style>
+{% include 'assessments/_session_row_actions_styles.html' %}
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'assessment_template_list' %}" class="btn btn-outline-secondary btn-sm">Session templates</a>
+<a href="{% url 'assessment_session_list' %}{% if can_oversee %}?scope=all{% endif %}" class="btn btn-outline-secondary btn-sm">{% if can_oversee %}All organization sessions{% else %}View all sessions{% endif %}</a>
+<a href="{% url 'assessment_session_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>New session</a>
+{% endblock %}
+
+{% block content %}
+<div class="stage-content classroom-dashboard">
+  <header class="hero-banner between-banner">
+    <div class="hero-meta">
+      <p>A live summary of your sessions, rosters, and current classroom activity.</p>
+    </div>
+    <div class="hero-actions">
+      <a href="{% url 'assessment_session_list' %}{% if can_oversee %}?scope=all{% endif %}" class="btn btn-outline-primary">{% if can_oversee %}Browse all sessions{% else %}Browse sessions{% endif %}</a>
+      <a href="{% url 'assessment_session_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create session</a>
+    </div>
+  </header>
+
+  <section class="classroom-kpis" aria-label="Classroom key metrics">
+    <article class="classroom-kpi"><div class="classroom-kpi-label">Total sessions</div><div class="classroom-kpi-value">{{ dashboard_stats.total }}</div><div class="classroom-kpi-note">Your sessions in this organization</div></article>
+    <article class="classroom-kpi"><div class="classroom-kpi-label">Live now</div><div class="classroom-kpi-value">{{ dashboard_stats.live_count }}</div><div class="classroom-kpi-note">{% if dashboard_stats.live_count %}{{ dashboard_stats.live_joined_count }} of {{ dashboard_stats.live_roster_count }} rostered students have joined across your live rooms{% else %}No live rooms to report participation for{% endif %}</div></article>
+    <article class="classroom-kpi"><div class="classroom-kpi-label">In setup</div><div class="classroom-kpi-value">{{ dashboard_stats.draft_count }}</div><div class="classroom-kpi-note">Draft sessions not yet running</div></article>
+    <article class="classroom-kpi"><div class="classroom-kpi-label">Completed</div><div class="classroom-kpi-value">{{ dashboard_stats.closed_count }}</div><div class="classroom-kpi-note">Sessions that have been closed</div></article>
+    <article class="classroom-kpi"><div class="classroom-kpi-label">Students on rosters</div><div class="classroom-kpi-value">{{ dashboard_stats.student_count }}</div><div class="classroom-kpi-note">Roster entries across your sessions</div></article>
+    <article class="classroom-kpi"><div class="classroom-kpi-label">Presentation groups</div><div class="classroom-kpi-value">{{ dashboard_stats.group_count }}</div><div class="classroom-kpi-note">Non-practice groups across your sessions</div></article>
+  </section>
+
+  {% if live_sessions %}
+  <section class="classroom-live-panel" aria-labelledby="classroom-live-heading">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <div><span class="classroom-live-now"><span class="classroom-live-dot" aria-hidden="true"></span>Live in the classroom</span><h2 class="h5 mt-1 mb-0" id="classroom-live-heading">{{ dashboard_stats.live_count }} active session{{ dashboard_stats.live_count|pluralize }}</h2></div>
+      <a href="{% url 'assessment_session_list' %}?status=live{% if can_oversee %}&amp;scope=all{% endif %}" class="btn btn-sm btn-outline-primary">View live sessions</a>
+    </div>
+    <div class="classroom-live-list">
+      {% for session in live_sessions %}
+      <a class="classroom-live-card-link" href="{% url 'assessment_session_detail' session.pk %}">
+        <article class="classroom-live-item">
+          <h3>{{ session.name }}</h3>
+          <div class="classroom-live-meta"><span>{{ session.live_joined_count }} of {{ session.student_count }} students joined</span><span>{{ session.group_count }} presentation group{{ session.group_count|pluralize }}</span></div>
+          <div class="classroom-live-meta">{% if session.live_active_group %}<span>Presenting: {{ session.live_active_group.name }}</span>{% else %}<span>No group is presenting right now</span>{% endif %}</div>
+        </article>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% else %}
+  <section class="classroom-live-panel" aria-labelledby="classroom-live-heading">
+    <h2 class="h6 mb-1" id="classroom-live-heading">None of your sessions are live right now</h2>
+    <p class="text-muted small mb-0">Live sessions will appear here with current student participation.</p>
+  </section>
+  {% endif %}
+
+  <section class="classroom-visual-grid" aria-label="Classroom data visualizations">
+    <article class="classroom-data-card" aria-labelledby="classroom-stage-heading">
+      <h2 id="classroom-stage-heading">Session stages</h2>
+      <p class="classroom-data-subtitle">Distribution across your {{ dashboard_stats.total }} session{{ dashboard_stats.total|pluralize }}.</p>
+      {% if dashboard_stats.total %}
+      <div class="classroom-stage-chart">
+        <div class="classroom-stage-pie" style="background:{{ stage_pie_background }}" aria-hidden="true"></div>
+        <ul class="classroom-stage-legend" aria-label="Session stage breakdown">
+          {% for stage in stage_distribution %}
+          <li><span class="classroom-stage-swatch {{ stage.key }}" aria-hidden="true"></span><span>{{ stage.label }}</span><strong>{{ stage.count }} <small>({{ stage.percentage }}%)</small></strong></li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% else %}
+        <p class="classroom-empty mb-0">Session stage data will appear after you create a session.</p>
+      {% endif %}
+    </article>
+
+    <article class="classroom-data-card" aria-labelledby="classroom-roster-heading">
+      <h2 id="classroom-roster-heading">Largest student rosters</h2>
+      <p class="classroom-data-subtitle">Roster sizes by session; bars are scaled to the largest roster shown.</p>
+      {% if roster_sessions and largest_roster %}
+      <ol class="classroom-roster-list">
+        {% for session in roster_sessions %}
+        <li>
+          <div class="classroom-roster-label"><a href="{% url 'assessment_session_detail' session.pk %}">{{ session.name }}</a><strong>{{ session.student_count }}</strong></div>
+          <div class="classroom-roster-track" aria-hidden="true"><div class="classroom-roster-fill" style="width:{{ session.roster_bar_percent }}%"></div></div>
+        </li>
+        {% endfor %}
+      </ol>
+      <div class="classroom-roster-axis" aria-hidden="true"><span>0 students</span><span>{{ largest_roster }} students</span></div>
+      {% else %}<p class="classroom-empty mb-0">Roster data will appear after students are added to a session.</p>{% endif %}
+    </article>
+  </section>
+
+  <section class="classroom-recent" aria-labelledby="classroom-recent-heading">
+    <div class="classroom-recent-head"><div><h2 id="classroom-recent-heading">Recent sessions</h2><p class="classroom-data-subtitle mb-0">Your five most recently created sessions.</p></div><a href="{% url 'assessment_session_list' %}{% if can_oversee %}?scope=all{% endif %}" class="btn btn-outline-primary btn-sm">View all sessions</a></div>
+    {% if recent_sessions %}
+    <div class="table-responsive">
+      <table class="table table-hover" data-session-row-navigation>
+        <caption class="visually-hidden">Five most recently created Classroom sessions</caption>
+        <thead><tr><th scope="col">Session</th><th scope="col">Status</th><th scope="col">Students</th><th scope="col">Groups</th><th scope="col">Created</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+        <tbody>
+          {% for session in recent_sessions %}
+          {% if session.status == 'draft' %}{% url 'assessment_session_edit' session.pk as session_row_url %}
+          {% elif session.status == 'live' %}{% url 'assessment_session_detail' session.pk as session_row_url %}
+          {% else %}{% url 'assessment_results' session.pk as session_row_url %}{% endif %}
+          <tr class="session-row-clickable" data-session-row-href="{{ session_row_url }}">
+            <td><a class="classroom-recent-name" href="{{ session_row_url }}">{{ session.name }}</a></td>
+            <td><span class="badge {% if session.status == 'live' %}bg-success-subtle text-success-emphasis{% elif session.status == 'closed' %}bg-secondary-subtle text-secondary-emphasis{% else %}bg-warning-subtle text-warning-emphasis{% endif %}">{{ session.get_status_display }}</span>{% if session.status == 'live' %}<span class="visually-hidden">, {{ session.live_joined_count }} joined</span>{% endif %}</td>
+            <td>{{ session.student_count }}{% if session.status == 'live' %}<span class="text-muted"> · {{ session.live_joined_count }} joined</span>{% endif %}</td>
+            <td>{{ session.group_count }}</td>
+            <td>{{ session.created_at|date:'d M Y' }}</td>
+            <td class="session-actions-cell text-end">{% include 'assessments/_session_row_actions.html' with row_is_mine=True %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <div class="classroom-empty"><h2>You haven’t created a classroom session yet</h2><p>Your dashboard shows sessions you own. Create a session to see rosters and live activity here.{% if can_oversee %} You can also <a href="{% url 'assessment_session_list' %}?scope=all">view all sessions in {{ active_org.name }}</a>.{% endif %}</p><a href="{% url 'assessment_session_create' %}" class="btn btn-primary">Create a session</a></div>
+    {% endif %}
+  </section>
+</div>
+{% include 'assessments/_session_action_modal.html' %}
+{% endblock %}
+
+{% block scripts %}
+{% include 'assessments/_session_action_modal_script.html' %}
+{% include 'assessments/_clickable_session_rows_script.html' %}
+{% endblock %}

@@ -1,0 +1,14 @@
+<style nonce="{{ csp_nonce }}">
+.session-actions .dropdown-toggle{display:grid;width:2rem;height:2rem;place-items:center;padding:0;border:1px solid var(--border);border-radius:50%;background:var(--surface);color:var(--text-muted)}
+.session-actions .dropdown-toggle::after{display:none}
+.session-actions .dropdown-menu{min-width:12rem;padding:var(--sp-1);border:1px solid var(--border);border-radius:var(--radius-control);box-shadow:var(--elev-3)}
+.session-actions .dropdown-item{padding:.5rem .65rem;border-radius:var(--radius-xs);font-size:var(--fs-sm)}
+.session-actions .dropdown-item form{margin:calc(-1 * var(--sp-2)) calc(-1 * var(--sp-3))}
+.session-actions .dropdown-item button{width:100%;padding:.5rem .65rem;border:0;background:transparent;text-align:left}
+.session-actions .dropdown-item button:focus-visible{outline:0;box-shadow:var(--focus-ring)}
+.session-actions form{margin:0}
+.session-actions .dropdown-menu form .dropdown-item{width:100%;border:0;background:transparent;text-align:left}
+.session-actions .dropdown-menu form .dropdown-item:focus-visible{outline:0;box-shadow:var(--focus-ring)}
+.session-row-clickable{cursor:pointer}
+.session-row-clickable .session-actions{cursor:default}
+</style>

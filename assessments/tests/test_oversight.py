@@ -72,7 +72,8 @@ class SessionListTests(OversightTestCase):
         self.assertContains(mine, 'All sessions in Uni')
         self.assertContains(mine, 'My sessions')
         _, everything = self.listing('?scope=all')
-        self.assertContains(everything, 'page-tab active')
+        self.assertContains(everything, 'class="session-scope-tabs"')
+        self.assertContains(everything, 'class="active" aria-current="page"')
 
     def test_somebody_without_oversight_is_not_offered_it_and_asking_does_nothing(self):
         sign_in(self.client, self.ann, self.plain)

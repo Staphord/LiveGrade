@@ -26,7 +26,9 @@ MISSING = {'int': 999999, 'uuid': uuid.UUID('00000000-0000-4000-8000-00000000000
 
 LECTURER_PAGES = {
     # name: (method, anonymous, unauthorised, lecturer)
+    'assessment_dashboard':   (GET, LOGIN, 403, 200),
     'assessment_session_list':   (GET, LOGIN, 403, 200),
+    'assessment_session_bulk_delete': (POST, LOGIN, 403, '/classroom/app/sessions/'),
     'assessment_session_create': (GET, LOGIN, 403, 200),
     'assessment_template_list': (GET, LOGIN, 403, 200),
     'assessment_group_onboarding_sample': (GET, LOGIN, 403, 200),
@@ -35,7 +37,7 @@ LECTURER_PAGES = {
     'standalone_poll_sample': (GET, LOGIN, 403, 200),
     'standalone_poll_delete': (POST, LOGIN, 403, '/polls/app/'),
     'assessment_walkthrough_start': (POST, LOGIN, 403, '/classroom/app/new/'),
-    'assessment_walkthrough_dismiss': (POST, LOGIN, 403, '/classroom/app/'),
+    'assessment_walkthrough_dismiss': (POST, LOGIN, 403, '/classroom/app/sessions/'),
 }
 LECTURER_ROW_ROUTES = {
     'standalone_poll_state': GET,

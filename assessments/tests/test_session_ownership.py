@@ -73,7 +73,7 @@ class SessionListTests(OwnershipTestCase):
         self.client.logout()
         sign_in(self.client, make_user('newcomer'), self.org)
         self.assertContains(self.client.get(reverse('assessment_session_list')),
-                            'No assessment sessions yet')
+                            'No classroom sessions yet')
 
 
 class CreationTests(OwnershipTestCase):

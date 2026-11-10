@@ -1,185 +1,230 @@
 {% extends 'base.html' %}
-{% block title %}Sessions - LiveGrade{% endblock %}
-{% block page_title %}LiveGrade{% endblock %}
+{% block title %}Sessions - Classroom{% endblock %}
+{% block page_title %}Classroom sessions{% endblock %}
 
 {% block extra_css %}
+{% include 'partials/_service_dashboard_styles.html' %}
 <style nonce="{{ csp_nonce }}">
-@keyframes assess-fade-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-.assess-stagger{animation:assess-fade-in var(--motion,.35s) var(--ease,ease) both}
-.assess-stagger:nth-child(1){animation-delay:.03s}
-.assess-stagger:nth-child(2){animation-delay:.08s}
-.assess-stagger:nth-child(3){animation-delay:.13s}
-.assess-stagger:nth-child(4){animation-delay:.18s}
-.assess-stagger:nth-child(5){animation-delay:.23s}
-.assess-stagger:nth-child(6){animation-delay:.28s}
-
-/* Centered in the page's own content area, not pinned under the header -
-   the empty state IS the page when there's nothing yet, so it gets the
-   same visual weight a populated grid would have, vertically balanced
-   rather than stacked flush against the top. */
-.assess-empty{min-height:60vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
-     text-align:center;padding:var(--sp-5)}
-.assess-empty .empty-icon{width:72px;height:72px;border-radius:50%;background:var(--accent-soft);
-     display:flex;align-items:center;justify-content:center;margin-bottom:var(--sp-4);
-     font-size:1.9rem;color:var(--accent)}
-.assess-empty h2{font-size:var(--fs-title);font-weight:800;color:var(--ink);margin-bottom:var(--sp-2)}
-.assess-empty p{color:var(--text-muted);max-width:420px;margin:0 auto var(--sp-4)}
-
-.session-card{transition:transform .15s var(--ease,ease),box-shadow .15s var(--ease,ease);height:100%}
-.session-card:hover{transform:translateY(-3px);box-shadow:var(--elev-3)}
-.session-card .status-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px}
-.status-dot.live{background:var(--success);animation:pulse 1.4s ease-in-out infinite}
-.status-dot.draft{background:var(--warn)}
-.status-dot.closed{background:var(--text-subtle)}
-@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
-.session-mini-stat{display:flex;align-items:center;gap:4px;font-size:var(--fs-sm);color:var(--text-muted)}
-
-/* A session actually running in a room right now outranks everything
-   else on this page - permanent elevation and a live accent border, not
-   just a hover state, so it visually leads the grid at a glance instead
-   of blending in until the cursor happens to land on it. */
-.session-card.is-live{box-shadow:var(--elev-3);border-color:color-mix(in srgb,var(--success) 35%,var(--border))}
-.session-card.is-live:hover{transform:translateY(-4px);box-shadow:var(--elev-4,var(--elev-3))}
-.session-live-glance{display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);font-weight:600;
-     color:var(--tone-success-fg);background:var(--tone-success-bg);border-radius:var(--radius-card);
-     padding:.35rem .6rem;margin-top:.6rem}
-.session-live-glance i{flex-shrink:0}
-.session-card-actions{position:absolute;top:.75rem;right:.75rem;z-index:2}
-.session-card-actions .dropdown-toggle{width:2rem;height:2rem;padding:0;border:0;border-radius:50%;background:var(--surface-hover);color:var(--text-muted);display:grid;place-items:center}
-.session-card-actions .dropdown-toggle::after{display:none}
-.session-card-actions .dropdown-menu{min-width:11rem;padding:.35rem;border:1px solid var(--border);box-shadow:var(--elev-3);border-radius:10px}
-.session-card-actions .dropdown-item{border-radius:7px;padding:.5rem .6rem;font-size:var(--fs-sm)}
-.session-card-wrap{position:relative;z-index:1}
-.session-card-wrap:has(.dropdown.show){z-index:20}
+.session-list-page{max-width:1400px;margin:0 auto;display:grid;gap:var(--sp-4);min-width:0}
+.session-list-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--sp-3);flex-wrap:wrap}
+.session-list-heading h1{margin:0;font-size:var(--fs-title);font-weight:800;letter-spacing:-.025em;color:var(--ink)}
+.session-list-heading p{margin:0;color:var(--text-muted)}
+.session-scope-tabs{display:flex;gap:var(--sp-2);flex-wrap:wrap;padding-bottom:var(--sp-3);border-bottom:1px solid var(--border)}
+.session-scope-tabs a{display:inline-flex;align-items:center;gap:var(--sp-2);padding:.5rem .75rem;border:1px solid var(--border);border-radius:var(--radius-pill);background:var(--surface);color:var(--text);font-size:var(--fs-sm);font-weight:650;text-decoration:none}
+.session-scope-tabs a.active{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.session-filters{display:grid;grid-template-columns:minmax(220px,1.5fr) minmax(180px,.8fr) auto;align-items:end;gap:var(--sp-3);padding:var(--sp-4);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.session-filters label{display:block;margin-bottom:var(--sp-1);color:var(--text-soft);font-size:var(--fs-sm);font-weight:650}
+.session-filter-clear{align-self:end}
+.session-table-card{min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.session-table-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);padding:var(--sp-4);border-bottom:1px solid var(--border)}
+.session-table-heading-group{display:flex;align-items:baseline;gap:var(--sp-3);min-width:0}
+.session-table-head h2{margin:0;font-size:var(--fs-heading);font-weight:750}
+.session-table-count{color:var(--text-muted);font-size:var(--fs-sm)}
+.session-table-tools{display:flex;align-items:flex-end;justify-content:flex-end;gap:var(--sp-3);flex-wrap:wrap}
+.session-table-tools form{margin:0}
+.session-table-tools [data-bulk-delete-button][hidden]{display:none!important}
+.session-page-size{display:grid;gap:3px;min-width:9rem;color:var(--text-muted);font-size:var(--fs-micro);font-weight:650}
+.session-page-size .custom-select-wrap{min-width:7rem}
+.session-table{margin:0;vertical-align:middle}
+.session-table th{padding:var(--sp-3) var(--sp-4);color:var(--text-muted);font-size:var(--fs-micro);font-weight:750;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+.session-table td{padding:var(--sp-3) var(--sp-4);font-size:var(--fs-sm)}
+.session-table .session-select-column{width:3.25rem;padding-right:0;text-align:center}
+.session-select-column .form-check-input{width:1em;height:1em;margin:0;vertical-align:middle;border:2px solid var(--text-muted);border-radius:var(--radius-xs);background-color:var(--surface);cursor:pointer}
+.session-select-column .form-check-input:checked{border-color:var(--accent);background-color:var(--accent)}
+.session-select-column .form-check-input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.session-select-column .form-check-input:disabled{cursor:not-allowed}
+.session-table-name{color:var(--ink);font-size:var(--fs-body);font-weight:750;text-decoration:none}
+.session-table-name:hover{text-decoration:none}
+.session-table-owner,.session-table-secondary{display:block;margin-top:3px;color:var(--text-muted);font-size:var(--fs-micro)}
+.session-stage{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.session-stage-dot{width:7px;height:7px;border-radius:50%;background:var(--text-subtle)}
+.session-stage-dot.live{background:var(--success)}
+.session-stage-dot.draft{background:#d28a08}
+.session-empty{padding:var(--sp-6) var(--sp-4);text-align:center}
+.session-empty-icon{display:grid;width:3rem;height:3rem;place-items:center;margin:0 auto var(--sp-3);border-radius:var(--radius-card);background:var(--accent-soft);color:var(--accent);font-size:1.4rem}
+.session-empty h2{margin:0 0 var(--sp-2);font-size:var(--fs-title);font-weight:800;color:var(--ink)}
+.session-empty p{max-width:38rem;margin:0 auto var(--sp-4);color:var(--text-muted);line-height:1.55}
+.session-empty-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--sp-3);max-width:850px;margin:0 auto var(--sp-4);text-align:left}
+.session-empty-step{padding:var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface-hover)}
+.session-empty-step strong,.session-empty-step span{display:block}
+.session-empty-step strong{margin-bottom:var(--sp-1);font-size:var(--fs-sm)}
+.session-empty-step span{color:var(--text-muted);font-size:var(--fs-micro);line-height:1.45}
+.session-pagination{display:flex;align-items:center;justify-content:flex-end;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);border-top:1px solid var(--border)}
+.session-pagination-label{color:var(--text-muted);font-size:var(--fs-sm)}
+.session-pagination-links{display:flex;gap:var(--sp-2)}
+@media(max-width:767.98px){.session-filters{grid-template-columns:minmax(0,1fr)}.session-empty-steps{grid-template-columns:1fr}}
+@media(max-width:575.98px){.session-table-head{align-items:flex-start;flex-direction:column}.session-table-heading-group{align-items:flex-start;flex-direction:column;gap:var(--sp-1)}.session-table-tools{width:100%;justify-content:space-between}.session-table{min-width:820px}.session-pagination{align-items:flex-end;flex-direction:column}}
 </style>
+{% include 'assessments/_session_row_actions_styles.html' %}
 {% endblock %}
 
 {% block topbar_actions %}
 <a href="{% url 'assessment_template_list' %}" class="btn btn-outline-secondary btn-sm">Session templates</a>
-<a href="{% url 'assessment_session_create' %}" class="btn btn-primary btn-sm">
-  <i class="bi bi-plus-lg me-1"></i>New session
-</a>
+<a href="{% url 'assessment_session_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>New session</a>
 {% endblock %}
 
 {% block content %}
-<div>
-{% include 'partials/_page_header.html' with title='LiveGrade' subtitle='Run live, QR-joined peer assessment for presentations, demos, or any session worth grading in the room.' %}
+<div class="session-list-page">
+  <header class="session-list-heading">
+    <div><h1 class="visually-hidden">Classroom sessions</h1><p>Search, filter, and manage the sessions in this classroom workspace.</p></div>
+    {% if can_oversee and not show_all %}<a href="{% url 'assessment_session_list' %}?scope=all" class="btn btn-outline-secondary btn-sm">View all organization sessions</a>{% endif %}
+  </header>
 
-{% if can_oversee %}
-<div class="page-tabs mb-3">
-  <a href="{% url 'assessment_session_list' %}" class="page-tab {% if not show_all %}active{% endif %}">
-    <i class="bi bi-person me-1"></i>My sessions
-  </a>
-  <a href="{% url 'assessment_session_list' %}?scope=all" class="page-tab {% if show_all %}active{% endif %}">
-    <i class="bi bi-people me-1"></i>All sessions in {{ active_org.name }}
-  </a>
-</div>
-{% endif %}
+  {% if can_oversee %}
+  <nav class="session-scope-tabs" aria-label="Session ownership scope">
+    <a href="{% url 'assessment_session_list' %}" class="{% if not show_all %}active{% endif %}"{% if not show_all %} aria-current="page"{% endif %}>My sessions <span>{{ status_counts.total }}</span></a>
+    <a href="{% url 'assessment_session_list' %}?scope=all" class="{% if show_all %}active{% endif %}"{% if show_all %} aria-current="page"{% endif %}>All sessions in {{ active_org.name }}</a>
+  </nav>
+  {% endif %}
 
-{% if not sessions and show_all %}
-<div class="assess-empty assess-stagger">
-  <div class="empty-icon"><i class="bi bi-clipboard2-data"></i></div>
-  <h2>Nobody has created a session yet</h2>
-  <p>Sessions made by anyone in {{ active_org.name }} will be listed here.</p>
-</div>
-{% elif not sessions %}
-<div class="assess-empty assess-stagger">
-  <div class="empty-icon"><i class="bi bi-clipboard2-data"></i></div>
-  <h2>No assessment sessions yet</h2>
-  <p>
-    Import a class roster, build a rubric, and let students grade each
-    other's presentations from their phones - live, anonymous, and scored
-    automatically.
-  </p>
-  <a href="{% url 'assessment_session_create' %}" class="btn btn-primary btn-lg">
-    <i class="bi bi-plus-lg me-1"></i>Create your first session
-  </a>
-  <form method="post" action="{% url 'assessment_walkthrough_start' %}" class="mt-2">
-    {% csrf_token %}
-    <button type="submit" class="btn btn-outline-primary">
-      <i class="bi bi-signpost-split me-1" aria-hidden="true"></i>Start interactive walkthrough
-    </button>
+  <form class="session-filters" method="get" action="{% url 'assessment_session_list' %}" data-session-auto-filter>
+    {% if show_all %}<input type="hidden" name="scope" value="all">{% endif %}
+    <input type="hidden" name="per_page" value="{{ per_page }}" data-session-filter-page-size>
+    <div><label for="session-search">{% if show_all %}Search session or teacher{% else %}Search by session name{% endif %}</label><input id="session-search" class="form-control" name="q" type="search" value="{{ search_query }}" placeholder="{% if show_all %}Session or teacher name{% else %}Session name{% endif %}" autocomplete="off" aria-describedby="session-search-help"><span id="session-search-help" class="visually-hidden">Results update after you stop typing. Press Enter to search immediately.</span></div>
+    <div><label for="session-status">Status</label><select id="session-status" class="form-select" name="status" aria-describedby="session-filter-help"><option value="">All statuses ({{ status_counts.total }})</option><option value="live" {% if status_filter == 'live' %}selected{% endif %}>Live ({{ status_counts.live }})</option><option value="draft" {% if status_filter == 'draft' %}selected{% endif %}>In setup ({{ status_counts.draft }})</option><option value="closed" {% if status_filter == 'closed' %}selected{% endif %}>Completed ({{ status_counts.closed }})</option></select><span id="session-filter-help" class="visually-hidden">The list filters as soon as you choose a status.</span></div>
+    <a class="btn btn-outline-secondary session-filter-clear" href="{% url 'assessment_session_list' %}{% if show_all %}?scope=all{% endif %}" data-session-clear-filters>Clear filters</a>
   </form>
-  <p class="mt-3">Start with these example files, then replace the sample names and criteria with your own.</p>
-  <div class="d-flex flex-wrap gap-2 justify-content-center">
-    <a href="{% url 'assessment_group_onboarding_sample' %}" class="btn btn-outline-secondary">Groups and students sample</a>
-    <a href="{% url 'assessment_rubric_onboarding_sample' %}" class="btn btn-outline-secondary">Rubric sample</a>
-  </div>
-</div>
-{% else %}
-<div class="row g-3">
-  {% for session in sessions %}
-  <div class="col-md-6 col-lg-4 assess-stagger">
-    <div class="session-card-wrap">
-    <a href="{% if session.is_mine %}{% url 'assessment_session_detail' session.pk %}{% elif session.status == 'live' %}{% url 'assessment_participation' session.pk %}{% else %}{% url 'assessment_results' session.pk %}{% endif %}" class="text-decoration-none text-reset">
-      <div class="card session-card {% if session.status == 'live' %}is-live{% endif %}">
-        <div class="card-body">
-          <div class="d-flex justify-content-between align-items-start mb-2">
-            <h5 class="fw-700 mb-0">{{ session.name }}</h5>
-            {% if session.status == 'live' %}
-            <span class="badge bg-success-subtle text-success-emphasis me-4"><span class="status-dot live"></span>Live</span>
-            {% elif session.status == 'closed' %}
-            <span class="badge bg-secondary-subtle text-secondary-emphasis me-4"><span class="status-dot closed"></span>Closed</span>
-            {% else %}
-            <span class="badge bg-warning-subtle text-warning-emphasis me-4"><span class="status-dot draft"></span>Draft</span>
-            {% endif %}
-          </div>
-          <div class="d-flex gap-3 mb-2">
-            <span class="session-mini-stat"><i class="bi bi-people"></i>{{ session.students.count }} students</span>
-            <span class="session-mini-stat"><i class="bi bi-diagram-3"></i>{{ session.groups.count }} groups</span>
-          </div>
-          <div class="text-muted t-sm"><i class="bi bi-clock me-1"></i>Created {{ session.created_at|date:'d M Y' }}</div>
-          {% if show_all %}
-          <div class="text-muted t-sm"><i class="bi bi-person me-1"></i>{% if session.is_mine %}Yours{% elif session.created_by %}{{ session.created_by.display_name }}{% else %}No owner{% endif %}</div>
-          {% endif %}
-          {% if session.status == 'live' %}
-          <div class="session-live-glance">
-            <i class="bi bi-people-fill"></i>{{ session.live_joined_count }}/{{ session.students.count }} joined
-            {% if session.live_active_group %}<span class="opacity-50">·</span><i class="bi bi-broadcast"></i>"{{ session.live_active_group.name }}" presenting{% endif %}
-          </div>
-          {% endif %}
-        </div>
-      </div>
-    </a>
-    <div class="dropdown session-card-actions">
-      <button class="dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Actions for {{ session.name }}">
-        <i class="bi bi-three-dots-vertical"></i>
-      </button>
-      <ul class="dropdown-menu dropdown-menu-end">
-        {% if not session.is_mine %}
-        {% if session.status == 'live' %}
-        <li><a class="dropdown-item" href="{% url 'assessment_participation' session.pk %}"><i class="bi bi-people me-2"></i>View participation</a></li>
-        {% endif %}
-        <li><a class="dropdown-item" href="{% url 'assessment_results' session.pk %}"><i class="bi bi-bar-chart me-2"></i>View results</a></li>
-        {% if not active_org.public %}<li><button class="dropdown-item" type="button" aria-haspopup="dialog" aria-controls="session-action-modal" data-session-action-modal data-action-url="{% url 'assessment_transfer' session.pk %}" data-action-modal-title="Transfer ownership"><i class="bi bi-arrow-left-right me-2"></i>Transfer ownership</button></li>{% endif %}
-        {% else %}
-        {% if session.status == 'draft' %}
-        <li><a class="dropdown-item" href="{% url 'assessment_session_edit' session.pk %}"><i class="bi bi-pencil me-2"></i>Edit session</a></li>
-        {% elif session.status == 'live' %}
-        <li><a class="dropdown-item" href="{% url 'assessment_session_detail' session.pk %}"><i class="bi bi-broadcast me-2"></i>Open live panel</a></li>
-        <li><a class="dropdown-item" href="{% url 'assessment_participation' session.pk %}"><i class="bi bi-people me-2"></i>View participation</a></li>
-        {% else %}
-        <li><a class="dropdown-item" href="{% url 'assessment_results' session.pk %}"><i class="bi bi-bar-chart me-2"></i>View results</a></li>
-        {% endif %}
-        <li><button class="dropdown-item" type="button" aria-haspopup="dialog" aria-controls="session-action-modal" data-session-action-modal data-action-url="{% url 'assessment_template_save' session.pk %}" data-action-modal-title="Save as template"><i class="bi bi-bookmark-plus me-2"></i>Save as template</button></li>
-        <li><button class="dropdown-item" type="button" aria-haspopup="dialog" aria-controls="session-action-modal" data-session-action-modal data-action-url="{% url 'assessment_session_duplicate' session.pk %}" data-action-modal-title="Duplicate session"><i class="bi bi-copy me-2"></i>Duplicate session</button></li>
-        {% if not active_org.public %}<li><button class="dropdown-item" type="button" aria-haspopup="dialog" aria-controls="session-action-modal" data-session-action-modal data-action-url="{% url 'assessment_transfer' session.pk %}" data-action-modal-title="Transfer ownership"><i class="bi bi-arrow-left-right me-2"></i>Transfer ownership</button></li>{% endif %}
-        <li><hr class="dropdown-divider"></li>
-        <li><form method="post" action="{% url 'assessment_session_delete' session.pk %}" data-confirm="Delete &quot;{{ session.name }}&quot;? This permanently removes all roster, rubric, and grade data." data-confirm-label="Delete session" data-confirm-tone="danger">
-          {% csrf_token %}<button type="submit" class="dropdown-item text-danger"><i class="bi bi-trash me-2"></i>Delete session</button>
-        </form></li>
-        {% endif %}
-      </ul>
-    </div>
-    </div>
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
+
+  <p id="session-filter-feedback" class="visually-hidden" role="status" aria-live="polite"></p>
+  {% include 'assessments/_session_list_results.html' %}
 </div>
 {% include 'assessments/_session_action_modal.html' %}
 {% endblock %}
 
 {% block scripts %}
 {% include 'assessments/_session_action_modal_script.html' %}
+{% include 'assessments/_clickable_session_rows_script.html' %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  const form = document.querySelector('[data-session-auto-filter]');
+  if (!form) return;
+  const search = form.querySelector('input[name="q"]');
+  const status = form.querySelector('select[name="status"]');
+  const feedback = document.getElementById('session-filter-feedback');
+  let results = document.getElementById('session-results');
+  let searchTimer;
+  let activeRequest;
+
+  function submitFilters(restorePageSizeFocus) {
+    window.clearTimeout(searchTimer);
+    const pageSize = results.querySelector('[data-session-page-size]');
+    const pageSizeInput = form.querySelector('[data-session-filter-page-size]');
+    if (pageSize && pageSizeInput) pageSizeInput.value = pageSize.value;
+    const url = new URL(form.action, window.location.href);
+    url.search = new URLSearchParams(new FormData(form)).toString();
+    updateResults(url, restorePageSizeFocus);
+  }
+
+  async function updateResults(url, restorePageSizeFocus) {
+    if (!results) return;
+    if (activeRequest) activeRequest.abort();
+    const controller = new AbortController();
+    activeRequest = controller;
+    results.setAttribute('aria-busy', 'true');
+    feedback.className = 'visually-hidden';
+    feedback.textContent = '';
+    try {
+      const response = await fetch(url.toString(), {
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+        credentials: 'same-origin',
+        signal: controller.signal
+      });
+      if (response.redirected) {
+        window.location.assign(response.url);
+        return;
+      }
+      if (!response.ok) throw new Error('Session results could not be loaded');
+      const responsePage = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const nextResults = responsePage.getElementById('session-results');
+      if (!nextResults) throw new Error('Session results were missing from the response');
+      if (controller.signal.aborted || activeRequest !== controller) return;
+
+      results.replaceWith(nextResults);
+      results = nextResults;
+      if (window.initCustomSelects) window.initCustomSelects(results);
+      syncSelection();
+      if (restorePageSizeFocus) {
+        const pageSizeTrigger = results.querySelector('.session-page-size .custom-select-trigger');
+        if (pageSizeTrigger) pageSizeTrigger.focus({preventScroll: true});
+      }
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+      const count = results.querySelector('.session-table-count');
+      feedback.textContent = count ? count.textContent.trim() : 'Session list updated.';
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      feedback.className = 'alert alert-warning mb-3';
+      feedback.textContent = 'Could not update the session list. Press Enter to try again.';
+    } finally {
+      if (activeRequest === controller) {
+        results.setAttribute('aria-busy', 'false');
+        activeRequest = null;
+      }
+    }
+  }
+
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+    submitFilters();
+  });
+  search.addEventListener('input', function () {
+    window.clearTimeout(searchTimer);
+    if (activeRequest) activeRequest.abort();
+    searchTimer = window.setTimeout(submitFilters, 350);
+  });
+  status.addEventListener('change', submitFilters);
+
+  function syncSelection() {
+    const selectable = Array.from(results.querySelectorAll('[data-session-select]'));
+    const selected = selectable.filter(function (checkbox) { return checkbox.checked; });
+    const selectAll = results.querySelector('[data-session-select-all]');
+    const deleteButton = results.querySelector('[data-bulk-delete-button]');
+    const count = results.querySelector('[data-selected-count]');
+    if (selectAll) {
+      selectAll.disabled = selectable.length === 0;
+      selectAll.checked = selectable.length > 0 && selected.length === selectable.length;
+      selectAll.indeterminate = selected.length > 0 && selected.length < selectable.length;
+    }
+    if (deleteButton) deleteButton.hidden = selected.length === 0;
+    if (count) count.textContent = String(selected.length);
+  }
+
+  syncSelection();
+
+  document.addEventListener('change', function (event) {
+    if (!results.contains(event.target)) return;
+    if (event.target.matches('[data-session-select-all]')) {
+      results.querySelectorAll('[data-session-select]').forEach(function (checkbox) {
+        checkbox.checked = event.target.checked;
+      });
+      syncSelection();
+      return;
+    }
+    if (event.target.matches('[data-session-select]')) {
+      syncSelection();
+      return;
+    }
+    if (event.target.matches('[data-session-page-size]')) {
+      const pageSizeInput = form.querySelector('[data-session-filter-page-size]');
+      if (pageSizeInput) pageSizeInput.value = event.target.value;
+      submitFilters(true);
+    }
+  });
+
+  document.addEventListener('click', function (event) {
+    const clear = event.target.closest('[data-session-clear-filters]');
+    if (clear) {
+      event.preventDefault();
+      search.value = '';
+      status.value = '';
+      status.dispatchEvent(new Event('change', {bubbles: true}));
+      search.focus({preventScroll: true});
+      return;
+    }
+    const pageLink = event.target.closest('[data-session-page]');
+    if (!pageLink || !results.contains(pageLink)) return;
+    event.preventDefault();
+    updateResults(new URL(pageLink.href, window.location.href));
+  });
+})();
+</script>
 {% endblock %}

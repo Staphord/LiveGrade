@@ -84,12 +84,12 @@ class ReleaseTests(SimpleTestCase):
 
 class DashboardTests(SimpleTestCase):
 
-    def test_classroom_lands_on_the_session_list(self):
-        self.assertEqual(dashboard_url(get_service('classroom')), reverse('assessment_session_list'))
+    def test_classroom_lands_on_its_dashboard(self):
+        self.assertEqual(dashboard_url(get_service('classroom')), reverse('assessment_dashboard'))
 
     def test_every_service_lands_on_its_existing_workspace(self):
         self.assertEqual({s.slug: dashboard_url(s) for s in SERVICES}, {
-            'classroom': reverse('assessment_session_list'),
+            'classroom': reverse('assessment_dashboard'),
             'panel': reverse('panel_hearing_list'),
             'showcase': reverse('showcase_event_list'),
             'team': reverse('training_series_list'),

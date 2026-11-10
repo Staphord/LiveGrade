@@ -4,10 +4,11 @@ from decimal import Decimal, InvalidOperation
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
-from django.http import Http404, HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.cache import patch_vary_headers
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_POST
 
@@ -32,7 +33,7 @@ from ..setup_rules import (
     annotate_groups, closed_reason, group_delete_lock, group_members_lock, is_live,
     live_rubric_lock, record_change, student_delete_lock,
 )
-from ..pagination import PAGE_SIZES, paginate
+from ..pagination import PAGE_SIZE, PAGE_SIZES, paginate
 from ..pending_imports import pending_group_import, pending_rubric_import
 from ..qr import join_url, qr_png
 from ..weight_pie import weight_pie
@@ -45,9 +46,9 @@ from ..turns import (
 from ..turns import close_turn as close_turn_service
 
 __all__ = [
-    'assessment_session_list', 'assessment_session_create', 'assessment_session_edit',
+    'assessment_dashboard', 'assessment_session_list', 'assessment_session_create', 'assessment_session_edit',
     'assessment_session_detail', 'assessment_session_duplicate',
-    'assessment_session_delete', 'assessment_live_state', 'roster', 'roster_search', 'roster_edit',
+    'assessment_session_delete', 'assessment_session_bulk_delete', 'assessment_live_state', 'roster', 'roster_search', 'roster_edit',
     'roster_delete',
     'rubric', 'rubric_edit', 'rubric_delete', 'groups', 'group_edit',
     'group_members', 'group_delete',
@@ -94,33 +95,147 @@ def _closed(request, session):
 
 
 @lecturer_required
+def assessment_dashboard(request):
+    """Classroom overview: a compact, data-backed summary of owned sessions."""
+    if getattr(request, 'service', None) != 'classroom':
+        raise Http404
+    if request.GET.get('scope') == 'all' or request.GET.get('q') or request.GET.get('status'):
+        return assessment_session_list(request)
+    sessions = (AssessmentSession.objects.for_request(request)
+                .for_service('classroom').owned_by(request.user))
+    counts = sessions.aggregate(
+        total=models.Count('pk'),
+        live_count=models.Count('pk', filter=models.Q(status=AssessmentSession.Status.LIVE)),
+        draft_count=models.Count('pk', filter=models.Q(status=AssessmentSession.Status.DRAFT)),
+        closed_count=models.Count('pk', filter=models.Q(status=AssessmentSession.Status.CLOSED)),
+    )
+    live_sessions_qs = sessions.filter(status=AssessmentSession.Status.LIVE)
+    counts['student_count'] = Student.objects.filter(assessment_session__in=sessions).count()
+    counts['group_count'] = PresentationGroup.objects.filter(
+        assessment_session__in=sessions, is_practice=False).count()
+    counts['live_joined_count'] = ParticipationRecord.objects.filter(
+        assessment_session__in=live_sessions_qs).count()
+    counts['live_roster_count'] = Student.objects.filter(assessment_session__in=live_sessions_qs).count()
+
+    stage_distribution = []
+    stage_colors = {
+        'live': 'var(--success)',
+        'draft': '#d28a08',
+        'closed': 'var(--text-subtle)',
+    }
+    pie_segments = []
+    cumulative_sessions = 0
+    for key, label, count in (
+        ('live', 'Live now', counts['live_count']),
+        ('draft', 'In setup', counts['draft_count']),
+        ('closed', 'Completed', counts['closed_count']),
+    ):
+        segment_start = cumulative_sessions * 360 / counts['total'] if counts['total'] else 0
+        cumulative_sessions += count
+        segment_end = cumulative_sessions * 360 / counts['total'] if counts['total'] else 0
+        stage_distribution.append({
+            'key': key,
+            'label': label,
+            'count': count,
+            'percentage': round(count * 100 / counts['total'], 1) if counts['total'] else 0,
+        })
+        if count:
+            pie_segments.append(
+                f'{stage_colors[key]} {segment_start:.3f}deg {segment_end:.3f}deg')
+    stage_pie_background = (
+        f"conic-gradient({', '.join(pie_segments)})" if pie_segments else ''
+    )
+
+    live_sessions = list(
+        live_sessions_qs.select_related('created_by')
+        .annotate(student_count=models.Count('students', distinct=True),
+                  group_count=models.Count('groups', filter=models.Q(groups__is_practice=False), distinct=True),
+                  live_joined_count=models.Count('participation_records', distinct=True))
+        .order_by('-created_at', '-pk')[:3])
+    if live_sessions:
+        active_turns = {
+            turn.assessment_session_id: turn.group
+            for turn in PresentationTurn.objects.filter(
+                assessment_session_id__in=[session.pk for session in live_sessions],
+                status=PresentationTurn.Status.ACTIVE).select_related('group')
+        }
+        for session in live_sessions:
+            session.live_active_group = active_turns.get(session.pk)
+
+    recent_sessions = list(
+        sessions.select_related('created_by')
+        .annotate(student_count=models.Count('students', distinct=True),
+                  group_count=models.Count('groups', filter=models.Q(groups__is_practice=False), distinct=True),
+                  live_joined_count=models.Count('participation_records', distinct=True))
+        .order_by('-created_at', '-pk')[:5])
+
+    roster_sessions = list(
+        sessions.select_related('created_by')
+        .annotate(student_count=models.Count('students', distinct=True))
+        .order_by('-student_count', '-created_at', '-pk')[:5])
+    largest_roster = max((session.student_count for session in roster_sessions), default=0)
+    for session in roster_sessions:
+        session.roster_bar_percent = round(session.student_count * 100 / largest_roster, 1) if largest_roster else 0
+
+    return render(request, 'assessments/session_dashboard.html', {
+        'dashboard_stats': counts,
+        'stage_distribution': stage_distribution,
+        'stage_pie_background': stage_pie_background,
+        'live_sessions': live_sessions,
+        'recent_sessions': recent_sessions,
+        'roster_sessions': roster_sessions,
+        'largest_roster': largest_roster,
+        'can_oversee': can_oversee(request),
+    })
+
+
+@lecturer_required
 def assessment_session_list(request):
-    organization = active_organization(request)
     # "All sessions in the organization" is for people DevPerf has given the
     # oversee permission; for everybody else the parameter does nothing.
     show_all = request.GET.get('scope') == 'all' and can_oversee(request)
-    visible = AssessmentSession.objects.for_organization(organization).for_service(getattr(request, 'service', None))
+    visible = (AssessmentSession.objects.for_request(request)
+               .for_service('classroom'))
     if not show_all:
         visible = visible.owned_by(request.user)
-    sessions = list(
-        visible.select_related('created_by')
-        .prefetch_related('students', 'groups')
-        .order_by('-created_at'))
+
+    counts = visible.aggregate(
+        total=models.Count('pk'),
+        live=models.Count('pk', filter=models.Q(status=AssessmentSession.Status.LIVE)),
+        draft=models.Count('pk', filter=models.Q(status=AssessmentSession.Status.DRAFT)),
+        closed=models.Count('pk', filter=models.Q(status=AssessmentSession.Status.CLOSED)),
+    )
+    search_query = request.GET.get('q', '').strip()[:100]
+    status_filter = request.GET.get('status', '')
+    if status_filter not in AssessmentSession.Status.values:
+        status_filter = ''
+    filtered = visible
+    if search_query:
+        search = models.Q(name__icontains=search_query)
+        if show_all:
+            search |= (models.Q(created_by__username__icontains=search_query)
+                       | models.Q(created_by__first_name__icontains=search_query)
+                       | models.Q(created_by__last_name__icontains=search_query))
+        filtered = filtered.filter(search)
+    if status_filter:
+        filtered = filtered.filter(status=status_filter)
+
+    status_order = models.Case(
+        models.When(status=AssessmentSession.Status.LIVE, then=0),
+        models.When(status=AssessmentSession.Status.DRAFT, then=1),
+        default=2,
+        output_field=models.IntegerField(),
+    )
+    queryset = (filtered.select_related('created_by')
+        .annotate(student_count=models.Count('students', distinct=True),
+                  group_count=models.Count('groups', filter=models.Q(groups__is_practice=False), distinct=True),
+                  live_joined_count=models.Count('participation_records', distinct=True))
+        .order_by(status_order, '-created_at', '-pk'))
+    paginator, page = paginate(request, queryset)
+    sessions = list(page.object_list)
     for session in sessions:
         session.is_mine = session.created_by_id == request.user.pk
 
-    # Live sessions always lead, regardless of age - a session that's
-    # actually running in a room right now is the one thing on this page
-    # someone is likely to be looking for, same as Kahoot/Slido always
-    # surfacing the in-progress session first rather than sorting purely
-    # by recency or name.
-    status_order = {AssessmentSession.Status.LIVE: 0, AssessmentSession.Status.DRAFT: 1,
-                     AssessmentSession.Status.CLOSED: 2}
-    sessions.sort(key=lambda s: status_order.get(s.status, 3))
-
-    # For each live session, one glanceable line - who's in the room and
-    # who's presenting - so the lecturer doesn't have to open it just to
-    # find out if anything needs attention right now.
     live_ids = [s.pk for s in sessions if s.status == AssessmentSession.Status.LIVE]
     if live_ids:
         active_turns = {
@@ -129,19 +244,33 @@ def assessment_session_list(request):
                 assessment_session_id__in=live_ids, status=PresentationTurn.Status.ACTIVE
             ).select_related('group')
         }
-        joined_counts = {
-            row['assessment_session_id']: row['n']
-            for row in ParticipationRecord.objects.filter(assessment_session_id__in=live_ids)
-            .values('assessment_session_id').annotate(n=models.Count('id'))
-        }
         for session in sessions:
             if session.status != AssessmentSession.Status.LIVE:
                 continue
             session.live_active_group = active_turns.get(session.pk)
-            session.live_joined_count = joined_counts.get(session.pk, 0)
 
-    return render(request, 'assessments/session_list.html', {
-        'sessions': sessions, 'show_all': show_all, 'can_oversee': can_oversee(request)})
+    query_params = request.GET.copy()
+    query_params.pop('page', None)
+    query_params['per_page'] = str(page.paginator.per_page)
+    if show_all:
+        query_params['scope'] = 'all'
+    else:
+        query_params.pop('scope', None)
+
+    context = {
+        'sessions': page, 'page_obj': page, 'paginator': paginator,
+        'show_all': show_all, 'can_oversee': can_oversee(request),
+        'per_page': page.paginator.per_page, 'page_sizes': PAGE_SIZES,
+        'status_counts': counts, 'status_filter': status_filter,
+        'search_query': search_query, 'querystring': query_params.urlencode(),
+        'filtered_count': paginator.count,
+    }
+    template = 'assessments/_session_list_results.html'
+    if request.headers.get('x-requested-with') != 'XMLHttpRequest':
+        template = 'assessments/session_list.html'
+    response = render(request, template, context)
+    patch_vary_headers(response, ['X-Requested-With'])
+    return response
 
 
 @lecturer_required
@@ -487,6 +616,59 @@ def assessment_session_delete(request, pk):
     session.delete()
     messages.success(request, f'"{name}" deleted.')
     return redirect('assessment_session_list')
+
+
+@lecturer_required
+@require_POST
+def assessment_session_bulk_delete(request):
+    """Delete an explicitly selected set of the current lecturer's sessions."""
+    if getattr(request, 'service', None) != 'classroom':
+        raise Http404
+
+    raw_ids = request.POST.getlist('session_ids')
+    if (not raw_ids or len(raw_ids) > max(PAGE_SIZES)
+            or any(not re.fullmatch(r'[1-9][0-9]*', value)
+                   or len(value) > 19
+                   or (len(value) == 19 and value > '9223372036854775807')
+                   for value in raw_ids)):
+        messages.error(request, 'Select one or more valid sessions to delete.')
+        return _session_bulk_delete_redirect(request)
+
+    session_ids = {int(value) for value in raw_ids}
+    owned_sessions = (AssessmentSession.objects.for_request(request)
+                      .for_service('classroom').owned_by(request.user))
+    with transaction.atomic():
+        selected = list(owned_sessions.select_for_update().filter(pk__in=session_ids))
+        if len(selected) != len(session_ids):
+            messages.error(request, 'One or more selected sessions are no longer available to delete.')
+            return _session_bulk_delete_redirect(request)
+        count = len(selected)
+        owned_sessions.filter(pk__in=session_ids).delete()
+
+    messages.success(request, f'{count} session{"s" if count != 1 else ""} deleted.')
+    return _session_bulk_delete_redirect(request)
+
+
+def _session_bulk_delete_redirect(request):
+    """Return to the current filtered view, with a valid page-size and scope."""
+    params = QueryDict('', mutable=True)
+    query = (request.POST.get('q') or '').strip()[:100]
+    status_filter = request.POST.get('status', '')
+    if query:
+        params['q'] = query
+    if status_filter in AssessmentSession.Status.values:
+        params['status'] = status_filter
+    try:
+        per_page = int(request.POST.get('per_page', PAGE_SIZE))
+    except (TypeError, ValueError):
+        per_page = PAGE_SIZE
+    if per_page not in PAGE_SIZES:
+        per_page = PAGE_SIZE
+    params['per_page'] = str(per_page)
+    if request.POST.get('scope') == 'all' and can_oversee(request):
+        params['scope'] = 'all'
+    url = reverse('assessment_session_list')
+    return redirect(f'{url}?{params.urlencode()}' if params else url)
 
 
 # ---------------------------------------------------------------- Roster ----

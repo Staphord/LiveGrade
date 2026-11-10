@@ -67,6 +67,36 @@ class SessionTemplateTests(TestCase):
         self.assertContains(response, 'name="description"')
         self.assertFalse(SessionTemplate.objects.exists())
 
+    def test_template_library_presents_saved_templates_as_scannable_rows(self):
+        template = self.saved()
+
+        response = self.client.get(self.list_url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Reusable session setups')
+        self.assertContains(response, '<table class="table table-hover template-table align-middle mb-0">', html=False)
+        self.assertContains(response, '<th scope="col">Template</th>', html=False)
+        self.assertContains(response, '<th scope="col">Rubric</th>', html=False)
+        self.assertContains(response, '<th scope="col" class="text-end">Actions</th>', html=False)
+        self.assertContains(response, template.name)
+        self.assertContains(response, '2 rubric criteria')
+        self.assertContains(response, 'View rubric details')
+        self.assertContains(response, 'Partly supported by evidence.')
+        self.assertContains(response, reverse('assessment_session_create') + f'?template=saved:{template.pk}')
+        self.assertContains(response, f'action="{reverse("assessment_template_delete", args=[template.pk])}"')
+        self.assertContains(response, 'data-confirm="Delete this template? Sessions already created from it will be kept."')
+        self.assertContains(response, 'Classroom starters')
+        self.assertContains(response, 'Use starter')
+
+    def test_empty_template_library_explains_how_to_save_a_template(self):
+        response = self.client.get(self.list_url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'No saved templates yet')
+        self.assertContains(response, 'choose “Save as template”')
+        self.assertNotContains(response, '<table class="table table-hover template-table align-middle mb-0">', html=False)
+        self.assertContains(response, 'Classroom starters')
+
     def test_save_copies_exact_setup_and_no_assessment_records(self):
         template = self.saved()
         self.assertEqual(template.organization_id, self.org.id)

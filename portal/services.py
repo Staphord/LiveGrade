@@ -46,7 +46,7 @@ SERVICES = (
             'Grade presentations in your class, live, from your students’ phones.',
             'Teachers',
             _words('session', 'students', 'groups', 'rubric', 'lecturer'),
-            dashboard='assessment_session_list'),
+            dashboard='assessment_dashboard'),
     Service('panel', 'Panel',
             'Run a fair, recorded panel decision: invite examiners, score against agreed criteria, keep the record.',
             'Chairs and coordinators of defences, committees and interviews',

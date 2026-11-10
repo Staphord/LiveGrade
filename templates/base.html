@@ -38,6 +38,10 @@ display:none!important;
 .sidebar-signout{color:var(--danger);display:inline-flex;align-items:center;justify-content:center;font-size:var(--fs-heading);padding:2px;flex-shrink:0}
 .sidebar-signout:hover{color:var(--tone-danger-fg)}
 .sidebar.collapsed .sidebar-footer{justify-content:center}
+.tenant-pill{padding:.45rem .65rem;border-radius:var(--radius-control);background:var(--surface-sunken, #f1f5f9);border:1px solid var(--border);display:flex;align-items:center;gap:.6rem}
+.tenant-avatar{width:28px;height:28px;border-radius:6px;background:#0f172a;color:#fff;font-size:.72rem;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;text-transform:uppercase}
+.user-avatar{width:32px;height:32px;border-radius:999px;background:var(--accent-soft, #eff6ff);border:1px solid var(--border);color:var(--accent, #2563eb);font-weight:700;font-size:.75rem;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;text-transform:uppercase}
+.sidebar.collapsed .user-avatar{display:none!important}
 
 .nav-link{display:flex;align-items:center;gap:var(--sp-2);margin:1px var(--sp-2);padding:var(--nav-pad) var(--sp-2);color:var(--text-soft);font-size:var(--fs-body);border-radius:var(--radius-control);transition:background var(--motion-fast) var(--ease),color var(--motion-fast) var(--ease)}
 .nav-link:hover{background:var(--surface-hover);color:var(--text)}
@@ -230,27 +234,55 @@ display:none!important;
   </div>
   {% elif active_org %}
   <div class="brand-text px-3 py-2 border-bottom">
-    <div class="text-muted u-label">Organization</div>
-    <div class="fw-semibold t-body">{{ active_org.name }}</div>
+    <div class="tenant-pill">
+      <span class="tenant-avatar" aria-hidden="true">{{ active_org.name|slice:":2" }}</span>
+      <div class="min-w-0">
+        <div class="text-muted u-label">Organization</div>
+        <div class="fw-semibold t-body text-truncate">{{ active_org.name }}</div>
+      </div>
+    </div>
   </div>
   {% endif %}
 
   <nav class="nav-shell" aria-label="Main navigation">
     {% if request.user.is_authenticated and current_service %}
-    <div class="nav-section">Main</div>
-    <a href="{{ service_dashboard }}" class="nav-link active"{% if request.path == service_dashboard %} aria-current="page"{% endif %}>
+    {% with url_name=request.resolver_match.url_name %}
+    <div class="nav-section">{{ current_service.name }} Service</div>
+    <a href="{{ service_dashboard }}" class="nav-link {% if current_service.slug == 'classroom' %}{% if url_name == 'assessment_dashboard' %}active{% endif %}{% elif url_name != 'assessment_session_create' and url_name != 'assessment_template_list' and url_name != 'combined_assessment_list' and url_name != 'showcase_event_create' %}active{% endif %}"{% if request.path == service_dashboard %} aria-current="page"{% endif %}>
       <i class="bi bi-clipboard2-data" aria-hidden="true"></i><span class="nav-text">{{ current_service.name }} dashboard</span>
     </a>
+    {% if current_service.slug == 'classroom' %}
+    <a href="{% url 'assessment_session_list' %}" class="nav-link {% if url_name == 'assessment_session_list' or url_name == 'assessment_session_detail' or url_name == 'assessment_session_edit' or url_name == 'assessment_setup' or url_name == 'assessment_roster' or url_name == 'assessment_rubric' or url_name == 'assessment_groups' or url_name == 'assessment_participation' or url_name == 'assessment_results' or url_name == 'assessment_polls' %}active{% endif %}"{% if url_name == 'assessment_session_list' %} aria-current="page"{% endif %}>
+      <i class="bi bi-list-ul" aria-hidden="true"></i><span class="nav-text">Sessions</span>
+    </a>
+    <a href="{% url 'assessment_session_create' %}" class="nav-link {% if url_name == 'assessment_session_create' %}active{% endif %}"{% if url_name == 'assessment_session_create' %} aria-current="page"{% endif %}>
+      <i class="bi bi-plus-circle" aria-hidden="true"></i><span class="nav-text">New session</span>
+    </a>
+    <a href="{% url 'assessment_template_list' %}" class="nav-link {% if url_name == 'assessment_template_list' %}active{% endif %}"{% if url_name == 'assessment_template_list' %} aria-current="page"{% endif %}>
+      <i class="bi bi-journal-bookmark" aria-hidden="true"></i><span class="nav-text">Session templates</span>
+    </a>
+    {% elif current_service.slug == 'panel' %}
+    <a href="{% url 'combined_assessment_list' %}" class="nav-link {% if url_name == 'combined_assessment_list' %}active{% endif %}"{% if url_name == 'combined_assessment_list' %} aria-current="page"{% endif %}>
+      <i class="bi bi-diagram-3" aria-hidden="true"></i><span class="nav-text">Combined assessments</span>
+    </a>
+    {% elif current_service.slug == 'showcase' %}
+    <a href="{% url 'showcase_event_create' %}" class="nav-link {% if url_name == 'showcase_event_create' %}active{% endif %}"{% if url_name == 'showcase_event_create' %} aria-current="page"{% endif %}>
+      <i class="bi bi-plus-circle" aria-hidden="true"></i><span class="nav-text">Create event</span>
+    </a>
+    {% endif %}
+    <div class="nav-section">Platform Services</div>
     <a href="{% url 'home' %}" class="nav-link">
       <i class="bi bi-grid-1x2" aria-hidden="true"></i><span class="nav-text">All services</span>
     </a>
+    {% endwith %}
     {% endif %}
   </nav>
   {% if request.user.is_authenticated %}
   <div class="sidebar-footer">
-    <div class="d-flex align-items-center gap-2 flex-grow-1">
-      <div class="sidebar-footer-text">
-        <div class="t-body fw-600 text-ink">{{ request.user.display_name }}</div>
+    <div class="d-flex align-items-center gap-2 flex-grow-1 min-w-0">
+      <span class="user-avatar" aria-hidden="true">{{ request.user.display_name|slice:":2" }}</span>
+      <div class="sidebar-footer-text min-w-0">
+        <div class="t-body fw-600 text-ink text-truncate">{{ request.user.display_name }}</div>
         <div class="u-meta">Signed in with DevPerf</div>
       </div>
     </div>
