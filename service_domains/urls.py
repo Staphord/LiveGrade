@@ -9,6 +9,7 @@ from .views import (
     showcase_exhibit_import, showcase_exhibit_import_sample,
     showcase_event_transition, showcase_certificate_verify,
     showcase_judge_workspace, showcase_live_monitor, showcase_live_activity_view,
+    showcase_live_control, showcase_live_state, showcase_live_action,
 )
 
 
@@ -21,6 +22,12 @@ urlpatterns = [
     path('organizer/events/<int:event_id>/', showcase_event_manage, name='showcase_event_manage'),
     path('organizer/events/<int:event_id>/live/', showcase_live_monitor,
          name='showcase_live_monitor'),
+    path('organizer/events/<int:event_id>/live-control/', showcase_live_control,
+         name='showcase_live_control'),
+    path('organizer/events/<int:event_id>/live-state/', showcase_live_state,
+         name='showcase_live_state'),
+    path('organizer/events/<int:event_id>/live-action/', showcase_live_action,
+         name='showcase_live_action'),
     path('organizer/events/<int:event_id>/live/activity/', showcase_live_activity_view,
          name='showcase_live_activity'),
     path('organizer/events/<int:event_id>/transition/', showcase_event_transition,

@@ -1,0 +1,78 @@
+<section id="showcase-live-hero" class="card assess-stagger shadow-sm mb-4" aria-labelledby="showcase-hero-heading">
+  <div class="card-body p-4">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
+      <div>
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <span class="live-badge" id="showcase-live-badge"><span class="dot"></span>Live Event</span>
+          <span class="badge bg-secondary-subtle text-secondary-emphasis">{{ event.get_status_display }}</span>
+          {% if attention_count > 0 %}
+            <span class="badge bg-warning-subtle text-warning-emphasis">
+              <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>{{ attention_count }} Exhibit{{ attention_count|pluralize }} Need Attention
+            </span>
+          {% endif %}
+        </div>
+        <h1 id="showcase-hero-heading" class="h3 fw-bold mb-1">{{ event.name }}</h1>
+        <p class="text-muted small mb-0">Dual-channel live telemetry: Visitor feedback and expert judge evaluations.</p>
+      </div>
+
+      <div class="d-flex align-items-center gap-2">
+        <a href="{% url 'showcase_event_labels' event_id=event.pk %}" class="btn btn-outline-secondary btn-sm" target="_blank">
+          <i class="bi bi-qr-code me-1" aria-hidden="true"></i>Print labels
+        </a>
+        <a href="{% url 'showcase_public_results' public_id=event.public_id %}" class="btn btn-outline-primary btn-sm" target="_blank" rel="noopener">
+          <i class="bi bi-projector me-1" aria-hidden="true"></i>Public screen
+        </a>
+      </div>
+    </div>
+
+    <div class="row g-3">
+      <!-- Visitor Stream Metric Card -->
+      <div class="col-12 col-md-6">
+        <div class="p-3 border rounded-3 bg-surface h-100">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="fw-bold text-dark small text-uppercase" style="letter-spacing: 0.05em;">
+              <i class="bi bi-phone me-1 text-primary" aria-hidden="true"></i>Visitor Ratings Stream
+            </span>
+            <button type="button" class="btn btn-sm {% if visitor_voting_paused %}btn-success{% else %}btn-outline-warning{% endif %}"
+                    data-showcase-live-action="toggle_visitor_voting">
+              <i class="bi {% if visitor_voting_paused %}bi-play-circle{% else %}bi-pause-circle{% endif %} me-1" aria-hidden="true"></i>
+              {% if visitor_voting_paused %}Resume visitor ratings{% else %}Pause visitor ratings{% endif %}
+            </button>
+          </div>
+          <div class="d-flex align-items-baseline gap-2">
+            <strong class="display-6 fw-bold text-dark" id="showcase-total-ratings">{{ total_ratings }}</strong>
+            <span class="text-muted">ratings submitted</span>
+          </div>
+          <div class="small text-muted mt-2 d-flex gap-3">
+            <span>Average: <strong>{% if avg_stars_all %}{{ avg_stars_all }}★{% else %}—{% endif %}</strong></span>
+            <span>Channel status: <strong>{% if visitor_voting_paused %}<span class="text-warning">Paused</span>{% else %}<span class="text-success">Active</span>{% endif %}</strong></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Judge Stream Metric Card -->
+      <div class="col-12 col-md-6">
+        <div class="p-3 border rounded-3 bg-surface h-100">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="fw-bold text-dark small text-uppercase" style="letter-spacing: 0.05em;">
+              <i class="bi bi-clipboard-check me-1 text-success" aria-hidden="true"></i>Official Judge Stream
+            </span>
+            <button type="button" class="btn btn-sm {% if judge_scoring_paused %}btn-success{% else %}btn-outline-secondary{% endif %}"
+                    data-showcase-live-action="toggle_judge_scoring">
+              <i class="bi {% if judge_scoring_paused %}bi-unlock{% else %}bi-lock{% endif %} me-1" aria-hidden="true"></i>
+              {% if judge_scoring_paused %}Unlock judge scoring{% else %}Lock judge scoring{% endif %}
+            </button>
+          </div>
+          <div class="d-flex align-items-baseline gap-2">
+            <strong class="display-6 fw-bold text-dark" id="showcase-judge-scorecards">{{ total_submitted_scorecards }}</strong>
+            <span class="text-muted">of {{ total_assigned_scorecards }} scorecards submitted</span>
+          </div>
+          <div class="small text-muted mt-2 d-flex gap-3">
+            <span>Pending: <strong>{{ total_assigned_scorecards|default:0|add:"-"|add:total_submitted_scorecards|default:0 }}</strong></span>
+            <span>Channel status: <strong>{% if judge_scoring_paused %}<span class="text-warning">Locked</span>{% else %}<span class="text-success">Open</span>{% endif %}</strong></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

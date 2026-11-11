@@ -51,7 +51,7 @@
               {% url 'panel_hearing_manage' hearing_id=hearing.pk as row_url %}
             {% endif %}
           {% elif hearing.status == 'open' %}
-            {% url 'panel_hearing_manage' hearing_id=hearing.pk as row_url %}
+            {% url 'panel_hearing_live' hearing_id=hearing.pk as row_url %}
           {% else %}
             {% url 'panel_results_review' hearing_id=hearing.pk as row_url %}
           {% endif %}

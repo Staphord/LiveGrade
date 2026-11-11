@@ -8,7 +8,7 @@
         <li><a class="dropdown-item" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}"><i class="bi bi-pencil me-2" aria-hidden="true"></i>Continue setup</a></li>
       {% endif %}
     {% elif hearing.status == 'open' %}
-      <li><a class="dropdown-item" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}"><i class="bi bi-broadcast me-2" aria-hidden="true"></i>Open live controls</a></li>
+      <li><a class="dropdown-item" href="{% url 'panel_hearing_live' hearing_id=hearing.pk %}"><i class="bi bi-broadcast me-2" aria-hidden="true"></i>Open live controls</a></li>
     {% elif hearing.status == 'review' %}
       <li><a class="dropdown-item" href="{% url 'panel_results_review' hearing_id=hearing.pk %}"><i class="bi bi-bar-chart me-2" aria-hidden="true"></i>Review results</a></li>
     {% elif hearing.status == 'signed_off' %}

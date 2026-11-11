@@ -8,7 +8,7 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
-from django.http import Http404, QueryDict
+from django.http import Http404, JsonResponse, QueryDict
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods, require_POST
@@ -518,4 +518,53 @@ def combined_assessment_detail(request, assessment_id):
         'unusable_candidates': unusable_candidates,
         'mapping_complete': mapping_complete,
         'roster_changed_mappings': roster_changed_mappings,
+    })
+
+
+@_panel_owner
+@require_http_methods(['GET'])
+def combined_assessment_live_state(request, assessment_id):
+    """Return live status data for the combined presentation console."""
+    item = _owned_assessment(request, assessment_id)
+    if item is None:
+        raise Http404
+
+    active_turn = item.classroom_session.active_turn()
+    active_mapping = (item.mappings.filter(group_id=active_turn.group_id).first()
+        if active_turn else None)
+    paired_slot_active = bool(active_mapping and
+        item.panel_hearing.active_candidate_id == active_mapping.candidate_id)
+    has_unpaired_active_entry = bool(active_turn or item.panel_hearing.active_candidate_id)
+    is_out_of_sync = bool(has_unpaired_active_entry and not paired_slot_active)
+
+    active_group_name = active_turn.group.name if active_turn else None
+    active_candidate_name = (
+        item.panel_hearing.active_candidate.display_name
+        if item.panel_hearing.active_candidate else None
+    )
+
+    rows = combined_assessment_results(item)
+    pairs = []
+    for r in rows:
+        is_active = bool(active_turn and active_turn.group_id == r['group'].pk and
+                         item.panel_hearing.active_candidate_id == r['candidate'].pk)
+        pairs.append({
+            'mapping_id': r['mapping_id'],
+            'group_name': r['group'].name,
+            'candidate_name': r['candidate'].display_name,
+            'peer_rater_count': r['peer_rater_count'],
+            'panel_rater_count': r['panel_rater_count'],
+            'already_presented': r['already_presented'],
+            'is_active': is_active,
+            'can_start': not r['already_presented'] and not is_active,
+        })
+
+    return JsonResponse({
+        'assessment_id': item.pk,
+        'status': item.status,
+        'paired_slot_active': paired_slot_active,
+        'is_out_of_sync': is_out_of_sync,
+        'active_group_name': active_group_name,
+        'active_candidate_name': active_candidate_name,
+        'pairs': pairs,
     })

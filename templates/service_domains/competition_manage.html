@@ -15,6 +15,7 @@
     <span class="tc-status {% if competition.status == 'active' %}is-active{% elif competition.status == 'complete' %}is-warn{% elif competition.status == 'revealed' %}is-success{% endif %}">{{ competition.get_status_display }}</span>
   </header>
   {% if messages %}<div aria-live="polite">{% for message in messages %}<p class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'warning' %}alert-warning{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %}">{{ message }}</p>{% endfor %}</div>{% endif %}
+  {% if competition.status == 'active' %}<p><a class="btn btn-primary" href="{% url 'competition_live_control' competition.pk %}"><i class="bi bi-broadcast me-1" aria-hidden="true"></i>Open Arena Live Control</a></p>{% endif %}
   {% if competition.status == 'complete' or competition.status == 'revealed' %}<p><a class="btn btn-outline-primary" href="{% url 'competition_results_export' competition.pk %}">Download results CSV</a></p>{% endif %}
   {% if action_error %}<div class="alert alert-danger" role="alert">{{ action_error }}</div>{% endif %}
   <p class="small text-muted">Organizer workspace · Public results stay hidden until you reveal them.</p>

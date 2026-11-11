@@ -1,0 +1,123 @@
+<section id="panel-live-convergence" class="card assess-stagger shadow-sm mb-4" aria-labelledby="convergence-head">
+  <div class="card-header bg-surface d-flex justify-content-between align-items-center py-3">
+    <div class="d-flex align-items-center gap-2">
+      <div class="icon-badge bg-info-subtle text-info rounded-circle p-2 d-inline-flex">
+        <i class="bi bi-pie-chart" aria-hidden="true"></i>
+      </div>
+      <h2 id="convergence-head" class="h6 mb-0 fw-bold">Score Convergence &amp; Deliberation</h2>
+    </div>
+    {% if has_divergence %}
+      <span class="badge bg-warning-subtle text-warning-emphasis">
+        <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>Divergence Detected
+      </span>
+    {% endif %}
+  </div>
+
+  <div class="card-body">
+    {% if not active_candidate %}
+      <p class="text-muted text-center py-3 mb-0">Select a candidate on the floor to inspect score convergence.</p>
+    {% else %}
+      {% if has_divergence %}
+        <div class="alert alert-warning d-flex align-items-center gap-2 mb-3" role="alert">
+          <i class="bi bi-info-circle-fill text-warning flex-shrink-0" aria-hidden="true"></i>
+          <div>
+            <strong>Examiner scores diverge on one or more criteria.</strong> Verbal reconciliation is recommended during deliberation.
+          </div>
+        </div>
+      {% endif %}
+
+      <h3 class="h6 text-muted text-uppercase fw-bold mb-3" style="font-size: var(--fs-micro); letter-spacing: 0.05em;">Criteria Breakdown</h3>
+      <div class="table-responsive mb-4">
+        <table class="table table-sm align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th scope="col">Criterion</th>
+              <th scope="col" class="text-center">Responses</th>
+              <th scope="col" class="text-center">Average</th>
+              <th scope="col" class="text-center">Range (Min - Max)</th>
+              <th scope="col" class="text-end">Convergence</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in convergence_criteria %}
+              <tr class="{% if item.divergent %}table-warning{% endif %}">
+                <td class="fw-semibold">{{ item.criterion.name }}</td>
+                <td class="text-center">{{ item.count }}</td>
+                <td class="text-center fw-bold">
+                  {% if item.mean is not None %}{{ item.mean }}{% else %}<span class="text-muted">—</span>{% endif %}
+                </td>
+                <td class="text-center">
+                  {% if item.min is not None %}
+                    <span class="badge bg-light text-dark border">{{ item.min }}</span> to <span class="badge bg-light text-dark border">{{ item.max }}</span>
+                  {% else %}
+                    <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  {% if item.divergent %}
+                    <span class="badge bg-warning text-dark">Spread: {{ item.diff }}</span>
+                  {% elif item.count > 0 %}
+                    <span class="badge bg-success-subtle text-success-emphasis">Aligned</span>
+                  {% else %}
+                    <span class="badge bg-secondary-subtle text-secondary-emphasis">Awaiting</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="5" class="text-center py-3 text-muted">No criteria configured for this hearing.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if reviews %}
+        <div class="mb-4">
+          <h3 class="h6 text-muted text-uppercase fw-bold mb-2" style="font-size: var(--fs-micro); letter-spacing: 0.05em;">Examiner Written Notes</h3>
+          <div class="list-group list-group-flush border rounded-3">
+            {% for rev in reviews %}
+              <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <strong class="small">{{ rev.invitation.email }}</strong>
+                  <span class="text-muted small">{{ rev.created_at|date:"H:i" }}</span>
+                </div>
+                <p class="mb-0 text-secondary small">{{ rev.comments|linebreaksbr }}</p>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+
+      <div class="border-top pt-3">
+        <h3 class="h6 fw-bold mb-2">Record Committee Outcome</h3>
+        <form method="post" id="panel-quick-decision-form" data-panel-decision-form>
+          {% csrf_token %}
+          <input type="hidden" name="action" value="record_decision">
+          <input type="hidden" name="candidate_id" value="{{ active_candidate.pk }}">
+          <div class="row g-2 align-items-center">
+            <div class="col-12 col-md-4">
+              <label for="panel-decision-outcome" class="visually-hidden">Outcome</label>
+              <select class="form-select form-select-sm" name="outcome" id="panel-decision-outcome" required>
+                <option value="">Select decision outcome...</option>
+                {% for code, label in outcomes %}
+                  <option value="{{ code }}" {% if active_decision and active_decision.outcome == code %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-md-6">
+              <label for="panel-decision-rationale" class="visually-hidden">Summary note</label>
+              <input type="text" class="form-control form-control-sm" name="rationale" id="panel-decision-rationale"
+                     placeholder="Consensus notes / rationale..." value="{{ active_decision.rationale|default:'' }}" required>
+            </div>
+            <div class="col-12 col-md-2 text-end">
+              <button type="submit" class="btn btn-primary btn-sm w-100">
+                <i class="bi bi-save me-1" aria-hidden="true"></i>Record
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+</section>

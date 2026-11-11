@@ -4,15 +4,19 @@
 {% block content %}
 {% include 'service_domains/_workspace_styles.html' %}
 {% include 'service_domains/_panel_ui_styles.html' %}
-<div class="container-fluid py-4 service-workspace panel-page">
-  <header class="panel-hero mb-4">
-    <div class="page-header-main">
-      <p class="panel-eyebrow">Classroom + Panel</p>
-      <h1 class="page-title">Link assessments</h1>
-      <p class="page-subtitle mt-2">Choose the existing assessments and decide how their results will be used.</p>
+<div class="container-fluid py-4 stage-content">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <a href="{% url 'combined_assessment_list' %}" class="btn btn-link px-0"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i>Combined assessments</a>
+  </div>
+
+  <header class="hero-banner between-banner mb-4">
+    <div>
+      <p class="panel-eyebrow mb-1">Classroom + Panel</p>
+      <h1 class="page-title mb-1">Link assessments</h1>
+      <p class="page-subtitle text-muted mb-0">Choose existing assessments and configure scoring policy and quorums.</p>
     </div>
-    <div class="page-header-actions">
-      <a class="btn btn-outline-secondary" href="{% url 'panel_hearing_list' %}">Cancel</a>
+    <div class="d-flex align-items-center gap-2">
+      <a class="btn btn-outline-secondary" href="{% url 'combined_assessment_list' %}">Cancel</a>
     </div>
   </header>
 
@@ -24,19 +28,19 @@
 
   <div class="row g-4 align-items-start">
     <section class="col-12 col-xl-8" aria-labelledby="combined-setup-heading">
-      <div class="panel-card">
+      <div class="card border p-4 shadow-sm" style="border-radius: var(--radius-card); background: var(--surface);">
         <form method="post">
           {% csrf_token %}
 
           <fieldset class="mb-4 pb-4 border-bottom">
             <legend class="h5" id="combined-setup-heading">1. Choose assessments</legend>
-              <p class="text-muted">The Classroom groups and Panel candidates must represent the same entries.</p>
+            <p class="text-muted">The Classroom groups and Panel candidates must represent the same entries.</p>
             {% include 'service_domains/_combined_form_field.html' with field=form.name %}
             <div class="row g-3">
               <div class="col-12 col-lg-6">{% include 'service_domains/_combined_form_field.html' with field=form.classroom_session %}</div>
               <div class="col-12 col-lg-6">{% include 'service_domains/_combined_form_field.html' with field=form.panel_hearing %}</div>
             </div>
-            <div class="alert alert-info mb-0" role="note">Entries are matched by saved links, not by similar names. You can check and confirm each match in the draft.</div>
+            <div class="alert alert-info mb-0 mt-3" role="note">Entries are matched by saved links, not by similar names. You can check and confirm each match in the draft.</div>
           </fieldset>
 
           <fieldset class="mb-4 pb-4 border-bottom">
@@ -66,7 +70,7 @@
 
           <div class="d-flex flex-wrap align-items-center gap-2 pt-3 border-top">
             <button class="btn btn-primary btn-lg" type="submit">Create draft and review matches</button>
-            <a class="btn btn-outline-secondary" href="{% url 'panel_hearing_list' %}">Cancel</a>
+            <a class="btn btn-outline-secondary" href="{% url 'combined_assessment_list' %}">Cancel</a>
             <span class="small text-muted ms-lg-auto">You can review every match before publishing.</span>
           </div>
         </form>
@@ -74,7 +78,7 @@
     </section>
 
     <aside class="col-12 col-xl-4" aria-label="Combined grading guidance">
-      <section class="panel-card mb-4" aria-labelledby="link-process-heading">
+      <section class="card border p-4 mb-4 shadow-sm" style="border-radius: var(--radius-card); background: var(--surface);" aria-labelledby="link-process-heading">
         <h2 class="h5" id="link-process-heading">Next steps</h2>
         <ol class="ps-3 mb-0">
           <li class="mb-2">Review and confirm each entry match.</li>
@@ -83,7 +87,7 @@
         </ol>
       </section>
 
-      <section class="panel-card" aria-labelledby="policy-guide-heading">
+      <section class="card border p-4 shadow-sm" style="border-radius: var(--radius-card); background: var(--surface);" aria-labelledby="policy-guide-heading">
         <h2 class="h5" id="policy-guide-heading">Check before publishing</h2>
         <ul class="mb-0 ps-3">
           <li class="mb-2">Names alone do not confirm a match.</li>

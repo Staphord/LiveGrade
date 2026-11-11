@@ -1,0 +1,292 @@
+{% extends 'base.html' %}
+{% block title %}{{ competition.name }} — Arena Live Stage · LiveGrade{% endblock %}
+{% block page_title %}{{ competition.name }}{% endblock %}
+
+{% block topbar_actions %}
+<div class="d-flex align-items-center gap-2">
+  <span class="live-badge" id="competition-conn-badge">
+    <span class="dot"></span>Live
+  </span>
+  <a href="{% url 'competition_public_leaderboard' competition_id=competition.public_id %}" target="_blank" rel="noopener" class="btn btn-outline-primary btn-sm">
+    <i class="bi bi-display me-1" aria-hidden="true"></i>Arena screen
+  </a>
+  <a href="{% url 'competition_manage' competition_id=competition.pk %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-gear me-1" aria-hidden="true"></i>Setup
+  </a>
+  <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#competition-end-modal">
+    <i class="bi bi-flag me-1" aria-hidden="true"></i>Finish
+  </button>
+  <a href="{% url 'competition_table' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>All competitions
+  </a>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style nonce="{{ csp_nonce }}">
+.live-badge{display:inline-flex;align-items:center;gap:5px;font-size:var(--fs-micro);font-weight:700;
+     padding:.25rem .65rem;border-radius:999px;background:var(--tone-success-bg);color:var(--tone-success-fg)}
+.live-badge.is-offline{background:var(--tone-warn-bg);color:var(--tone-warn-fg)}
+.live-badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:live-pulse 1.4s ease-in-out infinite}
+@keyframes live-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+.turn-ring-wrap{position:relative;width:68px;height:68px;flex-shrink:0}
+.turn-ring{width:68px;height:68px;border-radius:50%;
+     background:conic-gradient(var(--accent) calc(var(--turn-pct,100) * 1%),var(--surface-sunken) 0);
+     transition:background 1s linear}
+.turn-ring::before{content:"";position:absolute;inset:6px;border-radius:50%;background:var(--surface)}
+.turn-ring-label{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.95rem;font-weight:700;color:var(--ink)}
+.turn-ring.is-urgent{background:conic-gradient(var(--danger) calc(var(--turn-pct,100) * 1%),var(--surface-sunken) 0)}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3" style="max-width: 1400px;">
+  <!-- Live Pitch Hero -->
+  {% include 'service_domains/_partials/competition_live_hero.html' %}
+
+  <!-- Scoring Command Panel (Judge Scorecards + Audience Voting) -->
+  <div class="row g-4 mb-4">
+    <div class="col-lg-7">
+      {% include 'service_domains/_partials/competition_live_judges.html' %}
+    </div>
+    <div class="col-lg-5">
+      {% include 'service_domains/_partials/competition_live_audience.html' %}
+    </div>
+  </div>
+
+  <!-- Live Standings and Advancement Engine -->
+  <div class="mb-4">
+    {% include 'service_domains/_partials/competition_live_standings.html' %}
+  </div>
+
+  <!-- Arena Projector Screen Controller -->
+  <div class="mb-4">
+    {% include 'service_domains/_partials/competition_live_projector.html' %}
+  </div>
+</div>
+
+<!-- Modal: Advance to Next Round -->
+<div class="modal fade" id="competition-advance-modal" tabindex="-1" aria-labelledby="advance-modal-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post" action="{% url 'competition_live_action' competition_id=competition.pk %}">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="advance_round">
+        <div class="modal-header">
+          <h5 class="modal-title" id="advance-modal-title">Advance to Next Round</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted small">
+            Advancing the round will promote qualifying entrants to the next stage based on cutoff thresholds and freeze this round.
+          </p>
+          <div class="mb-3">
+            <label for="next-round-name" class="form-label small fw-semibold">Next Round Name</label>
+            <input type="text" class="form-control" id="next-round-name" name="next_round_name" value="Round {% if active_round %}{{ active_round.order|add:1 }}{% else %}2{% endif %}" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">Confirm & Advance</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Resolve Tie -->
+<div class="modal fade" id="competition-tie-modal" tabindex="-1" aria-labelledby="tie-modal-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post" action="{% url 'competition_live_action' competition_id=competition.pk %}">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="resolve_tie">
+        <input type="hidden" name="track_id" value="{{ active_track.pk }}">
+        <input type="hidden" name="tied_score" value="{% if standings %}{{ standings.0.effective_score|default:'0' }}{% else %}0{% endif %}">
+        <div class="modal-header">
+          <h5 class="modal-title" id="tie-modal-title">Resolve Boundary Tie</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted small">
+            Provide a head judge resolution rationale to determine entrant advancement order.
+          </p>
+          <div class="mb-3">
+            <label for="tie-reason" class="form-label small fw-semibold">Resolution Reason <span class="text-danger">*</span></label>
+            <textarea class="form-control" id="tie-reason" name="reason" rows="3" placeholder="Explain the rationale for resolving this tie." required></textarea>
+          </div>
+          {% if standings %}
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Advancing Entrant Order</label>
+            {% for row in standings %}
+            {% if forloop.counter <= cutoff_rank %}
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="ordered_entry_ids" value="{{ row.entry.pk }}" id="tie-entry-{{ row.entry.pk }}" checked>
+              <label class="form-check-label small" for="tie-entry-{{ row.entry.pk }}">
+                {{ row.entry.name }} (Score: {{ row.effective_score }})
+              </label>
+            </div>
+            {% endif %}
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-warning btn-sm">Save Tie Resolution</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Finish Competition -->
+<div class="modal fade" id="competition-end-modal" tabindex="-1" aria-labelledby="end-modal-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post" action="{% url 'competition_live_action' competition_id=competition.pk %}">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="conclude_competition">
+        <div class="modal-header">
+          <h5 class="modal-title text-danger" id="end-modal-title">Finish Competition</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-2">Are you sure you want to conclude <strong>{{ competition.name }}</strong>?</p>
+          <p class="text-muted small mb-0">
+            This locks all round scoring and freezes the leaderboard for awards presentation.
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-danger btn-sm">Yes, Finish Competition</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script nonce="{{ csp_nonce }}">
+(function() {
+  const stateUrl = "{% url 'competition_live_state' competition_id=competition.pk %}";
+  const actionUrl = "{% url 'competition_live_action' competition_id=competition.pk %}";
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
+  let pollInterval = 2500;
+  let activeTimer = null;
+
+  async function postAction(params) {
+    const body = new FormData();
+    for (const [k, v] of Object.entries(params)) {
+      body.append(k, v);
+    }
+    try {
+      const res = await fetch(actionUrl, {
+        method: "POST",
+        headers: { "X-CSRFToken": csrfToken, "X-Requested-With": "XMLHttpRequest" },
+        body: body,
+      });
+      const data = await res.json();
+      if (data.redirect) {
+        window.location.href = data.redirect;
+        return;
+      }
+      if (data.hero_html) updateDom(data);
+    } catch (err) {
+      console.error("Action failed", err);
+    }
+  }
+
+  function updateDom(data) {
+    if (data.hero_html) {
+      const el = document.getElementById("competition-live-hero");
+      if (el) el.outerHTML = data.hero_html;
+    }
+    if (data.judges_html) {
+      const el = document.getElementById("competition-live-judges");
+      if (el) el.outerHTML = data.judges_html;
+    }
+    if (data.audience_html) {
+      const el = document.getElementById("competition-live-audience");
+      if (el) el.outerHTML = data.audience_html;
+    }
+    if (data.standings_html) {
+      const el = document.getElementById("competition-live-standings");
+      if (el) el.outerHTML = data.standings_html;
+    }
+    if (data.projector_html) {
+      const el = document.getElementById("competition-live-projector");
+      if (el) el.outerHTML = data.projector_html;
+    }
+  }
+
+  async function pollState() {
+    try {
+      const res = await fetch(stateUrl, {
+        headers: { "X-Requested-With": "XMLHttpRequest" }
+      });
+      if (!res.ok) throw new Error("Poll error");
+      const data = await res.json();
+      if (data.ok) {
+        updateDom(data);
+        const badge = document.getElementById("competition-conn-badge");
+        if (badge) badge.classList.remove("is-offline");
+      }
+    } catch (err) {
+      const badge = document.getElementById("competition-conn-badge");
+      if (badge) badge.classList.add("is-offline");
+    } finally {
+      activeTimer = setTimeout(pollState, pollInterval);
+    }
+  }
+
+  document.addEventListener("click", function(e) {
+    const actionBtn = e.target.closest("[data-competition-action]");
+    if (actionBtn) {
+      e.preventDefault();
+      const action = actionBtn.getAttribute("data-competition-action");
+      const delta = actionBtn.getAttribute("data-delta");
+      const params = { action: action };
+      if (delta) params.delta = delta;
+      postAction(params);
+      return;
+    }
+
+    const nudgeBtn = e.target.closest("[data-competition-nudge]");
+    if (nudgeBtn) {
+      e.preventDefault();
+      const judgeId = nudgeBtn.getAttribute("data-judge-id");
+      postAction({ action: "nudge_judge", judge_id: judgeId });
+      nudgeBtn.disabled = true;
+      nudgeBtn.textContent = "Nudged";
+      return;
+    }
+
+    const projBtn = e.target.closest("[data-competition-projector]");
+    if (projBtn) {
+      e.preventDefault();
+      const mode = projBtn.getAttribute("data-competition-projector");
+      postAction({ action: "set_projector_mode", mode: mode });
+      return;
+    }
+  });
+
+  document.addEventListener("change", function(e) {
+    if (e.target.matches("[data-competition-select-entry]")) {
+      postAction({ action: "set_active_entry", entry_id: e.target.value });
+    }
+  });
+
+  // Spacebar hotkey to toggle timer pause
+  document.addEventListener("keydown", function(e) {
+    if (e.code === "Space" && !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) {
+      e.preventDefault();
+      postAction({ action: "toggle_pitch_pause" });
+    }
+  });
+
+  activeTimer = setTimeout(pollState, pollInterval);
+})();
+</script>
+{% endblock %}

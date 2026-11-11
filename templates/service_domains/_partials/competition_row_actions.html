@@ -4,7 +4,8 @@
     {% if competition.status == 'draft' %}
       <li><a class="dropdown-item" href="{% url 'competition_manage' competition_id=competition.pk %}"><i class="bi bi-pencil me-2" aria-hidden="true"></i>Continue setup</a></li>
     {% elif competition.status == 'active' %}
-      <li><a class="dropdown-item" href="{% url 'competition_manage' competition_id=competition.pk %}"><i class="bi bi-broadcast me-2" aria-hidden="true"></i>Manage live round</a></li>
+      <li><a class="dropdown-item" href="{% url 'competition_live_control' competition_id=competition.pk %}"><i class="bi bi-broadcast me-2" aria-hidden="true"></i>Arena live control</a></li>
+      <li><a class="dropdown-item" href="{% url 'competition_manage' competition_id=competition.pk %}"><i class="bi bi-gear me-2" aria-hidden="true"></i>Manage live round</a></li>
     {% elif competition.status == 'complete' %}
       <li><a class="dropdown-item" href="{% url 'competition_manage' competition_id=competition.pk %}"><i class="bi bi-eye me-2" aria-hidden="true"></i>Review &amp; reveal</a></li>
     {% else %}

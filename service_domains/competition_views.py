@@ -14,6 +14,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 from django.http import Http404, HttpResponse, JsonResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.cache import patch_vary_headers
 from django.views.decorators.cache import never_cache
@@ -38,7 +39,10 @@ from .operations import (create_initial_competition_round,
 from .operations import set_competition_public_leaderboard
 from .operations import (competition_final_tie_requirements,
     resolve_competition_final_ties, competition_audience_join_code,
-    competition_audience_ranked_choice, finalize_competition_weighted_scores)
+    competition_audience_ranked_choice, finalize_competition_weighted_scores,
+    get_competition_live_state_context, set_competition_stage_entry,
+    adjust_competition_pitch_timer, toggle_competition_pitch_pause,
+    toggle_competition_audience_voting, set_competition_projector_mode)
 from .models import CompetitionLeaderboardTieDecision
 from .throttling import allow_public_event_request
 from .onboarding import service_onboarding
@@ -1097,3 +1101,149 @@ def competition_results_export(request, competition_id):
             safe_text(row.entry.name), safe_text(row.entry.reference), row.judge_score,
             row.audience_score, row.score])
     return response
+
+
+@require_safe
+@never_cache
+@_competition_owner
+def competition_live_control(request, competition_id):
+    """Render the arena stage pitch runner and live round command console."""
+    competition = _owned_competition(request, competition_id)
+    if competition.status == Competition.Status.DRAFT:
+        return redirect('competition_manage', competition_id=competition.pk)
+    if competition.status in (Competition.Status.COMPLETE, Competition.Status.REVEALED):
+        return redirect('competition_manage', competition_id=competition.pk)
+    context = get_competition_live_state_context(competition)
+    response = render(request, 'service_domains/competition_live_control.html', context)
+    response['Cache-Control'] = 'private, no-store'
+    response['Referrer-Policy'] = 'same-origin'
+    return response
+
+
+@require_safe
+@never_cache
+@_competition_owner
+def competition_live_state(request, competition_id):
+    """Real-time JSON state endpoint returning arena telemetry and HTML fragments."""
+    competition = _owned_competition(request, competition_id)
+    if competition.status != Competition.Status.ACTIVE:
+        return JsonResponse({
+            'ok': False,
+            'status': competition.status,
+            'redirect': reverse('competition_manage', args=(competition.pk,))
+        })
+    context = get_competition_live_state_context(competition)
+    return JsonResponse({
+        'ok': True,
+        'competition_status': competition.status,
+        'active_round_id': context['active_round'].pk if context['active_round'] else None,
+        'active_track_id': context['active_track'].pk if context['active_track'] else None,
+        'active_entry_id': context['active_entry'].pk if context['active_entry'] else None,
+        'pitch_seconds_remaining': context['pitch_seconds_remaining'],
+        'timer_paused': context['timer_paused'],
+        'audience_voting_open': context['audience_voting_open'],
+        'ballots_count': context['ballots_count'],
+        'has_boundary_tie': context['has_boundary_tie'],
+        'unresolved_ties': context['unresolved_ties'],
+        'can_advance': context['can_advance'],
+        'projector_mode': context['projector_mode'],
+        'hero_html': render_to_string('service_domains/_partials/competition_live_hero.html', context, request=request),
+        'judges_html': render_to_string('service_domains/_partials/competition_live_judges.html', context, request=request),
+        'audience_html': render_to_string('service_domains/_partials/competition_live_audience.html', context, request=request),
+        'standings_html': render_to_string('service_domains/_partials/competition_live_standings.html', context, request=request),
+        'projector_html': render_to_string('service_domains/_partials/competition_live_projector.html', context, request=request),
+    })
+
+
+@require_POST
+@never_cache
+@_competition_owner
+def competition_live_action(request, competition_id):
+    """Execute atomic live arena stage, timer, judge nudge, and round advancement actions."""
+    competition = _owned_competition(request, competition_id)
+    if competition.status != Competition.Status.ACTIVE:
+        return JsonResponse({'error': 'Competition is not active.'}, status=400)
+    action = request.POST.get('action')
+    try:
+        if action == 'set_active_entry':
+            entry_id = request.POST.get('entry_id')
+            set_competition_stage_entry(competition, entry_id, organization=request.organization, user=request.user)
+        elif action == 'adjust_pitch_timer':
+            delta = int(request.POST.get('delta', 30))
+            adjust_competition_pitch_timer(competition, delta, organization=request.organization, user=request.user)
+        elif action == 'toggle_pitch_pause':
+            toggle_competition_pitch_pause(competition, organization=request.organization, user=request.user)
+        elif action == 'toggle_audience_voting':
+            toggle_competition_audience_voting(competition, organization=request.organization, user=request.user)
+        elif action == 'nudge_judge':
+            judge_id = request.POST.get('judge_id')
+            invitation = CompetitionJudgeInvitation.objects.filter(
+                pk=judge_id, competition=competition, organization_id=competition.organization_id
+            ).first()
+            if invitation and not invitation.submitted_at and not invitation.revoked_at:
+                messages.info(request, f'Nudge sent to judge {invitation.email}.')
+        elif action == 'resolve_tie':
+            track_id = int(request.POST.get('track_id'))
+            tied_score = Decimal(request.POST.get('tied_score'))
+            reason = request.POST.get('reason', '').strip()
+            ordered_ids = [int(eid) for eid in request.POST.getlist('ordered_entry_ids')]
+            active_round = CompetitionRound.objects.filter(competition=competition, organization_id=competition.organization_id).order_by('-order').first()
+            if active_round and reason and len(ordered_ids) >= 2:
+                CompetitionLeaderboardTieDecision.objects.create(
+                    organization_id=competition.organization_id,
+                    created_by=request.user,
+                    round=active_round,
+                    track_id=track_id,
+                    tied_score=tied_score,
+                    ordered_entry_ids=ordered_ids,
+                    reason=reason,
+                    decided_by=request.user,
+                )
+        elif action == 'advance_round':
+            active_round = CompetitionRound.objects.filter(competition=competition, organization_id=competition.organization_id).order_by('-order').first()
+            next_round_name = request.POST.get('next_round_name') or f'Round {active_round.order + 1}'
+            create_next_competition_round(competition, active_round, next_round_name, organization=request.organization, user=request.user)
+            messages.success(request, f'Advanced to {next_round_name}. Qualified entrants are ready on the stage docket.')
+        elif action == 'conclude_competition':
+            complete_competition(competition, organization=request.organization, user=request.user)
+            messages.success(request, 'Competition completed. Final leaderboard is ready for review.')
+            return JsonResponse({'status': 'complete', 'redirect': reverse('competition_manage', args=(competition.pk,))})
+        elif action == 'set_projector_mode':
+            mode = request.POST.get('mode', 'stage')
+            set_competition_projector_mode(competition, mode, organization=request.organization, user=request.user)
+        else:
+            return JsonResponse({'error': f'Unknown action: {action}'}, status=400)
+    except (ValidationError, PermissionDenied) as exc:
+        msg = '; '.join(getattr(exc, 'messages', [])) or str(exc)
+        return JsonResponse({'error': msg}, status=400)
+
+    context = get_competition_live_state_context(competition)
+    return JsonResponse({
+        'ok': True,
+        'competition_status': competition.status,
+        'pitch_seconds_remaining': context['pitch_seconds_remaining'],
+        'timer_paused': context['timer_paused'],
+        'audience_voting_open': context['audience_voting_open'],
+        'ballots_count': context['ballots_count'],
+        'has_boundary_tie': context['has_boundary_tie'],
+        'unresolved_ties': context['unresolved_ties'],
+        'can_advance': context['can_advance'],
+        'projector_mode': context['projector_mode'],
+        'hero_html': render_to_string('service_domains/_partials/competition_live_hero.html', context, request=request),
+        'judges_html': render_to_string('service_domains/_partials/competition_live_judges.html', context, request=request),
+        'audience_html': render_to_string('service_domains/_partials/competition_live_audience.html', context, request=request),
+        'standings_html': render_to_string('service_domains/_partials/competition_live_standings.html', context, request=request),
+        'projector_html': render_to_string('service_domains/_partials/competition_live_projector.html', context, request=request),
+    })
+
+
+@require_POST
+@never_cache
+@_competition_owner
+def competition_live_projector_toggle(request, competition_id):
+    """Switch the public projector display mode."""
+    competition = _owned_competition(request, competition_id)
+    mode = request.POST.get('mode', 'stage')
+    set_competition_projector_mode(competition, mode, organization=request.organization, user=request.user)
+    context = get_competition_live_state_context(competition)
+    return JsonResponse({'ok': True, 'projector_mode': context['projector_mode']})

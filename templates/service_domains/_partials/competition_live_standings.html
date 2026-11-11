@@ -1,0 +1,108 @@
+<section class="card border-0 shadow-sm" id="competition-live-standings">
+  <div class="card-header bg-transparent border-0 pt-3 pb-0 d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <div>
+      <h3 class="h6 mb-0 fw-bold">Live Round Standings & Advancement Engine</h3>
+      <p class="text-muted small mb-0">Rankings compute from submitted judge scores and audience ballots.</p>
+    </div>
+    <div>
+      {% if can_advance %}
+      <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#competition-advance-modal">
+        <i class="bi bi-arrow-right-circle me-1" aria-hidden="true"></i>Advance to Next Round
+      </button>
+      {% elif active_round.advancement_locked_at %}
+      <span class="badge text-bg-secondary">Round Completed & Advanced</span>
+      {% else %}
+      <button type="button" class="btn btn-outline-secondary btn-sm" disabled title="Awaiting judge scoring completion or tie resolution">
+        <i class="bi bi-lock me-1" aria-hidden="true"></i>Advancement Locked
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card-body p-3">
+    {% if has_boundary_tie %}
+    <div class="alert alert-warning d-flex align-items-center justify-content-between p-3 mb-3" role="alert">
+      <div class="d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill fs-5" aria-hidden="true"></i>
+        <div>
+          <strong>Boundary Tie Detected:</strong> Two or more entrants on the advancement threshold share identical scores.
+        </div>
+      </div>
+      <button type="button" class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#competition-tie-modal">
+        Resolve Tie
+      </button>
+    </div>
+    {% endif %}
+
+    {% if standings %}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th scope="col" style="width: 50px;">Rank</th>
+            <th scope="col">Entrant</th>
+            <th scope="col">Track</th>
+            <th scope="col" style="text-align: right;">Judge Mean</th>
+            <th scope="col" style="text-align: right;">Audience</th>
+            <th scope="col" style="text-align: right;">Final Score</th>
+            <th scope="col" style="width: 110px; text-align: center;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in standings %}
+          <tr class="{% if row.is_active %}table-primary{% endif %}">
+            <td>
+              <span class="badge {% if row.rank <= cutoff_rank %}text-bg-success{% else %}text-bg-light border text-muted{% endif %} rounded-pill">
+                #{{ row.rank }}
+              </span>
+            </td>
+            <td>
+              <div class="fw-semibold">{{ row.entry.name }}</div>
+              {% if row.entry.reference %}<span class="text-muted small">Ref: {{ row.entry.reference }}</span>{% endif %}
+            </td>
+            <td><span class="badge text-bg-light border">{{ row.track.name }}</span></td>
+            <td style="text-align: right;">
+              {% if row.judge_score is not None %}{{ row.judge_score }}{% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+            <td style="text-align: right;">
+              {% if row.audience_score is not None %}{{ row.audience_score }}{% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
+            <td style="text-align: right;" class="fw-bold">
+              {% if row.score is not None %}
+              {{ row.score }}
+              {% elif row.judge_score is not None %}
+              {{ row.judge_score }}
+              {% else %}
+              <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td style="text-align: center;">
+              {% if row.rank <= cutoff_rank %}
+              <span class="badge text-bg-success-subtle text-success-emphasis border border-success-subtle">
+                Qualifies
+              </span>
+              {% else %}
+              <span class="badge text-bg-light text-muted border">
+                Eliminated
+              </span>
+              {% endif %}
+            </td>
+          </tr>
+          {% if row.rank == cutoff_rank and not forloop.last %}
+          <tr class="table-warning border-top border-bottom">
+            <td colspan="7" class="text-center py-1 small fw-semibold text-warning-emphasis" style="letter-spacing: .04em; background: rgba(255, 193, 7, 0.15);">
+              ↑ TOP {{ cutoff_rank }} ADVANCE TO NEXT ROUND · CUTOFF THRESHOLD ↓
+            </td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center py-4 text-muted small">
+      No entrants in the active round yet.
+    </div>
+    {% endif %}
+  </div>
+</section>

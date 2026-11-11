@@ -1,0 +1,246 @@
+{% extends 'base.html' %}
+{% block title %}{{ event.name }} — Exhibition Live Command · LiveGrade{% endblock %}
+{% block page_title %}{{ event.name }}{% endblock %}
+
+{% block topbar_actions %}
+<div class="d-flex align-items-center gap-2">
+  <span class="live-badge" id="showcase-conn-badge">
+    <span class="dot"></span>Live
+  </span>
+  <a href="{% url 'showcase_event_manage' event_id=event.pk %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-gear me-1" aria-hidden="true"></i>Event setup
+  </a>
+  <button type="button" class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#showcase-close-modal">
+    <i class="bi bi-door-closed me-1" aria-hidden="true"></i>Close ratings
+  </button>
+  <a href="{% url 'showcase_event_table' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>All events
+  </a>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style nonce="{{ csp_nonce }}">
+.live-badge{display:inline-flex;align-items:center;gap:5px;font-size:var(--fs-micro);font-weight:700;
+     padding:.25rem .65rem;border-radius:999px;background:var(--tone-success-bg);color:var(--tone-success-fg)}
+.live-badge.is-offline{background:var(--tone-warn-bg);color:var(--tone-warn-fg)}
+.live-badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:live-pulse 1.4s ease-in-out infinite}
+@keyframes live-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+.turn-ring-wrap{position:relative;width:64px;height:64px;flex-shrink:0}
+.turn-ring{width:64px;height:64px;border-radius:50%;
+     background:conic-gradient(var(--accent) calc(var(--turn-pct,100) * 1%),var(--surface-sunken) 0);
+     transition:background 1s linear}
+.turn-ring::before{content:"";position:absolute;inset:6px;border-radius:50%;background:var(--surface)}
+.turn-ring-label{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.9rem;font-weight:700;color:var(--ink)}
+.turn-ring.is-urgent{background:conic-gradient(var(--danger) calc(var(--turn-pct,100) * 1%),var(--surface-sunken) 0)}
+.assess-stagger{animation:assess-fade-in .35s ease both}
+@keyframes assess-fade-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4" style="max-width: 1400px;">
+  <!-- Telemetry Hero Banner -->
+  {% include 'service_domains/_partials/showcase_live_hero.html' %}
+
+  <!-- Spotlight Pitch Stage Runner -->
+  {% include 'service_domains/_partials/showcase_live_stage.html' %}
+
+  <!-- Floor Radar Table -->
+  {% include 'service_domains/_partials/showcase_live_table.html' %}
+
+  <!-- Projector & Venue Display Controller -->
+  {% include 'service_domains/_partials/showcase_live_projector_control.html' %}
+</div>
+
+<!-- Modal: Close Ratings Confirmation -->
+<div class="modal fade" id="showcase-close-modal" tabindex="-1" aria-labelledby="showcase-close-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title h5" id="showcase-close-title">Close visitor ratings?</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p>This will close mobile attendee rating submissions and advance the showcase into the <strong>Closed / Review</strong> stage.</p>
+        <p class="text-muted small mb-0">Judges can finalize their remaining assigned evaluations before official award publication.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Keep ratings open</button>
+        <button type="button" class="btn btn-warning" id="confirm-showcase-close-ratings-btn">Close ratings</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const LIVE_STATE_URL = "{% url 'showcase_live_state' event_id=event.pk %}";
+  const LIVE_ACTION_URL = "{% url 'showcase_live_action' event_id=event.pk %}";
+
+  let refreshing = false;
+  let remainingSeconds = parseInt(document.getElementById('showcase-pitch-timer-display')?.dataset.seconds || '180', 10);
+  let timerPaused = false;
+
+  function csrfHeaders() {
+    const el = document.querySelector('[name=csrfmiddlewaretoken]');
+    return el ? { 'X-CSRFToken': el.value } : {};
+  }
+
+  function postAction(data) {
+    const formData = new FormData();
+    Object.keys(data).forEach(k => formData.append(k, data[k]));
+    return fetch(LIVE_ACTION_URL, {
+      method: 'POST',
+      body: formData,
+      headers: Object.assign({ 'X-Requested-With': 'XMLHttpRequest' }, csrfHeaders())
+    })
+    .then(res => res.json())
+    .then(payload => {
+      if (payload.redirect) {
+        window.location.href = payload.redirect;
+        return;
+      }
+      if (payload.error) {
+        alert(payload.error);
+        return;
+      }
+      patchFragments(payload);
+    })
+    .catch(() => {});
+  }
+
+  function patchFragments(data) {
+    const FRAGMENTS = {
+      'showcase-live-hero': data.hero_html,
+      'showcase-live-stage': data.stage_html,
+      'showcase-live-table': data.table_html,
+      'showcase-live-projector-control': data.projector_html
+    };
+    Object.keys(FRAGMENTS).forEach(id => {
+      const el = document.getElementById(id);
+      const html = FRAGMENTS[id];
+      if (el && html !== undefined) el.outerHTML = html;
+    });
+    remainingSeconds = data.pitch_seconds_remaining || 0;
+    timerPaused = !!data.timer_paused;
+    updateTimerDisplay();
+  }
+
+  function refreshState() {
+    if (refreshing) return;
+    refreshing = true;
+    fetch(LIVE_STATE_URL, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(res => res.json())
+      .then(data => {
+        if (data.redirect) {
+          window.location.href = data.redirect;
+          return;
+        }
+        patchFragments(data);
+        const badge = document.getElementById('showcase-conn-badge');
+        if (badge) {
+          badge.classList.remove('is-offline');
+          badge.innerHTML = '<span class="dot"></span>Live';
+        }
+      })
+      .catch(() => {
+        const badge = document.getElementById('showcase-conn-badge');
+        if (badge) {
+          badge.classList.add('is-offline');
+          badge.innerHTML = '<span class="dot"></span>Reconnecting';
+        }
+      })
+      .finally(() => { refreshing = false; });
+  }
+
+  function updateTimerDisplay() {
+    const display = document.getElementById('showcase-pitch-timer-display');
+    const ring = document.getElementById('showcase-pitch-ring');
+    if (!display || !ring) return;
+    const mins = Math.floor(remainingSeconds / 60);
+    const secs = remainingSeconds % 60;
+    display.textContent = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    const pct = Math.min(100, Math.max(0, Math.round((remainingSeconds / 180) * 100)));
+    ring.style.setProperty('--turn-pct', pct);
+    if (remainingSeconds < 30 && !timerPaused) {
+      ring.classList.add('is-urgent');
+    } else {
+      ring.classList.remove('is-urgent');
+    }
+  }
+
+  // Timer interval tick
+  setInterval(() => {
+    if (!timerPaused && remainingSeconds > 0) {
+      remainingSeconds--;
+      updateTimerDisplay();
+    }
+  }, 1000);
+
+  // Periodic polling interval
+  setInterval(refreshState, 8000);
+
+  // Delegated click handler for showcase live actions
+  document.addEventListener('click', e => {
+    const actionBtn = e.target.closest('[data-showcase-live-action]');
+    if (actionBtn) {
+      e.preventDefault();
+      const action = actionBtn.dataset.showcaseLiveAction;
+      const data = { action };
+      if (actionBtn.dataset.delta) data.delta = actionBtn.dataset.delta;
+      if (actionBtn.dataset.exhibitId) data.exhibit_id = actionBtn.dataset.exhibitId;
+      if (actionBtn.dataset.mode) data.mode = actionBtn.dataset.mode;
+      postAction(data);
+      return;
+    }
+
+    const rovingJudgeBtn = e.target.closest('[data-assign-roving-judge-btn]');
+    if (rovingJudgeBtn) {
+      e.preventDefault();
+      const exhibitId = rovingJudgeBtn.dataset.exhibitId;
+      const select = document.getElementById(`roving-judge-select-${exhibitId}`);
+      if (select && select.value) {
+        postAction({
+          action: 'assign_roving_judge',
+          exhibit_id: exhibitId,
+          judge_invitation_id: select.value
+        });
+        const modal = bootstrap.Modal.getInstance(document.getElementById(`assign-judge-modal-${exhibitId}`));
+        if (modal) modal.hide();
+      }
+      return;
+    }
+
+    const closeBtn = e.target.closest('#confirm-showcase-close-ratings-btn');
+    if (closeBtn) {
+      e.preventDefault();
+      closeBtn.disabled = true;
+      postAction({ action: 'close_ratings' });
+      return;
+    }
+
+    const filterBtn = e.target.closest('[data-showcase-filter]');
+    if (filterBtn) {
+      e.preventDefault();
+      const filter = filterBtn.dataset.showcaseFilter;
+      document.querySelectorAll('[data-showcase-filter]').forEach(b => b.classList.remove('active'));
+      filterBtn.classList.add('active');
+      document.querySelectorAll('#showcase-exhibit-radar-table tbody tr').forEach(row => {
+        if (filter === 'all') {
+          row.hidden = false;
+        } else if (filter === 'attention') {
+          row.hidden = row.dataset.rowAttention !== 'true';
+        } else if (filter === 'missing-judge') {
+          row.hidden = row.dataset.rowMissingJudge !== 'true';
+        } else if (filter === 'zero-ratings') {
+          row.hidden = row.dataset.rowZeroRatings !== 'true';
+        }
+      });
+    }
+  });
+
+  updateTimerDisplay();
+})();
+</script>
+{% endblock %}

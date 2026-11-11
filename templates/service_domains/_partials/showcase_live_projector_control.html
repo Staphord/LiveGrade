@@ -1,0 +1,56 @@
+<section id="showcase-live-projector-control" class="card assess-stagger shadow-sm mb-4" aria-labelledby="projector-head">
+  <div class="card-header bg-surface d-flex justify-content-between align-items-center py-3">
+    <div class="d-flex align-items-center gap-2">
+      <div class="icon-badge bg-primary-subtle text-primary rounded-circle p-2 d-inline-flex">
+        <i class="bi bi-projector" aria-hidden="true"></i>
+      </div>
+      <h2 id="projector-head" class="h6 mb-0 fw-bold">Venue Projector &amp; Stage Display</h2>
+    </div>
+    <a href="{% url 'showcase_public_results' public_id=event.public_id %}" target="_blank" rel="noopener" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i>Launch screen
+    </a>
+  </div>
+
+  <div class="card-body">
+    <p class="small text-muted mb-3">
+      Choose what is projected onto the main hall screen or venue monitors:
+    </p>
+
+    <div class="bg-surface-sunken p-3 rounded-3">
+      <div class="d-flex flex-wrap gap-3">
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="projector_mode_choice" id="proj-mode-qr" value="qr_welcome"
+                 {% if projector_mode == 'qr_welcome' %}checked{% endif %} data-showcase-live-action="set_projector_mode" data-mode="qr_welcome">
+          <label class="form-check-label small" for="proj-mode-qr">
+            <strong>Welcome &amp; Visitor QR</strong>
+            <span class="d-block text-muted">Displays event welcome title and high-resolution QR code for attendees to scan.</span>
+          </label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="projector_mode_choice" id="proj-mode-ticker" value="telemetry_ticker"
+                 {% if projector_mode == 'telemetry_ticker' %}checked{% endif %} data-showcase-live-action="set_projector_mode" data-mode="telemetry_ticker">
+          <label class="form-check-label small" for="proj-mode-ticker">
+            <strong>Live Activity Ticker</strong>
+            <span class="d-block text-muted">Shows total votes cast count and rotating featured booths without publishing scores.</span>
+          </label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="projector_mode_choice" id="proj-mode-stage" value="stage_spotlight"
+                 {% if projector_mode == 'stage_spotlight' %}checked{% endif %} data-showcase-live-action="set_projector_mode" data-mode="stage_spotlight">
+          <label class="form-check-label small" for="proj-mode-stage">
+            <strong>Spotlight Pitch Mode</strong>
+            <span class="d-block text-muted">Displays current main-stage presenter information and live pitch timer.</span>
+          </label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="projector_mode_choice" id="proj-mode-awards" value="awards_reveal"
+                 {% if projector_mode == 'awards_reveal' %}checked{% endif %} data-showcase-live-action="set_projector_mode" data-mode="awards_reveal">
+          <label class="form-check-label small" for="proj-mode-awards">
+            <strong>Awards Podium Reveal</strong>
+            <span class="d-block text-muted">Presents published award winners and category medals.</span>
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

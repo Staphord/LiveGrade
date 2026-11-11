@@ -932,6 +932,7 @@ class ShowcaseEvent(OwnedDomainRecord):
         validators=[MinValueValidator(0), MaxValueValidator(50)],
         help_text='Set 0 for an audience-only event; otherwise require this many judge scorecards per exhibit.')
     public_results = models.BooleanField(default=False)
+    workflow_snapshot = models.JSONField(default=dict, blank=True, editable=False)
     branding = models.JSONField(default=dict, blank=True)
 
     class Meta:
@@ -1452,6 +1453,7 @@ class TrainingSeriesSession(OwnedDomainRecord):
     feedback_public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     sequence = models.PositiveIntegerField()
     scheduled_for = models.DateTimeField(null=True, blank=True)
+    workflow_snapshot = models.JSONField(default=dict, blank=True, editable=False)
 
     class Meta:
         ordering = ('sequence',)
@@ -2396,6 +2398,28 @@ class CompetitionLeaderboardTieDecision(OwnedDomainRecord):
 
     def delete(self, *args, **kwargs):
         raise ValidationError('Competition leaderboard tie decisions are append-only.')
+
+
+class CompetitionLiveState(OwnedDomainRecord):
+    """Runtime stage telemetry and projector state for an active competition arena."""
+
+    competition = models.OneToOneField(Competition, on_delete=models.CASCADE,
+        related_name='live_state')
+    active_round = models.ForeignKey(CompetitionRound, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='active_in_live_states')
+    active_entry = models.ForeignKey(CompetitionEntry, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='active_in_live_states')
+    pitch_seconds_remaining = models.PositiveIntegerField(default=180)
+    timer_paused = models.BooleanField(default=False)
+    audience_voting_open = models.BooleanField(default=True)
+    projector_mode = models.CharField(max_length=32, default='stage')
+    broadcast_banner = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        ordering = ('pk',)
+
+    def __str__(self):
+        return f'{self.competition.name} Live State'
 
 
 class CombinedAssessmentQuerySet(OwnedQuerySet):

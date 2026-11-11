@@ -114,6 +114,7 @@ def combined_assessment_results(assessment):
                 peer_score * assessment.peer_weight / Decimal('100') +
                 panel_score * assessment.panel_weight / Decimal('100')
             ).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        moderation_history = list(mapping.moderation_decisions.select_related('reviewed_by').order_by('-revision'))
         result_rows.append({
             'mapping_id': mapping.pk,
             'group': mapping.group,
@@ -134,6 +135,7 @@ def combined_assessment_results(assessment):
             'moderation_required': moderation_required,
             'moderation_state': moderation_state,
             'combined_score': combined_score,
+            'moderation_history': moderation_history,
         })
     return result_rows
 

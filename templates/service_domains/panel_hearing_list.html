@@ -145,8 +145,10 @@
           <a class="btn btn-sm btn-primary" href="{% url 'panel_results_review' hearing_id=hearing.pk %}">{% if hearing.status == 'signed_off' %}Release results{% else %}Review results{% endif %}</a>
         {% elif hearing.status == 'draft' and hearing.dashboard_next_action == 'Ready to open' %}
           <a class="btn btn-sm btn-primary" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}?step=ready">Review and open</a>
+        {% elif hearing.status == 'open' %}
+          <a class="btn btn-sm btn-primary" href="{% url 'panel_hearing_live' hearing_id=hearing.pk %}">Open live controls</a>
         {% else %}
-          <a class="btn btn-sm btn-primary" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}">{% if hearing.status == 'open' %}Open live controls{% else %}Continue setup{% endif %}</a>
+          <a class="btn btn-sm btn-primary" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}">Continue setup</a>
         {% endif %}
       </div>
       {% endfor %}

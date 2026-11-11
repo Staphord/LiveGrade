@@ -527,3 +527,103 @@ class ShowcaseWorkspaceUiTests(TestCase):
         res_post = self.client.post(reverse('showcase_event_bulk_delete'))
         self.assertEqual(res_post.status_code, 302)
         self.assertIn(res_post['Location'], ['/showcase/', '/accounts/sign-in/'])
+
+    def test_showcase_live_control_console_lifecycle_and_actions(self):
+        event = self.create_event('Live Science Expo', status=ShowcaseEvent.Status.OPEN)
+        exhibit1 = ShowcaseExhibit.objects.create(
+            organization_id=self.org.id,
+            created_by=self.owner,
+            event=event,
+            name='Solar Rover',
+            order=1,
+        )
+        exhibit2 = ShowcaseExhibit.objects.create(
+            organization_id=self.org.id,
+            created_by=self.owner,
+            event=event,
+            name='Hydro Filter',
+            order=2,
+        )
+        invitation = ShowcaseJudgeInvitation.objects.create(
+            organization_id=self.org.id,
+            created_by=self.owner,
+            event=event,
+            email='judge@example.com',
+            token_digest=ShowcaseJudgeInvitation.digest_token('a' * 32),
+            expires_at=timezone.now() + timezone.timedelta(days=7),
+        )
+
+        # GET console
+        url = reverse('showcase_live_control', kwargs={'event_id': event.pk})
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'Exhibition Live Command')
+        self.assertContains(res, 'Solar Rover')
+        self.assertContains(res, 'Hydro Filter')
+
+        # GET live state JSON
+        state_url = reverse('showcase_live_state', kwargs={'event_id': event.pk})
+        res_state = self.client.get(state_url)
+        self.assertEqual(res_state.status_code, 200)
+        state_data = res_state.json()
+        self.assertTrue(state_data.get('ok'))
+        self.assertIn('hero_html', state_data)
+        self.assertIn('stage_html', state_data)
+        self.assertIn('table_html', state_data)
+        self.assertIn('projector_html', state_data)
+
+        # Action: toggle visitor voting
+        action_url = reverse('showcase_live_action', kwargs={'event_id': event.pk})
+        res_action = self.client.post(action_url, {'action': 'toggle_visitor_voting'})
+        self.assertEqual(res_action.status_code, 200)
+        event.refresh_from_db()
+        self.assertTrue(event.workflow_snapshot['floor_state']['visitor_voting_paused'])
+
+        # Action: toggle judge scoring
+        res_action = self.client.post(action_url, {'action': 'toggle_judge_scoring'})
+        self.assertEqual(res_action.status_code, 200)
+        event.refresh_from_db()
+        self.assertTrue(event.workflow_snapshot['floor_state']['judge_scoring_paused'])
+
+        # Action: stage_set_exhibit
+        res_action = self.client.post(action_url, {'action': 'stage_set_exhibit', 'exhibit_id': str(exhibit1.id)})
+        self.assertEqual(res_action.status_code, 200)
+        event.refresh_from_db()
+        self.assertEqual(event.workflow_snapshot['stage_state']['active_exhibit_id'], exhibit1.id)
+
+        # Action: stage_adjust_timer
+        res_action = self.client.post(action_url, {'action': 'stage_adjust_timer', 'delta': 60})
+        self.assertEqual(res_action.status_code, 200)
+        event.refresh_from_db()
+        self.assertGreaterEqual(event.workflow_snapshot['stage_state']['pitch_seconds_remaining'], 240)
+
+        # Action: stage_toggle_pause
+        res_action = self.client.post(action_url, {'action': 'stage_toggle_pause'})
+        self.assertEqual(res_action.status_code, 200)
+        event.refresh_from_db()
+        self.assertTrue(event.workflow_snapshot['stage_state']['timer_paused'])
+
+        # Action: set_projector_mode
+        res_action = self.client.post(action_url, {'action': 'set_projector_mode', 'mode': 'leaderboard'})
+        self.assertEqual(res_action.status_code, 200)
+        event.refresh_from_db()
+        self.assertEqual(event.workflow_snapshot['floor_state']['projector_mode'], 'leaderboard')
+
+        # Action: assign roving judge
+        res_action = self.client.post(action_url, {
+            'action': 'assign_roving_judge',
+            'judge_invitation_id': str(invitation.id),
+            'exhibit_id': str(exhibit2.id),
+        })
+        self.assertEqual(res_action.status_code, 200)
+        self.assertTrue(
+            ShowcaseJudgeExhibitAssignment.objects.filter(
+                invitation=invitation, exhibit=exhibit2
+            ).exists()
+        )
+
+        # Tenant isolation check
+        other_client = self.client_class()
+        sign_in(other_client, self.other, self.other_org)
+        res_other = other_client.get(url)
+        self.assertEqual(res_other.status_code, 404)

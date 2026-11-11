@@ -4,7 +4,8 @@
     <li><a class="dropdown-item" href="{% url 'showcase_event_manage' event_id=event.pk %}"><i class="bi bi-pencil me-2" aria-hidden="true"></i>Manage event</a></li>
 
     {% if event.status == 'open' %}
-    <li><a class="dropdown-item" href="{% url 'showcase_live_monitor' event_id=event.pk %}"><i class="bi bi-broadcast me-2" aria-hidden="true"></i>Open live monitor</a></li>
+    <li><a class="dropdown-item" href="{% url 'showcase_live_control' event_id=event.pk %}"><i class="bi bi-broadcast me-2" aria-hidden="true"></i>Live control</a></li>
+    <li><a class="dropdown-item" href="{% url 'showcase_live_monitor' event_id=event.pk %}"><i class="bi bi-display me-2" aria-hidden="true"></i>Live monitor</a></li>
     {% endif %}
 
     {% if event.status == 'draft' or event.status == 'open' %}

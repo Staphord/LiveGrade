@@ -15,7 +15,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core import signing
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Q
+from django.db.models import Avg, Count, Q
 from django.utils import timezone
 from django.utils.crypto import salted_hmac
 
@@ -44,6 +44,7 @@ from .models import (
     CompetitionJudgeInvitation, CompetitionJudgeScore,
     CompetitionJudgeAudit, CompetitionJudgeAbstention,
     CompetitionWeightedResultAudit, CompetitionAudienceJoinCode,
+    CompetitionLiveState,
 )
 from .realtime import schedule_competition_leaderboard_update
 from .rules import (advance_entries, aggregate_anonymous_feedback, aggregate_scores,
@@ -2997,3 +2998,889 @@ def revoke_panel_entrant_result_link(hearing, link, reason, *, organization, use
     _record_panel_audit(locked_hearing, PanelAuditEvent.Action.RESULT_LINK_REVOKED,
         reason.strip(), candidate=locked_link.candidate, actor_user=user)
     return locked_link
+
+
+def get_panel_live_state_context(hearing):
+    """Compile chamber state, candidate docket, examiner readiness, and score convergence."""
+    org = hearing.organization_id
+    candidates = list(PanelCandidate.objects.filter(hearing=hearing, organization_id=org).order_by('order', 'pk'))
+    active_candidate = hearing.active_candidate
+    if active_candidate is None and candidates:
+        active_candidate = candidates[0]
+
+    chamber_state = (hearing.workflow_snapshot or {}).get('chamber_state', {})
+    active_phase = chamber_state.get('active_phase', 'presentation')
+    phase_seconds_remaining = chamber_state.get('phase_seconds_remaining', 900)
+    timer_paused = chamber_state.get('timer_paused', False)
+    display_mode = chamber_state.get('display_mode', 'in_session')
+
+    decisions = {d.candidate_id: d for d in PanelDecision.objects.filter(hearing=hearing, organization_id=org).order_by('revision')}
+
+    conflicts_by_candidate = defaultdict(set)
+    for inv_id, cand_id in PanelConflict.objects.filter(candidate__hearing=hearing, organization_id=org).values_list('invitation_id', 'candidate_id'):
+        conflicts_by_candidate[cand_id].add(inv_id)
+
+    scores_by_cand = defaultdict(lambda: defaultdict(list))
+    for s in PanelScore.objects.filter(candidate__hearing=hearing, organization_id=org).select_related('invitation'):
+        if s.invitation_id not in conflicts_by_candidate[s.candidate_id]:
+            scores_by_cand[s.candidate_id][s.criterion_id].append(float(s.score))
+
+    criteria = list(PanelCriterion.objects.filter(hearing=hearing, organization_id=org).order_by('order', 'pk'))
+    invitations = list(PanelInvitation.objects.filter(hearing=hearing, organization_id=org, revoked_at__isnull=True).order_by('pk'))
+
+    docket = []
+    for cand in candidates:
+        has_decision = cand.pk in decisions
+        is_active = bool(active_candidate and cand.pk == active_candidate.pk)
+        if is_active:
+            status = 'active'
+            status_label = 'On Floor'
+        elif has_decision:
+            status = 'completed'
+            status_label = 'Completed'
+        else:
+            status = 'scheduled'
+            status_label = 'Scheduled'
+        docket.append({
+            'candidate': cand,
+            'status': status,
+            'status_label': status_label,
+            'is_active': is_active,
+            'has_decision': has_decision,
+            'decision': decisions.get(cand.pk),
+        })
+
+    examiners = []
+    total_criteria = len(criteria)
+    for inv in invitations:
+        is_conflicted = bool(active_candidate and (inv.pk in conflicts_by_candidate[active_candidate.pk]))
+        scored_criteria_count = 0
+        if active_candidate and not is_conflicted:
+            for crit in criteria:
+                if PanelScore.objects.filter(candidate=active_candidate, criterion=crit, invitation=inv).exists():
+                    scored_criteria_count += 1
+        pct = int((scored_criteria_count / total_criteria * 100)) if total_criteria else 0
+        is_done = bool(scored_criteria_count == total_criteria) if total_criteria else False
+        examiners.append({
+            'invitation': inv,
+            'is_conflicted': is_conflicted,
+            'scored_criteria_count': scored_criteria_count,
+            'total_criteria': total_criteria,
+            'pct': pct,
+            'is_done': is_done,
+        })
+
+    convergence_criteria = []
+    has_divergence = False
+    if active_candidate:
+        cand_scores = scores_by_cand[active_candidate.pk]
+        for crit in criteria:
+            vals = cand_scores.get(crit.pk, [])
+            if vals:
+                c_mean = round(sum(vals) / len(vals), 2)
+                c_min = min(vals)
+                c_max = max(vals)
+                diff = round(c_max - c_min, 2)
+                divergent = diff >= 1.5
+                if divergent:
+                    has_divergence = True
+            else:
+                c_mean = None
+                c_min = None
+                c_max = None
+                diff = 0
+                divergent = False
+            convergence_criteria.append({
+                'criterion': crit,
+                'mean': c_mean,
+                'min': c_min,
+                'max': c_max,
+                'diff': diff,
+                'divergent': divergent,
+                'count': len(vals),
+            })
+
+    reviews = []
+    if active_candidate:
+        reviews = list(PanelWrittenReview.objects.filter(hearing=hearing, candidate=active_candidate).select_related('invitation').order_by('created_at'))
+
+    display_link = PanelLiveDisplayLink.objects.filter(hearing=hearing, organization_id=org, revoked_at__isnull=True).first()
+
+    return {
+        'hearing': hearing,
+        'active_candidate': active_candidate,
+        'active_phase': active_phase,
+        'phase_seconds_remaining': phase_seconds_remaining,
+        'timer_paused': timer_paused,
+        'display_mode': display_mode,
+        'docket': docket,
+        'examiners': examiners,
+        'criteria': criteria,
+        'convergence_criteria': convergence_criteria,
+        'has_divergence': has_divergence,
+        'reviews': reviews,
+        'active_decision': decisions.get(active_candidate.pk) if active_candidate else None,
+        'display_link': display_link,
+        'outcomes': PanelDecision.Outcome.choices,
+    }
+
+
+@transaction.atomic
+def set_panel_chamber_active_candidate(hearing, candidate_id, *, organization, user):
+    """Set active candidate on the floor and reset turn phase timer."""
+    locked = PanelHearing.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=hearing.pk).first()
+    if locked is None:
+        raise PermissionDenied
+    cand = PanelCandidate.objects.filter(hearing=locked, pk=candidate_id).first()
+    if cand is None:
+        raise ValidationError('Candidate not found in this hearing.')
+    locked.active_candidate = cand
+    snapshot = dict(locked.workflow_snapshot or {})
+    chamber = dict(snapshot.get('chamber_state', {}))
+    chamber['active_phase'] = 'presentation'
+    chamber['phase_seconds_remaining'] = 900
+    chamber['timer_paused'] = False
+    snapshot['chamber_state'] = chamber
+    locked.workflow_snapshot = snapshot
+    locked.save(update_fields=('active_candidate', 'workflow_snapshot', 'updated_at'))
+    _record_panel_audit(locked, PanelAuditEvent.Action.CANDIDATE_ACTIVATED,
+        f'Presenter activated on floor: {cand.display_name}.', candidate=cand, actor_user=user)
+    return locked
+
+
+@transaction.atomic
+def set_panel_chamber_phase(hearing, phase, *, organization, user):
+    """Transition active candidate phase: presentation, qa, deliberation, decision."""
+    locked = PanelHearing.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=hearing.pk).first()
+    if locked is None:
+        raise PermissionDenied
+    valid_phases = {
+        'presentation': 900,
+        'qa': 1200,
+        'deliberation': 600,
+        'decision': 300,
+    }
+    if phase not in valid_phases:
+        raise ValidationError('Invalid chamber phase.')
+    snapshot = dict(locked.workflow_snapshot or {})
+    chamber = dict(snapshot.get('chamber_state', {}))
+    chamber['active_phase'] = phase
+    chamber['phase_seconds_remaining'] = valid_phases[phase]
+    chamber['timer_paused'] = False
+    snapshot['chamber_state'] = chamber
+    locked.workflow_snapshot = snapshot
+    locked.save(update_fields=('workflow_snapshot', 'updated_at'))
+    return locked
+
+
+@transaction.atomic
+def adjust_panel_chamber_timer(hearing, delta_seconds, *, organization, user):
+    """Adjust remaining phase seconds."""
+    locked = PanelHearing.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=hearing.pk).first()
+    if locked is None:
+        raise PermissionDenied
+    snapshot = dict(locked.workflow_snapshot or {})
+    chamber = dict(snapshot.get('chamber_state', {}))
+    current_sec = int(chamber.get('phase_seconds_remaining', 900))
+    chamber['phase_seconds_remaining'] = max(0, current_sec + int(delta_seconds))
+    snapshot['chamber_state'] = chamber
+    locked.workflow_snapshot = snapshot
+    locked.save(update_fields=('workflow_snapshot', 'updated_at'))
+    return locked
+
+
+@transaction.atomic
+def toggle_panel_chamber_pause(hearing, *, organization, user):
+    """Toggle timer pause state."""
+    locked = PanelHearing.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=hearing.pk).first()
+    if locked is None:
+        raise PermissionDenied
+    snapshot = dict(locked.workflow_snapshot or {})
+    chamber = dict(snapshot.get('chamber_state', {}))
+    chamber['timer_paused'] = not chamber.get('timer_paused', False)
+    snapshot['chamber_state'] = chamber
+    locked.workflow_snapshot = snapshot
+    locked.save(update_fields=('workflow_snapshot', 'updated_at'))
+    return locked
+
+
+@transaction.atomic
+def conclude_panel_chamber_candidate(hearing, candidate_id, *, organization, user):
+    """Conclude current candidate and advance docket to next candidate."""
+    locked = PanelHearing.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=hearing.pk).first()
+    if locked is None:
+        raise PermissionDenied
+    candidates = list(PanelCandidate.objects.filter(hearing=locked).order_by('order', 'pk'))
+    next_cand = None
+    found_curr = False
+    for cand in candidates:
+        if found_curr:
+            next_cand = cand
+            break
+        if cand.pk == int(candidate_id):
+            found_curr = True
+    locked.active_candidate = next_cand
+    snapshot = dict(locked.workflow_snapshot or {})
+    chamber = dict(snapshot.get('chamber_state', {}))
+    chamber['active_phase'] = 'presentation'
+    chamber['phase_seconds_remaining'] = 900
+    chamber['timer_paused'] = False
+    snapshot['chamber_state'] = chamber
+    locked.workflow_snapshot = snapshot
+    locked.save(update_fields=('active_candidate', 'workflow_snapshot', 'updated_at'))
+    return locked
+
+
+@transaction.atomic
+def toggle_panel_chamber_display_mode(hearing, mode, *, organization, user):
+    """Set projector display mode: welcome, in_session, deliberation_private."""
+    locked = PanelHearing.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=hearing.pk).first()
+    if locked is None:
+        raise PermissionDenied
+    if mode not in ('welcome', 'in_session', 'deliberation_private'):
+        raise ValidationError('Invalid display mode.')
+    snapshot = dict(locked.workflow_snapshot or {})
+    chamber = dict(snapshot.get('chamber_state', {}))
+    chamber['display_mode'] = mode
+    snapshot['chamber_state'] = chamber
+    locked.workflow_snapshot = snapshot
+    locked.save(update_fields=('workflow_snapshot', 'updated_at'))
+    return locked
+
+
+def get_showcase_live_context(event):
+    """Compile comprehensive live telemetry, attention radar, stage pitch, and floor controls."""
+    org = event.organization_id
+    exhibits = list(ShowcaseExhibit.objects.filter(event=event, organization_id=org)
+                    .select_related('category').order_by('category__order', 'category__name', 'order', 'pk'))
+    exhibit_ids = [e.pk for e in exhibits]
+
+    ratings = {
+        row['exhibit_id']: row for row in ShowcaseRating.objects.filter(
+            event=event, exhibit_id__in=exhibit_ids
+        ).values('exhibit_id').annotate(count=Count('pk'), mean=Avg('stars'))
+    }
+    assignments = {
+        row['exhibit_id']: row for row in ShowcaseJudgeExhibitAssignment.objects.filter(
+            event=event, exhibit_id__in=exhibit_ids, active=True
+        ).exclude(conflict_declaration__isnull=False)
+        .values('exhibit_id').annotate(assigned=Count('pk'), submitted=Count('evaluation', distinct=True))
+    }
+    scores = {
+        row['assignment__exhibit_id']: row for row in ShowcaseJudgeEvaluation.objects.filter(
+            assignment__event=event
+        ).values('assignment__exhibit_id').annotate(count=Count('pk'), mean=Avg('score'))
+    }
+
+    total_ratings = sum(r.get('count', 0) for r in ratings.values())
+    total_assigned_scorecards = sum(a.get('assigned', 0) for a in assignments.values())
+    total_submitted_scorecards = sum(s.get('count', 0) for s in scores.values())
+    avg_stars_all = None
+    if total_ratings > 0:
+        star_sum = sum((r.get('mean') or 0) * r.get('count', 0) for r in ratings.values())
+        avg_stars_all = round(star_sum / total_ratings, 2)
+
+    snapshot = event.workflow_snapshot or {}
+    floor_state = snapshot.get('floor_state', {})
+    visitor_voting_paused = floor_state.get('visitor_voting_paused', False)
+    judge_scoring_paused = floor_state.get('judge_scoring_paused', False)
+    projector_mode = floor_state.get('projector_mode', 'qr_welcome')
+    broadcast_banner = floor_state.get('broadcast_banner', '')
+
+    stage_state = snapshot.get('stage_state', {})
+    active_exhibit_id = stage_state.get('active_exhibit_id')
+    pitch_seconds_remaining = stage_state.get('pitch_seconds_remaining', 180)
+    timer_paused = stage_state.get('timer_paused', False)
+
+    active_exhibit = None
+    if active_exhibit_id:
+        active_exhibit = next((e for e in exhibits if e.pk == int(active_exhibit_id)), None)
+    if not active_exhibit and exhibits:
+        active_exhibit = exhibits[0]
+
+    rows = []
+    attention_count = 0
+    categories = set()
+    for ex in exhibits:
+        if ex.category:
+            categories.add(ex.category.name)
+        aud = ratings.get(ex.pk, {})
+        cov = assignments.get(ex.pk, {})
+        sc = scores.get(ex.pk, {})
+
+        aud_count = aud.get('count', 0)
+        aud_mean = round(aud.get('mean'), 2) if aud.get('mean') is not None else None
+        j_assigned = cov.get('assigned', 0)
+        j_submitted = sc.get('count', 0)
+        j_mean = round(sc.get('mean'), 1) if sc.get('mean') is not None else None
+
+        missing_judge = (j_assigned == 0)
+        pending_scores = (j_submitted < j_assigned)
+        zero_ratings = (aud_count == 0)
+        needs_attention = (missing_judge or zero_ratings or pending_scores)
+        if needs_attention:
+            attention_count += 1
+
+        rows.append({
+            'exhibit': ex,
+            'audience_count': aud_count,
+            'audience_mean': aud_mean,
+            'judge_assigned_count': j_assigned,
+            'judge_submitted_count': j_submitted,
+            'judge_mean': j_mean,
+            'missing_judge': missing_judge,
+            'pending_scores': pending_scores,
+            'zero_ratings': zero_ratings,
+            'needs_attention': needs_attention,
+            'is_stage_active': bool(active_exhibit and ex.pk == active_exhibit.pk),
+        })
+
+    judges = list(ShowcaseJudgeInvitation.objects.filter(event=event, organization_id=org, revoked_at__isnull=True).order_by('email'))
+
+    return {
+        'event': event,
+        'rows': rows,
+        'categories': sorted(list(categories)),
+        'total_ratings': total_ratings,
+        'avg_stars_all': avg_stars_all,
+        'total_assigned_scorecards': total_assigned_scorecards,
+        'total_submitted_scorecards': total_submitted_scorecards,
+        'attention_count': attention_count,
+        'visitor_voting_paused': visitor_voting_paused,
+        'judge_scoring_paused': judge_scoring_paused,
+        'projector_mode': projector_mode,
+        'broadcast_banner': broadcast_banner,
+        'active_exhibit': active_exhibit,
+        'pitch_seconds_remaining': pitch_seconds_remaining,
+        'timer_paused': timer_paused,
+        'judges': judges,
+    }
+
+
+@transaction.atomic
+def toggle_showcase_floor_visitor_voting(event, *, organization, user):
+    """Toggle visitor rating acceptance globally."""
+    locked = ShowcaseEvent.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=event.pk).first()
+    if locked is None:
+        raise PermissionDenied
+    snapshot = dict(locked.workflow_snapshot or {})
+    floor = dict(snapshot.get('floor_state', {}))
+    floor['visitor_voting_paused'] = not floor.get('visitor_voting_paused', False)
+    snapshot['floor_state'] = floor
+    locked.workflow_snapshot = snapshot
+    locked.save(update_fields=('workflow_snapshot', 'updated_at'))
+    return locked
+
+
+@transaction.atomic
+def toggle_showcase_floor_judge_scoring(event, *, organization, user):
+    """Toggle judge scoring acceptance globally."""
+    locked = ShowcaseEvent.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=event.pk).first()
+    if locked is None:
+        raise PermissionDenied
+    snapshot = dict(locked.workflow_snapshot or {})
+    floor = dict(snapshot.get('floor_state', {}))
+    floor['judge_scoring_paused'] = not floor.get('judge_scoring_paused', False)
+    snapshot['floor_state'] = floor
+    locked.workflow_snapshot = snapshot
+    locked.save(update_fields=('workflow_snapshot', 'updated_at'))
+    return locked
+
+
+@transaction.atomic
+def assign_showcase_roving_judge(event, exhibit_id, judge_invitation_id, *, organization, user):
+    """Assign an invited judge to an exhibit dynamically during the live event."""
+    locked = ShowcaseEvent.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=event.pk).first()
+    if locked is None:
+        raise PermissionDenied
+    exhibit = ShowcaseExhibit.objects.filter(event=locked, pk=exhibit_id).first()
+    invitation = ShowcaseJudgeInvitation.objects.filter(event=locked, pk=judge_invitation_id).first()
+    if exhibit is None or invitation is None:
+        raise ValidationError('Exhibit or Judge invitation not found.')
+    assignment, created = ShowcaseJudgeExhibitAssignment.objects.get_or_create(
+        event=locked,
+        exhibit=exhibit,
+        invitation=invitation,
+        defaults={'organization_id': locked.organization_id, 'created_by': user, 'active': True}
+    )
+    if not created and not assignment.active:
+        assignment.active = True
+        assignment.save(update_fields=('active', 'updated_at'))
+    return assignment
+
+
+@transaction.atomic
+def stage_set_showcase_exhibit(event, exhibit_id, *, organization, user):
+    """Set spotlight exhibit on main stage and reset pitch timer to 180s."""
+    locked = ShowcaseEvent.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=event.pk).first()
+    if locked is None:
+        raise PermissionDenied
+    exhibit = ShowcaseExhibit.objects.filter(event=locked, pk=exhibit_id).first()
+    if exhibit is None:
+        raise ValidationError('Exhibit not found.')
+    snapshot = dict(locked.workflow_snapshot or {})
+    stage = dict(snapshot.get('stage_state', {}))
+    stage['active_exhibit_id'] = exhibit.pk
+    stage['pitch_seconds_remaining'] = 180
+    stage['timer_paused'] = False
+    snapshot['stage_state'] = stage
+    locked.workflow_snapshot = snapshot
+    locked.save(update_fields=('workflow_snapshot', 'updated_at'))
+    return locked
+
+
+@transaction.atomic
+def stage_adjust_showcase_timer(event, delta_seconds, *, organization, user):
+    """Adjust pitch countdown seconds."""
+    locked = ShowcaseEvent.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=event.pk).first()
+    if locked is None:
+        raise PermissionDenied
+    snapshot = dict(locked.workflow_snapshot or {})
+    stage = dict(snapshot.get('stage_state', {}))
+    sec = int(stage.get('pitch_seconds_remaining', 180))
+    stage['pitch_seconds_remaining'] = max(0, sec + int(delta_seconds))
+    snapshot['stage_state'] = stage
+    locked.workflow_snapshot = snapshot
+    locked.save(update_fields=('workflow_snapshot', 'updated_at'))
+    return locked
+
+
+@transaction.atomic
+def stage_toggle_showcase_pause(event, *, organization, user):
+    """Toggle pitch timer pause."""
+    locked = ShowcaseEvent.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=event.pk).first()
+    if locked is None:
+        raise PermissionDenied
+    snapshot = dict(locked.workflow_snapshot or {})
+    stage = dict(snapshot.get('stage_state', {}))
+    stage['timer_paused'] = not stage.get('timer_paused', False)
+    snapshot['stage_state'] = stage
+    locked.workflow_snapshot = snapshot
+    locked.save(update_fields=('workflow_snapshot', 'updated_at'))
+    return locked
+
+
+@transaction.atomic
+def set_showcase_projector_mode(event, mode, *, organization, user):
+    """Set venue projector display mode."""
+    locked = ShowcaseEvent.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=event.pk).first()
+    if locked is None:
+        raise PermissionDenied
+    snapshot = dict(locked.workflow_snapshot or {})
+    floor = dict(snapshot.get('floor_state', {}))
+    floor['projector_mode'] = mode
+    snapshot['floor_state'] = floor
+    locked.workflow_snapshot = snapshot
+    locked.save(update_fields=('workflow_snapshot', 'updated_at'))
+    return locked
+
+
+def get_or_create_competition_live_state(competition):
+    """Retrieve or initialize live arena state for an active competition."""
+    org_id = competition.organization_id
+    live_state = CompetitionLiveState.objects.filter(competition=competition, organization_id=org_id).first()
+    if live_state is None:
+        latest_round = CompetitionRound.objects.filter(competition=competition, organization_id=org_id).order_by('-order').first()
+        first_entry = None
+        if latest_round:
+            first_round_entry = CompetitionRoundEntry.objects.filter(round=latest_round, organization_id=org_id).select_related('entry').first()
+            if first_round_entry:
+                first_entry = first_round_entry.entry
+        live_state = CompetitionLiveState.objects.create(
+            organization_id=org_id,
+            created_by=competition.created_by,
+            competition=competition,
+            active_round=latest_round,
+            active_entry=first_entry,
+            pitch_seconds_remaining=180,
+            timer_paused=False,
+            audience_voting_open=True,
+            projector_mode='stage',
+        )
+    return live_state
+
+
+def get_competition_live_state_context(competition):
+    """Compile telemetry, stage pitch controls, judge matrix, audience meter, and round standings."""
+    org_id = competition.organization_id
+    live_state = get_or_create_competition_live_state(competition)
+    rounds = list(CompetitionRound.objects.filter(competition=competition, organization_id=org_id).order_by('order'))
+    active_round = live_state.active_round
+    if not active_round and rounds:
+        active_round = rounds[-1]
+        live_state.active_round = active_round
+        live_state.save(update_fields=('active_round', 'updated_at'))
+
+    tracks = list(CompetitionTrack.objects.filter(competition=competition, organization_id=org_id).order_by('pk'))
+
+    round_entries = []
+    if active_round:
+        round_entries = list(CompetitionRoundEntry.objects.filter(round=active_round, organization_id=org_id)
+            .select_related('entry', 'track').order_by('entry__order', 'entry__pk'))
+
+    active_entry = live_state.active_entry
+    if active_entry and round_entries:
+        if not any(re.entry_id == active_entry.pk for re in round_entries):
+            active_entry = round_entries[0].entry
+            live_state.active_entry = active_entry
+            live_state.save(update_fields=('active_entry', 'updated_at'))
+    elif not active_entry and round_entries:
+        active_entry = round_entries[0].entry
+        live_state.active_entry = active_entry
+        live_state.save(update_fields=('active_entry', 'updated_at'))
+
+    active_round_entry = None
+    if active_entry and round_entries:
+        active_round_entry = next((re for re in round_entries if re.entry_id == active_entry.pk), None)
+
+    active_track = active_round_entry.track if active_round_entry else (tracks[0] if tracks else None)
+
+    # Judge matrix for active round and active track
+    judge_rows = []
+    judge_scores_total = Decimal('0')
+    judge_scores_count = 0
+    if active_round and active_track and active_round_entry:
+        invitations = list(CompetitionJudgeInvitation.objects.filter(
+            round=active_round, track=active_track, organization_id=org_id, revoked_at__isnull=True
+        ).order_by('email'))
+        for inv in invitations:
+            scores = list(CompetitionJudgeScore.objects.filter(
+                invitation=inv, round_entry=active_round_entry, organization_id=org_id
+            ))
+            if scores:
+                avg_val = Decimal(str(sum(s.score for s in scores) / len(scores))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                judge_scores_total += avg_val
+                judge_scores_count += 1
+                status = 'submitted'
+                score_val = avg_val
+            elif inv.submitted_at:
+                score_val = None
+                status = 'submitted'
+            else:
+                score_val = None
+                status = 'awaiting'
+            judge_rows.append({
+                'invitation': inv,
+                'email': inv.email,
+                'status': status,
+                'score': score_val,
+            })
+
+    avg_judge_score = (judge_scores_total / Decimal(judge_scores_count)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP) if judge_scores_count > 0 else None
+
+    # Audience join code and ballots count
+    join_code = None
+    ballots_count = 0
+    if active_round and active_track:
+        join_code_obj = CompetitionAudienceJoinCode.objects.filter(round=active_round, track=active_track).first()
+        if join_code_obj:
+            join_code = join_code_obj.code
+        else:
+            try:
+                join_code = competition_audience_join_code(competition, active_round, active_track)
+            except Exception:
+                join_code = 'JOIN123'
+        ballots_count = CompetitionAudienceBallot.objects.filter(
+            competition=competition, round=active_round, track=active_track
+        ).count()
+
+    # Round standings
+    standings = []
+    has_boundary_tie = False
+    cutoff_rank = 3
+    if round_entries:
+        sorted_entries = sorted(
+            round_entries,
+            key=lambda re: (
+                re.score is not None,
+                re.score if re.score is not None else (re.judge_score if re.judge_score is not None else Decimal('-1'))
+            ),
+            reverse=True
+        )
+        for idx, re in enumerate(sorted_entries, start=1):
+            effective_score = re.score if re.score is not None else re.judge_score
+            is_qualified = (idx <= cutoff_rank)
+            standings.append({
+                'rank': idx,
+                'round_entry': re,
+                'entry': re.entry,
+                'track': re.track,
+                'judge_score': re.judge_score,
+                'audience_score': re.audience_score,
+                'score': re.score,
+                'effective_score': effective_score,
+                'is_qualified': is_qualified,
+                'is_active': bool(active_entry and re.entry_id == active_entry.pk),
+            })
+        if len(standings) > cutoff_rank:
+            boundary_score = standings[cutoff_rank - 1]['effective_score']
+            next_score = standings[cutoff_rank]['effective_score']
+            if boundary_score is not None and boundary_score == next_score:
+                has_boundary_tie = True
+
+    unresolved_ties = False
+    if has_boundary_tie and active_round:
+        tie_decisions = CompetitionLeaderboardTieDecision.objects.filter(
+            round=active_round, organization_id=org_id
+        ).exists()
+        unresolved_ties = not tie_decisions
+
+    can_advance = (
+        active_round is not None
+        and active_round.advancement_locked_at is None
+        and not unresolved_ties
+        and len(standings) > 0
+    )
+
+    return {
+        'competition': competition,
+        'live_state': live_state,
+        'rounds': rounds,
+        'active_round': active_round,
+        'tracks': tracks,
+        'active_track': active_track,
+        'round_entries': round_entries,
+        'active_entry': active_entry,
+        'active_round_entry': active_round_entry,
+        'pitch_seconds_remaining': live_state.pitch_seconds_remaining,
+        'timer_paused': live_state.timer_paused,
+        'audience_voting_open': live_state.audience_voting_open and (active_round.audience_locked_at is None if active_round else True),
+        'join_code': join_code,
+        'ballots_count': ballots_count,
+        'judge_rows': judge_rows,
+        'avg_judge_score': avg_judge_score,
+        'standings': standings,
+        'cutoff_rank': cutoff_rank,
+        'has_boundary_tie': has_boundary_tie,
+        'unresolved_ties': unresolved_ties,
+        'can_advance': can_advance,
+        'projector_mode': live_state.projector_mode,
+        'broadcast_banner': live_state.broadcast_banner,
+    }
+
+
+@transaction.atomic
+def set_competition_stage_entry(competition, entry_id, *, organization, user):
+    """Set the active entrant presenting on the arena stage."""
+    live_state = get_or_create_competition_live_state(competition)
+    entry = CompetitionEntry.objects.filter(pk=entry_id, organization_id=competition.organization_id).first()
+    if entry is None:
+        raise ValidationError('Entrant not found.')
+    live_state.active_entry = entry
+    live_state.pitch_seconds_remaining = 180
+    live_state.timer_paused = False
+    live_state.save(update_fields=('active_entry', 'pitch_seconds_remaining', 'timer_paused', 'updated_at'))
+    return live_state
+
+
+@transaction.atomic
+def adjust_competition_pitch_timer(competition, delta_seconds, *, organization, user):
+    """Adjust pitch countdown seconds."""
+    live_state = get_or_create_competition_live_state(competition)
+    live_state.pitch_seconds_remaining = max(0, live_state.pitch_seconds_remaining + int(delta_seconds))
+    live_state.save(update_fields=('pitch_seconds_remaining', 'updated_at'))
+    return live_state
+
+
+@transaction.atomic
+def toggle_competition_pitch_pause(competition, *, organization, user):
+    """Toggle pitch timer pause."""
+    live_state = get_or_create_competition_live_state(competition)
+    live_state.timer_paused = not live_state.timer_paused
+    live_state.save(update_fields=('timer_paused', 'updated_at'))
+    return live_state
+
+
+@transaction.atomic
+def toggle_competition_audience_voting(competition, *, organization, user):
+    """Toggle audience voting open/locked state."""
+    live_state = get_or_create_competition_live_state(competition)
+    live_state.audience_voting_open = not live_state.audience_voting_open
+    live_state.save(update_fields=('audience_voting_open', 'updated_at'))
+    return live_state
+
+
+@transaction.atomic
+def set_competition_projector_mode(competition, mode, *, organization, user):
+    """Set the arena projector display mode."""
+    live_state = get_or_create_competition_live_state(competition)
+    live_state.projector_mode = mode
+    live_state.save(update_fields=('projector_mode', 'updated_at'))
+    return live_state
+
+
+def get_training_session_live_state(series, session):
+    """Compile workshop telemetry, drill phase pipeline, competencies, and pod trackers."""
+    org_id = series.organization_id
+    snapshot = dict(session.workflow_snapshot or {})
+    drill_phase = snapshot.get('drill_phase', 'briefing')
+    drill_seconds_remaining = int(snapshot.get('drill_seconds_remaining', 900))
+    timer_paused = bool(snapshot.get('timer_paused', False))
+    visited_pods = set(snapshot.get('visited_pods', []))
+    notes = dict(snapshot.get('notes', {}))
+
+    participants = list(TrainingParticipant.objects.filter(
+        series=series, organization_id=org_id
+    ).order_by('group_name', 'order', 'pk'))
+
+    students = list(session.assessment_session.students.all().order_by('full_name', 'pk'))
+    student_by_name = {s.full_name.strip().casefold(): s for s in students}
+
+    criteria = list(TrainingSessionCompetency.objects.filter(
+        series_session=session, organization_id=org_id
+    ).order_by('order', 'pk'))
+
+    results = list(TrainingCompetencyResult.objects.filter(
+        criterion__series_session=session, organization_id=org_id
+    ).order_by('criterion_id', 'student_id', '-revision'))
+
+    results_map = {}
+    for r in results:
+        results_map.setdefault((r.student_id, r.criterion_id), r)
+
+    # Breakout pods grouping
+    pods_dict = {}
+    participant_rows = []
+    for p in participants:
+        student = student_by_name.get(p.display_name.strip().casefold())
+        comp_scores = []
+        for c in criteria:
+            res = results_map.get((student.pk if student else None, c.pk))
+            comp_scores.append({
+                'criterion': c,
+                'result': res,
+                'score': res.score if res else None,
+            })
+        row_data = {
+            'participant': p,
+            'student': student,
+            'note': notes.get(str(p.pk), ''),
+            'competency_scores': comp_scores,
+        }
+        participant_rows.append(row_data)
+        pods_dict.setdefault(p.group_name, []).append(row_data)
+
+    pods = []
+    for group_name, members in sorted(pods_dict.items()):
+        pods.append({
+            'name': group_name,
+            'members': members,
+            'is_visited': group_name in visited_pods,
+        })
+
+    # Attendee feedback
+    feedback_rows = TrainingFeedback.objects.filter(series_session=session, organization_id=org_id)
+    feedback_count = feedback_rows.count()
+    mean_val = feedback_rows.aggregate(avg=Avg('score'))['avg']
+    feedback_score_mean = round(mean_val, 1) if mean_val is not None else None
+
+    # Pace distribution breakdown
+    pace_high = feedback_rows.filter(score__gte=4).count()
+    pace_mid = feedback_rows.filter(score=3).count()
+    pace_low = feedback_rows.filter(score__lte=2).count()
+
+    return {
+        'series': series,
+        'session': session,
+        'assessment_session': session.assessment_session,
+        'drill_phase': drill_phase,
+        'drill_seconds_remaining': drill_seconds_remaining,
+        'timer_paused': timer_paused,
+        'visited_pods': list(visited_pods),
+        'notes': notes,
+        'participants': participant_rows,
+        'pods': pods,
+        'criteria': criteria,
+        'feedback_count': feedback_count,
+        'feedback_score_mean': feedback_score_mean,
+        'pace_high': pace_high,
+        'pace_mid': pace_mid,
+        'pace_low': pace_low,
+        'feedback_public_id': session.feedback_public_id,
+    }
+
+
+@transaction.atomic
+def set_training_drill_phase(session, phase, *, organization, user):
+    """Advance drill phase between briefing, simulation, and debrief."""
+    locked = TrainingSeriesSession.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=session.pk).first()
+    if locked is None:
+        raise PermissionDenied
+    if phase not in ('briefing', 'simulation', 'debrief'):
+        raise ValidationError('Phase must be briefing, simulation, or debrief.')
+    snapshot = dict(locked.workflow_snapshot or {})
+    snapshot['drill_phase'] = phase
+    if phase == 'simulation':
+        snapshot['drill_seconds_remaining'] = 900
+    elif phase == 'debrief':
+        snapshot['drill_seconds_remaining'] = 600
+    else:
+        snapshot['drill_seconds_remaining'] = 300
+    snapshot['timer_paused'] = False
+    locked.workflow_snapshot = snapshot
+    locked.save(update_fields=('workflow_snapshot', 'updated_at'))
+    return locked
+
+
+@transaction.atomic
+def adjust_training_drill_timer(session, delta_seconds, *, organization, user):
+    """Adjust countdown seconds for current drill phase."""
+    locked = TrainingSeriesSession.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=session.pk).first()
+    if locked is None:
+        raise PermissionDenied
+    snapshot = dict(locked.workflow_snapshot or {})
+    sec = int(snapshot.get('drill_seconds_remaining', 900))
+    snapshot['drill_seconds_remaining'] = max(0, sec + int(delta_seconds))
+    locked.workflow_snapshot = snapshot
+    locked.save(update_fields=('workflow_snapshot', 'updated_at'))
+    return locked
+
+
+@transaction.atomic
+def toggle_training_drill_pause(session, *, organization, user):
+    """Toggle timer pause for current drill."""
+    locked = TrainingSeriesSession.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=session.pk).first()
+    if locked is None:
+        raise PermissionDenied
+    snapshot = dict(locked.workflow_snapshot or {})
+    snapshot['timer_paused'] = not snapshot.get('timer_paused', False)
+    locked.workflow_snapshot = snapshot
+    locked.save(update_fields=('workflow_snapshot', 'updated_at'))
+    return locked
+
+
+@transaction.atomic
+def mark_training_pod_visited(session, pod_name, *, organization, user):
+    """Toggle coach check-in state on a breakout team pod."""
+    locked = TrainingSeriesSession.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=session.pk).first()
+    if locked is None:
+        raise PermissionDenied
+    snapshot = dict(locked.workflow_snapshot or {})
+    visited = set(snapshot.get('visited_pods', []))
+    if pod_name in visited:
+        visited.remove(pod_name)
+    else:
+        visited.add(pod_name)
+    snapshot['visited_pods'] = list(visited)
+    locked.workflow_snapshot = snapshot
+    locked.save(update_fields=('workflow_snapshot', 'updated_at'))
+    return locked
+
+
+@transaction.atomic
+def save_training_observation_note(session, key, note, *, organization, user):
+    """Save qualitative coach observation note."""
+    locked = TrainingSeriesSession.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=session.pk).first()
+    if locked is None:
+        raise PermissionDenied
+    snapshot = dict(locked.workflow_snapshot or {})
+    notes = dict(snapshot.get('notes', {}))
+    notes[str(key)] = str(note).strip()
+    snapshot['notes'] = notes
+    locked.workflow_snapshot = snapshot
+    locked.save(update_fields=('workflow_snapshot', 'updated_at'))
+    return locked
+
+
+
+

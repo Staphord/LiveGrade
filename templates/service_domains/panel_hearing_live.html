@@ -1,0 +1,270 @@
+{% extends 'base.html' %}
+{% block title %}{{ hearing.name }} — Live Chamber · LiveGrade{% endblock %}
+{% block page_title %}{{ hearing.name }}{% endblock %}
+
+{% block topbar_actions %}
+<div class="d-flex align-items-center gap-2">
+  <span class="live-badge" id="live-connection-badge">
+    <span class="dot"></span>Live
+  </span>
+  <a href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-gear me-1" aria-hidden="true"></i>Hearing setup
+  </a>
+  <button type="button" class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#panel-close-confirm-modal">
+    <i class="bi bi-door-closed me-1" aria-hidden="true"></i>Close &amp; review
+  </button>
+  <a href="{% url 'panel_hearing_table' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>All assessments
+  </a>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style nonce="{{ csp_nonce }}">
+.presenting-hero{border-radius:var(--radius-card-lg);padding:var(--sp-5);position:relative;overflow:hidden;
+     background:linear-gradient(120deg,var(--brand-deep),var(--brand-bright));color:#fff;
+     box-shadow:var(--elev-3);margin-bottom:var(--sp-4)}
+.presenting-hero.is-idle{background:var(--surface-sunken);color:var(--text)}
+.presenting-hero .eyebrow{font-size:var(--fs-micro);font-weight:700;text-transform:uppercase;letter-spacing:.08em;opacity:.85}
+.presenting-hero .group-name{font-size:var(--fs-display);font-weight:800;margin:.15rem 0 .35rem;line-height:1.05}
+.presenting-hero .group-name.is-idle{font-size:var(--fs-title)}
+.presenting-hero .meta-row{display:flex;align-items:center;gap:var(--sp-4);flex-wrap:wrap;opacity:.92;font-size:var(--fs-sm)}
+.presenting-hero .actions{display:flex;gap:var(--sp-2);flex-wrap:wrap}
+.hero-kicker{display:inline-flex;align-items:center;gap:.45rem;padding:.35rem .7rem;border-radius:999px;background:rgba(255,255,255,.16);font-size:var(--fs-micro);font-weight:800;text-transform:uppercase;letter-spacing:.07em;margin-bottom:.7rem}
+.phase-chip{display:inline-flex;align-items:center;padding:.3rem .75rem;border-radius:999px;background:rgba(255,255,255,.16);font-weight:800;transition:background .15s ease}
+.phase-chip.is-voting{background:rgba(255,255,255,.36);box-shadow:0 0 0 2px rgba(255,255,255,.45)}
+.turn-ring-wrap{position:relative;width:68px;height:68px;flex-shrink:0}
+.turn-ring{width:68px;height:68px;border-radius:50%;
+     background:conic-gradient(#fff calc(var(--turn-pct,100) * 1%),rgba(255,255,255,.28) 0);
+     transition:background 1s linear}
+.turn-ring::before{content:"";position:absolute;inset:6px;border-radius:50%;background:var(--brand-deep)}
+.turn-ring-label{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.9rem;font-weight:700;color:#fff}
+.turn-ring.is-urgent{background:conic-gradient(var(--danger) calc(var(--turn-pct,100) * 1%),rgba(255,255,255,.28) 0)}
+.live-badge{display:inline-flex;align-items:center;gap:5px;font-size:var(--fs-micro);font-weight:700;
+     padding:.25rem .65rem;border-radius:999px;background:var(--tone-success-bg);color:var(--tone-success-fg)}
+.live-badge.is-offline{background:var(--tone-warn-bg);color:var(--tone-warn-fg)}
+.live-badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:live-pulse 1.4s ease-in-out infinite}
+@keyframes live-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+.assess-stagger{animation:assess-fade-in .35s ease both}
+@keyframes assess-fade-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4" style="max-width: 1400px;">
+  <!-- Chamber Hero -->
+  {% include 'service_domains/_partials/panel_live_hero.html' %}
+
+  <div class="row g-4">
+    <!-- Main Left Column -->
+    <div class="col-12 col-lg-7">
+      {% include 'service_domains/_partials/panel_live_examiners.html' %}
+      {% include 'service_domains/_partials/panel_live_convergence.html' %}
+    </div>
+
+    <!-- Right Side Column -->
+    <div class="col-12 col-lg-5">
+      {% include 'service_domains/_partials/panel_live_docket.html' %}
+      {% include 'service_domains/_partials/panel_live_display_control.html' %}
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Close Hearing Confirmation -->
+<div class="modal fade" id="panel-close-confirm-modal" tabindex="-1" aria-labelledby="panel-close-modal-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title h5" id="panel-close-modal-title">Close assessment for review?</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p>This will close examiner response submission and move the hearing into <strong>Under Review</strong> status.</p>
+        <p class="text-muted small mb-0">The committee chair can then review final score tables, record outstanding outcomes, and prepare official releases.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Keep chamber open</button>
+        <button type="button" class="btn btn-warning" id="confirm-panel-close-hearing-btn">Close hearing</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const LIVE_STATE_URL = "{% url 'panel_hearing_live_state' hearing_id=hearing.pk %}";
+  const LIVE_ACTION_URL = "{% url 'panel_hearing_live_action' hearing_id=hearing.pk %}";
+
+  let refreshing = false;
+  let remainingSeconds = parseInt(document.getElementById('panel-phase-timer-display')?.dataset.seconds || '900', 10);
+  let timerPaused = false;
+
+  function csrfHeaders() {
+    const el = document.querySelector('[name=csrfmiddlewaretoken]');
+    return el ? { 'X-CSRFToken': el.value } : {};
+  }
+
+  function postAction(data) {
+    const formData = new FormData();
+    Object.keys(data).forEach(k => formData.append(k, data[k]));
+    return fetch(LIVE_ACTION_URL, {
+      method: 'POST',
+      body: formData,
+      headers: Object.assign({ 'X-Requested-With': 'XMLHttpRequest' }, csrfHeaders())
+    })
+    .then(res => res.json())
+    .then(payload => {
+      if (payload.redirect) {
+        window.location.href = payload.redirect;
+        return;
+      }
+      if (payload.error) {
+        alert(payload.error);
+        return;
+      }
+      patchFragments(payload);
+    })
+    .catch(() => {});
+  }
+
+  function patchFragments(data) {
+    const FRAGMENTS = {
+      'panel-live-hero': data.hero_html,
+      'panel-live-examiners': data.examiners_html,
+      'panel-live-convergence': data.convergence_html,
+      'panel-live-docket': data.docket_html,
+      'panel-live-display-control': data.display_html
+    };
+    Object.keys(FRAGMENTS).forEach(id => {
+      const el = document.getElementById(id);
+      const html = FRAGMENTS[id];
+      if (el && html !== undefined) el.outerHTML = html;
+    });
+    remainingSeconds = data.phase_seconds_remaining || 0;
+    timerPaused = !!data.timer_paused;
+    updateTimerDisplay();
+  }
+
+  function refreshState() {
+    if (refreshing) return;
+    refreshing = true;
+    fetch(LIVE_STATE_URL, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(res => res.json())
+      .then(data => {
+        if (data.redirect) {
+          window.location.href = data.redirect;
+          return;
+        }
+        patchFragments(data);
+        const badge = document.getElementById('live-connection-badge');
+        if (badge) {
+          badge.classList.remove('is-offline');
+          badge.innerHTML = '<span class="dot"></span>Live';
+        }
+      })
+      .catch(() => {
+        const badge = document.getElementById('live-connection-badge');
+        if (badge) {
+          badge.classList.add('is-offline');
+          badge.innerHTML = '<span class="dot"></span>Reconnecting';
+        }
+      })
+      .finally(() => { refreshing = false; });
+  }
+
+  function updateTimerDisplay() {
+    const display = document.getElementById('panel-phase-timer-display');
+    const ring = document.getElementById('panel-phase-ring');
+    if (!display || !ring) return;
+    const mins = Math.floor(remainingSeconds / 60);
+    const secs = remainingSeconds % 60;
+    display.textContent = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    const pct = Math.min(100, Math.max(0, Math.round((remainingSeconds / 900) * 100)));
+    ring.style.setProperty('--turn-pct', pct);
+    if (remainingSeconds < 120 && !timerPaused) {
+      ring.classList.add('is-urgent');
+    } else {
+      ring.classList.remove('is-urgent');
+    }
+  }
+
+  // Timer interval tick
+  setInterval(() => {
+    if (!timerPaused && remainingSeconds > 0) {
+      remainingSeconds--;
+      updateTimerDisplay();
+    }
+  }, 1000);
+
+  // Periodic polling interval
+  setInterval(refreshState, 6000);
+
+  // Delegated click handler for panel live actions
+  document.addEventListener('click', e => {
+    const actionBtn = e.target.closest('[data-panel-live-action]');
+    if (actionBtn) {
+      e.preventDefault();
+      const action = actionBtn.dataset.panelLiveAction;
+      const data = { action };
+      if (actionBtn.dataset.phase) data.phase = actionBtn.dataset.phase;
+      if (actionBtn.dataset.delta) data.delta = actionBtn.dataset.delta;
+      if (actionBtn.dataset.candidateId) data.candidate_id = actionBtn.dataset.candidateId;
+      if (actionBtn.dataset.invitationId) data.invitation_id = actionBtn.dataset.invitationId;
+      if (actionBtn.dataset.mode) data.mode = actionBtn.dataset.mode;
+      postAction(data);
+      return;
+    }
+
+    const toggleDisplayBtn = e.target.closest('#toggle-panel-display-link-btn');
+    if (toggleDisplayBtn) {
+      e.preventDefault();
+      fetch(toggleDisplayBtn.dataset.displayToggleUrl, {
+        method: 'POST',
+        headers: Object.assign({ 'X-Requested-With': 'XMLHttpRequest' }, csrfHeaders())
+      })
+      .then(res => res.json())
+      .then(refreshState);
+      return;
+    }
+
+    const closeHearingBtn = e.target.closest('#confirm-panel-close-hearing-btn');
+    if (closeHearingBtn) {
+      e.preventDefault();
+      closeHearingBtn.disabled = true;
+      postAction({ action: 'close_hearing' });
+    }
+  });
+
+  // Delegated submit handler for decision form
+  document.addEventListener('submit', e => {
+    const form = e.target;
+    if (form.matches('[data-panel-decision-form]')) {
+      e.preventDefault();
+      const formData = new FormData(form);
+      const data = {};
+      formData.forEach((v, k) => { data[k] = v; });
+      postAction(data);
+    }
+  });
+
+  // Spacebar shortcut to advance phase
+  document.addEventListener('keydown', e => {
+    if (e.code !== 'Space' && e.key !== ' ') return;
+    if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+    if (document.querySelector('.modal.show')) return;
+    e.preventDefault();
+    const chips = Array.from(document.querySelectorAll('.phase-chip'));
+    const activeIndex = chips.findIndex(c => c.classList.contains('is-voting'));
+    if (activeIndex >= 0 && activeIndex < chips.length - 1) {
+      chips[activeIndex + 1].click();
+    } else {
+      const concludeBtn = document.querySelector('[data-panel-live-action="conclude_candidate"]');
+      if (concludeBtn) concludeBtn.click();
+    }
+  });
+
+  updateTimerDisplay();
+})();
+</script>
+{% endblock %}

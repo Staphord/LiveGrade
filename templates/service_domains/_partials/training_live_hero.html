@@ -1,0 +1,70 @@
+<section class="card border-0 shadow-sm mb-4" id="training-live-hero">
+  <div class="card-body p-4" style="background: linear-gradient(135deg, rgba(27, 79, 138, 0.05) 0%, rgba(46, 134, 222, 0.05) 100%);">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+      <div>
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <span class="badge text-bg-primary text-uppercase" style="letter-spacing: .04em;">
+            {{ series.name }}
+          </span>
+          <span class="badge text-bg-secondary">
+            Session {{ session.sequence }}{% if session.scheduled_for %} · {{ session.scheduled_for|date:"M j, Y" }}{% endif %}
+          </span>
+        </div>
+        <h2 class="h4 mb-0 fw-bold">{{ assessment_session.name }}</h2>
+        <p class="text-muted small mb-0">Cohort workshop drill live observation & facilitation console</p>
+      </div>
+
+      <div class="d-flex align-items-center gap-3">
+        <!-- Circular countdown drill ring -->
+        <div class="turn-ring-wrap" title="Drill phase countdown timer">
+          <div class="turn-ring{% if drill_seconds_remaining <= 120 %} is-urgent{% endif %}"
+               id="training-drill-ring"
+               style="--turn-pct: {% widthratio drill_seconds_remaining 900 100 %};">
+            <span class="turn-ring-label" id="training-timer-label">
+              {{ drill_seconds_remaining }}s
+            </span>
+          </div>
+        </div>
+
+        <div class="d-flex flex-column gap-1">
+          <span class="small fw-semibold text-muted">Drill Countdown</span>
+          <span class="badge {% if timer_paused %}text-bg-warning{% else %}text-bg-success{% endif %}" id="training-timer-state-badge">
+            {% if timer_paused %}Paused{% else %}Active Timing{% endif %}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Drill Phase Pipeline Bar -->
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 pt-3 border-top">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <span class="small fw-semibold text-muted me-2">Drill Phase:</span>
+        <button type="button" class="btn btn-sm {% if drill_phase == 'briefing' %}btn-primary shadow-sm{% else %}btn-outline-secondary{% endif %}" data-training-action="set_drill_phase" data-phase="briefing">
+          1. Scenario Briefing
+        </button>
+        <i class="bi bi-chevron-right text-muted small" aria-hidden="true"></i>
+        <button type="button" class="btn btn-sm {% if drill_phase == 'simulation' %}btn-primary shadow-sm{% else %}btn-outline-secondary{% endif %}" data-training-action="set_drill_phase" data-phase="simulation">
+          2. Active Simulation / Drill
+        </button>
+        <i class="bi bi-chevron-right text-muted small" aria-hidden="true"></i>
+        <button type="button" class="btn btn-sm {% if drill_phase == 'debrief' %}btn-primary shadow-sm{% else %}btn-outline-secondary{% endif %}" data-training-action="set_drill_phase" data-phase="debrief">
+          3. Debrief &amp; Assessment
+        </button>
+      </div>
+
+      <!-- Quick timer controls -->
+      <div class="d-flex align-items-center gap-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-training-action="adjust_drill_timer" data-delta="300">
+          <i class="bi bi-plus-circle me-1" aria-hidden="true"></i>+5 min
+        </button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-training-action="adjust_drill_timer" data-delta="600">
+          <i class="bi bi-plus-circle me-1" aria-hidden="true"></i>+10 min
+        </button>
+        <button type="button" class="btn {% if timer_paused %}btn-success{% else %}btn-outline-warning{% endif %} btn-sm" data-training-action="toggle_drill_pause">
+          <i class="bi {% if timer_paused %}bi-play-fill{% else %}bi-pause-fill{% endif %} me-1" aria-hidden="true"></i>
+          {% if timer_paused %}Resume{% else %}Pause{% endif %}
+        </button>
+      </div>
+    </div>
+  </div>
+</section>

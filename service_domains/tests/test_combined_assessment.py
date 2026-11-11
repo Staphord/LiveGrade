@@ -867,3 +867,47 @@ class CombinedAssessmentTableTests(CombinedAssessmentTests):
         self.assertContains(res_combined, reverse('panel_hearing_table'))
         self.assertContains(res_combined, '<span class="nav-text">Assessments</span>')
         self.assertNotContains(res_combined, '<span class="nav-text">Combined assessments</span>')
+
+    def test_combined_assessment_live_state_endpoint(self):
+        live_state_url = reverse('combined_assessment_live_state', args=[self.assessment.pk])
+        # Unauthenticated request fails
+        res_unauth = self.client.get(live_state_url)
+        self.assertEqual(res_unauth.status_code, 302)
+
+        # Other user cannot access
+        sign_in(self.client, self.other, self.org)
+        res_other = self.client.get(live_state_url)
+        self.assertEqual(res_other.status_code, 404)
+
+        # Owner gets valid JSON state
+        sign_in(self.client, self.owner, self.org)
+        res_owner = self.client.get(live_state_url)
+        self.assertEqual(res_owner.status_code, 200)
+        data = res_owner.json()
+        self.assertEqual(data['assessment_id'], self.assessment.pk)
+        self.assertFalse(data['paired_slot_active'])
+        self.assertFalse(data['is_out_of_sync'])
+        self.assertIn('pairs', data)
+        self.assertEqual(len(data['pairs']), 1)
+        self.assertEqual(data['pairs'][0]['group_name'], 'Team One')
+        self.assertEqual(data['pairs'][0]['candidate_name'], 'Team One')
+
+        # Activate paired presentation
+        self.assessment.status = CombinedPresentationAssessment.Status.ACTIVE
+        self.assessment.save()
+        self.session.status = AssessmentSession.Status.LIVE
+        self.session.save()
+        self.hearing.status = PanelHearing.Status.OPEN
+        self.hearing.active_candidate = self.candidate
+        self.hearing.save()
+        PresentationTurn.objects.create(assessment_session=self.session,
+            group=self.group, status=PresentationTurn.Status.ACTIVE)
+
+        res_active = self.client.get(live_state_url)
+        self.assertEqual(res_active.status_code, 200)
+        data_active = res_active.json()
+        self.assertTrue(data_active['paired_slot_active'])
+        self.assertFalse(data_active['is_out_of_sync'])
+        self.assertEqual(data_active['active_group_name'], 'Team One')
+        self.assertEqual(data_active['active_candidate_name'], 'Team One')
+        self.assertTrue(data_active['pairs'][0]['is_active'])

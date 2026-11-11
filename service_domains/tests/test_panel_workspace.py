@@ -533,3 +533,95 @@ class PanelWorkspaceUiTests(TestCase):
         self.assertEqual(res_ajax.status_code, 200)
         self.assertIn('X-Requested-With', res_ajax.headers.get('Vary', ''))
         self.assertContains(res_ajax, 'id="panel-results"')
+
+    def test_panel_live_control_console_lifecycle_and_actions(self):
+        # Create open hearing with candidates and examiner
+        hearing = self.create_hearing('Live Chamber Defense', status=PanelHearing.Status.OPEN,
+                                     workflow=PanelHearing.Workflow.OUTCOME)
+        cand1 = PanelCandidate.objects.create(
+            organization_id=self.org.pk,
+            created_by=self.owner,
+            hearing=hearing,
+            display_name='Candidate Alice',
+            order=1
+        )
+        cand2 = PanelCandidate.objects.create(
+            organization_id=self.org.pk,
+            created_by=self.owner,
+            hearing=hearing,
+            display_name='Candidate Bob',
+            order=2
+        )
+        hearing.active_candidate = cand1
+        hearing.save(update_fields=('active_candidate',))
+
+        panel = PanelScoringPanel.objects.create(
+            organization_id=self.org.pk,
+            created_by=self.owner,
+            hearing=hearing,
+            name='Primary Committee'
+        )
+        invitation = PanelInvitation.objects.create(
+            organization_id=self.org.pk,
+            created_by=self.owner,
+            hearing=hearing,
+            panel=panel,
+            email='examiner1@example.org',
+            expires_at=timezone.now() + timezone.timedelta(days=7)
+        )
+
+        # GET live control page
+        live_url = reverse('panel_hearing_live', args=(hearing.pk,))
+        res = self.client.get(live_url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'Live Chamber Defense')
+        self.assertContains(res, 'Candidate Alice')
+        self.assertContains(res, 'Candidate Bob')
+        self.assertContains(res, 'examiner1@example.org')
+
+        # GET live state JSON endpoint
+        state_url = reverse('panel_hearing_live_state', args=(hearing.pk,))
+        res_state = self.client.get(state_url, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res_state.status_code, 200)
+        state_data = res_state.json()
+        self.assertEqual(state_data['status'], 'open')
+        self.assertEqual(state_data['active_candidate_id'], cand1.pk)
+        self.assertIn('hero_html', state_data)
+        self.assertIn('examiners_html', state_data)
+        self.assertIn('convergence_html', state_data)
+        self.assertIn('docket_html', state_data)
+        self.assertIn('display_html', state_data)
+
+        # POST actions: set_phase
+        action_url = reverse('panel_hearing_live_action', args=(hearing.pk,))
+        res_phase = self.client.post(action_url, {'action': 'set_phase', 'phase': 'qa'}, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res_phase.status_code, 200)
+        self.assertEqual(res_phase.json()['active_phase'], 'qa')
+
+        # POST actions: adjust_timer
+        res_timer = self.client.post(action_url, {'action': 'adjust_timer', 'delta': '120'}, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res_timer.status_code, 200)
+        self.assertEqual(res_timer.json()['phase_seconds_remaining'], 1320)
+
+        # POST actions: toggle_pause
+        res_pause = self.client.post(action_url, {'action': 'toggle_pause'}, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res_pause.status_code, 200)
+        self.assertTrue(res_pause.json()['timer_paused'])
+
+        # POST actions: switch candidate
+        res_cand = self.client.post(action_url, {'action': 'set_candidate', 'candidate_id': str(cand2.pk)}, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res_cand.status_code, 200)
+        self.assertEqual(res_cand.json()['active_candidate_id'], cand2.pk)
+
+        # POST display link toggle
+        display_toggle_url = reverse('panel_hearing_live_display_toggle', args=(hearing.pk,))
+        res_disp = self.client.post(display_toggle_url, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res_disp.status_code, 200)
+        self.assertTrue(res_disp.json()['active'])
+
+        # POST close_hearing
+        res_close = self.client.post(action_url, {'action': 'close_hearing'}, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res_close.status_code, 200)
+        hearing.refresh_from_db()
+        self.assertEqual(hearing.status, PanelHearing.Status.REVIEW)
+

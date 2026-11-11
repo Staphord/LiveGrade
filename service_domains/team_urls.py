@@ -9,7 +9,9 @@ from .views import (training_anonymous_feedback, training_series_list,
                     training_series_manage, training_series_trends,
                     training_series_export, training_certificate_verify,
                     training_series_roster_import, training_series_roster_preview,
-                    training_series_roster_sample)
+                    training_series_roster_sample,
+                    training_session_live, training_session_live_state,
+                    training_session_live_action, training_session_feedback_qr)
 
 urlpatterns = [
     path('results/<str:token>/', training_learner_report, name='training_learner_report'),
@@ -26,6 +28,14 @@ urlpatterns = [
     path('series/<int:series_id>/delete/export/', training_series_delete_export,
          name='training_series_delete_export'),
     path('series/<int:series_id>/delete/', training_series_delete, name='training_series_delete'),
+    path('series/<int:series_id>/sessions/<int:session_id>/live/', training_session_live,
+         name='training_session_live'),
+    path('series/<int:series_id>/sessions/<int:session_id>/live-state/', training_session_live_state,
+         name='training_session_live_state'),
+    path('series/<int:series_id>/sessions/<int:session_id>/live-action/', training_session_live_action,
+         name='training_session_live_action'),
+    path('series/<int:series_id>/sessions/<int:session_id>/feedback-qr/', training_session_feedback_qr,
+         name='training_session_feedback_qr'),
     path('series/<int:series_id>/', training_series_manage, name='training_series_manage'),
     path('series/<int:series_id>/trends/', training_series_trends, name='training_series_trends'),
     path('series/<int:series_id>/outcomes.csv', training_series_export,

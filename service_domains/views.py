@@ -41,6 +41,7 @@ from .forms import ShowcaseRatingForm
 from .models import (
     SHOWCASE_DEVICE_TOKEN_MAX_AGE, ShowcaseCertificate, ShowcaseEvent,
     ShowcaseConsentAudit, ShowcaseEventAudit, ShowcaseExhibit, ShowcaseRating, TrainingFeedback,
+    TrainingSeriesSession, TrainingSessionCompetency,
     ShowcaseJudgeInvitation, ShowcaseJudgeExhibitAssignment, ShowcaseJudgeCriterion,
     ShowcaseJudgeEvaluation, ShowcaseJudgeConflict,
 )
@@ -78,7 +79,11 @@ from .operations import (confirm_showcase_minor_consent,
                          replace_showcase_judge_criteria,
                          resolve_showcase_judge_invitation,
                          submit_showcase_judge_evaluation, showcase_judge_progress,
-                         revoke_showcase_judge_invitation, declare_showcase_judge_conflict)
+                         revoke_showcase_judge_invitation, declare_showcase_judge_conflict,
+                         get_showcase_live_context, toggle_showcase_floor_visitor_voting,
+                         toggle_showcase_floor_judge_scoring, assign_showcase_roving_judge,
+                         stage_set_showcase_exhibit, stage_adjust_showcase_timer,
+                         stage_toggle_showcase_pause, set_showcase_projector_mode)
 from .operations import showcase_awards
 from .throttling import (allow_panel_examiner_request, allow_unknown_bearer_request,
                          allow_showcase_judge_request, allow_public_event_request)
@@ -97,13 +102,23 @@ from .operations import (abstain_panel_score, declare_panel_conflict, resolve_pa
                          confirm_panel_signoff, release_panel_results,
                          adjust_panel_result, issue_panel_entrant_result_link,
                          resolve_panel_entrant_result_link, revoke_panel_entrant_result_link,
-                         redact_panel_comment, release_panel_comment, record_panel_invitation_attempt)
+                         redact_panel_comment, release_panel_comment, record_panel_invitation_attempt,
+                         get_panel_live_state_context, set_panel_chamber_active_candidate,
+                         set_panel_chamber_phase, adjust_panel_chamber_timer,
+                         toggle_panel_chamber_pause, conclude_panel_chamber_candidate,
+                         toggle_panel_chamber_display_mode)
 from .operations import (create_next_training_session, record_training_competency_result,
                          training_series_competency_trends,
                          training_series_feedback_summary, submit_training_feedback,
                          issue_training_certificates,
                          submit_competition_audience_ballot,
-                         training_series_competency_export)
+                         training_series_competency_export,
+                         get_training_session_live_state,
+                         set_training_drill_phase,
+                         adjust_training_drill_timer,
+                         toggle_training_drill_pause,
+                         mark_training_pod_visited,
+                         save_training_observation_note)
 from .panel_import import (apply_candidate_import, parse_candidates, plan_candidates,
                            sample_workbook as panel_candidate_sample_workbook)
 from .panel_invitation_import import (parse_examiner_emails, plan_examiner_import,
@@ -1504,6 +1519,142 @@ def panel_results_export(request, hearing_id):
     response['X-Content-Type-Options'] = 'nosniff'
     response['Referrer-Policy'] = 'no-referrer'
     return response
+
+
+@require_safe
+@never_cache
+@_panel_owner
+def panel_hearing_live(request, hearing_id):
+    hearing = (PanelHearing.objects.for_organization(request.organization)
+               .owned_by(request.user).filter(pk=hearing_id).first())
+    if hearing is None:
+        raise Http404
+    if hearing.status == PanelHearing.Status.DRAFT:
+        return redirect('panel_hearing_manage', hearing_id=hearing.pk)
+    if hearing.status in (PanelHearing.Status.REVIEW, PanelHearing.Status.SIGNED_OFF, PanelHearing.Status.RELEASED):
+        return redirect('panel_results_review', hearing_id=hearing.pk)
+    context = get_panel_live_state_context(hearing)
+    return render(request, 'service_domains/panel_hearing_live.html', context)
+
+
+@require_safe
+@never_cache
+@_panel_owner
+def panel_hearing_live_state(request, hearing_id):
+    hearing = (PanelHearing.objects.for_organization(request.organization)
+               .owned_by(request.user).filter(pk=hearing_id).first())
+    if hearing is None:
+        raise Http404
+    if hearing.status != PanelHearing.Status.OPEN:
+        redirect_url = (reverse('panel_results_review', args=(hearing.pk,))
+                        if hearing.status in (PanelHearing.Status.REVIEW, PanelHearing.Status.SIGNED_OFF, PanelHearing.Status.RELEASED)
+                        else reverse('panel_hearing_manage', args=(hearing.pk,)))
+        return JsonResponse({'status': hearing.status, 'redirect': redirect_url})
+    context = get_panel_live_state_context(hearing)
+    active_cand = context['active_candidate']
+    return JsonResponse({
+        'status': hearing.status,
+        'active_candidate_id': active_cand.pk if active_cand else None,
+        'active_phase': context['active_phase'],
+        'phase_seconds_remaining': context['phase_seconds_remaining'],
+        'timer_paused': context['timer_paused'],
+        'display_mode': context['display_mode'],
+        'hero_html': render_to_string('service_domains/_partials/panel_live_hero.html', context, request=request),
+        'examiners_html': render_to_string('service_domains/_partials/panel_live_examiners.html', context, request=request),
+        'convergence_html': render_to_string('service_domains/_partials/panel_live_convergence.html', context, request=request),
+        'docket_html': render_to_string('service_domains/_partials/panel_live_docket.html', context, request=request),
+        'display_html': render_to_string('service_domains/_partials/panel_live_display_control.html', context, request=request),
+    })
+
+
+@require_POST
+@never_cache
+@_panel_owner
+def panel_hearing_live_action(request, hearing_id):
+    hearing = (PanelHearing.objects.for_organization(request.organization)
+               .owned_by(request.user).filter(pk=hearing_id).first())
+    if hearing is None:
+        raise Http404
+    if hearing.status != PanelHearing.Status.OPEN:
+        return JsonResponse({'error': 'Hearing is not open.'}, status=400)
+    action = request.POST.get('action')
+    try:
+        if action == 'set_candidate':
+            cand_id = request.POST.get('candidate_id')
+            set_panel_chamber_active_candidate(hearing, cand_id, organization=request.organization, user=request.user)
+        elif action == 'set_phase':
+            phase = request.POST.get('phase')
+            set_panel_chamber_phase(hearing, phase, organization=request.organization, user=request.user)
+        elif action == 'adjust_timer':
+            delta = int(request.POST.get('delta', 60))
+            adjust_panel_chamber_timer(hearing, delta, organization=request.organization, user=request.user)
+        elif action == 'toggle_pause':
+            toggle_panel_chamber_pause(hearing, organization=request.organization, user=request.user)
+        elif action == 'record_decision':
+            cand_id = request.POST.get('candidate_id')
+            outcome = request.POST.get('outcome')
+            rationale = request.POST.get('rationale', 'Recorded during chamber deliberation.')
+            conditions = request.POST.get('conditions', '')
+            dissent = request.POST.get('dissent', '')
+            candidate = PanelCandidate.objects.filter(hearing=hearing, pk=cand_id).first()
+            if candidate is None:
+                raise ValidationError('Candidate not found.')
+            record_panel_decision(hearing, candidate, outcome, rationale, conditions, dissent,
+                                  organization=request.organization, user=request.user)
+        elif action == 'conclude_candidate':
+            cand_id = request.POST.get('candidate_id')
+            conclude_panel_chamber_candidate(hearing, cand_id, organization=request.organization, user=request.user)
+        elif action == 'nudge_examiner':
+            inv_id = request.POST.get('invitation_id')
+            inv = PanelInvitation.objects.filter(hearing=hearing, pk=inv_id).first()
+            if inv and panel_invitation_resend_available(inv):
+                request_panel_invitation_resend(hearing, inv, organization=request.organization, user=request.user)
+        elif action == 'set_display_mode':
+            mode = request.POST.get('mode')
+            toggle_panel_chamber_display_mode(hearing, mode, organization=request.organization, user=request.user)
+        elif action == 'close_hearing':
+            compile_panel_results(hearing, organization=request.organization, user=request.user)
+            messages.success(request, 'Hearing closed. Review and sign off results.')
+            return JsonResponse({'status': 'closed', 'redirect': reverse('panel_results_review', args=(hearing.pk,))})
+        else:
+            return JsonResponse({'error': f'Unknown action: {action}'}, status=400)
+    except (ValidationError, PermissionDenied) as exc:
+        msg = '; '.join(getattr(exc, 'messages', [])) or str(exc)
+        return JsonResponse({'error': msg}, status=400)
+
+    hearing.refresh_from_db()
+    context = get_panel_live_state_context(hearing)
+    active_cand = context['active_candidate']
+    return JsonResponse({
+        'status': hearing.status,
+        'active_candidate_id': active_cand.pk if active_cand else None,
+        'active_phase': context['active_phase'],
+        'phase_seconds_remaining': context['phase_seconds_remaining'],
+        'timer_paused': context['timer_paused'],
+        'display_mode': context['display_mode'],
+        'hero_html': render_to_string('service_domains/_partials/panel_live_hero.html', context, request=request),
+        'examiners_html': render_to_string('service_domains/_partials/panel_live_examiners.html', context, request=request),
+        'convergence_html': render_to_string('service_domains/_partials/panel_live_convergence.html', context, request=request),
+        'docket_html': render_to_string('service_domains/_partials/panel_live_docket.html', context, request=request),
+        'display_html': render_to_string('service_domains/_partials/panel_live_display_control.html', context, request=request),
+    })
+
+
+@require_POST
+@never_cache
+@_panel_owner
+def panel_hearing_live_display_toggle(request, hearing_id):
+    hearing = (PanelHearing.objects.for_organization(request.organization)
+               .owned_by(request.user).filter(pk=hearing_id).first())
+    if hearing is None:
+        raise Http404
+    link = PanelLiveDisplayLink.objects.filter(hearing=hearing, organization_id=hearing.organization_id, revoked_at__isnull=True).first()
+    if link is None:
+        link, token = issue_panel_live_display_link(hearing, organization=request.organization, user=request.user)
+        return JsonResponse({'active': True, 'url': reverse('panel_live_display', args=(token,))})
+    else:
+        revoke_panel_live_display_link(hearing, link, organization=request.organization, user=request.user)
+        return JsonResponse({'active': False, 'url': None})
 
 
 @require_http_methods(['GET', 'POST'])
@@ -3629,6 +3780,120 @@ def showcase_live_monitor(request, event_id):
 @require_http_methods(['GET'])
 @never_cache
 @_showcase_owner
+def showcase_live_control(request, event_id):
+    """Render the organizer's live command console for an open/closed showcase event."""
+    event = _owned_showcase_event(request, event_id)
+    if event.status not in (ShowcaseEvent.Status.OPEN, ShowcaseEvent.Status.CLOSED):
+        raise Http404
+    context = get_showcase_live_context(event)
+    response = render(request, 'service_domains/showcase_live_control.html', context)
+    response['Cache-Control'] = 'private, no-store'
+    response['Referrer-Policy'] = 'same-origin'
+    return response
+
+
+@require_http_methods(['GET'])
+@never_cache
+@_showcase_owner
+def showcase_live_state(request, event_id):
+    """Real-time JSON state endpoint returning telemetry metrics and HTML fragments."""
+    event = _owned_showcase_event(request, event_id)
+    if event.status not in (ShowcaseEvent.Status.OPEN, ShowcaseEvent.Status.CLOSED):
+        return JsonResponse({'status': event.status, 'redirect': reverse('showcase_event_manage', args=(event.pk,))})
+    context = get_showcase_live_context(event)
+    return JsonResponse({
+        'ok': True,
+        'status': event.status,
+        'visitor_voting_paused': context['visitor_voting_paused'],
+        'judge_scoring_paused': context['judge_scoring_paused'],
+        'total_ratings': context['total_ratings'],
+        'avg_stars_all': context['avg_stars_all'],
+        'total_assigned_scorecards': context['total_assigned_scorecards'],
+        'total_submitted_scorecards': context['total_submitted_scorecards'],
+        'attention_count': context['attention_count'],
+        'pitch_seconds_remaining': context['pitch_seconds_remaining'],
+        'timer_paused': context['timer_paused'],
+        'hero_html': render_to_string('service_domains/_partials/showcase_live_hero.html', context, request=request),
+        'stage_html': render_to_string('service_domains/_partials/showcase_live_stage.html', context, request=request),
+        'table_html': render_to_string('service_domains/_partials/showcase_live_table.html', context, request=request),
+        'projector_html': render_to_string('service_domains/_partials/showcase_live_projector_control.html', context, request=request),
+    })
+
+
+@require_POST
+@never_cache
+@_showcase_owner
+def showcase_live_action(request, event_id):
+    """Execute atomic live floor and stage management actions."""
+    event = _owned_showcase_event(request, event_id)
+    if event.status not in (ShowcaseEvent.Status.OPEN, ShowcaseEvent.Status.CLOSED):
+        return JsonResponse({'error': 'Event is not active.'}, status=400)
+    action = request.POST.get('action')
+    try:
+        if action == 'toggle_visitor_voting':
+            toggle_showcase_floor_visitor_voting(event, organization=request.organization, user=request.user)
+        elif action == 'toggle_judge_scoring':
+            toggle_showcase_floor_judge_scoring(event, organization=request.organization, user=request.user)
+        elif action == 'assign_roving_judge':
+            exhibit_id = request.POST.get('exhibit_id')
+            judge_inv_id = request.POST.get('judge_invitation_id')
+            assign_showcase_roving_judge(event, exhibit_id, judge_inv_id, organization=request.organization, user=request.user)
+        elif action == 'stage_set_exhibit':
+            exhibit_id = request.POST.get('exhibit_id')
+            stage_set_showcase_exhibit(event, exhibit_id, organization=request.organization, user=request.user)
+        elif action == 'stage_adjust_timer':
+            delta = int(request.POST.get('delta', 30))
+            stage_adjust_showcase_timer(event, delta, organization=request.organization, user=request.user)
+        elif action == 'stage_toggle_pause':
+            stage_toggle_showcase_pause(event, organization=request.organization, user=request.user)
+        elif action == 'set_projector_mode':
+            mode = request.POST.get('mode')
+            set_showcase_projector_mode(event, mode, organization=request.organization, user=request.user)
+        elif action == 'close_ratings':
+            with transaction.atomic():
+                locked = ShowcaseEvent.objects.for_organization(request.organization).owned_by(request.user).select_for_update().filter(pk=event.pk).first()
+                locked.status = ShowcaseEvent.Status.CLOSED
+                locked.save(update_fields=('status', 'updated_at'))
+                ShowcaseEventAudit.objects.create(
+                    organization_id=locked.organization_id,
+                    created_by=request.user,
+                    event=locked,
+                    action=ShowcaseEventAudit.Action.STATUS_TRANSITION,
+                    reason='Organizer closed public visitor rating window from live command console.',
+                    actor_user=request.user
+                )
+            messages.success(request, 'Visitor rating window closed. Finalize judge scorecards and review results.')
+            return JsonResponse({'status': 'closed', 'redirect': reverse('showcase_event_manage', args=(event.pk,))})
+        else:
+            return JsonResponse({'error': f'Unknown action: {action}'}, status=400)
+    except (ValidationError, PermissionDenied) as exc:
+        msg = '; '.join(getattr(exc, 'messages', [])) or str(exc)
+        return JsonResponse({'error': msg}, status=400)
+
+    event.refresh_from_db()
+    context = get_showcase_live_context(event)
+    return JsonResponse({
+        'ok': True,
+        'status': event.status,
+        'visitor_voting_paused': context['visitor_voting_paused'],
+        'judge_scoring_paused': context['judge_scoring_paused'],
+        'total_ratings': context['total_ratings'],
+        'avg_stars_all': context['avg_stars_all'],
+        'total_assigned_scorecards': context['total_assigned_scorecards'],
+        'total_submitted_scorecards': context['total_submitted_scorecards'],
+        'attention_count': context['attention_count'],
+        'pitch_seconds_remaining': context['pitch_seconds_remaining'],
+        'timer_paused': context['timer_paused'],
+        'hero_html': render_to_string('service_domains/_partials/showcase_live_hero.html', context, request=request),
+        'stage_html': render_to_string('service_domains/_partials/showcase_live_stage.html', context, request=request),
+        'table_html': render_to_string('service_domains/_partials/showcase_live_table.html', context, request=request),
+        'projector_html': render_to_string('service_domains/_partials/showcase_live_projector_control.html', context, request=request),
+    })
+
+
+@require_http_methods(['GET'])
+@never_cache
+@_showcase_owner
 def showcase_live_activity_view(request, event_id):
     """Return an owner-scoped refresh projection with judging channels separate."""
     event = _owned_showcase_event(request, event_id)
@@ -4179,3 +4444,131 @@ def showcase_certificate_verify(request, public_id):
     })
     response['Cache-Control'] = 'public, max-age=300'
     return response
+
+
+def _owned_training_series_session(request, series_id, session_id):
+    """Retrieve verified series and session within tenant and ownership boundary."""
+    series = _owned_training_series(request, series_id)
+    session = (TrainingSeriesSession.objects.for_organization(request.organization)
+               .owned_by(request.user).filter(pk=session_id, series=series).select_related('assessment_session').first())
+    if session is None:
+        raise Http404
+    return series, session
+
+
+@require_http_methods(['GET'])
+@never_cache
+@_team_owner
+def training_session_live(request, series_id, session_id):
+    """Render the workshop live command and observation console for facilitators."""
+    series, session = _owned_training_series_session(request, series_id, session_id)
+    context = get_training_session_live_state(series, session)
+    response = render(request, 'service_domains/training_session_live.html', context)
+    response['Cache-Control'] = 'private, no-store'
+    response['Referrer-Policy'] = 'same-origin'
+    return response
+
+
+@require_http_methods(['GET'])
+@never_cache
+@_team_owner
+def training_session_live_state(request, series_id, session_id):
+    """Real-time JSON state endpoint returning drill timer, feedback meter, and HTML fragments."""
+    series, session = _owned_training_series_session(request, series_id, session_id)
+    context = get_training_session_live_state(series, session)
+    return JsonResponse({
+        'ok': True,
+        'session_status': session.assessment_session.status,
+        'active_drill_phase': context['drill_phase'],
+        'drill_seconds_remaining': context['drill_seconds_remaining'],
+        'timer_paused': context['timer_paused'],
+        'feedback_count': context['feedback_count'],
+        'feedback_score_mean': context['feedback_score_mean'],
+        'hero_html': render_to_string('service_domains/_partials/training_live_hero.html', context, request=request),
+        'competencies_html': render_to_string('service_domains/_partials/training_live_competencies.html', context, request=request),
+        'feedback_html': render_to_string('service_domains/_partials/training_live_feedback.html', context, request=request),
+        'pods_html': render_to_string('service_domains/_partials/training_live_pods.html', context, request=request),
+    })
+
+
+@require_POST
+@never_cache
+@_team_owner
+def training_session_live_action(request, series_id, session_id):
+    """Execute atomic live workshop operations: drill phase, timer, competency scoring, and pod visits."""
+    series, session = _owned_training_series_session(request, series_id, session_id)
+    action = request.POST.get('action')
+    try:
+        if action == 'set_drill_phase':
+            phase = request.POST.get('phase')
+            set_training_drill_phase(session, phase, organization=request.organization, user=request.user)
+        elif action == 'adjust_drill_timer':
+            delta = int(request.POST.get('delta', 300))
+            adjust_training_drill_timer(session, delta, organization=request.organization, user=request.user)
+        elif action == 'toggle_drill_pause':
+            toggle_training_drill_pause(session, organization=request.organization, user=request.user)
+        elif action == 'record_competency_score':
+            criterion_id = int(request.POST.get('criterion_id'))
+            student_id = int(request.POST.get('student_id'))
+            score = Decimal(request.POST.get('score'))
+            evidence = request.POST.get('evidence', '').strip() or 'Direct observation during drill phase.'
+            criterion = TrainingSessionCompetency.objects.filter(pk=criterion_id, series_session=session).first()
+            student = session.assessment_session.students.filter(pk=student_id).first()
+            if criterion and student:
+                record_training_competency_result(
+                    session.assessment_session, criterion, student, score, evidence,
+                    organization=request.organization, user=request.user
+                )
+        elif action == 'mark_pod_visited':
+            pod_name = request.POST.get('pod_name', '').strip()
+            if pod_name:
+                mark_training_pod_visited(session, pod_name, organization=request.organization, user=request.user)
+        elif action == 'save_observation_note':
+            key = request.POST.get('key', '').strip()
+            note = request.POST.get('note', '').strip()
+            if key:
+                save_training_observation_note(session, key, note, organization=request.organization, user=request.user)
+        elif action == 'conclude_session':
+            with transaction.atomic():
+                assessment_session = session.assessment_session
+                assessment_session.status = 'closed'
+                assessment_session.save(update_fields=('status', 'updated_at'))
+            messages.success(request, 'Workshop session concluded and results preserved.')
+            return JsonResponse({'status': 'closed', 'redirect': reverse('training_series_manage', args=(series.pk,))})
+        else:
+            return JsonResponse({'error': f'Unknown action: {action}'}, status=400)
+    except (ValidationError, PermissionDenied) as exc:
+        msg = '; '.join(getattr(exc, 'messages', [])) or str(exc)
+        return JsonResponse({'error': msg}, status=400)
+
+    session.refresh_from_db()
+    context = get_training_session_live_state(series, session)
+    return JsonResponse({
+        'ok': True,
+        'session_status': session.assessment_session.status,
+        'active_drill_phase': context['drill_phase'],
+        'drill_seconds_remaining': context['drill_seconds_remaining'],
+        'timer_paused': context['timer_paused'],
+        'feedback_count': context['feedback_count'],
+        'feedback_score_mean': context['feedback_score_mean'],
+        'hero_html': render_to_string('service_domains/_partials/training_live_hero.html', context, request=request),
+        'competencies_html': render_to_string('service_domains/_partials/training_live_competencies.html', context, request=request),
+        'feedback_html': render_to_string('service_domains/_partials/training_live_feedback.html', context, request=request),
+        'pods_html': render_to_string('service_domains/_partials/training_live_pods.html', context, request=request),
+    })
+
+
+@require_http_methods(['GET'])
+@never_cache
+@_team_owner
+def training_session_feedback_qr(request, series_id, session_id):
+    """Render attendee QR presentation modal or image."""
+    series, session = _owned_training_series_session(request, series_id, session_id)
+    feedback_url = request.build_absolute_uri(
+        reverse('training_anonymous_feedback', kwargs={'feedback_public_id': session.feedback_public_id})
+    )
+    return render(request, 'service_domains/_partials/training_live_feedback_modal.html', {
+        'series': series,
+        'session': session,
+        'feedback_url': feedback_url,
+    })
