@@ -7,13 +7,15 @@ from django import forms
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Q
-from django.http import Http404
+from django.db.models import Count, Q
+from django.http import Http404, QueryDict
 from django.shortcuts import redirect, render
-from django.views.decorators.http import require_http_methods
+from django.urls import reverse
+from django.views.decorators.http import require_http_methods, require_POST
 
-from accounts.access import lecturer_required
+from accounts.access import can_oversee, lecturer_required
 from assessments.models import AssessmentSession, PresentationGroup
+from assessments.pagination import PAGE_SIZES, paginate
 from assessments.turns import activate_turn, close_turn
 from .combined_assessment import (combined_assessment_results, mapping_is_complete,
                                   record_combined_moderation)
@@ -100,11 +102,159 @@ def _owned_assessment(request, assessment_id):
 @_panel_owner
 @require_http_methods(['GET'])
 def combined_assessment_list(request):
-    assessments = (CombinedPresentationAssessment.objects.for_organization(request.organization)
-        .owned_by(request.user).select_related('classroom_session', 'panel_hearing'))
-    return render(request, 'service_domains/combined_assessment_list.html', {
-        'assessments': assessments,
-    })
+    """Searchable, filterable, and paginated list of combined assessments."""
+    base_qs = (CombinedPresentationAssessment.objects.for_organization(request.organization)
+        .owned_by(request.user)
+        .select_related('classroom_session', 'panel_hearing')
+        .annotate(mappings_count=Count('mappings', distinct=True)))
+
+    status_counts = {
+        'total': base_qs.count(),
+        'draft': base_qs.filter(status=CombinedPresentationAssessment.Status.DRAFT).count(),
+        'active': base_qs.filter(status=CombinedPresentationAssessment.Status.ACTIVE).count(),
+        'closed': base_qs.filter(status=CombinedPresentationAssessment.Status.CLOSED).count(),
+    }
+
+    filtered_qs = base_qs
+    search_query = (request.GET.get('q') or '').strip()[:100]
+    if search_query:
+        filtered_qs = filtered_qs.filter(
+            Q(name__icontains=search_query) |
+            Q(classroom_session__name__icontains=search_query) |
+            Q(panel_hearing__name__icontains=search_query)
+        )
+
+    status_filter = request.GET.get('status', '').strip()
+    if status_filter in CombinedPresentationAssessment.Status.values:
+        filtered_qs = filtered_qs.filter(status=status_filter)
+    else:
+        status_filter = ''
+
+    policy_filter = request.GET.get('policy', '').strip()
+    if policy_filter in CombinedPresentationAssessment.ResultPolicy.values:
+        filtered_qs = filtered_qs.filter(result_policy=policy_filter)
+    else:
+        policy_filter = ''
+
+    filtered_qs = filtered_qs.order_by('-created_at', '-pk')
+    filtered_count = filtered_qs.count()
+
+    paginator, page_obj = paginate(request, filtered_qs)
+
+    query_params = QueryDict('', mutable=True)
+    if search_query:
+        query_params['q'] = search_query
+    if status_filter:
+        query_params['status'] = status_filter
+    if policy_filter:
+        query_params['policy'] = policy_filter
+    query_params['per_page'] = str(paginator.per_page)
+    querystring = query_params.urlencode()
+
+    hearing_count = (PanelHearing.objects.for_organization(request.organization)
+                     .owned_by(request.user).count())
+
+    context = {
+        'assessments': filtered_qs,
+        'page_obj': page_obj,
+        'paginator': paginator,
+        'status_counts': status_counts,
+        'search_query': search_query,
+        'status_filter': status_filter,
+        'policy_filter': policy_filter,
+        'filtered_count': filtered_count,
+        'per_page': paginator.per_page,
+        'page_sizes': PAGE_SIZES,
+        'querystring': querystring,
+        'active_tab': 'combined',
+        'combined_count': status_counts['total'],
+        'hearing_count': hearing_count,
+        'can_oversee_panel': can_oversee(request),
+    }
+
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        response = render(request, 'service_domains/_partials/combined_assessment_results.html', context)
+        response['Vary'] = 'X-Requested-With'
+        return response
+
+    return render(request, 'service_domains/combined_assessment_list.html', context)
+
+
+def _combined_bulk_delete_redirect(request):
+    redirect_url = reverse('combined_assessment_list')
+    query_params = QueryDict('', mutable=True)
+    q = (request.POST.get('q') or '').strip()
+    status = (request.POST.get('status') or '').strip()
+    policy = (request.POST.get('policy') or '').strip()
+    per_page = (request.POST.get('per_page') or '').strip()
+    if q:
+        query_params['q'] = q
+    if status in CombinedPresentationAssessment.Status.values:
+        query_params['status'] = status
+    if policy in CombinedPresentationAssessment.ResultPolicy.values:
+        query_params['policy'] = policy
+    if per_page:
+        query_params['per_page'] = per_page
+    qs = query_params.urlencode()
+    if qs:
+        redirect_url = f'{redirect_url}?{qs}'
+    return redirect(redirect_url)
+
+
+@_panel_owner
+@require_POST
+def combined_assessment_bulk_delete(request):
+    """Delete multiple selected draft combined assessments."""
+    raw_ids = request.POST.getlist('assessment_ids')
+    if not raw_ids:
+        messages.error(request, 'Select at least one combined assessment to delete.')
+        return _combined_bulk_delete_redirect(request)
+
+    valid_ids = []
+    for raw_id in raw_ids:
+        raw_id = raw_id.strip()
+        if not raw_id.isdigit() or len(raw_id) > 10:
+            messages.error(request, 'Invalid combined assessment ID submitted.')
+            return _combined_bulk_delete_redirect(request)
+        valid_ids.append(int(raw_id))
+
+    if len(valid_ids) > 100:
+        messages.error(request, 'You cannot delete more than 100 combined assessments at once.')
+        return _combined_bulk_delete_redirect(request)
+
+    with transaction.atomic():
+        locked = list(
+            CombinedPresentationAssessment.objects.for_organization(request.organization)
+            .owned_by(request.user)
+            .filter(pk__in=valid_ids, status=CombinedPresentationAssessment.Status.DRAFT)
+            .select_for_update()
+        )
+        if len(locked) != len(set(valid_ids)):
+            messages.error(request, 'One or more selected combined assessments cannot be deleted or are no longer available.')
+            return _combined_bulk_delete_redirect(request)
+
+        count = len(locked)
+        for item in locked:
+            item.delete()
+
+    messages.success(request, f'{count} combined assessment{"s" if count != 1 else ""} deleted.')
+    return _combined_bulk_delete_redirect(request)
+
+
+@_panel_owner
+@require_POST
+def combined_assessment_delete(request, assessment_id):
+    """Delete a single draft combined assessment."""
+    item = _owned_assessment(request, assessment_id)
+    if item is None:
+        raise Http404
+    if item.status != CombinedPresentationAssessment.Status.DRAFT:
+        messages.error(request, 'Published combined assessments cannot be deleted.')
+        return redirect('combined_assessment_list')
+    name = item.name
+    item.delete()
+    messages.success(request, f'Combined assessment "{name}" deleted.')
+    return redirect('combined_assessment_list')
 
 
 @_panel_owner

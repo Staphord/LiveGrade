@@ -1490,6 +1490,9 @@ class TrainingFeedbackQuerySet(OwnedQuerySet):
     def delete(self):
         raise ValidationError('Anonymous training feedback is immutable.')
 
+    def delete_for_series_removal(self):
+        return super().delete()
+
 
 class TrainingFeedbackManager(OwnedManager.from_queryset(TrainingFeedbackQuerySet)):
     pass
@@ -1596,6 +1599,9 @@ class TrainingCompetencyResultQuerySet(OwnedQuerySet):
 
     def delete(self):
         raise ValidationError('Competency decisions are append-only.')
+
+    def delete_for_series_removal(self):
+        return super().delete()
 
 
 class TrainingCompetencyResultManager(OwnedManager.from_queryset(TrainingCompetencyResultQuerySet)):

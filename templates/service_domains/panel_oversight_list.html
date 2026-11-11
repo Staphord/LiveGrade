@@ -1,13 +1,246 @@
 {% extends 'base.html' %}
-{% block title %}Organization results · Panel{% endblock %}
-{% block page_title %}Organization results{% endblock %}
-{% block content %}
-{% include 'service_domains/_workspace_styles.html' %}
+{% block title %}Oversight results · Panel · LiveGrade{% endblock %}
+{% block page_title %}Oversight results{% endblock %}
+
+{% block extra_css %}
+{% include 'partials/_service_dashboard_styles.html' %}
+<style nonce="{{ csp_nonce }}">
+.panel-list-page{max-width:1400px;margin:0 auto;display:grid;gap:var(--sp-4);min-width:0}
+.oversight-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,13rem),1fr));gap:var(--sp-3)}
+.oversight-kpi{padding:var(--sp-3) var(--sp-4);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);box-shadow:var(--elev-1)}
+.oversight-kpi-label{font-size:var(--fs-sm);font-weight:650;color:var(--text-muted);display:block}
+.oversight-kpi-value{font-size:1.75rem;font-weight:800;color:var(--ink);display:block;margin:var(--sp-1) 0 2px;font-variant-numeric:tabular-nums}
+.oversight-kpi-sub{font-size:var(--fs-micro);color:var(--text-soft);display:block}
+.panel-filters{display:grid;grid-template-columns:minmax(220px,1.5fr) minmax(160px,.8fr) minmax(180px,.9fr) auto;align-items:end;gap:var(--sp-3);padding:var(--sp-4);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.panel-filters label{display:block;margin-bottom:var(--sp-1);color:var(--text-soft);font-size:var(--fs-sm);font-weight:650}
+.panel-filter-clear{align-self:end}
+.panel-table-card{min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.panel-table-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);padding:var(--sp-4);border-bottom:1px solid var(--border)}
+.panel-table-heading-group{display:flex;align-items:baseline;gap:var(--sp-3);min-width:0}
+.panel-table-head h2{margin:0;font-size:var(--fs-heading);font-weight:750}
+.panel-table-count{color:var(--text-muted);font-size:var(--fs-sm)}
+.panel-table-tools{display:flex;align-items:flex-end;justify-content:flex-end;gap:var(--sp-3);flex-wrap:wrap}
+.panel-page-size{display:grid;gap:3px;min-width:9rem;color:var(--text-muted);font-size:var(--fs-micro);font-weight:650}
+.panel-page-size .custom-select-wrap{min-width:7rem}
+.panel-table{margin:0;vertical-align:middle}
+.panel-table th{padding:var(--sp-3) var(--sp-4);color:var(--text-muted);font-size:var(--fs-micro);font-weight:750;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+.panel-table td{padding:var(--sp-3) var(--sp-4);font-size:var(--fs-sm)}
+.panel-table-name{color:var(--ink);font-size:var(--fs-body);font-weight:750;text-decoration:none}
+.panel-table-name:hover{text-decoration:none}
+.panel-table-secondary{display:block;margin-top:3px;color:var(--text-muted);font-size:var(--fs-micro)}
+.panel-stage{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.panel-stage-dot{width:7px;height:7px;border-radius:50%;background:var(--text-subtle)}
+.panel-stage-dot.released{background:var(--success)}
+.panel-stage-dot.signed_off{background:var(--accent)}
+.panel-empty{padding:var(--sp-6) var(--sp-4);text-align:center}
+.panel-empty-icon{display:grid;width:3rem;height:3rem;place-items:center;margin:0 auto var(--sp-3);border-radius:var(--radius-card);background:var(--accent-soft);color:var(--accent);font-size:1.4rem}
+.panel-empty h2{margin:0 0 var(--sp-2);font-size:var(--fs-title);font-weight:800;color:var(--ink)}
+.panel-empty p{max-width:38rem;margin:0 auto var(--sp-4);color:var(--text-muted);line-height:1.55}
+.panel-pagination{display:flex;align-items:center;justify-content:flex-end;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);border-top:1px solid var(--border)}
+.panel-pagination-label{color:var(--text-muted);font-size:var(--fs-sm)}
+.panel-pagination-links{display:flex;gap:var(--sp-2)}
+@media(max-width:991.98px){.panel-filters{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+@media(max-width:575.98px){.panel-filters{grid-template-columns:1fr}.panel-table-head{align-items:flex-start;flex-direction:column}.panel-table-heading-group{align-items:flex-start;flex-direction:column;gap:var(--sp-1)}.panel-table-tools{width:100%;justify-content:space-between}.panel-table{min-width:760px}.panel-pagination{align-items:flex-end;flex-direction:column}}
+</style>
 {% include 'service_domains/_panel_ui_styles.html' %}
-<div class="container-fluid py-4 service-workspace panel-page">
-  <header class="panel-hero mb-4"><div class="panel-hero__copy"><p class="panel-eyebrow">Panel · Read only</p><h1 class="page-title">Organization results</h1><p class="page-subtitle mt-2">Approved combined results across Panel assessments.</p></div><div class="panel-hero__actions"><a class="btn btn-outline-secondary" href="{% url 'panel_hearing_list' %}">My assessments</a></div></header>
-  <div class="alert alert-light border" role="note">This view shows combined results only. Examiner names, individual marks, and private comments stay hidden.</div>
-  {% if hearings %}<section class="row g-3" aria-label="Completed assessments">{% for hearing in hearings %}<div class="col-12 col-md-6"><a class="panel-card d-block text-decoration-none h-100" href="{% url 'panel_oversight_detail' hearing_id=hearing.pk %}"><div class="panel-card__top"><div><p class="panel-eyebrow">{{ hearing.get_status_display }}</p><h2 class="h5 mb-1">{{ hearing.name }}</h2><p class="small panel-muted mb-0">Organizer: {% if hearing.created_by %}{{ hearing.created_by.display_name }}{% else %}Not recorded{% endif %}</p></div><span class="panel-state panel-state--done">{{ hearing.result_count }} result{{ hearing.result_count|pluralize }}</span></div><span class="btn btn-sm btn-outline-primary mt-3">View results <span aria-hidden="true">→</span></span></a></div>{% endfor %}</section>
-  {% else %}<section class="panel-empty"><h2 class="h5">No approved results yet</h2><p class="panel-muted mb-0">Results will appear here after an assessment is closed and approved.</p></section>{% endif %}
+{% include 'service_domains/_partials/panel_row_actions_styles.html' %}
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'panel_hearing_table' %}" class="btn btn-outline-secondary btn-sm">My assessments</a>
+{% endblock %}
+
+{% block content %}
+<div class="panel-list-page stage-content">
+  <header class="panel-hero mb-2">
+    <div class="panel-hero__copy">
+      <p class="panel-eyebrow">Panel · Governance &amp; Archive</p>
+      <h1 class="page-title">Oversight results</h1>
+      <p class="page-subtitle mt-2">Approved outcomes and compiled records across all Panel assessments.</p>
+    </div>
+    <div class="panel-hero__actions">
+      <a class="btn btn-outline-secondary" href="{% url 'panel_hearing_table' %}">My assessments</a>
+    </div>
+  </header>
+
+  <section class="oversight-kpis" aria-label="Oversight summary metrics">
+    <div class="oversight-kpi">
+      <span class="oversight-kpi-label">Total panels</span>
+      <span class="oversight-kpi-value">{{ stats.total_panels }}</span>
+      <span class="oversight-kpi-sub">Compiled &amp; approved</span>
+    </div>
+    <div class="oversight-kpi">
+      <span class="oversight-kpi-label">Candidates evaluated</span>
+      <span class="oversight-kpi-value">{{ stats.total_candidates }}</span>
+      <span class="oversight-kpi-sub">Across all panels</span>
+    </div>
+    <div class="oversight-kpi">
+      <span class="oversight-kpi-label">Released outcomes</span>
+      <span class="oversight-kpi-value">{{ stats.total_released }}</span>
+      <span class="oversight-kpi-sub">Shared with entrants</span>
+    </div>
+    <div class="oversight-kpi">
+      <span class="oversight-kpi-label">Signed off</span>
+      <span class="oversight-kpi-value">{{ stats.total_signed_off }}</span>
+      <span class="oversight-kpi-sub">Awaiting release</span>
+    </div>
+  </section>
+
+  <div class="alert alert-info d-flex align-items-center gap-2 mb-2" role="note">
+    <i class="bi bi-shield-check fs-5 flex-shrink-0" aria-hidden="true"></i>
+    <div><strong>Verified Oversight View:</strong> Displaying approved aggregate results only. Individual examiner identities, marks, and confidential notes remain redacted for governance compliance.</div>
+  </div>
+
+  {% if messages %}
+    <div aria-live="polite">
+      {% for message in messages %}
+        <div class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'warning' %}alert-warning{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %}" role="status">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <form class="panel-filters" method="get" action="{% url 'panel_oversight_list' %}" data-panel-auto-filter>
+    <input type="hidden" name="per_page" value="{{ per_page }}" data-panel-filter-page-size>
+    <div>
+      <label for="oversight-search">Search assessments or organizers</label>
+      <input id="oversight-search" class="form-control" name="q" type="search" value="{{ search_query }}" placeholder="Assessment name, organizer, or email" autocomplete="off" aria-describedby="oversight-search-help">
+      <span id="oversight-search-help" class="visually-hidden">Results update after you stop typing. Press Enter to search immediately.</span>
+    </div>
+    <div>
+      <label for="oversight-status">Status</label>
+      <select id="oversight-status" class="form-select" name="status" aria-describedby="oversight-filter-help">
+        <option value="">All statuses ({{ status_counts.total }})</option>
+        <option value="signed_off" {% if status_filter == 'signed_off' %}selected{% endif %}>Signed off ({{ status_counts.signed_off }})</option>
+        <option value="released" {% if status_filter == 'released' %}selected{% endif %}>Released ({{ status_counts.released }})</option>
+      </select>
+      <span id="oversight-filter-help" class="visually-hidden">The list filters as soon as you choose a status.</span>
+    </div>
+    <div>
+      <label for="oversight-workflow">Decision process</label>
+      <select id="oversight-workflow" class="form-select" name="workflow">
+        <option value="">All decision processes</option>
+        {% for value, label in workflow_choices %}
+        <option value="{{ value }}" {% if workflow_filter == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <a class="btn btn-outline-secondary panel-filter-clear" href="{% url 'panel_oversight_list' %}" data-panel-clear-filters>Clear filters</a>
+  </form>
+
+  <p id="panel-filter-feedback" class="visually-hidden" role="status" aria-live="polite"></p>
+  {% include 'service_domains/_partials/panel_oversight_results.html' %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+{% include 'service_domains/_partials/panel_clickable_rows_script.html' %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  const form = document.querySelector('[data-panel-auto-filter]');
+  if (!form) return;
+  const search = form.querySelector('input[name="q"]');
+  const selects = form.querySelectorAll('select');
+  const feedback = document.getElementById('panel-filter-feedback');
+  let results = document.getElementById('panel-results');
+  let searchTimer;
+  let activeRequest;
+
+  function submitFilters(restorePageSizeFocus) {
+    window.clearTimeout(searchTimer);
+    const pageSize = results ? results.querySelector('[data-panel-page-size]') : null;
+    const pageSizeInput = form.querySelector('[data-panel-filter-page-size]');
+    if (pageSize && pageSizeInput) pageSizeInput.value = pageSize.value;
+    const url = new URL(form.action, window.location.href);
+    url.search = new URLSearchParams(new FormData(form)).toString();
+    updateResults(url, restorePageSizeFocus);
+  }
+
+  async function updateResults(url, restorePageSizeFocus) {
+    if (!results) return;
+    if (activeRequest) activeRequest.abort();
+    const controller = new AbortController();
+    activeRequest = controller;
+    results.setAttribute('aria-busy', 'true');
+    feedback.className = 'visually-hidden';
+    feedback.textContent = '';
+    try {
+      const response = await fetch(url.toString(), {
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+        credentials: 'same-origin',
+        signal: controller.signal
+      });
+      if (response.redirected) {
+        window.location.assign(response.url);
+        return;
+      }
+      if (!response.ok) throw new Error('Oversight results could not be loaded');
+      const responsePage = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const nextResults = responsePage.getElementById('panel-results');
+      if (!nextResults) throw new Error('Results were missing from response');
+      if (controller.signal.aborted || activeRequest !== controller) return;
+
+      results.replaceWith(nextResults);
+      results = nextResults;
+      if (window.initCustomSelects) window.initCustomSelects(results);
+      if (restorePageSizeFocus) {
+        const pageSizeTrigger = results.querySelector('.panel-page-size .custom-select-trigger');
+        if (pageSizeTrigger) pageSizeTrigger.focus({preventScroll: true});
+      }
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+      const count = results.querySelector('.panel-table-count');
+      feedback.textContent = count ? count.textContent.trim() : 'List updated.';
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      feedback.className = 'alert alert-danger';
+      feedback.textContent = 'Unable to update oversight results right now. Please refresh the page.';
+    } finally {
+      if (activeRequest === controller) {
+        activeRequest = null;
+        results.removeAttribute('aria-busy');
+      }
+    }
+  }
+
+  if (search) {
+    search.addEventListener('input', function () {
+      window.clearTimeout(searchTimer);
+      searchTimer = window.setTimeout(submitFilters, 250);
+    });
+    search.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        submitFilters();
+      }
+    });
+  }
+
+  selects.forEach(function (sel) {
+    sel.addEventListener('change', function () { submitFilters(); });
+  });
+
+  document.addEventListener('change', function (event) {
+    if (event.target && event.target.matches('[data-panel-page-size]')) {
+      const pageSizeInput = form.querySelector('[data-panel-filter-page-size]');
+      if (pageSizeInput) pageSizeInput.value = event.target.value;
+      submitFilters(true);
+    }
+  });
+
+  document.addEventListener('click', function (event) {
+    const pageLink = event.target.closest('[data-panel-page]');
+    if (pageLink) {
+      event.preventDefault();
+      updateResults(new URL(pageLink.href, window.location.href));
+      return;
+    }
+    const clearLink = event.target.closest('[data-panel-clear-filters]');
+    if (clearLink) {
+      event.preventDefault();
+      if (search) search.value = '';
+      selects.forEach(function (sel) { sel.value = ''; });
+      submitFilters();
+    }
+  });
+})();
+</script>
 {% endblock %}

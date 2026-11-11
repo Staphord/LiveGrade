@@ -1,254 +1,259 @@
 {% extends 'base.html' %}
-{% block title %}Panel · LiveGrade{% endblock %}
-{% block page_title %}Panel{% endblock %}
-{% block content %}
-{% include 'service_domains/_workspace_styles.html' %}
-{% include 'service_domains/_panel_ui_styles.html' %}
+{% block title %}Panel dashboard - LiveGrade{% endblock %}
+{% block page_title %}Panel dashboard{% endblock %}
+
+{% block extra_css %}
 {% include 'partials/_service_dashboard_styles.html' %}
-<div class="container-fluid py-4 service-workspace panel-page panel-dashboard stage-content">
-  <header class="hero-banner {% if not dashboard_stats.live %}between-banner{% endif %}">
+<style nonce="{{ csp_nonce }}">
+.panel-dashboard{gap:var(--sp-4)}
+.panel-dashboard a,.panel-dashboard a:hover{text-decoration:none}
+.panel-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:var(--sp-3)}
+.panel-kpi{min-width:0;padding:var(--sp-4);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);box-shadow:var(--elev-1)}
+.panel-kpi-label{color:var(--text-muted);font-size:var(--fs-sm);font-weight:650}
+.panel-kpi-value{margin-top:var(--sp-2);font-size:1.8rem;line-height:1.1;font-weight:800;letter-spacing:-.04em;color:var(--ink)}
+.panel-kpi-note{margin-top:var(--sp-2);color:var(--text-muted);font-size:var(--fs-micro);line-height:1.45}
+.panel-live-panel{padding:var(--sp-4);border:1px solid var(--tone-success-bg);border-radius:var(--radius-card);background:var(--surface)}
+.panel-live-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:var(--sp-3);margin-top:var(--sp-3)}
+.panel-live-card-link{display:block;height:100%;border-radius:var(--radius-control);color:var(--text)}
+.panel-live-card-link:focus-visible{outline:0;box-shadow:var(--focus-ring)}
+.panel-live-item{height:100%;padding:var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface-hover);transition:border-color var(--motion-fast) var(--ease),background var(--motion-fast) var(--ease),transform var(--motion-fast) var(--ease)}
+.panel-live-card-link:hover .panel-live-item{border-color:var(--accent);background:var(--surface);transform:translateY(-1px)}
+.panel-live-item h3{margin:0;color:var(--ink);font-size:var(--fs-strong);font-weight:750}
+.panel-live-meta{display:flex;flex-wrap:gap:var(--sp-2) var(--sp-4);margin-top:var(--sp-2);color:var(--text-muted);font-size:var(--fs-sm)}
+.panel-live-now{display:inline-flex;align-items:center;gap:6px;color:var(--tone-success-fg);font-size:var(--fs-micro);font-weight:750;text-transform:uppercase;letter-spacing:.04em}
+.panel-live-dot{width:8px;height:8px;border-radius:50%;background:var(--success)}
+.panel-attention-panel{padding:var(--sp-4);border:1px solid var(--tone-warn-bg, var(--border));border-radius:var(--radius-card);background:var(--surface)}
+.panel-attention-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:var(--sp-2);margin-bottom:var(--sp-3)}
+.panel-attention-badge{display:inline-flex;align-items:center;gap:6px;font-weight:750;font-size:var(--fs-sm);color:var(--tone-warn-fg, #b45309)}
+.panel-attention-item{display:flex;justify-content:space-between;align-items:center;padding:var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface-hover);gap:var(--sp-3);flex-wrap:wrap}
+.panel-attention-detail strong{display:block;color:var(--ink);font-size:var(--fs-body)}
+.panel-attention-detail span{color:var(--text-muted);font-size:var(--fs-sm)}
+.panel-visual-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-3)}
+.panel-data-card{min-width:0;padding:var(--sp-4);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.panel-data-card h2{margin:0;font-size:var(--fs-heading);font-weight:750}
+.panel-data-subtitle{margin:var(--sp-1) 0 var(--sp-4);color:var(--text-muted);font-size:var(--fs-sm)}
+.panel-stage-chart{display:grid;grid-template-columns:minmax(140px,180px) minmax(0,1fr);align-items:center;gap:var(--sp-4)}
+.panel-stage-pie{width:100%;aspect-ratio:1;border:1px solid var(--border);border-radius:50%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.4)}
+.panel-stage-legend{display:grid;gap:var(--sp-3);margin:0;padding:0;list-style:none}
+.panel-stage-legend li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:var(--sp-2);font-size:var(--fs-sm)}
+.panel-stage-swatch{width:11px;height:11px;border-radius:3px;background:var(--text-subtle)}
+.panel-stage-swatch.open{background:var(--success)}
+.panel-stage-swatch.draft{background:#d28a08}
+.panel-stage-swatch.review{background:var(--accent)}
+.panel-stage-swatch.signed_off{background:var(--text-muted)}
+.panel-stage-swatch.released{background:var(--text-subtle)}
+.panel-stage-legend strong{white-space:nowrap;color:var(--ink)}
+.panel-stage-legend small{color:var(--text-muted);font-weight:500}
+.panel-candidate-list{display:grid;gap:var(--sp-3);margin:0;padding:0;list-style:none}
+.panel-candidate-label{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2);margin-bottom:var(--sp-1);font-size:var(--fs-sm)}
+.panel-candidate-label a{overflow:hidden;color:var(--text);font-weight:650;text-overflow:ellipsis;white-space:nowrap}
+.panel-candidate-label a:hover,.panel-recent-name:hover{color:var(--accent)}
+.panel-candidate-label strong{flex:0 0 auto}
+.panel-candidate-track{height:12px;overflow:hidden;border-radius:var(--radius-pill);background:var(--surface-sunken);background-image:linear-gradient(to right,transparent calc(50% - .5px),var(--border) calc(50% - .5px),var(--border) calc(50% + .5px),transparent calc(50% + .5px))}
+.panel-candidate-fill{height:100%;border-radius:inherit;background:var(--accent);transition:width var(--motion) var(--ease)}
+.panel-candidate-axis{display:flex;justify-content:space-between;margin-top:var(--sp-1);padding-left:0;color:var(--text-muted);font-size:var(--fs-micro)}
+.panel-recent{overflow:hidden;padding:0;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.panel-recent-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);padding:var(--sp-4);border-bottom:1px solid var(--border)}
+.panel-recent-head h2{margin:0;font-size:var(--fs-heading);font-weight:750}
+.panel-recent .table{margin:0;vertical-align:middle}
+.panel-recent .table th{color:var(--text-muted);font-size:var(--fs-micro);font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.panel-recent .table td{font-size:var(--fs-sm)}
+.panel-recent-name{color:var(--text);font-size:var(--fs-body);font-weight:700;text-decoration:none}
+.panel-recent-name:hover{text-decoration:none}
+.panel-table-secondary{display:block;margin-top:3px;color:var(--text-muted);font-size:var(--fs-micro)}
+.panel-recent .panel-actions-cell{width:1%;white-space:nowrap}
+.panel-recent .panel-actions-cell .dropdown-menu{z-index:var(--z-dropdown)}
+.panel-empty{padding:var(--sp-5);text-align:center;color:var(--text-muted)}
+.panel-empty h2{margin:0 0 var(--sp-2);color:var(--ink);font-size:var(--fs-title)}
+@media(max-width:1199.98px){.panel-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:767.98px){.panel-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.panel-visual-grid{grid-template-columns:1fr}}
+@media(max-width:575.98px){.panel-kpi{padding:var(--sp-3)}.panel-kpi-value{font-size:1.5rem}.panel-stage-chart{grid-template-columns:minmax(120px,150px) minmax(0,1fr);gap:var(--sp-3)}.panel-recent-head{align-items:flex-start;flex-direction:column}.panel-recent .table{min-width:680px}}
+</style>
+{% include 'service_domains/_partials/panel_row_actions_styles.html' %}
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'combined_assessment_list' %}" class="btn btn-outline-secondary btn-sm">Combined assessments</a>
+{% if can_oversee_panel %}
+<a href="{% url 'panel_oversight_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-shield-check me-1" aria-hidden="true"></i>Oversight results</a>
+{% endif %}
+<a href="{% url 'panel_hearing_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>New assessment</a>
+{% endblock %}
+
+{% block content %}
+<div class="stage-content panel-dashboard">
+  <header class="hero-banner between-banner">
     <div class="hero-meta">
-      {% if dashboard_stats.live %}
-        <div class="status-pill live mb-2"><span class="live-dot"></span> LIVE HEARING IN PROGRESS</div>
-      {% elif hearings %}
-        <div class="status-pill closed mb-2"><i class="bi bi-calendar-check" aria-hidden="true"></i> BETWEEN HEARINGS — SCHEDULED</div>
-      {% else %}
-        <div class="status-pill action mb-2"><i class="bi bi-shield-check" aria-hidden="true"></i> LIVEGRADE PANEL</div>
-      {% endif %}
-      <h1 class="page-title">Panel assessments</h1>
-      <p class="page-subtitle mb-0">Set up reviews, run them live with private examiner bearer links, and share chair-approved results.</p>
+      <p>A live summary of your assessments, candidates, and examiner activity.</p>
     </div>
     <div class="hero-actions">
-      <a class="btn btn-primary" href="#create-hearing"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create assessment</a>
-      <a class="btn btn-outline-secondary" href="{% url 'combined_assessment_list' %}">Combined assessments</a>
-      {% if can_oversee_panel %}<a class="btn btn-outline-secondary" href="{% url 'panel_oversight_list' %}">Organization results</a>{% endif %}
+      <a href="{% url 'panel_hearing_table' %}" class="btn btn-outline-primary">Browse assessments</a>
+      <a href="{% url 'panel_hearing_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create assessment</a>
     </div>
   </header>
 
   {% if messages %}<div aria-live="polite">{% for message in messages %}<div class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'warning' %}alert-warning{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %}" role="status">{{ message }}</div>{% endfor %}</div>{% endif %}
 
-  {% if not hearings %}
-    {% include 'service_domains/_onboarding.html' with onboarding=onboarding %}
-  {% else %}
-    {% if attention_hearings %}
-    <section class="bento-card col-12 attention-card" aria-labelledby="attention-heading">
-      <div class="attention-header">
-        <span class="attention-badge" id="attention-heading"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> Action Required · Needs your attention</span>
-        <span class="small text-muted">{{ attention_hearings|length }} assessment{{ attention_hearings|length|pluralize }} awaiting chair or organizer action</span>
-      </div>
-      <div class="d-flex flex-column gap-2">
-        {% for hearing in attention_hearings %}
-        <div class="attention-item">
-          <div class="attention-detail">
-            <strong>{{ hearing.name }}</strong>
-            <span>{% if hearing.dashboard_invitation_issue %}{{ hearing.dashboard_invitation_issue }}{% else %}{{ hearing.dashboard_next_action }}{% endif %} · {{ hearing.candidate_count }} candidate{{ hearing.candidate_count|pluralize }}</span>
-          </div>
-          {% if hearing.status == 'review' or hearing.status == 'signed_off' or hearing.status == 'released' %}
-            <a class="btn btn-sm btn-primary" href="{% url 'panel_results_review' hearing_id=hearing.pk %}">{% if hearing.status == 'signed_off' %}Release results{% else %}Review results{% endif %}</a>
-          {% elif hearing.status == 'draft' and hearing.dashboard_next_action == 'Ready to open' %}
-            <a class="btn btn-sm btn-primary" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}?step=ready">Review and open</a>
-          {% else %}
-            <a class="btn btn-sm btn-primary" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}">{% if hearing.status == 'open' %}Open live controls{% else %}Continue setup{% endif %}</a>
-          {% endif %}
-        </div>
-        {% endfor %}
-      </div>
-    </section>
-    {% endif %}
+  <section class="panel-kpis" aria-label="Panel key metrics">
+    <article class="panel-kpi"><div class="panel-kpi-label">Total assessments</div><div class="panel-kpi-value">{{ dashboard_stats.total }}</div><div class="panel-kpi-note">Your assessments in this organization</div></article>
+    <article class="panel-kpi"><div class="panel-kpi-label">Live now</div><div class="panel-kpi-value">{{ dashboard_stats.live }}</div><div class="panel-kpi-note">Open for scoring right now</div></article>
+    <article class="panel-kpi"><div class="panel-kpi-label">In setup</div><div class="panel-kpi-value">{{ dashboard_stats.drafts }}</div><div class="panel-kpi-note">Drafts not yet opened</div></article>
+    <article class="panel-kpi"><div class="panel-kpi-label">To review</div><div class="panel-kpi-value">{{ dashboard_stats.review }}</div><div class="panel-kpi-note">Awaiting chair sign-off</div></article>
+    <article class="panel-kpi"><div class="panel-kpi-label">Ready to share</div><div class="panel-kpi-value">{{ dashboard_stats.release }}</div><div class="panel-kpi-note">Signed off and ready for entrant release</div></article>
+    <article class="panel-kpi"><div class="panel-kpi-label">Completed</div><div class="panel-kpi-value">{{ dashboard_stats.completed }}</div><div class="panel-kpi-note">Released to entrants</div></article>
+  </section>
 
-    <section class="kpi-row kpi-row-5" aria-label="Assessment overview">
-      <article class="kpi-tile" data-filter-trigger="open">
-        <div class="kpi-label">Live now {% if dashboard_stats.live %}<span class="live-dot"></span>{% endif %}</div>
-        <div class="kpi-value">{{ dashboard_stats.live }}</div>
-        <div class="kpi-footer"><span class="kpi-trend">Active</span><span>Open scoring chambers</span></div>
-      </article>
-      <article class="kpi-tile" data-filter-trigger="draft">
-        <div class="kpi-label">In setup</div>
-        <div class="kpi-value">{{ dashboard_stats.drafts }}</div>
-        <div class="kpi-footer"><span>Drafts</span><span>Preparing criteria &amp; panels</span></div>
-      </article>
-      <article class="kpi-tile" data-filter-trigger="review">
-        <div class="kpi-label">To review</div>
-        <div class="kpi-value">{{ dashboard_stats.review }}</div>
-        <div class="kpi-footer"><span>Deliberation</span><span>Awaiting chair sign-off</span></div>
-      </article>
-      <article class="kpi-tile" data-filter-trigger="signed_off">
-        <div class="kpi-label">Ready to share</div>
-        <div class="kpi-value">{{ dashboard_stats.release }}</div>
-        <div class="kpi-footer"><span>Signed off</span><span>Ready for entrant release</span></div>
-      </article>
-      <article class="kpi-tile" data-filter-trigger="released">
-        <div class="kpi-label">Completed</div>
-        <div class="kpi-value">{{ dashboard_stats.completed }}</div>
-        <div class="kpi-footer"><span class="kpi-trend">Audited</span><span>{{ dashboard_stats.total_candidates }} candidates total</span></div>
-      </article>
-    </section>
-
-    <div class="bento-grid">
-      <section class="bento-card col-8" aria-labelledby="assessments-heading">
-        <div class="bento-header">
-          <div class="bento-title">
-            <h2 id="assessments-heading">Your assessments</h2>
-            <p>Live work and assessments needing action appear first.</p>
-          </div>
-          <a href="#create-hearing" class="bento-action-link">New assessment <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
-        </div>
-
-        <div class="chart-container" aria-label="Examiner Consensus and Score Convergence">
-          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <span class="small fw-bold text-dark">Examiner Consensus &amp; Score Convergence</span>
-            <span class="small text-muted">{{ dashboard_stats.total_examiners }} confirmed examiner{{ dashboard_stats.total_examiners|pluralize }} · {{ dashboard_stats.total_candidates }} candidate{{ dashboard_stats.total_candidates|pluralize }}</span>
-          </div>
-          <svg class="chart-svg" viewBox="0 0 600 155" role="img" aria-label="Examiner score convergence across criteria">
-            <line x1="40" y1="25" x2="580" y2="25" stroke="#e2e8f0" stroke-dasharray="4"/>
-            <line x1="40" y1="75" x2="580" y2="75" stroke="#e2e8f0" stroke-dasharray="4"/>
-            <line x1="40" y1="125" x2="580" y2="125" stroke="#cbd5e1"/>
-            <text x="8" y="30" font-size="10" fill="#64748b">100</text>
-            <text x="14" y="80" font-size="10" fill="#64748b">75</text>
-            <text x="14" y="130" font-size="10" fill="#64748b">50</text>
-            <rect x="95" y="38" width="44" height="32" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
-            <line x1="95" y1="52" x2="139" y2="52" stroke="#1e40af" stroke-width="2.5"/>
-            <text x="117" y="145" font-size="11" font-weight="600" fill="#334155" text-anchor="middle">Live ({{ dashboard_stats.live }})</text>
-            <rect x="235" y="32" width="44" height="28" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
-            <line x1="235" y1="45" x2="279" y2="45" stroke="#1e40af" stroke-width="2.5"/>
-            <text x="257" y="145" font-size="11" font-weight="600" fill="#334155" text-anchor="middle">Draft ({{ dashboard_stats.drafts }})</text>
-            <rect x="375" y="42" width="44" height="38" rx="4" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
-            <line x1="375" y1="60" x2="419" y2="60" stroke="#92400e" stroke-width="2.5"/>
-            <text x="397" y="145" font-size="11" font-weight="600" fill="#334155" text-anchor="middle">Review ({{ dashboard_stats.review }})</text>
-            <rect x="505" y="28" width="44" height="24" rx="4" fill="#d1fae5" stroke="#059669" stroke-width="1.5"/>
-            <line x1="505" y1="40" x2="549" y2="40" stroke="#065f46" stroke-width="2.5"/>
-            <text x="527" y="145" font-size="11" font-weight="600" fill="#334155" text-anchor="middle">Released ({{ dashboard_stats.completed }})</text>
-          </svg>
-        </div>
-
-        <div class="filter-bar" role="group" aria-label="Filter Panel assessments">
-          <div class="filter-tabs">
-            <button type="button" class="filter-tab active" data-hearing-filter="all" aria-pressed="true">All <span class="ms-1">{{ dashboard_stats.total }}</span></button>
-            <button type="button" class="filter-tab" data-hearing-filter="open" aria-pressed="false">Live {{ dashboard_stats.live }}</button>
-            <button type="button" class="filter-tab" data-hearing-filter="draft" aria-pressed="false">In Setup {{ dashboard_stats.drafts }}</button>
-            <button type="button" class="filter-tab" data-hearing-filter="review" aria-pressed="false">To Review {{ dashboard_stats.review }}</button>
-            <button type="button" class="filter-tab" data-hearing-filter="signed_off" aria-pressed="false">Signed Off {{ dashboard_stats.release }}</button>
-            <button type="button" class="filter-tab" data-hearing-filter="released" aria-pressed="false">Released {{ dashboard_stats.completed }}</button>
-          </div>
-          <div class="sd-search-box">
-            <label class="visually-hidden" for="panel-hearing-search">Filter hearings by name</label>
-            <i class="bi bi-search" aria-hidden="true"></i>
-            <input type="search" id="panel-hearing-search" class="form-control form-control-sm" placeholder="Search assessments..." data-hearing-search>
-          </div>
-        </div>
-
-        <div class="row g-3" id="panel-hearing-grid">
-          {% for hearing in hearings %}
-          <div class="col-12 col-md-6" data-hearing-status="{{ hearing.status }}" data-hearing-name="{{ hearing.name|lower }}">
-            <article class="panel-card panel-card--accent d-flex flex-column h-100">
-              <div class="panel-card__top mb-2">
-                <h3 class="h5 mb-0 text-break">{{ hearing.name }}</h3>
-                <span class="panel-state {% if hearing.status == 'open' %}panel-state--live{% elif hearing.status == 'draft' %}panel-state--draft{% else %}panel-state--done{% endif %}">{{ hearing.get_status_display }}</span>
-              </div>
-              <p class="small panel-muted mb-3">{{ hearing.get_workflow_display }}</p>
-              <div class="d-flex flex-wrap gap-2 mb-3">
-                <span class="badge text-bg-light border">{{ hearing.candidate_count }} candidate{{ hearing.candidate_count|pluralize }}</span>
-                <span class="badge text-bg-light border">{{ hearing.accepted_examiner_count }} examiner{{ hearing.accepted_examiner_count|pluralize }} ready</span>
-              </div>
-              {% if hearing.status == 'open' %}
-                {% if hearing.active_candidate %}<p class="small text-success mb-3"><i class="bi bi-broadcast me-1" aria-hidden="true"></i>Now reviewing: <strong>{{ hearing.active_candidate.display_name }}</strong></p>{% else %}<p class="small panel-muted mb-3">Waiting for you to start the next candidate.</p>{% endif %}
-                <a class="btn btn-primary mt-auto" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}">Open live controls</a>
-              {% elif hearing.status == 'draft' %}
-                <p class="small panel-muted mb-3">Next: {{ hearing.dashboard_next_action }}</p>
-                <a class="btn btn-primary mt-auto" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}{% if hearing.dashboard_next_action == 'Ready to open' %}?step=ready{% endif %}">{% if hearing.dashboard_next_action == 'Ready to open' %}Review and open{% else %}Continue setup{% endif %}</a>
-              {% elif hearing.status == 'review' or hearing.status == 'signed_off' %}
-                <a class="btn btn-outline-primary mt-auto" href="{% url 'panel_results_review' hearing_id=hearing.pk %}">{% if hearing.status == 'signed_off' %}Release results{% else %}Review results{% endif %}</a>
-              {% elif hearing.status == 'released' %}
-                <a class="btn btn-outline-secondary mt-auto" href="{% url 'panel_results_review' hearing_id=hearing.pk %}">View released results</a>
-              {% endif %}
-            </article>
-          </div>
-          {% endfor %}
-        </div>
-        <p id="panel-hearing-filter-empty" class="text-muted mt-3 mb-0" hidden>No assessments match this filter.</p>
-      </section>
-
-      <aside class="bento-card col-4" aria-labelledby="panel-stage-heading">
-        <div class="bento-header">
-          <div class="bento-title">
-            <h2 id="panel-stage-heading">Chamber Stage Breakdown</h2>
-            <p>Progression across {{ dashboard_stats.total }} hearing{{ dashboard_stats.total|pluralize }}</p>
-          </div>
-        </div>
-        <div class="sd-pillar-list">
-          <div class="sd-pillar-row">
-            <div class="sd-pillar-head"><span class="fw-semibold">Open / Live Scoring</span><strong>{{ dashboard_stats.live }}</strong></div>
-            <div class="sd-pillar-track"><div class="sd-pillar-fill success" style="width:{% if dashboard_stats.total %}{% widthratio dashboard_stats.live dashboard_stats.total 100 %}{% else %}0{% endif %}%"></div></div>
-          </div>
-          <div class="sd-pillar-row">
-            <div class="sd-pillar-head"><span class="fw-semibold">In Setup (Draft)</span><strong>{{ dashboard_stats.drafts }}</strong></div>
-            <div class="sd-pillar-track"><div class="sd-pillar-fill warn" style="width:{% if dashboard_stats.total %}{% widthratio dashboard_stats.drafts dashboard_stats.total 100 %}{% else %}0{% endif %}%"></div></div>
-          </div>
-          <div class="sd-pillar-row">
-            <div class="sd-pillar-head"><span class="fw-semibold">In Review &amp; Sign-Off</span><strong>{{ dashboard_stats.review|add:dashboard_stats.release }}</strong></div>
-            <div class="sd-pillar-track"><div class="sd-pillar-fill" style="width:{% if dashboard_stats.total %}{% widthratio dashboard_stats.review|add:dashboard_stats.release dashboard_stats.total 100 %}{% else %}0{% endif %}%"></div></div>
-          </div>
-          <div class="sd-pillar-row">
-            <div class="sd-pillar-head"><span class="fw-semibold">Released</span><strong>{{ dashboard_stats.completed }}</strong></div>
-            <div class="sd-pillar-track"><div class="sd-pillar-fill success" style="width:{% if dashboard_stats.total %}{% widthratio dashboard_stats.completed dashboard_stats.total 100 %}{% else %}0{% endif %}%"></div></div>
-          </div>
-        </div>
-      </aside>
+  {% if live_hearings %}
+  <section class="panel-live-panel" aria-labelledby="panel-live-heading">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <div><span class="panel-live-now"><span class="panel-live-dot" aria-hidden="true"></span>Live in Panel</span><h2 class="h5 mt-1 mb-0" id="panel-live-heading">{{ dashboard_stats.live }} open assessment{{ dashboard_stats.live|pluralize }}</h2></div>
+      <a href="{% url 'panel_hearing_table' %}?status=open" class="btn btn-sm btn-outline-primary">View open assessments</a>
     </div>
+    <div class="panel-live-list">
+      {% for hearing in live_hearings %}
+      <a class="panel-live-card-link" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}">
+        <article class="panel-live-item">
+          <h3>{{ hearing.name }}</h3>
+          <div class="panel-live-meta"><span>{{ hearing.candidate_count }} candidate{{ hearing.candidate_count|pluralize }}</span><span>{{ hearing.accepted_examiner_count }} examiner{{ hearing.accepted_examiner_count|pluralize }} ready</span></div>
+          <div class="panel-live-meta">{% if hearing.active_candidate %}<span>Reviewing: {{ hearing.active_candidate.display_name }}</span>{% else %}<span>No candidate is being reviewed right now</span>{% endif %}</div>
+        </article>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% else %}
+  <section class="panel-live-panel" aria-labelledby="panel-live-heading">
+    <h2 class="h6 mb-1" id="panel-live-heading">None of your assessments are open right now</h2>
+    <p class="text-muted small mb-0">Open assessments will appear here with their current candidate.</p>
+  </section>
   {% endif %}
 
-  <section class="bento-card" id="create-hearing" aria-labelledby="new-hearing-heading">
-    <div class="bento-header">
-      <div class="bento-title">
-        <p class="panel-eyebrow mb-1">New assessment</p>
-        <h2 id="new-hearing-heading">Create a Panel assessment</h2>
-        <p>Name it and choose how examiners will take part. You can add candidates and reviewers next.</p>
-      </div>
+  {% if attention_hearings %}
+  <section class="panel-attention-panel" aria-labelledby="attention-heading">
+    <div class="panel-attention-header">
+      <span class="panel-attention-badge" id="attention-heading"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> Action Required · Needs your attention</span>
+      <span class="small text-muted">{{ attention_hearings|length }} assessment{{ attention_hearings|length|pluralize }} awaiting chair or organizer action</span>
     </div>
-    <form method="post" class="service-flow-form" novalidate>{% csrf_token %}
-      {% include 'partials/_form_fields.html' with form=form %}
-      <button class="btn btn-primary" type="submit">Create draft</button>
-    </form>
+    <div class="d-flex flex-column gap-2">
+      {% for hearing in attention_hearings %}
+      <div class="panel-attention-item">
+        <div class="panel-attention-detail">
+          <strong>{{ hearing.name }}</strong>
+          <span>{% if hearing.dashboard_invitation_issue %}{{ hearing.dashboard_invitation_issue }}{% else %}{{ hearing.dashboard_next_action }}{% endif %} · {{ hearing.candidate_count }} candidate{{ hearing.candidate_count|pluralize }}</span>
+        </div>
+        {% if hearing.status == 'review' or hearing.status == 'signed_off' or hearing.status == 'released' %}
+          <a class="btn btn-sm btn-primary" href="{% url 'panel_results_review' hearing_id=hearing.pk %}">{% if hearing.status == 'signed_off' %}Release results{% else %}Review results{% endif %}</a>
+        {% elif hearing.status == 'draft' and hearing.dashboard_next_action == 'Ready to open' %}
+          <a class="btn btn-sm btn-primary" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}?step=ready">Review and open</a>
+        {% else %}
+          <a class="btn btn-sm btn-primary" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}">{% if hearing.status == 'open' %}Open live controls{% else %}Continue setup{% endif %}</a>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="panel-visual-grid" aria-label="Panel data visualizations">
+    <article class="panel-data-card" aria-labelledby="panel-stage-heading">
+      <h2 id="panel-stage-heading">Assessment stages</h2>
+      <p class="panel-data-subtitle">Distribution across your {{ dashboard_stats.total }} assessment{{ dashboard_stats.total|pluralize }}.</p>
+      {% if dashboard_stats.total %}
+      <div class="panel-stage-chart">
+        <div class="panel-stage-pie" style="background:{{ stage_pie_background }}" aria-hidden="true"></div>
+        <ul class="panel-stage-legend" aria-label="Assessment stage breakdown">
+          {% for stage in stage_distribution %}
+          <li><span class="panel-stage-swatch {{ stage.key }}" aria-hidden="true"></span><span>{{ stage.label }}</span><strong>{{ stage.count }} <small>({{ stage.percentage }}%)</small></strong></li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% else %}
+        <p class="panel-empty mb-0">Assessment stage data will appear after you create an assessment.</p>
+      {% endif %}
+    </article>
+
+    <article class="panel-data-card" aria-labelledby="panel-candidate-heading">
+      <h2 id="panel-candidate-heading">Largest candidate lists</h2>
+      <p class="panel-data-subtitle">Candidate counts by assessment; bars are scaled to the largest list shown.</p>
+      {% if candidate_hearings and largest_candidates %}
+      <ol class="panel-candidate-list">
+        {% for hearing in candidate_hearings %}
+        <li>
+          <div class="panel-candidate-label"><a href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}">{{ hearing.name }}</a><strong>{{ hearing.candidate_count }}</strong></div>
+          <div class="panel-candidate-track" aria-hidden="true"><div class="panel-candidate-fill" style="width:{{ hearing.candidate_bar_percent }}%"></div></div>
+        </li>
+        {% endfor %}
+      </ol>
+      <div class="panel-candidate-axis" aria-hidden="true"><span>0 candidates</span><span>{{ largest_candidates }} candidates</span></div>
+      {% else %}
+        <p class="panel-empty mb-0">Candidate data will appear after candidates are added to an assessment.</p>
+      {% endif %}
+    </article>
+  </section>
+
+  <section class="panel-recent" aria-labelledby="panel-recent-heading">
+    <div class="panel-recent-head"><div><h2 id="panel-recent-heading">Recent assessments</h2><p class="panel-data-subtitle mb-0">Your five most recently created assessments.</p></div><a href="{% url 'panel_hearing_table' %}" class="btn btn-outline-primary btn-sm">View all assessments</a></div>
+    {% if recent_hearings %}
+    <div class="table-responsive">
+      <table class="table table-hover" data-panel-row-navigation>
+        <caption class="visually-hidden">Five most recently created Panel assessments</caption>
+        <thead>
+          <tr>
+            <th scope="col">Assessment</th>
+            <th scope="col">Status</th>
+            <th scope="col">Candidates</th>
+            <th scope="col">Examiners ready</th>
+            <th scope="col">Hearing date</th>
+            <th scope="col">Created</th>
+            <th scope="col"><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for hearing in recent_hearings %}
+          {% if hearing.status == 'draft' %}
+            {% if hearing.dashboard_next_action == 'Ready to open' %}
+              {% url 'panel_hearing_manage' hearing_id=hearing.pk as row_url %}
+            {% else %}
+              {% url 'panel_hearing_manage' hearing_id=hearing.pk as row_url %}
+            {% endif %}
+          {% elif hearing.status == 'open' %}
+            {% url 'panel_hearing_manage' hearing_id=hearing.pk as row_url %}
+          {% else %}
+            {% url 'panel_results_review' hearing_id=hearing.pk as row_url %}
+          {% endif %}
+          <tr class="panel-row-clickable" data-panel-row-href="{% if hearing.status == 'draft' and hearing.dashboard_next_action == 'Ready to open' %}{{ row_url }}?step=ready{% else %}{{ row_url }}{% endif %}">
+            <td>
+              <a class="panel-recent-name" href="{% if hearing.status == 'draft' and hearing.dashboard_next_action == 'Ready to open' %}{{ row_url }}?step=ready{% else %}{{ row_url }}{% endif %}">{{ hearing.name }}</a>
+              {% if hearing.status == 'open' and hearing.active_candidate %}
+                <span class="panel-table-secondary">Reviewing: {{ hearing.active_candidate.display_name }}</span>
+              {% else %}
+                <span class="panel-table-secondary">{{ hearing.get_workflow_display }}</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="badge {% if hearing.status == 'open' %}bg-success-subtle text-success-emphasis{% elif hearing.status == 'draft' %}bg-warning-subtle text-warning-emphasis{% else %}bg-secondary-subtle text-secondary-emphasis{% endif %}">{{ hearing.get_status_display }}</span>
+            </td>
+            <td>{{ hearing.candidate_count }}</td>
+            <td>{{ hearing.accepted_examiner_count }}</td>
+            <td>{% if hearing.hearing_date %}{{ hearing.hearing_date|date:'d M Y' }}{% else %}Not set{% endif %}</td>
+            <td>{{ hearing.created_at|date:'d M Y' }}</td>
+            <td class="panel-actions-cell text-end">{% include 'service_domains/_partials/panel_row_actions.html' %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <div class="panel-empty">
+        <h2>You haven’t created an assessment yet</h2>
+        <p>Your dashboard shows assessments you own. Create an assessment to see candidates and live activity here.</p>
+        <a href="{% url 'panel_hearing_create' %}" class="btn btn-primary">Create an assessment</a>
+      </div>
+    {% endif %}
   </section>
 </div>
-{% if hearings %}
-<script nonce="{{ csp_nonce }}">
-(()=>{
-  const buttons=[...document.querySelectorAll('[data-hearing-filter]')];
-  const cards=[...document.querySelectorAll('[data-hearing-status]')];
-  const searchInput=document.querySelector('[data-hearing-search]');
-  const empty=document.getElementById('panel-hearing-filter-empty');
-  const kpiTriggers=[...document.querySelectorAll('[data-filter-trigger]')];
-  let activeFilter='all';
+{% endblock %}
 
-  function applyFilter(){
-    const query=(searchInput?searchInput.value.trim().toLowerCase():'');
-    let shown=0;
-    buttons.forEach(item=>{
-      const isMatch=item.dataset.hearingFilter===activeFilter;
-      item.setAttribute('aria-pressed',String(isMatch));
-      item.classList.toggle('active',isMatch);
-    });
-    cards.forEach(card=>{
-      const statusMatch=activeFilter==='all'||card.dataset.hearingStatus===activeFilter;
-      const nameMatch=!query||(card.dataset.hearingName||'').includes(query);
-      const visible=statusMatch&&nameMatch;
-      card.hidden=!visible;
-      if(visible)shown++;
-    });
-    if(empty)empty.hidden=shown>0;
-  }
-
-  buttons.forEach(btn=>btn.addEventListener('click',()=>{
-    activeFilter=btn.dataset.hearingFilter;
-    applyFilter();
-  }));
-  kpiTriggers.forEach(tile=>tile.addEventListener('click',()=>{
-    activeFilter=tile.dataset.filterTrigger||'all';
-    applyFilter();
-  }));
-  if(searchInput)searchInput.addEventListener('input',applyFilter);
-})();
-</script>
-{% endif %}
+{% block scripts %}
+{% include 'service_domains/_partials/panel_clickable_rows_script.html' %}
 {% endblock %}

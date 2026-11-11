@@ -1,0 +1,108 @@
+<div id="competition-results" aria-busy="false">
+  <section class="competition-table-card" aria-labelledby="competition-table-heading">
+    <div class="competition-table-head">
+      <div class="competition-table-heading-group">
+        <h2 id="competition-table-heading">Competitions</h2>
+        <span class="competition-table-count">{% if search_query or status_filter %}{{ filtered_count }} matching{% else %}{{ status_counts.total }} total{% endif %} competition{{ filtered_count|pluralize }}</span>
+      </div>
+      <div class="competition-table-tools">
+        <form id="competition-bulk-delete" method="post" action="{% url 'competition_bulk_delete' %}" data-confirm="Delete the selected competitions and all of their tracks, rounds, entries, judge scores, audience ballots, and results? This cannot be undone." data-confirm-title="Delete selected competitions?" data-confirm-label="Delete selected" data-confirm-tone="danger">
+          {% csrf_token %}
+          <input type="hidden" name="q" value="{{ search_query }}">
+          <input type="hidden" name="status" value="{{ status_filter }}">
+          <input type="hidden" name="per_page" value="{{ per_page }}">
+          <button type="submit" class="btn btn-outline-danger btn-sm" data-bulk-delete-button hidden><i class="bi bi-trash me-1" aria-hidden="true"></i>Delete selected (<span data-selected-count>0</span>)</button>
+        </form>
+        <div class="competition-page-size">
+          <label for="competition-page-size">Rows per page</label>
+          <select id="competition-page-size" class="form-select form-select-sm" name="per_page" data-competition-page-size>
+            {% for size in page_sizes %}
+            <option value="{{ size }}"{% if size == per_page %} selected{% endif %}>{{ size }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+    {% if competitions %}
+    <div class="table-responsive">
+      <table class="table table-hover competition-table" data-competition-row-navigation>
+        <caption class="visually-hidden">Competitions with their status, tracks, rounds, creation date, and available actions</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="competition-select-column"><input class="form-check-input" type="checkbox" data-competition-select-all aria-label="Select all competitions on this page"><span class="visually-hidden">Select</span></th>
+            <th scope="col">Competition</th>
+            <th scope="col">Status</th>
+            <th scope="col">Tracks</th>
+            <th scope="col">Rounds</th>
+            <th scope="col">Created</th>
+            <th scope="col"><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for competition in competitions %}
+          {% url 'competition_manage' competition_id=competition.pk as comp_row_url %}
+          <tr class="competition-row-clickable" data-competition-row-href="{{ comp_row_url }}">
+            <td class="competition-select-column">
+              <input class="form-check-input" type="checkbox" name="competition_ids" value="{{ competition.pk }}" form="competition-bulk-delete" data-competition-select aria-label="Select {{ competition.name }}">
+            </td>
+            <td>
+              <a class="competition-table-name" href="{{ comp_row_url }}">{{ competition.name }}</a>
+              <span class="competition-table-secondary">
+                {% if competition.status == 'draft' %}Next: finish setup
+                {% elif competition.status == 'active' %}Next: manage live event
+                {% elif competition.status == 'complete' %}Next: review and reveal results
+                {% else %}Next: manage public display{% endif %}
+              </span>
+            </td>
+            <td>
+              <span class="competition-stage"><span class="competition-stage-dot {{ competition.status }}" aria-hidden="true"></span>{{ competition.get_status_display }}</span>
+            </td>
+            <td>{{ competition.track_count }}</td>
+            <td>{{ competition.round_count }}</td>
+            <td>{{ competition.created_at|date:'d M Y' }}</td>
+            <td class="text-end">{% include 'service_domains/_partials/competition_row_actions.html' %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if paginator.num_pages > 1 %}
+    <nav class="competition-pagination" aria-label="Competition pages">
+      <span class="competition-pagination-label">Page {{ page_obj.number }} of {{ paginator.num_pages }} · {{ paginator.count }} competitions</span>
+      <div class="competition-pagination-links">
+        {% if page_obj.has_previous %}<a class="btn btn-sm btn-outline-secondary" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page_obj.previous_page_number }}" data-competition-page>Previous</a>{% endif %}
+        {% if page_obj.has_next %}<a class="btn btn-sm btn-outline-secondary" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page_obj.next_page_number }}" data-competition-page>Next</a>{% endif %}
+      </div>
+    </nav>
+    {% endif %}
+    {% elif search_query or status_filter %}
+    <div class="competition-empty">
+      <div class="competition-empty-icon" aria-hidden="true"><i class="bi bi-search"></i></div>
+      <h2>No matching competitions</h2>
+      <p>Try a different competition name or status filter.</p>
+      <a href="{% url 'competition_table' %}" class="btn btn-outline-secondary" data-competition-clear-filters>Clear filters</a>
+    </div>
+    {% else %}
+    <div class="competition-empty">
+      <div class="competition-empty-icon" aria-hidden="true"><i class="bi bi-trophy"></i></div>
+      <h2>No competitions yet</h2>
+      <p>Create a competition, add entries and rounds, collect judge and audience scores, then reveal the leaderboard.</p>
+      <div class="competition-empty-steps" aria-label="Competition setup steps">
+        <div class="competition-empty-step">
+          <strong>1. Create the competition</strong>
+          <span>Name it and set the scoring weights.</span>
+        </div>
+        <div class="competition-empty-step">
+          <strong>2. Add entries, tracks, and rounds</strong>
+          <span>Import entries and define how contestants advance.</span>
+        </div>
+        <div class="competition-empty-step">
+          <strong>3. Score and reveal</strong>
+          <span>Collect judge and audience results, then publish the leaderboard.</span>
+        </div>
+      </div>
+      <a href="{% url 'competition_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create a competition</a>
+    </div>
+    {% endif %}
+  </section>
+</div>

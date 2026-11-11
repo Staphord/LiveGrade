@@ -1,0 +1,34 @@
+<div class="dropdown competition-actions">
+  <button class="dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Actions for {{ competition.name }}"><i class="bi bi-three-dots" aria-hidden="true"></i></button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    {% if competition.status == 'draft' %}
+      <li><a class="dropdown-item" href="{% url 'competition_manage' competition_id=competition.pk %}"><i class="bi bi-pencil me-2" aria-hidden="true"></i>Continue setup</a></li>
+    {% elif competition.status == 'active' %}
+      <li><a class="dropdown-item" href="{% url 'competition_manage' competition_id=competition.pk %}"><i class="bi bi-broadcast me-2" aria-hidden="true"></i>Manage live round</a></li>
+    {% elif competition.status == 'complete' %}
+      <li><a class="dropdown-item" href="{% url 'competition_manage' competition_id=competition.pk %}"><i class="bi bi-eye me-2" aria-hidden="true"></i>Review &amp; reveal</a></li>
+    {% else %}
+      <li><a class="dropdown-item" href="{% url 'competition_manage' competition_id=competition.pk %}"><i class="bi bi-display me-2" aria-hidden="true"></i>Manage public display</a></li>
+    {% endif %}
+
+    {% if competition.status == 'draft' or competition.status == 'active' %}
+      <li><a class="dropdown-item" href="{% url 'competition_entry_import' competition_id=competition.pk %}"><i class="bi bi-upload me-2" aria-hidden="true"></i>Import entries</a></li>
+    {% endif %}
+
+    {% if competition.status == 'complete' or competition.status == 'revealed' %}
+      <li><a class="dropdown-item" href="{% url 'competition_results_export' competition_id=competition.pk %}"><i class="bi bi-file-earmark-spreadsheet me-2" aria-hidden="true"></i>Export results (.csv)</a></li>
+    {% endif %}
+
+    {% if competition.status == 'revealed' %}
+      <li><a class="dropdown-item" href="{% url 'competition_public_leaderboard' competition_id=competition.public_id %}" target="_blank" rel="noopener"><i class="bi bi-bar-chart me-2" aria-hidden="true"></i>View public leaderboard</a></li>
+    {% endif %}
+
+    <li><hr class="dropdown-divider"></li>
+    <li>
+      <form method="post" action="{% url 'competition_delete' competition_id=competition.pk %}" data-confirm="Delete &quot;{{ competition.name }}&quot;? This permanently removes its tracks, rounds, entries, scores, and results." data-confirm-title="Delete competition?" data-confirm-label="Delete competition" data-confirm-tone="danger">
+        {% csrf_token %}
+        <button type="submit" class="dropdown-item text-danger"><i class="bi bi-trash me-2" aria-hidden="true"></i>Delete competition</button>
+      </form>
+    </li>
+  </ul>
+</div>

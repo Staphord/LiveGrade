@@ -1,187 +1,131 @@
 {% extends 'base.html' %}
-{% block title %}Team and Training · LiveGrade{% endblock %}
-{% block page_title %}Team and Training{% endblock %}
-{% block content %}
-{% include 'service_domains/_workspace_styles.html' %}
-{% include 'service_domains/_team_competition_styles.html' %}
+{% block title %}Team and Training dashboard · LiveGrade{% endblock %}
+{% block page_title %}Team and Training dashboard{% endblock %}
+
+{% block extra_css %}
 {% include 'partials/_service_dashboard_styles.html' %}
-<div class="container-fluid py-4 service-workspace tc-workspace stage-content">
-  <header class="hero-banner {% if not series %}between-banner{% endif %}">
-    <div class="hero-meta">
-      {% if series %}
-        <div class="status-pill live mb-2"><span class="live-dot"></span> ACTIVE TRAINING WORKSPACE</div>
-      {% else %}
-        <div class="status-pill action mb-2"><i class="bi bi-graph-up-arrow" aria-hidden="true"></i> TEAM &amp; TRAINING</div>
-      {% endif %}
-      <h1>Team and Training</h1>
-      <p>Build a reusable team roster, run a series of demos, and follow longitudinal competency progress and verifiable certificates.</p>
-    </div>
+<style nonce="{{ csp_nonce }}">
+.team-dashboard{gap:var(--sp-4)}
+.team-dashboard a,.team-dashboard a:hover{text-decoration:none}
+.team-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:var(--sp-3)}
+.team-kpi{min-width:0;padding:var(--sp-4);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);box-shadow:var(--elev-1)}
+.team-kpi-label{color:var(--text-muted);font-size:var(--fs-sm);font-weight:650}
+.team-kpi-value{margin-top:var(--sp-2);font-size:1.8rem;line-height:1.1;font-weight:800;letter-spacing:-.04em;color:var(--ink)}
+.team-kpi-note{margin-top:var(--sp-2);color:var(--text-muted);font-size:var(--fs-micro);line-height:1.45}
+.team-visual-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-3)}
+.team-data-card{min-width:0;padding:var(--sp-4);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.team-data-card h2{margin:0;font-size:var(--fs-heading);font-weight:750}
+.team-data-subtitle{margin:var(--sp-1) 0 var(--sp-4);color:var(--text-muted);font-size:var(--fs-sm)}
+.team-stage-chart{display:grid;grid-template-columns:minmax(140px,180px) minmax(0,1fr);align-items:center;gap:var(--sp-4)}
+.team-stage-pie{width:100%;aspect-ratio:1;border:1px solid var(--border);border-radius:50%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.4)}
+.team-stage-legend{display:grid;gap:var(--sp-3);margin:0;padding:0;list-style:none}
+.team-stage-legend li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:var(--sp-2);font-size:var(--fs-sm)}
+.team-stage-swatch{width:11px;height:11px;border-radius:3px;background:var(--success)}
+.team-stage-legend strong{white-space:nowrap;color:var(--ink)}
+.team-stage-legend small{color:var(--text-muted);font-weight:500}
+.team-roster-list{display:grid;gap:var(--sp-3);margin:0;padding:0;list-style:none}
+.team-roster-label{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2);margin-bottom:var(--sp-1);font-size:var(--fs-sm)}
+.team-roster-label a{overflow:hidden;color:var(--text);font-weight:650;text-overflow:ellipsis;white-space:nowrap}
+.team-roster-label a:hover,.team-recent-name:hover{color:var(--accent)}
+.team-roster-label strong{flex:0 0 auto}
+.team-roster-track{height:12px;overflow:hidden;border-radius:var(--radius-pill);background:var(--surface-sunken)}
+.team-roster-fill{height:100%;border-radius:inherit;background:var(--accent);transition:width var(--motion) var(--ease)}
+.team-roster-axis{display:flex;justify-content:space-between;margin-top:var(--sp-1);color:var(--text-muted);font-size:var(--fs-micro)}
+.team-recent{overflow:hidden;padding:0;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.team-recent-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);padding:var(--sp-4);border-bottom:1px solid var(--border)}
+.team-recent-head h2{margin:0;font-size:var(--fs-heading);font-weight:750}
+.team-recent .table{margin:0;vertical-align:middle}
+.team-recent .table th{color:var(--text-muted);font-size:var(--fs-micro);font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.team-recent .table td{font-size:var(--fs-sm)}
+.team-recent-name{color:var(--text);font-size:var(--fs-body);font-weight:700;text-decoration:none}
+.team-recent-name:hover{text-decoration:none}
+.team-recent-secondary{display:block;margin-top:3px;color:var(--text-muted);font-size:var(--fs-micro)}
+.team-recent .team-series-actions-cell{width:1%;white-space:nowrap}
+.team-empty{padding:var(--sp-5);text-align:center;color:var(--text-muted)}
+.team-empty>h2{margin:0 0 var(--sp-2);color:var(--ink);font-size:var(--fs-title)}
+.team-empty>p{max-width:38rem;margin:0 auto var(--sp-4)}
+.team-row-clickable{cursor:pointer}
+.team-row-clickable .team-series-actions{cursor:default}
+@media(max-width:1199.98px){.team-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:767.98px){.team-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.team-visual-grid{grid-template-columns:1fr}}
+@media(max-width:575.98px){.team-kpi{padding:var(--sp-3)}.team-kpi-value{font-size:1.5rem}.team-stage-chart{grid-template-columns:minmax(120px,150px) minmax(0,1fr);gap:var(--sp-3)}.team-recent-head{align-items:flex-start;flex-direction:column}.team-recent .table{min-width:760px}}
+</style>
+{% include 'service_domains/_partials/team_series_row_actions_styles.html' %}
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'training_series_table' %}" class="btn btn-outline-secondary btn-sm">Browse series</a>
+<a href="{% url 'training_series_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>New series</a>
+{% endblock %}
+
+{% block content %}
+<div class="stage-content team-dashboard">
+  <header class="hero-banner between-banner">
+    <div class="hero-meta"><p>A live summary of your training series, team rosters, and competency progress.</p></div>
     <div class="hero-actions">
-      <span class="tc-chip"><strong>{{ series_total }}</strong> active series</span>
-      <a class="btn btn-primary" href="#create-series"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create a series</a>
+      <a href="{% url 'training_series_table' %}" class="btn btn-outline-primary">Browse series</a>
+      <a href="{% url 'training_series_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create series</a>
     </div>
   </header>
 
-  {% if series %}
-    <details class="tc-disclosure">
-      <summary>Getting started</summary>
-      <div class="tc-disclosure-body">{% include 'service_domains/_onboarding.html' with onboarding=onboarding %}</div>
-    </details>
+  <section class="team-kpis" aria-label="Team and Training key metrics">
+    <article class="team-kpi"><div class="team-kpi-label">Total series</div><div class="team-kpi-value">{{ dashboard_stats.total_series }}</div><div class="team-kpi-note">Your training series in this organization</div></article>
+    <article class="team-kpi"><div class="team-kpi-label">Active series</div><div class="team-kpi-value">{{ dashboard_stats.active_series }}</div><div class="team-kpi-note">Series currently running demos</div></article>
+    <article class="team-kpi"><div class="team-kpi-label">Team members</div><div class="team-kpi-value">{{ dashboard_stats.total_participants }}</div><div class="team-kpi-note">Roster entries across your series</div></article>
+    <article class="team-kpi"><div class="team-kpi-label">Competencies</div><div class="team-kpi-value">{{ dashboard_stats.total_competencies }}</div><div class="team-kpi-note">Criteria defined across your series</div></article>
+    <article class="team-kpi"><div class="team-kpi-label">Demos</div><div class="team-kpi-value">{{ dashboard_stats.total_demos }}</div><div class="team-kpi-note">Demos held or scheduled across your series</div></article>
+  </section>
 
-    <section class="kpi-row" aria-label="Team training summary">
-      <article class="kpi-tile">
-        <div class="kpi-label">Active Cohort Series <span class="live-dot"></span></div>
-        <div class="kpi-value">{{ series_total }}</div>
-        <div class="kpi-footer"><span class="kpi-trend">Active</span><span>Recurring demo cohorts</span></div>
-      </article>
-      <article class="kpi-tile">
-        <div class="kpi-label">Enrolled Team Members</div>
-        <div class="kpi-value">{{ dashboard_stats.total_participants }}</div>
-        <div class="kpi-footer"><span class="kpi-trend">Reusable rosters</span><span>Tracked across demo checkpoints</span></div>
-      </article>
-      <article class="kpi-tile">
-        <div class="kpi-label">Competencies &amp; Demos</div>
-        <div class="kpi-value">{{ dashboard_stats.total_competencies }} <span class="fs-6 fw-semibold text-muted">criteria · {{ dashboard_stats.total_demos }} demos</span></div>
-        <div class="kpi-footer"><span class="kpi-trend">Auditable</span><span>Timestamped competency sign-off</span></div>
-      </article>
-    </section>
+  <section class="team-visual-grid" aria-label="Team and Training data visualizations">
+    <article class="team-data-card" aria-labelledby="team-stage-heading">
+      <h2 id="team-stage-heading">Series status</h2>
+      <p class="team-data-subtitle">Distribution across your {{ dashboard_stats.total_series }} training series.</p>
+      {% if dashboard_stats.total_series %}
+      <div class="team-stage-chart">
+        <div class="team-stage-pie" style="background:{{ stage_pie_background }}" aria-hidden="true"></div>
+        <ul class="team-stage-legend" aria-label="Series status breakdown">
+          {% for stage in stage_distribution %}<li><span class="team-stage-swatch" aria-hidden="true"></span><span>{{ stage.label }}</span><strong>{{ stage.count }} <small>({{ stage.percentage }}%)</small></strong></li>{% endfor %}
+        </ul>
+      </div>
+      {% else %}<p class="team-empty mb-0">Series status data will appear after you create a training series.</p>{% endif %}
+    </article>
 
-    <div class="bento-grid">
-      <section class="bento-card col-8" aria-labelledby="series-list-heading">
-        <div class="bento-header">
-          <div class="bento-title">
-            <h2 id="series-list-heading">Your training series</h2>
-            <p>Open a series to manage its team, competencies and demos.</p>
-          </div>
-          <a class="bento-action-link" href="#create-series">Create a series <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
-        </div>
+    <article class="team-data-card" aria-labelledby="team-roster-heading">
+      <h2 id="team-roster-heading">Largest team rosters</h2>
+      <p class="team-data-subtitle">Roster sizes by series; bars are scaled to the largest roster shown.</p>
+      {% if roster_series and largest_roster %}
+      <ol class="team-roster-list">
+        {% for item in roster_series %}<li><div class="team-roster-label"><a href="{% url 'training_series_manage' item.pk %}">{{ item.name }}</a><strong>{{ item.participant_count }}</strong></div><div class="team-roster-track" aria-hidden="true"><div class="team-roster-fill" style="width:{{ item.roster_bar_percent }}%"></div></div></li>{% endfor %}
+      </ol>
+      <div class="team-roster-axis" aria-hidden="true"><span>0 members</span><span>{{ largest_roster }} members</span></div>
+      {% else %}<p class="team-empty mb-0">Roster data will appear after team members are added to a series.</p>{% endif %}
+    </article>
+  </section>
 
-        <div class="chart-container" aria-label="Longitudinal Competency Growth">
-          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <span class="small fw-bold text-dark">Longitudinal Competency Growth (Demo 1 → Current)</span>
-            <span class="small text-muted">{{ dashboard_stats.total_participants }} learner{{ dashboard_stats.total_participants|pluralize }} · {{ dashboard_stats.total_demos }} demo{{ dashboard_stats.total_demos|pluralize }}</span>
-          </div>
-          <svg class="chart-svg" viewBox="0 0 600 155" role="img" aria-label="Cohort competency trend line chart">
-            <line x1="40" y1="25" x2="570" y2="25" stroke="#e2e8f0" stroke-dasharray="4"/>
-            <line x1="40" y1="65" x2="570" y2="65" stroke="#059669" stroke-width="1.5" stroke-dasharray="6 4"/>
-            <text x="574" y="68" font-size="9" font-weight="700" fill="#059669">PASS</text>
-            <line x1="40" y1="125" x2="570" y2="125" stroke="#cbd5e1"/>
-            <text x="10" y="30" font-size="10" fill="#64748b">100%</text>
-            <text x="14" y="69" font-size="10" fill="#059669" font-weight="700">70%</text>
-            <text x="16" y="130" font-size="10" fill="#64748b">40%</text>
-            <polygon points="80,100 230,78 380,55 530,38 530,125 80,125" fill="rgba(37, 99, 235, 0.08)"/>
-            <polyline fill="none" stroke="#2563eb" stroke-width="3" points="80,100 230,78 380,55 530,38"/>
-            <circle cx="80" cy="100" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="2.5"/>
-            <circle cx="230" cy="78" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="2.5"/>
-            <circle cx="380" cy="55" r="5" fill="#ffffff" stroke="#059669" stroke-width="2.5"/>
-            <circle cx="530" cy="38" r="6" fill="#059669"/>
-            <text x="80" y="144" font-size="11" font-weight="600" fill="#334155" text-anchor="middle">Demo 1</text>
-            <text x="230" y="144" font-size="11" font-weight="600" fill="#334155" text-anchor="middle">Demo 2</text>
-            <text x="380" y="144" font-size="11" font-weight="600" fill="#334155" text-anchor="middle">Demo 3</text>
-            <text x="530" y="144" font-size="11" font-weight="700" fill="#0f172a" text-anchor="middle">Latest Demo</text>
-          </svg>
-        </div>
-
-        <div class="filter-bar">
-          <span class="small fw-semibold text-muted">{{ series_total }} active training series</span>
-          <div class="sd-search-box">
-            <label class="visually-hidden" for="team-series-search">Filter training series by name</label>
-            <i class="bi bi-search" aria-hidden="true"></i>
-            <input type="search" id="team-series-search" class="form-control form-control-sm" placeholder="Search series..." data-series-search>
-          </div>
-        </div>
-
-        <div class="tc-list" id="team-series-list">
-          {% for item in series %}
-            <a class="tc-list-card" data-series-name="{{ item.name|lower }}" href="{% url 'training_series_manage' series_id=item.pk %}">
-              <span><h3>{{ item.name }}</h3>
-                {% if item.description %}<p>{{ item.description }}</p>{% endif %}
-                {% if item.cadence_note %}<p>Usual rhythm: {{ item.cadence_note }}</p>{% endif %}
-                <span class="tc-context">
-                  <span class="tc-chip">{{ item.participant_count }} team member{{ item.participant_count|pluralize }}</span>
-                  <span class="tc-chip">{{ item.competency_count }} competenc{{ item.competency_count|pluralize:"y,ies" }}</span>
-                  <span class="tc-chip">{{ item.demo_count }} demo{{ item.demo_count|pluralize }}</span>
-                </span>
-              </span>
-              <span class="tc-status is-active">Active</span>
-            </a>
-          {% endfor %}
-        </div>
-        <p id="team-series-filter-empty" class="text-muted mt-3 mb-0" hidden>No training series match this search.</p>
-
-        {% if series.has_other_pages %}
-        <nav aria-label="Training series pages" class="d-flex gap-3 mt-2">
-          {% if series.has_previous %}<a href="?page={{ series.previous_page_number }}">Previous</a>{% endif %}
-          <span>Page {{ series.number }} of {{ series.paginator.num_pages }}</span>
-          {% if series.has_next %}<a href="?page={{ series.next_page_number }}">Next</a>{% endif %}
-        </nav>
-        {% endif %}
-      </section>
-
-      <aside class="bento-card col-4" aria-labelledby="team-pillars-heading">
-        <div class="bento-header">
-          <div class="bento-title">
-            <h2 id="team-pillars-heading">Competency Pillar Overview</h2>
-            <p>Cohort coverage across {{ series_total }} active series</p>
-          </div>
-        </div>
-        <div class="sd-pillar-list">
-          <div class="sd-pillar-row">
-            <div class="sd-pillar-head"><span class="fw-semibold">Enrolled Team Roster</span><strong>{{ dashboard_stats.total_participants }}</strong></div>
-            <div class="sd-pillar-track"><div class="sd-pillar-fill success" style="width:{% if dashboard_stats.total_participants %}100{% else %}0{% endif %}%"></div></div>
-          </div>
-          <div class="sd-pillar-row">
-            <div class="sd-pillar-head"><span class="fw-semibold">Defined Competencies</span><strong>{{ dashboard_stats.total_competencies }}</strong></div>
-            <div class="sd-pillar-track"><div class="sd-pillar-fill" style="width:{% if dashboard_stats.total_competencies %}100{% else %}0{% endif %}%"></div></div>
-          </div>
-          <div class="sd-pillar-row">
-            <div class="sd-pillar-head"><span class="fw-semibold">Completed &amp; Scheduled Demos</span><strong>{{ dashboard_stats.total_demos }}</strong></div>
-            <div class="sd-pillar-track"><div class="sd-pillar-fill warn" style="width:{% if dashboard_stats.total_demos %}100{% else %}0{% endif %}%"></div></div>
-          </div>
-        </div>
-      </aside>
-    </div>
-  {% else %}
-    {% include 'service_domains/_onboarding.html' with onboarding=onboarding %}
-    <section class="tc-panel" aria-labelledby="series-list-heading">
-      <header>
-        <div><h2 id="series-list-heading">Your training series</h2><p>Open a series to manage its team, competencies and demos.</p></div>
-        <a class="btn btn-primary" href="#create-series">Create a series</a>
-      </header>
-      <div class="tc-empty" role="status"><h3>Start your first series</h3><p>Add a purpose and create a series. You can add the team and criteria next.</p></div>
-    </section>
-  {% endif %}
-
-  <details class="tc-disclosure" id="create-series" {% if form.errors or not series %}open{% endif %}>
-    <summary>Create a training series</summary>
-    <div class="tc-disclosure-body">
-      <p class="text-muted">Each demo in the series can reuse its team and competencies.</p>
-      <form method="post" class="service-flow-form" novalidate>
-        {% csrf_token %}
-        {% include 'partials/_form_fields.html' with form=form %}
-        <button class="btn btn-primary" type="submit">Create series</button>
-      </form>
-    </div>
-  </details>
+  <section class="team-recent" aria-labelledby="team-recent-heading">
+    <div class="team-recent-head"><div><h2 id="team-recent-heading">Recent training series</h2><p class="team-data-subtitle mb-0">Your five most recently created training series.</p></div><a href="{% url 'training_series_table' %}" class="btn btn-outline-primary btn-sm">View all series</a></div>
+    {% if recent_series %}
+    <div class="table-responsive"><table class="table table-hover" data-team-row-navigation>
+      <caption class="visually-hidden">Five most recently created training series, their status, team members, competencies, demos, creation date, and actions</caption>
+      <thead><tr><th scope="col">Series</th><th scope="col">Status</th><th scope="col">Team members</th><th scope="col">Competencies</th><th scope="col">Demos</th><th scope="col">Created</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+      <tbody>{% for item in recent_series %}{% url 'training_series_manage' item.pk as series_row_url %}
+        <tr class="team-row-clickable" data-team-row-href="{{ series_row_url }}">
+          <td><a class="team-recent-name" href="{{ series_row_url }}">{{ item.name }}</a>{% if item.cadence_note %}<span class="team-recent-secondary">Usual rhythm: {{ item.cadence_note }}</span>{% endif %}</td>
+          <td><span class="badge bg-success-subtle text-success-emphasis">Active</span></td>
+          <td>{{ item.participant_count }}</td><td>{{ item.competency_count }}</td><td>{{ item.demo_count }}</td><td>{{ item.created_at|date:'d M Y' }}</td>
+          <td class="team-series-actions-cell text-end">{% include 'service_domains/_partials/team_series_row_actions.html' with series=item %}</td>
+        </tr>
+      {% endfor %}</tbody>
+    </table></div>
+    {% else %}
+    <div class="team-empty"><h2>You haven’t created a training series yet</h2><p>Your dashboard shows series you own. Create a series to see team rosters and competency progress here.</p>{% include 'service_domains/_onboarding.html' with onboarding=onboarding %}</div>
+    {% endif %}
+  </section>
 </div>
-{% if series %}
-<script nonce="{{ csp_nonce }}">
-(()=>{
-  const searchInput=document.querySelector('[data-series-search]');
-  const rows=[...document.querySelectorAll('[data-series-name]')];
-  const empty=document.getElementById('team-series-filter-empty');
-  if(!searchInput)return;
-  searchInput.addEventListener('input',()=>{
-    const query=searchInput.value.trim().toLowerCase();
-    let shown=0;
-    rows.forEach(row=>{
-      const visible=!query||(row.dataset.seriesName||'').includes(query);
-      row.hidden=!visible;
-      if(visible)shown++;
-    });
-    if(empty)empty.hidden=shown>0;
-  });
-})();
-</script>
-{% endif %}
+{% include 'service_domains/_partials/team_series_delete_flow.html' %}
+{% endblock %}
+
+{% block scripts %}
+{% include 'service_domains/_partials/team_series_clickable_rows_script.html' %}
+{% include 'service_domains/_partials/team_series_delete_flow_script.html' %}
 {% endblock %}

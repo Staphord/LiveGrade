@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import io
 import logging
+import re
 import secrets
 from datetime import time
 from decimal import Decimal
@@ -13,26 +14,27 @@ from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
 from django.core.cache import cache
 from django.db import IntegrityError
-from django.db.models import Count, Avg, Q, OuterRef, Subquery, Value
+from django.db.models import Count, Avg, Q, OuterRef, Subquery, Value, Sum
 from django.db.models.functions import Coalesce
 from django.db import transaction
 from functools import wraps
 
-from django.core.paginator import Paginator
 from django.core import signing
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
-from django.http import Http404, HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse, QueryDict
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.cache import never_cache
-from django.views.decorators.http import require_http_methods, require_safe
+from django.views.decorators.http import require_http_methods, require_safe, require_POST
 from django.utils import timezone
+from django.utils.cache import patch_vary_headers
 
 from accounts.access import can_oversee, lecturer_required
 from assessments.models import AssessmentSession, SessionTemplate
+from assessments.pagination import PAGE_SIZE, PAGE_SIZES, paginate
 from assessments.qr import public_url
 from assessments.session_templates import starters_for
 from .forms import ShowcaseRatingForm
@@ -44,7 +46,8 @@ from .models import (
 )
 from .models import (Competition, CompetitionAudienceBallot, CompetitionRound,
                      CompetitionRoundEntry, CompetitionTrack)
-from .models import (PanelAbstention, PanelAuditEvent, PanelCandidate, PanelConflict, PanelCriterion,
+from .models import (CombinedPresentationAssessment,
+                     PanelAbstention, PanelAuditEvent, PanelCandidate, PanelConflict, PanelCriterion,
                      PanelCriterionLevel,
                      PanelCommentRedaction, PanelEntrantResultLink, PanelLiveDisplayLink,
                      PanelHearing, PanelInvitation,
@@ -66,6 +69,8 @@ from .forms import (PanelCandidateForm, PanelCandidateImportApplyForm, PanelCand
                     PanelInvitationForm, PanelResultAdjustmentForm)
 from .forms import PanelDecisionForm, PanelVoteForm, PanelWrittenReviewForm
 from .operations import (confirm_showcase_minor_consent,
+                         delete_panel_hearings,
+                         delete_showcase_events,
                          showcase_judge_coverage,
                          submit_showcase_rating, transition_showcase_event,
                          issue_showcase_judge_invitation,
@@ -109,7 +114,7 @@ from .panel_reporting import panel_live_activity
 from .tasks import send_panel_invitation_email
 from .team_forms import (CreateTrainingSessionForm, TrainingCompetencyForm,
                          TrainingCompetencyResultForm, TrainingParticipantForm,
-                         TrainingSeriesForm, TrainingFeedbackForm, TrainingRosterImportForm,
+                         TrainingFeedbackForm, TrainingRosterImportForm,
                          TrainingFeedbackPrivacyForm, TrainingSeriesDetailsForm)
 from .models import (TrainingCompetency, TrainingCompetencyResult, TrainingParticipant,
                      TrainingSeries, TrainingSeriesSession, TrainingCertificate)
@@ -119,6 +124,12 @@ from .onboarding import service_onboarding
 from assessments.qr import qr_png
 from .training_roster_import import (apply_training_roster_import,
     parse_training_roster, plan_training_roster_import, sample_training_roster)
+from .team_series import (
+    InvalidSeriesSelection, TrainingSeriesUnavailable, build_deletion_export,
+    dashboard_data, delete_series_selection, deletion_redirect_query,
+    get_owned_series, organization_id, parse_series_ids, series_list_data,
+    selected_series_names, verify_deletion_export_token,
+)
 
 
 DEVICE_COOKIE_PREFIX = 'livegrade_showcase_device_'
@@ -187,116 +198,250 @@ def _panel_owner(view):
     return scoped
 
 
-@require_http_methods(['GET', 'POST'])
+def _annotate_panel_hearing(hearing, now=None):
+    if now is None:
+        now = timezone.now()
+    hearing.candidate_count = len(hearing.candidates.all())
+    invitations = list(hearing.invitations.all())
+    hearing.invitation_count = len(invitations)
+    hearing.accepted_examiner_count = sum(
+        1 for invitation in invitations
+        if invitation.confirmed_at and not invitation.accepted_at
+        and not invitation.declined_at and not invitation.revoked_at
+        and invitation.expires_at > now)
+    hearing.failed_invitation_count = sum(
+        1 for invitation in invitations
+        if invitation.delivery_status == PanelInvitation.DeliveryStatus.FAILED
+        and not invitation.revoked_at)
+    panels = list(hearing.panels.all())
+    criteria = list(hearing.criteria.all())
+    scoring_required = hearing.workflow in (PanelHearing.Workflow.SCORED,
+                                            PanelHearing.Workflow.HYBRID)
+    examiner_required = hearing.workflow in (
+        PanelHearing.Workflow.SCORED, PanelHearing.Workflow.VOTE,
+        PanelHearing.Workflow.HYBRID, PanelHearing.Workflow.REVIEW,
+        PanelHearing.Workflow.REVIEW_VOTE)
+    panel_shares_ready = bool(panels) and sum(
+        (panel.share for panel in panels), Decimal('0')) == Decimal('100.00')
+    panel_criteria_ready = bool(panels) and all(
+        panel.criteria.exists() for panel in panels) if scoring_required else True
+    criteria_assigned = (all(any(panel.share > 0 and criterion in panel.criteria.all()
+                                  for panel in panels) for criterion in criteria)
+                         if scoring_required else True)
+    accepted_ready = True
+    if examiner_required:
+        required_panels = [panel for panel in panels
+                           if not scoring_required or panel.share > 0]
+        accepted_ready = bool(required_panels) and all(
+            sum(1 for invitation in invitations
+                if invitation.panel_id == panel.pk and invitation.confirmed_at
+                and not invitation.accepted_at and not invitation.declined_at
+                and not invitation.revoked_at
+                and invitation.expires_at > now) >= panel.minimum_examiners
+            for panel in required_panels)
+    if hearing.status == PanelHearing.Status.DRAFT:
+        if hearing.candidate_count == 0:
+            hearing.dashboard_next_action = 'Add presenters or entries'
+        elif scoring_required and not criteria:
+            hearing.dashboard_next_action = 'Add scoring criteria'
+        elif scoring_required and (not panel_shares_ready or not panel_criteria_ready or not criteria_assigned):
+            hearing.dashboard_next_action = 'Check scoring panel setup'
+        elif not accepted_ready:
+            hearing.dashboard_next_action = 'Invite and confirm examiners'
+        else:
+            hearing.dashboard_next_action = 'Ready to open'
+    elif hearing.status == PanelHearing.Status.OPEN and not hearing.active_candidate:
+        hearing.dashboard_next_action = 'Choose the next presenter or entry'
+    elif hearing.status == PanelHearing.Status.REVIEW:
+        hearing.dashboard_next_action = 'Review results'
+    elif hearing.status == PanelHearing.Status.SIGNED_OFF:
+        hearing.dashboard_next_action = 'Release results'
+    else:
+        hearing.dashboard_next_action = ''
+    if hearing.failed_invitation_count and hearing.status in (
+            PanelHearing.Status.DRAFT, PanelHearing.Status.OPEN):
+        hearing.dashboard_invitation_issue = (
+            f'{hearing.failed_invitation_count} invitation email'
+            f'{"s" if hearing.failed_invitation_count != 1 else ""} could not be delivered')
+    else:
+        hearing.dashboard_invitation_issue = ''
+    return hearing
+
+
+@require_safe
 @never_cache
 @_panel_owner
 def panel_hearing_list(request):
-    hearings = list(PanelHearing.objects.for_organization(request.organization).owned_by(
-        request.user).select_related('active_candidate').prefetch_related(
-            'candidates', 'criteria', 'invitations', 'panels__criteria').order_by('-created_at', 'pk'))
-    status_order = {
-        PanelHearing.Status.OPEN: 0,
-        PanelHearing.Status.DRAFT: 1,
-        PanelHearing.Status.REVIEW: 2,
-        PanelHearing.Status.SIGNED_OFF: 3,
-        PanelHearing.Status.RELEASED: 4,
-    }
-    hearings.sort(key=lambda hearing: (status_order.get(hearing.status, 5), -hearing.created_at.timestamp()))
+    """Panel dashboard overview: key metrics, active hearing, stage distribution, and recent assessments."""
+    hearings_qs = (PanelHearing.objects.for_organization(request.organization)
+                   .owned_by(request.user)
+                   .select_related('active_candidate')
+                   .prefetch_related('candidates', 'criteria', 'invitations', 'panels__criteria'))
     now = timezone.now()
-    attention_hearings = []
-    for hearing in hearings:
-        hearing.candidate_count = hearing.candidates.count()
-        invitations = list(hearing.invitations.all())
-        hearing.invitation_count = len(invitations)
-        hearing.accepted_examiner_count = sum(
-            1 for invitation in invitations
-            if invitation.confirmed_at and not invitation.accepted_at
-            and not invitation.declined_at and not invitation.revoked_at
-            and invitation.expires_at > now)
-        hearing.failed_invitation_count = sum(
-            1 for invitation in invitations
-            if invitation.delivery_status == PanelInvitation.DeliveryStatus.FAILED
-            and not invitation.revoked_at)
-        panels = list(hearing.panels.all())
-        criteria = list(hearing.criteria.all())
-        scoring_required = hearing.workflow in (PanelHearing.Workflow.SCORED,
-                                                  PanelHearing.Workflow.HYBRID)
-        examiner_required = hearing.workflow in (
-            PanelHearing.Workflow.SCORED, PanelHearing.Workflow.VOTE,
-            PanelHearing.Workflow.HYBRID, PanelHearing.Workflow.REVIEW,
-            PanelHearing.Workflow.REVIEW_VOTE)
-        panel_shares_ready = bool(panels) and sum(
-            (panel.share for panel in panels), Decimal('0')) == Decimal('100.00')
-        panel_criteria_ready = bool(panels) and all(
-            panel.criteria.exists() for panel in panels) if scoring_required else True
-        criteria_assigned = (all(any(panel.share > 0 and criterion in panel.criteria.all()
-                                      for panel in panels) for criterion in criteria)
-                             if scoring_required else True)
-        accepted_ready = True
-        if examiner_required:
-            required_panels = [panel for panel in panels
-                               if not scoring_required or panel.share > 0]
-            accepted_ready = bool(required_panels) and all(
-                sum(1 for invitation in invitations
-                    if invitation.panel_id == panel.pk and invitation.confirmed_at
-                    and not invitation.accepted_at and not invitation.declined_at
-                    and not invitation.revoked_at
-                    and invitation.expires_at > now) >= panel.minimum_examiners
-                for panel in required_panels)
-        if hearing.status == PanelHearing.Status.DRAFT:
-            if hearing.candidate_count == 0:
-                hearing.dashboard_next_action = 'Add presenters or entries'
-            elif scoring_required and not criteria:
-                hearing.dashboard_next_action = 'Add scoring criteria'
-            elif scoring_required and (not panel_shares_ready or not panel_criteria_ready or not criteria_assigned):
-                hearing.dashboard_next_action = 'Check scoring panel setup'
-            elif not accepted_ready:
-                hearing.dashboard_next_action = 'Invite and confirm examiners'
-            else:
-                hearing.dashboard_next_action = 'Ready to open'
-            attention_hearings.append(hearing)
-        elif hearing.status == PanelHearing.Status.OPEN and not hearing.active_candidate:
-            hearing.dashboard_next_action = 'Choose the next presenter or entry'
-            attention_hearings.append(hearing)
-        elif hearing.status == PanelHearing.Status.REVIEW:
-            hearing.dashboard_next_action = 'Review results'
-            attention_hearings.append(hearing)
-        elif hearing.status == PanelHearing.Status.SIGNED_OFF:
-            hearing.dashboard_next_action = 'Release results'
-            attention_hearings.append(hearing)
-        else:
-            hearing.dashboard_next_action = ''
-        if hearing.failed_invitation_count and hearing.status in (
-                PanelHearing.Status.DRAFT, PanelHearing.Status.OPEN):
-            hearing.dashboard_invitation_issue = (
-                f'{hearing.failed_invitation_count} invitation email'
-                f'{"s" if hearing.failed_invitation_count != 1 else ""} could not be delivered')
-            if hearing not in attention_hearings:
-                attention_hearings.append(hearing)
-        else:
-            hearing.dashboard_invitation_issue = ''
+    all_hearings = [_annotate_panel_hearing(h, now) for h in hearings_qs.order_by('-created_at', '-pk')]
+
     dashboard_stats = {
-        'total': len(hearings),
-        'live': sum(hearing.status == PanelHearing.Status.OPEN for hearing in hearings),
-        'drafts': sum(hearing.status == PanelHearing.Status.DRAFT for hearing in hearings),
-        'review': sum(hearing.status == PanelHearing.Status.REVIEW for hearing in hearings),
-        'release': sum(hearing.status == PanelHearing.Status.SIGNED_OFF for hearing in hearings),
-        'completed': sum(hearing.status == PanelHearing.Status.RELEASED for hearing in hearings),
-        'total_candidates': sum(hearing.candidate_count for hearing in hearings),
-        'total_examiners': sum(hearing.accepted_examiner_count for hearing in hearings),
+        'total': len(all_hearings),
+        'live': sum(h.status == PanelHearing.Status.OPEN for h in all_hearings),
+        'drafts': sum(h.status == PanelHearing.Status.DRAFT for h in all_hearings),
+        'review': sum(h.status == PanelHearing.Status.REVIEW for h in all_hearings),
+        'release': sum(h.status == PanelHearing.Status.SIGNED_OFF for h in all_hearings),
+        'completed': sum(h.status == PanelHearing.Status.RELEASED for h in all_hearings),
+        'total_candidates': sum(h.candidate_count for h in all_hearings),
+        'total_examiners': sum(h.accepted_examiner_count for h in all_hearings),
     }
-    latest_hearing = hearings[0] if hearings else None
-    form = PanelHearingForm(request.POST or None)
-    if request.method == 'POST' and form.is_valid():
-        hearing = form.save(commit=False)
-        hearing.organization_id = request.organization['id']
-        hearing.created_by = request.user
-        try:
-            hearing.full_clean()
-        except ValidationError as exc:
-            form.add_error(None, '; '.join(exc.messages))
-            messages.error(request, '; '.join(exc.messages))
-        else:
+
+    attention_hearings = []
+    for h in all_hearings:
+        if h.dashboard_next_action or h.dashboard_invitation_issue:
+            attention_hearings.append(h)
+
+    stage_colors = {
+        'draft': '#d28a08',
+        'open': 'var(--success)',
+        'review': 'var(--accent)',
+        'signed_off': 'var(--text-muted)',
+        'released': 'var(--text-subtle)',
+    }
+    stage_distribution = []
+    pie_segments = []
+    cumulative = 0
+    stage_items = [
+        ('draft', 'In setup', dashboard_stats['drafts']),
+        ('open', 'Live now', dashboard_stats['live']),
+        ('review', 'Under review', dashboard_stats['review']),
+        ('signed_off', 'Signed off', dashboard_stats['release']),
+        ('released', 'Released', dashboard_stats['completed']),
+    ]
+    for key, label, count in stage_items:
+        seg_start = cumulative * 360 / dashboard_stats['total'] if dashboard_stats['total'] else 0
+        cumulative += count
+        seg_end = cumulative * 360 / dashboard_stats['total'] if dashboard_stats['total'] else 0
+        percentage = round(count * 100 / dashboard_stats['total'], 1) if dashboard_stats['total'] else 0
+        stage_distribution.append({
+            'key': key,
+            'label': label,
+            'count': count,
+            'percentage': percentage,
+        })
+        if count:
+            pie_segments.append(f'{stage_colors[key]} {seg_start:.3f}deg {seg_end:.3f}deg')
+    stage_pie_background = f"conic-gradient({', '.join(pie_segments)})" if pie_segments else ''
+
+    live_hearings = [h for h in all_hearings if h.status == PanelHearing.Status.OPEN]
+    recent_hearings = all_hearings[:5]
+
+    candidate_hearings = sorted(all_hearings, key=lambda h: (-h.candidate_count, -h.created_at.timestamp()))[:5]
+    largest_candidates = max((h.candidate_count for h in candidate_hearings), default=0)
+    for h in candidate_hearings:
+        h.candidate_bar_percent = round(h.candidate_count * 100 / largest_candidates, 1) if largest_candidates else 0
+
+    return render(request, 'service_domains/panel_hearing_list.html', {
+        'dashboard_stats': dashboard_stats,
+        'attention_hearings': attention_hearings,
+        'stage_distribution': stage_distribution,
+        'stage_pie_background': stage_pie_background,
+        'live_hearings': live_hearings,
+        'recent_hearings': recent_hearings,
+        'candidate_hearings': candidate_hearings,
+        'largest_candidates': largest_candidates,
+        'can_oversee_panel': can_oversee(request),
+    })
+
+
+@require_safe
+@never_cache
+@_panel_owner
+def panel_hearing_table(request):
+    """Full searchable and paginated table of owned panel assessments."""
+    base_qs = (PanelHearing.objects.for_organization(request.organization)
+               .owned_by(request.user))
+
+    status_counts = {
+        'total': base_qs.count(),
+        'draft': base_qs.filter(status=PanelHearing.Status.DRAFT).count(),
+        'open': base_qs.filter(status=PanelHearing.Status.OPEN).count(),
+        'review': base_qs.filter(status=PanelHearing.Status.REVIEW).count(),
+        'signed_off': base_qs.filter(status=PanelHearing.Status.SIGNED_OFF).count(),
+        'released': base_qs.filter(status=PanelHearing.Status.RELEASED).count(),
+    }
+
+    filtered_qs = base_qs.select_related('active_candidate').prefetch_related(
+        'candidates', 'criteria', 'invitations', 'panels__criteria')
+
+    search_query = (request.GET.get('q') or '').strip()[:100]
+    if search_query:
+        filtered_qs = filtered_qs.filter(name__icontains=search_query)
+
+    status_filter = request.GET.get('status', '').strip()
+    if status_filter in PanelHearing.Status.values:
+        filtered_qs = filtered_qs.filter(status=status_filter)
+    else:
+        status_filter = ''
+
+    filtered_qs = filtered_qs.order_by('-created_at', '-pk')
+    filtered_count = filtered_qs.count()
+
+    paginator, page_obj = paginate(request, filtered_qs)
+    now = timezone.now()
+    annotated_page_hearings = [_annotate_panel_hearing(h, now) for h in page_obj.object_list]
+
+    query_params = QueryDict('', mutable=True)
+    if search_query:
+        query_params['q'] = search_query
+    if status_filter:
+        query_params['status'] = status_filter
+    query_params['per_page'] = str(paginator.per_page)
+    querystring = query_params.urlencode()
+
+    combined_count = (CombinedPresentationAssessment.objects.for_organization(request.organization)
+                      .owned_by(request.user).count())
+
+    context = {
+        'hearings': annotated_page_hearings,
+        'status_counts': status_counts,
+        'search_query': search_query,
+        'status_filter': status_filter,
+        'filtered_count': filtered_count,
+        'paginator': paginator,
+        'page_obj': page_obj,
+        'per_page': paginator.per_page,
+        'page_sizes': PAGE_SIZES,
+        'querystring': querystring,
+        'can_oversee_panel': can_oversee(request),
+        'active_tab': 'hearings',
+        'hearing_count': status_counts['total'],
+        'combined_count': combined_count,
+    }
+
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        response = render(request, 'service_domains/_partials/panel_hearing_results.html', context)
+        response['Vary'] = 'X-Requested-With'
+        return response
+
+    return render(request, 'service_domains/panel_hearing_table.html', context)
+
+
+@require_http_methods(['GET', 'POST'])
+@never_cache
+@_panel_owner
+def panel_hearing_create(request):
+    """Create a new Panel hearing and proceed directly to setup steps."""
+    org_id = request.organization.pk if hasattr(request.organization, 'pk') else (
+        request.organization['id'] if isinstance(request.organization, dict) else request.organization)
+
+    if request.method == 'POST':
+        form = PanelHearingForm(request.POST, auto_id='hearing_%s')
+        if form.is_valid():
+            hearing = form.save(commit=False)
+            hearing.organization_id = org_id
+            hearing.created_by = request.user
+            try:
+                hearing.full_clean()
+            except ValidationError as exc:
+                form.add_error(None, '; '.join(exc.messages))
+                messages.error(request, '; '.join(exc.messages))
+                return render(request, 'service_domains/panel_hearing_create.html', {'form': form})
             with transaction.atomic():
                 hearing.save(force_insert=True)
                 panel = PanelScoringPanel(
@@ -312,18 +457,87 @@ def panel_hearing_list(request):
                     organization_id=hearing.organization_id, created_by=request.user)
                 event.full_clean()
                 event.save(force_insert=True)
-            messages.success(request, 'Panel assessment created. Add presenters or entries to continue setup.')
+            messages.success(request, 'Panel assessment created. Add candidates to continue setup.')
+            if request.POST.get('advance') == '1':
+                return redirect(f"{reverse('panel_hearing_manage', args=[hearing.pk])}?step=candidates")
             return redirect('panel_hearing_manage', hearing_id=hearing.pk)
-    elif request.method == 'POST':
         messages.error(request, 'Please correct the highlighted fields and try again.')
-    return render(request, 'service_domains/panel_hearing_list.html', {
-        'hearings': hearings, 'form': form, 'can_oversee_panel': can_oversee(request),
-        'dashboard_stats': dashboard_stats, 'attention_hearings': attention_hearings,
-        'onboarding': service_onboarding('panel',
-            resume_url=(reverse('panel_hearing_manage', args=(latest_hearing.pk,))
-                        if latest_hearing else ''),
-            resume_name=(latest_hearing.name if latest_hearing else '')),
-    })
+        return render(request, 'service_domains/panel_hearing_create.html', {'form': form})
+
+    form = PanelHearingForm(auto_id='hearing_%s', initial={'workflow': PanelHearing.Workflow.SCORED})
+    return render(request, 'service_domains/panel_hearing_create.html', {'form': form})
+
+
+@require_POST
+@never_cache
+@_panel_owner
+def panel_hearing_delete(request, hearing_id):
+    """Delete a single owned panel assessment."""
+    hearing = (PanelHearing.objects.for_organization(request.organization)
+               .owned_by(request.user).filter(pk=hearing_id).first())
+    if hearing is None:
+        raise Http404
+    name = hearing.name
+    try:
+        delete_panel_hearings([hearing])
+    except ValidationError as exc:
+        messages.error(request, '; '.join(exc.messages) if hasattr(exc, 'messages') else str(exc))
+    else:
+        messages.success(request, f'"{name}" deleted.')
+    return redirect('panel_hearing_table')
+
+
+@require_POST
+@never_cache
+@_panel_owner
+def panel_hearing_bulk_delete(request):
+    """Delete an explicitly selected set of owned panel assessments."""
+    raw_ids = request.POST.getlist('hearing_ids')
+    if (not raw_ids or len(raw_ids) > max(PAGE_SIZES)
+            or any(not re.fullmatch(r'[1-9][0-9]*', value)
+                   or len(value) > 19
+                   or (len(value) == 19 and value > '9223372036854775807')
+                   for value in raw_ids)):
+        messages.error(request, 'Select one or more valid assessments to delete.')
+        return _panel_bulk_delete_redirect(request)
+
+    hearing_ids = {int(value) for value in raw_ids}
+    owned_hearings = (PanelHearing.objects.for_organization(request.organization)
+                      .owned_by(request.user))
+    with transaction.atomic():
+        selected = list(owned_hearings.select_for_update().filter(pk__in=hearing_ids))
+        if len(selected) != len(hearing_ids):
+            messages.error(request, 'One or more selected assessments are no longer available to delete.')
+            return _panel_bulk_delete_redirect(request)
+        try:
+            delete_panel_hearings(selected)
+        except ValidationError as exc:
+            messages.error(request, '; '.join(exc.messages) if hasattr(exc, 'messages') else str(exc))
+            return _panel_bulk_delete_redirect(request)
+        count = len(selected)
+
+    messages.success(request, f'{count} assessment{"s" if count != 1 else ""} deleted.')
+    return _panel_bulk_delete_redirect(request)
+
+
+def _panel_bulk_delete_redirect(request):
+    """Return to the filtered assessment list preserving parameters."""
+    params = QueryDict('', mutable=True)
+    query = (request.POST.get('q') or '').strip()[:100]
+    status_filter = request.POST.get('status', '').strip()
+    if query:
+        params['q'] = query
+    if status_filter in PanelHearing.Status.values:
+        params['status'] = status_filter
+    try:
+        per_page = int(request.POST.get('per_page', PAGE_SIZE))
+    except (TypeError, ValueError):
+        per_page = PAGE_SIZE
+    if per_page not in PAGE_SIZES:
+        per_page = PAGE_SIZE
+    params['per_page'] = str(per_page)
+    url = reverse('panel_hearing_table')
+    return redirect(f'{url}?{params.urlencode()}' if params else url)
 
 
 @require_http_methods(['GET', 'POST'])
@@ -1486,16 +1700,93 @@ def panel_oversight_list(request):
     """Organization overseers may inspect compiled, aggregate Panel records."""
     if not can_oversee(request):
         raise Http404
-    hearings = (PanelHearing.objects.for_organization(request.organization)
+    base_qs = (PanelHearing.objects.for_organization(request.organization)
         .exclude(status__in=(PanelHearing.Status.DRAFT, PanelHearing.Status.OPEN))
         .filter(result_snapshots__isnull=False,
                 result_snapshots__organization_id=request.organization['id'])
         .select_related('created_by')
-        .annotate(result_count=Count('result_snapshots', distinct=True))
-        .order_by('-created_at', 'pk'))
-    response = render(request, 'service_domains/panel_oversight_list.html', {
-        'hearings': hearings,
-    })
+        .annotate(result_count=Count('result_snapshots', distinct=True),
+                  candidate_count=Count('candidates', distinct=True)))
+
+    total_panels = base_qs.count()
+    total_signed_off = base_qs.filter(status=PanelHearing.Status.SIGNED_OFF).count()
+    total_released = base_qs.filter(status=PanelHearing.Status.RELEASED).count()
+    total_candidates = base_qs.aggregate(total=Sum('candidate_count'))['total'] or 0
+    total_outcomes = base_qs.aggregate(total=Sum('result_count'))['total'] or 0
+
+    stats = {
+        'total_panels': total_panels,
+        'total_signed_off': total_signed_off,
+        'total_released': total_released,
+        'total_candidates': total_candidates,
+        'total_outcomes': total_outcomes,
+    }
+
+    status_counts = {
+        'total': total_panels,
+        'signed_off': total_signed_off,
+        'released': total_released,
+    }
+
+    filtered_qs = base_qs
+    search_query = (request.GET.get('q') or '').strip()[:100]
+    if search_query:
+        filtered_qs = filtered_qs.filter(
+            Q(name__icontains=search_query) |
+            Q(created_by__first_name__icontains=search_query) |
+            Q(created_by__last_name__icontains=search_query) |
+            Q(created_by__email__icontains=search_query)
+        )
+
+    status_filter = request.GET.get('status', '').strip()
+    if status_filter in (PanelHearing.Status.SIGNED_OFF, PanelHearing.Status.RELEASED):
+        filtered_qs = filtered_qs.filter(status=status_filter)
+    else:
+        status_filter = ''
+
+    workflow_filter = request.GET.get('workflow', '').strip()
+    if workflow_filter in PanelHearing.Workflow.values:
+        filtered_qs = filtered_qs.filter(workflow=workflow_filter)
+    else:
+        workflow_filter = ''
+
+    filtered_qs = filtered_qs.order_by('-created_at', '-pk')
+    filtered_count = filtered_qs.count()
+
+    paginator, page_obj = paginate(request, filtered_qs)
+
+    query_params = QueryDict('', mutable=True)
+    if search_query:
+        query_params['q'] = search_query
+    if status_filter:
+        query_params['status'] = status_filter
+    if workflow_filter:
+        query_params['workflow'] = workflow_filter
+    query_params['per_page'] = str(paginator.per_page)
+    querystring = query_params.urlencode()
+
+    context = {
+        'hearings': filtered_qs,
+        'page_obj': page_obj,
+        'paginator': paginator,
+        'stats': stats,
+        'status_counts': status_counts,
+        'search_query': search_query,
+        'status_filter': status_filter,
+        'workflow_filter': workflow_filter,
+        'workflow_choices': PanelHearing.Workflow.choices,
+        'filtered_count': filtered_count,
+        'per_page': paginator.per_page,
+        'page_sizes': PAGE_SIZES,
+        'querystring': querystring,
+    }
+
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        response = render(request, 'service_domains/_partials/panel_oversight_results.html', context)
+        response['Vary'] = 'X-Requested-With'
+        return response
+
+    response = render(request, 'service_domains/panel_oversight_list.html', context)
     response['Cache-Control'] = 'private, no-store'
     response['Referrer-Policy'] = 'no-referrer'
     return response
@@ -1928,11 +2219,10 @@ def _set_panel_examiner_cookie(response, request, name, value, invitation):
 
 
 def _owned_training_series(request, series_id):
-    series = (TrainingSeries.objects.for_organization(request.organization)
-              .owned_by(request.user).filter(pk=series_id, active=True).first())
-    if series is None:
+    try:
+        return get_owned_series(request.organization, request.user, series_id)
+    except TrainingSeriesUnavailable:
         raise Http404
-    return series
 
 
 @require_safe
@@ -2136,48 +2426,184 @@ def competition_audience_vote(request, competition_id, round_id, track_id):
     return response
 
 
-@require_http_methods(['GET', 'POST'])
+@require_safe
 @never_cache
 @_team_owner
 def training_series_list(request):
-    def count_for_series(model):
-        return Coalesce(Subquery(model.objects.filter(series_id=OuterRef('pk'))
-            .order_by().values('series_id').annotate(total=Count('pk')).values('total')[:1]), Value(0))
+    context = dashboard_data(request.organization, request.user)
+    latest_series = context['recent_series'][0] if context['recent_series'] else None
+    onboarding = service_onboarding('team',
+        resume_url=(reverse('training_series_manage', args=(latest_series.pk,))
+                    if latest_series else ''),
+        resume_name=(latest_series.name if latest_series else ''))
+    onboarding['create_anchor'] = reverse('training_series_create')
+    if latest_series is None:
+        onboarding['steps'] = (
+            ('Create a series', 'Name the series and add its purpose.'),
+            ('Add your team', 'Import a roster or add team members.'),
+            ('Define competencies and run demos', 'Set pass marks, then record each demo.'),
+        )
+    context['onboarding'] = onboarding
+    return render(request, 'service_domains/team_series.html', context)
 
-    series = (TrainingSeries.objects.for_organization(request.organization)
-              .owned_by(request.user).filter(active=True).annotate(
-                  participant_count=count_for_series(TrainingParticipant),
-                  competency_count=count_for_series(TrainingCompetency),
-                  demo_count=count_for_series(TrainingSeriesSession))
-              .order_by('-created_at', 'pk'))
-    latest_series = series.first()
-    page = Paginator(series, 20).get_page(request.GET.get('page'))
-    series_items = list(page.object_list)
-    dashboard_stats = {
-        'total_series': page.paginator.count,
-        'total_participants': sum(item.participant_count for item in series_items),
-        'total_competencies': sum(item.competency_count for item in series_items),
-        'total_demos': sum(item.demo_count for item in series_items),
+
+@require_safe
+@never_cache
+@_team_owner
+def training_series_table(request):
+    context = series_list_data(request, request.organization, request.user)
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        response = render(request, 'service_domains/_partials/team_series_results.html', context)
+        response['Vary'] = 'X-Requested-With'
+        return response
+    return render(request, 'service_domains/team_series_table.html', context)
+
+
+def _new_training_series_context(request, details_form):
+    series = TrainingSeries(organization_id=organization_id(request.organization),
+        created_by=request.user)
+    return {
+        'series': series,
+        'participants': [],
+        'competencies': [],
+        'sessions': [],
+        'participant_form': TrainingParticipantForm(auto_id='participant_%s'),
+        'competency_form': TrainingCompetencyForm(auto_id='competency_%s'),
+        'launch_form': CreateTrainingSessionForm(
+            organization=request.organization, user=request.user, auto_id='launch_%s'),
+        'privacy_form': TrainingFeedbackPrivacyForm(),
+        'has_team_templates': (SessionTemplate.objects.for_organization(request.organization)
+            .for_service('team').owned_by(request.user).exists()),
+        'roster_import_form': TrainingRosterImportForm(),
+        'details_form': details_form,
+        'roster_import_pending': False,
+        'roster_import_plan': None,
+        'setup_steps': [
+            {'key': 'details', 'label': 'Series setup', 'href': '#series-details', 'complete': False},
+            {'key': 'roster', 'label': 'Roster', 'href': '#team-roster', 'complete': False},
+            {'key': 'competencies', 'label': 'Competencies', 'href': '#competency-criteria', 'complete': False},
+            {'key': 'demos', 'label': 'Session evaluation', 'href': '#series-demos', 'complete': False},
+            {'key': 'certification', 'label': 'Certification', 'href': '#feedback-privacy', 'complete': False},
+        ],
+        'active_step': 'details',
+        'team_starters': starters_for('team'),
+        'is_new_series': True,
     }
-    if request.method == 'POST':
-        form = TrainingSeriesForm(request.POST)
-        if form.is_valid():
-            item = form.save(commit=False)
-            item.organization_id = request.organization['id']
-            item.created_by = request.user
-            item.full_clean()
-            item.save(force_insert=True)
-            return redirect('training_series_manage', series_id=item.pk)
+
+
+@require_http_methods(['GET', 'POST'])
+@never_cache
+@_team_owner
+def training_series_create(request):
+    details_form = TrainingSeriesDetailsForm(
+        request.POST if request.method == 'POST' else None, auto_id='series_details_%s')
+    if request.method == 'POST' and details_form.is_valid():
+        series = details_form.save(commit=False)
+        series.organization_id = organization_id(request.organization)
+        series.created_by = request.user
+        try:
+            series.full_clean()
+        except ValidationError as exc:
+            details_form.add_error(None, '; '.join(exc.messages))
+        else:
+            series.save(force_insert=True)
+            messages.success(request, 'Training series created.')
+            if request.POST.get('advance') == '1':
+                return redirect(f"{reverse('training_series_manage', args=(series.pk,))}?step=roster")
+            return redirect('training_series_manage', series_id=series.pk)
+    return render(request, 'service_domains/team_series_manage.html',
+        _new_training_series_context(request, details_form))
+
+
+def _delete_export_response(content, token):
+    response = HttpResponse(content, content_type='application/zip')
+    response['Content-Disposition'] = 'attachment; filename="team-series-deletion-export.zip"'
+    response['Cache-Control'] = 'private, no-store'
+    response['X-Content-Type-Options'] = 'nosniff'
+    response['X-Delete-Export-Token'] = token
+    return response
+
+
+@require_safe
+@never_cache
+@_team_owner
+def training_series_delete_export(request, series_id):
+    try:
+        content, token, _ = build_deletion_export(
+            request.organization, request.user, [str(series_id)])
+    except (InvalidSeriesSelection, TrainingSeriesUnavailable):
+        raise Http404
+    return _delete_export_response(content, token)
+
+
+@_team_owner
+@never_cache
+@require_POST
+def training_series_bulk_delete_export(request):
+    try:
+        ids = parse_series_ids(request.POST.getlist('series_ids'))
+        content, token, _ = build_deletion_export(
+            request.organization, request.user, [str(item) for item in ids])
+    except InvalidSeriesSelection:
+        return HttpResponse('Select one or more valid series to export.', status=400)
+    except TrainingSeriesUnavailable:
+        raise Http404
+    return _delete_export_response(content, token)
+
+
+def _series_delete_redirect(request):
+    query = deletion_redirect_query(request.POST)
+    url = reverse('training_series_table')
+    return redirect(f'{url}?{query}' if query else url)
+
+
+def _reject_series_delete(request, message):
+    messages.error(request, message)
+    return _series_delete_redirect(request)
+
+
+def _delete_selected_series(request, ids):
+    try:
+        selected = selected_series_names(request.organization, request.user, ids)
+    except TrainingSeriesUnavailable:
+        return _reject_series_delete(request,
+            'One or more selected series are no longer available to delete.')
+    if not verify_deletion_export_token(
+            request.POST.get('delete_export_token'), request.organization, request.user, ids):
+        return _reject_series_delete(request,
+            'Export the selected series and confirm that you saved the archive before deleting.')
+    try:
+        count = delete_series_selection(request.organization, request.user, ids)
+    except TrainingSeriesUnavailable:
+        return _reject_series_delete(request,
+            'One or more selected series are no longer available to delete.')
+    if count == 1:
+        messages.success(request, f'"{selected[0].name}" deleted.')
     else:
-        form = TrainingSeriesForm()
-    return render(request, 'service_domains/team_series.html', {
-        'series': page, 'series_total': page.paginator.count, 'form': form,
-        'dashboard_stats': dashboard_stats,
-        'onboarding': service_onboarding('team',
-            resume_url=(reverse('training_series_manage', args=(latest_series.pk,))
-                        if latest_series else ''),
-            resume_name=(latest_series.name if latest_series else '')),
-    })
+        messages.success(request, f'{count} series deleted.')
+    return _series_delete_redirect(request)
+
+
+@_team_owner
+@never_cache
+@require_POST
+def training_series_delete(request, series_id):
+    try:
+        get_owned_series(request.organization, request.user, series_id, active_only=False)
+    except TrainingSeriesUnavailable:
+        raise Http404
+    return _delete_selected_series(request, [series_id])
+
+
+@_team_owner
+@never_cache
+@require_POST
+def training_series_bulk_delete(request):
+    try:
+        ids = parse_series_ids(request.POST.getlist('series_ids'))
+    except InvalidSeriesSelection:
+        return _reject_series_delete(request, 'Select one or more valid series to delete.')
+    return _delete_selected_series(request, ids)
 
 
 @require_http_methods(['GET', 'POST'])
@@ -2364,10 +2790,13 @@ def _team_roster_import_cache_key(token):
     return f'livegrade:team:roster-import:{token}'
 
 
-@require_http_methods(['POST'])
+@require_http_methods(['GET', 'POST'])
 @never_cache
 @_team_owner
 def training_series_roster_import(request, series_id):
+    if request.method == 'GET':
+        series = _owned_training_series(request, series_id)
+        return redirect(f"{reverse('training_series_manage', args=(series.pk,))}?step=roster")
     if request.POST.get('action') in ('apply', 'cancel'):
         return training_series_roster_preview(request, series_id)
     series = _owned_training_series(request, series_id)
@@ -2600,11 +3029,9 @@ def training_certificate_verify(request, public_id):
     return response
 
 
-@require_http_methods(['GET', 'POST'])
-@never_cache
-@_showcase_owner
-def showcase_event_list(request):
-    current_time = timezone.now()
+def _get_showcase_events_queryset(organization, user, current_time=None):
+    if current_time is None:
+        current_time = timezone.now()
     valid_or_submitted_assignment = (
         Q(invited_judge_assignments__active=True,
           invited_judge_assignments__conflict_declaration__isnull=True)
@@ -2612,45 +3039,222 @@ def showcase_event_list(request):
              invited_judge_assignments__invitation__expires_at__gt=current_time)
            | Q(invited_judge_assignments__evaluation__isnull=False))
     )
-    events = (ShowcaseEvent.objects.for_organization(request.organization)
-              .owned_by(request.user)
-              .annotate(exhibit_count=Count('exhibits', distinct=True),
-                  rating_count=Count('ratings', distinct=True),
-                  average_rating=Avg('ratings__stars'),
-                  judge_assignment_count=Count('invited_judge_assignments',
-                      filter=valid_or_submitted_assignment, distinct=True),
-                  judge_submitted_count=Count('invited_judge_assignments__evaluation',
-                      filter=Q(invited_judge_assignments__active=True,
-                          invited_judge_assignments__conflict_declaration__isnull=True),
-                      distinct=True))
-              .order_by('-created_at', 'pk'))
+    return (ShowcaseEvent.objects.for_organization(organization)
+            .owned_by(user)
+            .annotate(
+                exhibit_count=Count('exhibits', distinct=True),
+                rating_count=Count('ratings', distinct=True),
+                average_rating=Avg('ratings__stars'),
+                judge_assignment_count=Count('invited_judge_assignments',
+                    filter=valid_or_submitted_assignment, distinct=True),
+                judge_submitted_count=Count('invited_judge_assignments__evaluation',
+                    filter=Q(invited_judge_assignments__active=True,
+                        invited_judge_assignments__conflict_declaration__isnull=True),
+                    distinct=True))
+            .order_by('-created_at', '-pk'))
+
+
+@require_http_methods(['GET', 'POST'])
+@never_cache
+@_showcase_owner
+def showcase_event_list(request):
+    """Showcase dashboard overview: metrics, active events, stage distribution, and recent events."""
     if request.method == 'POST':
-        form = ShowcaseEventForm(request.POST)
-        if form.is_valid():
-            event = form.save(commit=False)
-            event.organization_id = request.organization['id']
-            event.created_by = request.user
-            try:
-                event.full_clean()
-            except ValidationError as exc:
-                form.add_error(None, '; '.join(exc.messages))
-            else:
-                event.save(force_insert=True)
-                return redirect('showcase_event_manage', event_id=event.pk)
-        return render(request, 'service_domains/showcase_event_create.html', {'form': form})
-    status_counts = {status: sum(event.status == status for event in events)
-        for status, _label in ShowcaseEvent.Status.choices}
-    total_events = len(events)
+        response = showcase_event_create(request)
+        if response.status_code == 400:
+            response.status_code = 200
+        return response
+
+    events_qs = _get_showcase_events_queryset(request.organization, request.user)
+    all_events = list(events_qs)
+    total_events = len(all_events)
+
+    status_counts = {
+        'total': total_events,
+        'draft': sum(e.status == ShowcaseEvent.Status.DRAFT for e in all_events),
+        'open': sum(e.status == ShowcaseEvent.Status.OPEN for e in all_events),
+        'closed': sum(e.status == ShowcaseEvent.Status.CLOSED for e in all_events),
+        'published': sum(e.status == ShowcaseEvent.Status.PUBLISHED for e in all_events),
+    }
+
+    stage_colors = {
+        'draft': '#d28a08',
+        'open': 'var(--success)',
+        'closed': 'var(--text-muted)',
+        'published': 'var(--accent)',
+    }
+    stage_items = [
+        ('draft', 'Draft', status_counts['draft']),
+        ('open', 'Open for ratings', status_counts['open']),
+        ('closed', 'Closed', status_counts['closed']),
+        ('published', 'Results published', status_counts['published']),
+    ]
+    stage_distribution = []
+    pie_segments = []
+    cumulative = 0
+    for key, label, count in stage_items:
+        seg_start = cumulative * 360 / total_events if total_events else 0
+        cumulative += count
+        seg_end = cumulative * 360 / total_events if total_events else 0
+        percentage = round(count * 100 / total_events, 1) if total_events else 0
+        stage_distribution.append({
+            'key': key,
+            'label': label,
+            'count': count,
+            'percentage': percentage,
+        })
+        if count:
+            pie_segments.append(f'{stage_colors[key]} {seg_start:.3f}deg {seg_end:.3f}deg')
+    stage_pie_background = f"conic-gradient({', '.join(pie_segments)})" if pie_segments else ''
+
+    live_events = [e for e in all_events if e.status == ShowcaseEvent.Status.OPEN]
+    recent_events = all_events[:5]
+
+    exhibit_events = sorted(all_events, key=lambda e: (-e.exhibit_count, -e.created_at.timestamp()))[:5]
+    largest_exhibits = max((e.exhibit_count for e in exhibit_events), default=0)
+    for e in exhibit_events:
+        e.exhibit_bar_percent = round(e.exhibit_count * 100 / largest_exhibits, 1) if largest_exhibits else 0
+
     return render(request, 'service_domains/showcase_events.html', {
-        'events': events,
-        'status_counts': status_counts,
+        'events': all_events,
         'total_events': total_events,
-        'open_events': status_counts.get(ShowcaseEvent.Status.OPEN, 0),
-        'total_exhibits': sum(event.exhibit_count for event in events),
-        'total_ratings': sum(event.rating_count for event in events),
-        'judge_submitted': sum(event.judge_submitted_count for event in events),
-        'judge_assigned': sum(event.judge_assignment_count for event in events),
+        'open_events': status_counts['open'],
+        'status_counts': status_counts,
+        'total_exhibits': sum(e.exhibit_count for e in all_events),
+        'total_ratings': sum(e.rating_count for e in all_events),
+        'judge_submitted': sum(e.judge_submitted_count for e in all_events),
+        'judge_assigned': sum(e.judge_assignment_count for e in all_events),
+        'live_events': live_events,
+        'recent_events': recent_events,
+        'stage_distribution': stage_distribution,
+        'stage_pie_background': stage_pie_background,
+        'exhibit_events': exhibit_events,
+        'largest_exhibits': largest_exhibits,
     })
+
+
+@require_safe
+@never_cache
+@_showcase_owner
+def showcase_event_table(request):
+    """Full searchable and paginated table of owned showcase events."""
+    base_qs = _get_showcase_events_queryset(request.organization, request.user)
+    base_events = list(base_qs)
+
+    status_counts = {
+        'total': len(base_events),
+        'draft': sum(e.status == ShowcaseEvent.Status.DRAFT for e in base_events),
+        'open': sum(e.status == ShowcaseEvent.Status.OPEN for e in base_events),
+        'closed': sum(e.status == ShowcaseEvent.Status.CLOSED for e in base_events),
+        'published': sum(e.status == ShowcaseEvent.Status.PUBLISHED for e in base_events),
+    }
+
+    filtered_qs = base_qs
+    search_query = (request.GET.get('q') or '').strip()[:100]
+    if search_query:
+        filtered_qs = filtered_qs.filter(name__icontains=search_query)
+
+    status_filter = request.GET.get('status', '').strip()
+    if status_filter in ShowcaseEvent.Status.values:
+        filtered_qs = filtered_qs.filter(status=status_filter)
+    else:
+        status_filter = ''
+
+    filtered_count = filtered_qs.count()
+    paginator, page_obj = paginate(request, filtered_qs)
+
+    query_params = QueryDict('', mutable=True)
+    if search_query:
+        query_params['q'] = search_query
+    if status_filter:
+        query_params['status'] = status_filter
+    query_params['per_page'] = str(paginator.per_page)
+    querystring = query_params.urlencode()
+
+    context = {
+        'events': page_obj.object_list,
+        'status_counts': status_counts,
+        'search_query': search_query,
+        'status_filter': status_filter,
+        'filtered_count': filtered_count,
+        'paginator': paginator,
+        'page_obj': page_obj,
+        'per_page': paginator.per_page,
+        'page_sizes': PAGE_SIZES,
+        'querystring': querystring,
+    }
+
+    template = 'service_domains/showcase_event_table.html'
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        template = 'service_domains/_partials/showcase_event_results.html'
+    response = render(request, template, context)
+    patch_vary_headers(response, ['X-Requested-With'])
+    return response
+
+
+@require_POST
+@never_cache
+@_showcase_owner
+def showcase_event_delete(request, event_id):
+    """Delete a single owned showcase event."""
+    event = (ShowcaseEvent.objects.for_organization(request.organization)
+             .owned_by(request.user).filter(pk=event_id).first())
+    if event is None:
+        raise Http404
+    name = event.name
+    delete_showcase_events([event])
+    messages.success(request, f'"{name}" deleted.')
+    return redirect('showcase_event_table')
+
+
+@require_POST
+@never_cache
+@_showcase_owner
+def showcase_event_bulk_delete(request):
+    """Delete an explicitly selected set of owned showcase events."""
+    raw_ids = request.POST.getlist('event_ids')
+    if (not raw_ids or len(raw_ids) > max(PAGE_SIZES)
+            or any(not re.fullmatch(r'[1-9][0-9]*', value)
+                   or len(value) > 19
+                   or (len(value) == 19 and value > '9223372036854775807')
+                   for value in raw_ids)):
+        messages.error(request, 'Select one or more valid events to delete.')
+        return _showcase_bulk_delete_redirect(request)
+
+    event_ids = {int(value) for value in raw_ids}
+    owned_events = (ShowcaseEvent.objects.for_organization(request.organization)
+                    .owned_by(request.user))
+    with transaction.atomic():
+        selected = list(owned_events.select_for_update().filter(pk__in=event_ids))
+        if len(selected) != len(event_ids):
+            messages.error(request, 'One or more selected events are no longer available to delete.')
+            return _showcase_bulk_delete_redirect(request)
+        delete_showcase_events(selected)
+        count = len(selected)
+
+    messages.success(request, f'{count} event{"s" if count != 1 else ""} deleted.')
+    return _showcase_bulk_delete_redirect(request)
+
+
+def _showcase_bulk_delete_redirect(request):
+    """Return to the filtered event list preserving parameters."""
+    params = QueryDict('', mutable=True)
+    query = (request.POST.get('q') or '').strip()[:100]
+    status_filter = request.POST.get('status', '').strip()
+    if query:
+        params['q'] = query
+    if status_filter in ShowcaseEvent.Status.values:
+        params['status'] = status_filter
+    try:
+        per_page = int(request.POST.get('per_page', PAGE_SIZE))
+    except (TypeError, ValueError):
+        per_page = PAGE_SIZE
+    if per_page not in PAGE_SIZES:
+        per_page = PAGE_SIZE
+    params['per_page'] = str(per_page)
+    url = reverse('showcase_event_table')
+    qs = params.urlencode()
+    return redirect(f'{url}?{qs}' if qs else url)
 
 
 @require_http_methods(['GET', 'POST'])
@@ -2670,7 +3274,7 @@ def showcase_event_create(request):
             event.save(force_insert=True)
             messages.success(request,
                 'Event details saved. Continue setup by adding exhibits, judging details, and consent checks before opening it.')
-            return redirect(f"{reverse('showcase_event_manage', args=(event.pk,))}#exhibits-heading")
+            return redirect('showcase_event_manage', event_id=event.pk)
     return render(request, 'service_domains/showcase_event_create.html', {
         'form': form,
     }, status=400 if request.method == 'POST' and form.errors else 200)

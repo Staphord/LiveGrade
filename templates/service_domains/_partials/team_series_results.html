@@ -1,0 +1,58 @@
+<div id="team-results" aria-busy="false">
+  <section class="team-series-table-card" aria-labelledby="team-series-table-heading">
+    <div class="team-series-table-head">
+      <div class="team-series-table-heading-group"><h2 id="team-series-table-heading">Training series</h2><span class="team-series-table-count">{% if search_query %}{{ filtered_count }} matching{% else %}{{ status_counts.total }} total{% endif %} series</span></div>
+      <div class="team-series-table-tools">
+        <form id="team-bulk-selection" method="post" action="{% url 'training_series_bulk_delete' %}">
+          {% csrf_token %}
+          <input type="hidden" name="q" value="{{ search_query }}">
+          <input type="hidden" name="per_page" value="{{ per_page }}">
+          <button type="button" class="btn btn-outline-danger btn-sm" data-team-bulk-delete-trigger hidden data-delete-url="{% url 'training_series_bulk_delete' %}" data-export-url="{% url 'training_series_bulk_delete_export' %}" data-query="{{ search_query }}" data-page-size="{{ per_page }}"><i class="bi bi-trash me-1" aria-hidden="true"></i>Delete selected (<span data-team-selected-count>0</span>)</button>
+        </form>
+        <div class="team-series-page-size"><label for="team-series-page-size">Rows per page</label><select id="team-series-page-size" class="form-select form-select-sm" name="per_page" data-team-page-size>{% for size in page_sizes %}<option value="{{ size }}"{% if size == per_page %} selected{% endif %}>{{ size }}</option>{% endfor %}</select></div>
+      </div>
+    </div>
+    {% if series %}
+    <div class="table-responsive">
+      <table class="table table-hover team-series-table" data-team-row-navigation>
+        <caption class="visually-hidden">Training series with their status, team members, competencies, demos, creation date, and available actions</caption>
+        <thead><tr><th scope="col" class="team-series-select-column"><input class="form-check-input" type="checkbox" data-team-select-all aria-label="Select all training series on this page"><span class="visually-hidden">Select</span></th><th scope="col">Series</th><th scope="col">Status</th><th scope="col">Team members</th><th scope="col">Competencies</th><th scope="col">Demos</th><th scope="col">Created</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+        <tbody>
+          {% for item in series %}{% url 'training_series_manage' item.pk as series_row_url %}
+          <tr class="team-series-row-clickable" data-team-row-href="{{ series_row_url }}">
+            <td class="team-series-select-column"><input class="form-check-input" type="checkbox" name="series_ids" value="{{ item.pk }}" form="team-bulk-selection" data-team-select aria-label="Select {{ item.name }}"></td>
+            <td><a class="team-series-table-name" href="{{ series_row_url }}">{{ item.name }}</a>{% if item.cadence_note %}<span class="team-series-secondary">Usual rhythm: {{ item.cadence_note }}</span>{% endif %}</td>
+            <td><span class="team-series-stage"><span class="team-series-stage-dot" aria-hidden="true"></span>Active</span></td>
+            <td>{{ item.participant_count }}</td><td>{{ item.competency_count }}</td><td>{{ item.demo_count }}</td><td>{{ item.created_at|date:'d M Y' }}</td>
+            <td class="text-end">{% include 'service_domains/_partials/team_series_row_actions.html' with series=item %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if paginator.num_pages > 1 %}
+    <nav class="team-series-pagination" aria-label="Training series pages">
+      <span class="team-series-pagination-label">Page {{ page_obj.number }} of {{ paginator.num_pages }} · {{ paginator.count }} series</span>
+      <div class="team-series-pagination-links">
+        {% if page_obj.has_previous %}<a class="btn btn-sm btn-outline-secondary" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page_obj.previous_page_number }}" data-team-page>Previous</a>{% endif %}
+        {% if page_obj.has_next %}<a class="btn btn-sm btn-outline-secondary" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page_obj.next_page_number }}" data-team-page>Next</a>{% endif %}
+      </div>
+    </nav>
+    {% endif %}
+    {% elif search_query %}
+    <div class="team-series-empty"><div class="team-series-empty-icon" aria-hidden="true"><i class="bi bi-search"></i></div><h2>No matching series</h2><p>Try a different series name.</p><a href="{% url 'training_series_table' %}" class="btn btn-outline-secondary" data-team-clear-filters>Clear filters</a></div>
+    {% else %}
+    <div class="team-series-empty">
+      <div class="team-series-empty-icon" aria-hidden="true"><i class="bi bi-graph-up-arrow"></i></div>
+      <h2>No training series yet</h2>
+      <p>Create a series, add your team, then track competency progress across demos.</p>
+      <div class="team-series-empty-steps" aria-label="Training series setup steps">
+        <div class="team-series-empty-step"><strong>1. Create a series</strong><span>Name the series and add its purpose.</span></div>
+        <div class="team-series-empty-step"><strong>2. Add your team</strong><span>Import a roster or add team members.</span></div>
+        <div class="team-series-empty-step"><strong>3. Define competencies and run demos</strong><span>Set pass marks, then record each demo.</span></div>
+      </div>
+      <a href="{% url 'training_series_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create a series</a>
+    </div>
+    {% endif %}
+  </section>
+</div>

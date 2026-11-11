@@ -1,214 +1,258 @@
 {% extends 'base.html' %}
-{% block title %}Competition · LiveGrade{% endblock %}
-{% block page_title %}Competition{% endblock %}
-{% block content %}
-{% include 'service_domains/_workspace_styles.html' %}
-{% include 'service_domains/_team_competition_styles.html' %}
+{% block title %}Competition dashboard · LiveGrade{% endblock %}
+{% block page_title %}Competition dashboard{% endblock %}
+
+{% block extra_css %}
 {% include 'partials/_service_dashboard_styles.html' %}
-<div class="container-fluid py-4 service-workspace tc-workspace stage-content">
-  <header class="hero-banner {% if not dashboard_stats.active %}between-banner{% endif %}">
+<style nonce="{{ csp_nonce }}">
+.competition-dashboard{gap:var(--sp-4)}
+.competition-dashboard a,.competition-dashboard a:hover{text-decoration:none}
+.competition-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:var(--sp-3)}
+.competition-kpi{min-width:0;padding:var(--sp-4);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);box-shadow:var(--elev-1)}
+.competition-kpi-label{color:var(--text-muted);font-size:var(--fs-sm);font-weight:650}
+.competition-kpi-value{margin-top:var(--sp-2);font-size:1.8rem;line-height:1.1;font-weight:800;letter-spacing:-.04em;color:var(--ink)}
+.competition-kpi-note{margin-top:var(--sp-2);color:var(--text-muted);font-size:var(--fs-micro);line-height:1.45}
+.competition-live-panel{padding:var(--sp-4);border:1px solid var(--tone-success-bg);border-radius:var(--radius-card);background:var(--surface)}
+.competition-live-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:var(--sp-3);margin-top:var(--sp-3)}
+.competition-live-card-link{display:block;height:100%;border-radius:var(--radius-control);color:var(--text)}
+.competition-live-card-link:focus-visible{outline:0;box-shadow:var(--focus-ring)}
+.competition-live-item{height:100%;padding:var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface-hover);transition:border-color var(--motion-fast) var(--ease),background var(--motion-fast) var(--ease),transform var(--motion-fast) var(--ease)}
+.competition-live-card-link:hover .competition-live-item{border-color:var(--accent);background:var(--surface);transform:translateY(-1px)}
+.competition-live-item h3{margin:0;color:var(--ink);font-size:var(--fs-strong);font-weight:750}
+.competition-live-meta{display:flex;flex-wrap:wrap;gap:var(--sp-2) var(--sp-4);margin-top:var(--sp-2);color:var(--text-muted);font-size:var(--fs-sm)}
+.competition-live-footer{margin-top:var(--sp-3);padding-top:var(--sp-2);border-top:1px solid var(--border);color:var(--accent);font-size:var(--fs-sm);font-weight:650}
+.competition-live-now{display:inline-flex;align-items:center;gap:6px;color:var(--tone-success-fg);font-size:var(--fs-micro);font-weight:750;text-transform:uppercase;letter-spacing:.04em}
+.competition-live-dot{width:8px;height:8px;border-radius:50%;background:var(--success)}
+.competition-visual-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-3)}
+.competition-data-card{min-width:0;padding:var(--sp-4);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.competition-data-card h2{margin:0;font-size:var(--fs-heading);font-weight:750}
+.competition-data-subtitle{margin:var(--sp-1) 0 var(--sp-4);color:var(--text-muted);font-size:var(--fs-sm)}
+.competition-stage-chart{display:grid;grid-template-columns:minmax(140px,180px) minmax(0,1fr);align-items:center;gap:var(--sp-4)}
+.competition-stage-pie{width:100%;aspect-ratio:1;border:1px solid var(--border);border-radius:50%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.4)}
+.competition-stage-legend{display:grid;gap:var(--sp-3);margin:0;padding:0;list-style:none}
+.competition-stage-legend li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:var(--sp-2);font-size:var(--fs-sm)}
+.competition-stage-swatch{width:11px;height:11px;border-radius:3px;background:var(--text-subtle)}
+.competition-stage-swatch.draft{background:#d28a08}
+.competition-stage-swatch.active{background:var(--success)}
+.competition-stage-swatch.complete{background:var(--accent)}
+.competition-stage-swatch.revealed{background:var(--text-muted)}
+.competition-stage-legend strong{white-space:nowrap;color:var(--ink)}
+.competition-stage-legend small{color:var(--text-muted);font-weight:500}
+.competition-roster-list{display:grid;gap:var(--sp-3);margin:0;padding:0;list-style:none}
+.competition-roster-label{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2);margin-bottom:var(--sp-1);font-size:var(--fs-sm)}
+.competition-roster-label a{overflow:hidden;color:var(--text);font-weight:650;text-overflow:ellipsis;white-space:nowrap}
+.competition-roster-label a:hover,.competition-recent-name:hover{color:var(--accent)}
+.competition-roster-label strong{flex:0 0 auto}
+.competition-roster-track{height:12px;overflow:hidden;border-radius:var(--radius-pill);background:var(--surface-sunken)}
+.competition-roster-fill{height:100%;border-radius:inherit;background:var(--accent);transition:width var(--motion) var(--ease)}
+.competition-roster-axis{display:flex;justify-content:space-between;margin-top:var(--sp-1);padding-left:0;color:var(--text-muted);font-size:var(--fs-micro)}
+.competition-recent{overflow:hidden;padding:0;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.competition-recent-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);padding:var(--sp-4);border-bottom:1px solid var(--border)}
+.competition-recent-head h2{margin:0;font-size:var(--fs-heading);font-weight:750}
+.competition-recent .table{margin:0;vertical-align:middle}
+.competition-recent .table th{color:var(--text-muted);font-size:var(--fs-micro);font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.competition-recent .table td{font-size:var(--fs-sm)}
+.competition-recent-name{color:var(--text);font-size:var(--fs-body);font-weight:700;text-decoration:none}
+.competition-recent-name:hover{text-decoration:none;color:var(--accent)}
+.competition-recent-secondary{display:block;margin-top:3px;color:var(--text-muted);font-size:var(--fs-micro)}
+.competition-recent .competition-actions-cell{width:1%;white-space:nowrap}
+.competition-recent .competition-actions-cell .dropdown-menu{z-index:var(--z-dropdown)}
+.competition-empty{padding:var(--sp-5);text-align:center;color:var(--text-muted)}
+.competition-empty h2{margin:0 0 var(--sp-2);color:var(--ink);font-size:var(--fs-title)}
+@media(max-width:1199.98px){.competition-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:767.98px){.competition-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.competition-visual-grid{grid-template-columns:1fr}}
+@media(max-width:575.98px){.competition-kpi{padding:var(--sp-3)}.competition-kpi-value{font-size:1.5rem}.competition-stage-chart{grid-template-columns:minmax(120px,150px) minmax(0,1fr);gap:var(--sp-3)}.competition-recent-head{align-items:flex-start;flex-direction:column}.competition-recent .table{min-width:680px}}
+</style>
+{% include 'service_domains/_partials/competition_row_actions_styles.html' %}
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'competition_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>New competition</a>
+{% endblock %}
+
+{% block content %}
+<div class="stage-content competition-dashboard">
+  <header class="hero-banner between-banner">
     <div class="hero-meta">
-      {% if dashboard_stats.active %}
-        <div class="status-pill live mb-2"><span class="live-dot"></span> ACTIVE TOURNAMENT ROUND</div>
-      {% elif competitions %}
-        <div class="status-pill closed mb-2"><i class="bi bi-trophy" aria-hidden="true"></i> BETWEEN ROUNDS — SCHEDULED</div>
-      {% else %}
-        <div class="status-pill action mb-2"><i class="bi bi-trophy" aria-hidden="true"></i> LIVEGRADE COMPETITION</div>
-      {% endif %}
-      <h1>Competition</h1>
-      <p>Set up an event, collect judge or audience results, and choose when to publish the leaderboard.</p>
+      <p>A live summary of your competitions, tracks, rounds, and leaderboard status.</p>
     </div>
     <div class="hero-actions">
-      <span class="tc-chip"><strong>{{ competitions|length }}</strong> competitions</span>
-      <a class="btn btn-primary" href="#create-competition"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create competition</a>
+      <a href="{% url 'competition_table' %}" class="btn btn-outline-primary">Browse competitions</a>
+      <a href="{% url 'competition_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create competition</a>
     </div>
   </header>
 
-  {% if competitions %}
-    <details class="tc-disclosure">
-      <summary>Getting started</summary>
-      <div class="tc-disclosure-body">{% include 'service_domains/_onboarding.html' with onboarding=onboarding %}</div>
-    </details>
+  <section class="competition-kpis" aria-label="Competition key metrics">
+    <article class="competition-kpi">
+      <div class="competition-kpi-label">Total competitions</div>
+      <div class="competition-kpi-value">{{ dashboard_stats.total }}</div>
+      <div class="competition-kpi-note">Your competitions in this organization</div>
+    </article>
+    <article class="competition-kpi">
+      <div class="competition-kpi-label">In progress</div>
+      <div class="competition-kpi-value">{{ dashboard_stats.active }}</div>
+      <div class="competition-kpi-note">Rounds currently running</div>
+    </article>
+    <article class="competition-kpi">
+      <div class="competition-kpi-label">Draft</div>
+      <div class="competition-kpi-value">{{ dashboard_stats.draft }}</div>
+      <div class="competition-kpi-note">Setup not finished</div>
+    </article>
+    <article class="competition-kpi">
+      <div class="competition-kpi-label">Complete</div>
+      <div class="competition-kpi-value">{{ dashboard_stats.complete }}</div>
+      <div class="competition-kpi-note">Scoring finished, leaderboard sealed</div>
+    </article>
+    <article class="competition-kpi">
+      <div class="competition-kpi-label">Revealed</div>
+      <div class="competition-kpi-value">{{ dashboard_stats.revealed }}</div>
+      <div class="competition-kpi-note">Leaderboard shown publicly</div>
+    </article>
+    <article class="competition-kpi">
+      <div class="competition-kpi-label">Tracks</div>
+      <div class="competition-kpi-value">{{ dashboard_stats.total_tracks }}</div>
+      <div class="competition-kpi-note">{{ dashboard_stats.total_rounds }} round{{ dashboard_stats.total_rounds|pluralize }} across your competitions</div>
+    </article>
+  </section>
 
-    {% if attention_competitions %}
-    <section class="bento-card col-12 attention-card" aria-labelledby="comp-attention-heading">
-      <div class="attention-header">
-        <span class="attention-badge" id="comp-attention-heading"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> Action Required · Live &amp; Completed Rounds</span>
-        <span class="small text-muted">{{ attention_competitions|length }} competition{{ attention_competitions|length|pluralize }} ready for live round management or leaderboard reveal</span>
+  {% if attention_competitions %}
+  <section class="competition-live-panel" aria-labelledby="competition-live-heading">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <div>
+        <span class="competition-live-now"><span class="competition-live-dot" aria-hidden="true"></span>Live and ready to reveal</span>
+        <h2 class="h5 mt-1 mb-0" id="competition-live-heading">{{ attention_competitions|length }} competition{{ attention_competitions|length|pluralize }} need attention</h2>
       </div>
-      <div class="d-flex flex-column gap-2">
-        {% for comp in attention_competitions %}
-        <div class="attention-item">
-          <div class="attention-detail">
-            <strong>{{ comp.name }}</strong>
+      <a href="{% url 'competition_table' %}?status=active" class="btn btn-sm btn-outline-primary">View in-progress competitions</a>
+    </div>
+    <div class="competition-live-list">
+      {% for comp in attention_competitions %}
+      <a class="competition-live-card-link" href="{% url 'competition_manage' competition_id=comp.pk %}">
+        <article class="competition-live-item">
+          <h3>{{ comp.name }}</h3>
+          <div class="competition-live-meta">
+            <span>{{ comp.track_count }} track{{ comp.track_count|pluralize }}</span> · <span>{{ comp.round_count }} round{{ comp.round_count|pluralize }}</span>
+          </div>
+          <div class="competition-live-meta">
             <span>{% if comp.status == 'active' %}Active round in progress · Compile judge scores or lock audience ballots{% else %}Scoring complete · Review final tie decisions and reveal public leaderboard{% endif %}</span>
           </div>
-          <a class="btn btn-sm btn-primary" href="{% url 'competition_manage' competition_id=comp.pk %}">
+          <div class="competition-live-footer">
             {% if comp.status == 'active' %}Manage live round{% else %}Review &amp; reveal{% endif %}
-          </a>
-        </div>
-        {% endfor %}
-      </div>
-    </section>
-    {% endif %}
-
-    <section class="kpi-row" aria-label="Competition summary">
-      <article class="kpi-tile" data-filter-trigger="active">
-        <div class="kpi-label">Active &amp; Configured Events {% if dashboard_stats.active %}<span class="live-dot"></span>{% endif %}</div>
-        <div class="kpi-value">{{ dashboard_stats.active }} <span class="fs-6 fw-semibold text-muted">active · {{ dashboard_stats.total }} total</span></div>
-        <div class="kpi-footer"><span class="kpi-trend">{{ dashboard_stats.draft }} draft</span><span>{{ dashboard_stats.revealed }} revealed publicly</span></div>
-      </article>
-      <article class="kpi-tile" data-filter-trigger="all">
-        <div class="kpi-label">Tracks &amp; Rounds</div>
-        <div class="kpi-value">{{ dashboard_stats.total_tracks }} <span class="fs-6 fw-semibold text-muted">tracks · {{ dashboard_stats.total_rounds }} rounds</span></div>
-        <div class="kpi-footer"><span class="kpi-trend">Multi-stage</span><span>Top-N &amp; threshold advancement</span></div>
-      </article>
-      <article class="kpi-tile" data-filter-trigger="complete">
-        <div class="kpi-label">Leaderboard Gate</div>
-        <div class="kpi-value">{{ dashboard_stats.complete|add:dashboard_stats.revealed }}</div>
-        <div class="kpi-footer"><span class="kpi-trend">Protected</span><span>Sealed until director reveal</span></div>
-      </article>
-    </section>
-
-    <div class="bento-grid">
-      <section class="bento-card col-8 tc-panel" aria-labelledby="competition-list-heading">
-        <div class="bento-header">
-          <div class="bento-title">
-            <h2 id="competition-list-heading">Your competitions</h2>
-            <p>Choose an event to continue setup, scoring or results.</p>
           </div>
-          <a class="bento-action-link" href="#create-competition">Create competition <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
-        </div>
-
-        <div class="chart-container" aria-label="Advancement Differential and Point Margins">
-          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <span class="small fw-bold text-dark">Advancement Differential &amp; Composite Scoring</span>
-            <span class="small text-muted">{{ dashboard_stats.total_tracks }} track{{ dashboard_stats.total_tracks|pluralize }} · {{ dashboard_stats.total_rounds }} round{{ dashboard_stats.total_rounds|pluralize }}</span>
-          </div>
-          <svg class="chart-svg" viewBox="0 0 600 145" role="img" aria-label="Composite score margin chart">
-            <line x1="120" y1="15" x2="120" y2="125" stroke="#cbd5e1"/>
-            <line x1="450" y1="15" x2="450" y2="125" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="5 4"/>
-            <text x="455" y="25" font-size="9" font-weight="800" fill="#dc2626">CUTOFF</text>
-            <text x="112" y="42" font-size="11" font-weight="700" fill="#0f172a" text-anchor="end">Rank #1</text>
-            <rect x="120" y="28" width="380" height="18" rx="4" fill="#059669"/>
-            <text x="508" y="41" font-size="11" font-weight="700" fill="#065f46">94.2 pts</text>
-            <text x="112" y="75" font-size="11" font-weight="700" fill="#0f172a" text-anchor="end">Rank #2</text>
-            <rect x="120" y="61" width="350" height="18" rx="4" fill="#2563eb"/>
-            <text x="478" y="74" font-size="11" font-weight="700" fill="#1e40af">89.6 pts</text>
-            <text x="112" y="108" font-size="11" font-weight="600" fill="#64748b" text-anchor="end">Cutoff Margin</text>
-            <rect x="120" y="94" width="330" height="18" rx="4" fill="#d97706"/>
-            <text x="458" y="107" font-size="11" font-weight="700" fill="#92400e">84.5 pts</text>
-          </svg>
-        </div>
-
-        <div class="filter-bar" role="group" aria-label="Filter competitions">
-          <div class="filter-tabs">
-            <button type="button" class="filter-tab active" data-comp-filter="all" aria-pressed="true">All <span class="ms-1">{{ dashboard_stats.total }}</span></button>
-            <button type="button" class="filter-tab" data-comp-filter="active" aria-pressed="false">Active {{ dashboard_stats.active }}</button>
-            <button type="button" class="filter-tab" data-comp-filter="draft" aria-pressed="false">Draft {{ dashboard_stats.draft }}</button>
-            <button type="button" class="filter-tab" data-comp-filter="complete" aria-pressed="false">Complete {{ dashboard_stats.complete }}</button>
-            <button type="button" class="filter-tab" data-comp-filter="revealed" aria-pressed="false">Revealed {{ dashboard_stats.revealed }}</button>
-          </div>
-          <div class="sd-search-box">
-            <label class="visually-hidden" for="competition-search">Filter competitions by name</label>
-            <i class="bi bi-search" aria-hidden="true"></i>
-            <input type="search" id="competition-search" class="form-control form-control-sm" placeholder="Search competitions..." data-comp-search>
-          </div>
-        </div>
-
-        <div class="tc-list" id="competition-list-items">
-          {% for competition in competitions %}
-          <a class="tc-list-card" data-comp-status="{{ competition.status }}" data-comp-name="{{ competition.name|lower }}" href="{% url 'competition_manage' competition_id=competition.pk %}">
-            <span><h3>{{ competition.name }}</h3>
-              <span class="tc-context">
-                <span class="tc-chip">{{ competition.track_count }} track{{ competition.track_count|pluralize }}</span>
-                <span class="tc-chip">{{ competition.round_count }} round{{ competition.round_count|pluralize }}</span>
-                {% if competition.status == 'draft' %}<span class="tc-chip">Next: finish setup</span>{% elif competition.status == 'active' %}<span class="tc-chip">Next: manage live event</span>{% elif competition.status == 'complete' %}<span class="tc-chip">Next: review and reveal results</span>{% else %}<span class="tc-chip">Next: manage public display</span>{% endif %}
-              </span>
-            </span>
-            <span class="tc-status {% if competition.status == 'active' %}is-active{% elif competition.status == 'revealed' %}is-success{% elif competition.status == 'complete' %}is-warn{% endif %}">{{ competition.get_status_display }}</span>
-          </a>
-          {% endfor %}
-        </div>
-        <p id="competition-filter-empty" class="text-muted mt-3 mb-0" hidden>No competitions match this filter.</p>
-      </section>
-
-      <aside class="bento-card col-4" aria-labelledby="comp-formula-heading">
-        <div class="bento-header">
-          <div class="bento-title">
-            <h2 id="comp-formula-heading">Scoring Formula Architecture</h2>
-            <p>Judge vs. Audience Borda Weighting</p>
-          </div>
-        </div>
-        <div class="d-flex flex-column align-items-center justify-content-center py-2 gap-3">
-          <svg width="140" height="140" viewBox="0 0 150 150" role="img" aria-label="Judge {{ dashboard_stats.judge_pct }}% and Audience {{ dashboard_stats.audience_pct }}% score weight distribution">
-            <circle cx="75" cy="75" r="54" fill="none" stroke="#e2e8f0" stroke-width="18"/>
-            <circle cx="75" cy="75" r="54" fill="none" stroke="#2563eb" stroke-width="18" stroke-dasharray="{{ dashboard_stats.judge_dash }} 339" transform="rotate(-90 75 75)"/>
-            <circle cx="75" cy="75" r="54" fill="none" stroke="#059669" stroke-width="18" stroke-dasharray="{{ dashboard_stats.audience_dash }} 339" stroke-dashoffset="{{ dashboard_stats.audience_offset }}" transform="rotate(-90 75 75)"/>
-            <text x="75" y="71" font-size="16" font-weight="800" fill="#0f172a" text-anchor="middle">{{ dashboard_stats.judge_pct }} / {{ dashboard_stats.audience_pct }}</text>
-            <text x="75" y="88" font-size="10" font-weight="600" fill="#64748b" text-anchor="middle">COMPOSITE</text>
-          </svg>
-          <div class="w-100 d-flex flex-column gap-2 small">
-            <div class="d-flex justify-content-between"><span><i class="bi bi-circle-fill text-primary me-1" aria-hidden="true"></i>Judge Panel Weight</span><strong>{{ dashboard_stats.judge_pct }}%</strong></div>
-            <div class="d-flex justify-content-between"><span><i class="bi bi-circle-fill text-success me-1" aria-hidden="true"></i>Audience Ranked Ballot</span><strong>{{ dashboard_stats.audience_pct }}% (Borda)</strong></div>
-          </div>
-        </div>
-      </aside>
+        </article>
+      </a>
+      {% endfor %}
     </div>
+  </section>
   {% else %}
-    {% include 'service_domains/_onboarding.html' with onboarding=onboarding %}
-    <section class="tc-panel mb-3" aria-labelledby="competition-list-heading">
-      <header><div><h2 id="competition-list-heading">Your competitions</h2><p>Choose an event to continue setup, scoring or results.</p></div></header>
-      <div class="tc-empty" role="status"><h3>No competitions yet</h3><p>Create a draft event to set up tracks, entries and scoring.</p></div>
-    </section>
+  <section class="competition-live-panel" aria-labelledby="competition-live-heading">
+    <h2 class="h6 mb-1" id="competition-live-heading">None of your competitions are in progress right now</h2>
+    <p class="text-muted small mb-0">Running competitions and those ready to reveal will appear here.</p>
+  </section>
   {% endif %}
 
-  <details class="tc-disclosure" id="create-competition" {% if form.errors or not competitions %}open{% endif %}>
-    <summary>Create a competition</summary>
-    <div class="tc-disclosure-body">
-      <p class="text-muted mt-2">Choose how judges and audience votes contribute before the event starts. These scoring rules are then fixed for the event.</p>
-      <form method="post" class="service-flow-form" novalidate>{% csrf_token %}{% include 'partials/_form_fields.html' with form=form %}<button class="btn btn-primary" type="submit">Create draft</button></form>
+  <section class="competition-visual-grid" aria-label="Competition data visualizations">
+    <article class="competition-data-card" aria-labelledby="competition-stage-heading">
+      <h2 id="competition-stage-heading">Competition stages</h2>
+      <p class="competition-data-subtitle">Distribution across your {{ dashboard_stats.total }} competition{{ dashboard_stats.total|pluralize }}.</p>
+      {% if dashboard_stats.total %}
+      <div class="competition-stage-chart">
+        <div class="competition-stage-pie" style="background:{{ stage_pie_background }}" aria-hidden="true"></div>
+        <ul class="competition-stage-legend" aria-label="Competition stage breakdown">
+          {% for stage in stage_distribution %}
+          <li>
+            <span class="competition-stage-swatch {{ stage.key }}" aria-hidden="true"></span>
+            <span>{{ stage.label }}</span>
+            <strong>{{ stage.count }} <small>({{ stage.percentage }}%)</small></strong>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% else %}
+        <p class="competition-empty mb-0">Stage data will appear after you create a competition.</p>
+      {% endif %}
+    </article>
+
+    <article class="competition-data-card" aria-labelledby="competition-bars-heading">
+      <h2 id="competition-bars-heading">Largest competitions</h2>
+      <p class="competition-data-subtitle">Rounds by competition; bars are scaled to the competition with the most rounds shown.</p>
+      {% if largest_competitions and largest %}
+      <ol class="competition-roster-list">
+        {% for comp in largest_competitions %}
+        <li>
+          <div class="competition-roster-label">
+            <a href="{% url 'competition_manage' competition_id=comp.pk %}">{{ comp.name }}</a>
+            <strong>{{ comp.round_count }}</strong>
+          </div>
+          <div class="competition-roster-track" aria-hidden="true">
+            <div class="competition-roster-fill" style="width:{{ comp.round_bar_percent }}%"></div>
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+      <div class="competition-roster-axis" aria-hidden="true"><span>0 rounds</span><span>{{ largest }} round{{ largest|pluralize }}</span></div>
+      {% else %}
+        <p class="competition-empty mb-0">Round data will appear after rounds are added to a competition.</p>
+      {% endif %}
+    </article>
+  </section>
+
+  <section class="competition-recent" aria-labelledby="competition-recent-heading">
+    <div class="competition-recent-head">
+      <div>
+        <h2 id="competition-recent-heading">Recent competitions</h2>
+        <p class="competition-data-subtitle mb-0">Your five most recently created competitions.</p>
+      </div>
+      <a href="{% url 'competition_table' %}" class="btn btn-outline-primary btn-sm">View all competitions</a>
     </div>
-  </details>
+    {% if recent_competitions %}
+    <div class="table-responsive">
+      <table class="table table-hover" data-competition-row-navigation>
+        <caption class="visually-hidden">Five most recently created competitions</caption>
+        <thead>
+          <tr>
+            <th scope="col">Competition</th>
+            <th scope="col">Status</th>
+            <th scope="col">Tracks</th>
+            <th scope="col">Rounds</th>
+            <th scope="col">Created</th>
+            <th scope="col"><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for comp in recent_competitions %}
+          <tr class="competition-row-clickable" data-competition-row-href="{% url 'competition_manage' competition_id=comp.pk %}">
+            <td>
+              <a class="competition-recent-name" href="{% url 'competition_manage' competition_id=comp.pk %}">{{ comp.name }}</a>
+              <span class="competition-recent-secondary">
+                {% if comp.status == 'draft' %}Next: finish setup
+                {% elif comp.status == 'active' %}Next: manage live event
+                {% elif comp.status == 'complete' %}Next: review and reveal results
+                {% else %}Next: manage public display{% endif %}
+              </span>
+            </td>
+            <td>
+              <span class="badge {% if comp.status == 'active' %}bg-success-subtle text-success-emphasis{% elif comp.status == 'draft' %}bg-warning-subtle text-warning-emphasis{% elif comp.status == 'complete' %}bg-info-subtle text-info-emphasis{% else %}bg-secondary-subtle text-secondary-emphasis{% endif %}">{{ comp.get_status_display }}</span>
+            </td>
+            <td>{{ comp.track_count }}</td>
+            <td>{{ comp.round_count }}</td>
+            <td>{{ comp.created_at|date:'d M Y' }}</td>
+            <td class="competition-actions-cell text-end">{% include 'service_domains/_partials/competition_row_actions.html' with competition=comp %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <div class="competition-empty">
+        <h2>You haven’t created a competition yet</h2>
+        <p>Your dashboard shows competitions you own. Create a competition to see tracks, rounds, and leaderboard status here.</p>
+        <a href="{% url 'competition_create' %}" class="btn btn-primary">Create a competition</a>
+      </div>
+    {% endif %}
+  </section>
 </div>
-{% if competitions %}
-<script nonce="{{ csp_nonce }}">
-(()=>{
-  const buttons=[...document.querySelectorAll('[data-comp-filter]')];
-  const rows=[...document.querySelectorAll('[data-comp-status]')];
-  const searchInput=document.querySelector('[data-comp-search]');
-  const empty=document.getElementById('competition-filter-empty');
-  const kpiTriggers=[...document.querySelectorAll('[data-filter-trigger]')];
-  let activeFilter='all';
+{% endblock %}
 
-  function applyFilter(){
-    const query=(searchInput?searchInput.value.trim().toLowerCase():'');
-    let shown=0;
-    buttons.forEach(item=>{
-      const isMatch=item.dataset.compFilter===activeFilter;
-      item.setAttribute('aria-pressed',String(isMatch));
-      item.classList.toggle('active',isMatch);
-    });
-    rows.forEach(row=>{
-      const statusMatch=activeFilter==='all'||row.dataset.compStatus===activeFilter;
-      const nameMatch=!query||(row.dataset.compName||'').includes(query);
-      const visible=statusMatch&&nameMatch;
-      row.hidden=!visible;
-      if(visible)shown++;
-    });
-    if(empty)empty.hidden=shown>0;
-  }
-
-  buttons.forEach(btn=>btn.addEventListener('click',()=>{
-    activeFilter=btn.dataset.compFilter;
-    applyFilter();
-  }));
-  kpiTriggers.forEach(tile=>tile.addEventListener('click',()=>{
-    activeFilter=tile.dataset.filterTrigger||'all';
-    applyFilter();
-  }));
-  if(searchInput)searchInput.addEventListener('input',applyFilter);
-})();
-</script>
-{% endif %}
+{% block scripts %}
+{% include 'service_domains/_partials/competition_clickable_rows_script.html' %}
 {% endblock %}

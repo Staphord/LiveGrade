@@ -635,12 +635,10 @@ class PanelOwnerWorkspaceTests(TestCase):
     def test_owner_can_create_configure_open_and_invite_to_hearing(self):
         listing = reverse('panel_hearing_list')
         guide = self.request('get', listing)
-        self.assertContains(guide, 'Getting started')
-        self.assertContains(guide, 'Set up your first Panel hearing')
-        self.assertContains(guide, 'Add candidates and criteria')
-        self.assertContains(guide, 'Review and release results')
-        self.assertContains(guide, 'href="#create-hearing"')
-        created = self.request('post', listing, {
+        self.assertContains(guide, 'You haven’t created an assessment yet')
+        self.assertContains(guide, 'Create an assessment')
+        self.assertContains(guide, reverse('panel_hearing_create'))
+        created = self.request('post', reverse('panel_hearing_create'), {
             'name': 'Engineering defence', 'aggregation': 'mean',
             'minimum_examiners': '1', 'workflow': PanelHearing.Workflow.SCORED,
         })
@@ -737,7 +735,7 @@ class PanelOwnerWorkspaceTests(TestCase):
             action=PanelAuditEvent.Action.HEARING_OPENED).count(), 1)
 
     def test_owner_can_configure_shares_and_assign_criteria_to_selected_panels(self):
-        self.request('post', reverse('panel_hearing_list'), {
+        self.request('post', reverse('panel_hearing_create'), {
             'name': 'Split panel hearing', 'aggregation': 'mean', 'minimum_examiners': '1',
             'workflow': PanelHearing.Workflow.SCORED,
         })
@@ -872,7 +870,7 @@ class PanelOwnerWorkspaceTests(TestCase):
         self.assertEqual(self.request('get', manage).status_code, 404)
 
     def test_owner_forms_reject_invalid_actions_and_duplicate_hearing_children(self):
-        listing = reverse('panel_hearing_list')
+        listing = reverse('panel_hearing_create')
         invalid_hearing = self.request('post', listing, {
             'name': '', 'aggregation': 'mean', 'minimum_examiners': '2',
         })
@@ -994,7 +992,7 @@ class PanelOwnerWorkspaceTests(TestCase):
         self.assertFalse(hearing.candidates.exists())
 
     def test_panel_creation_validation_and_invitation_state_errors_are_rendered(self):
-        listing = reverse('panel_hearing_list')
+        listing = reverse('panel_hearing_create')
         original = PanelHearing.full_clean
         calls = {'count': 0}
 

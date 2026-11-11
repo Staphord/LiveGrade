@@ -1,0 +1,236 @@
+{% extends 'base.html' %}
+{% block title %}Events - Showcase · LiveGrade{% endblock %}
+{% block page_title %}Showcase events{% endblock %}
+
+{% block extra_css %}
+{% include 'partials/_service_dashboard_styles.html' %}
+<style nonce="{{ csp_nonce }}">
+.showcase-list-page{max-width:1400px;margin:0 auto;display:grid;gap:var(--sp-4);min-width:0}
+.showcase-list-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--sp-3);flex-wrap:wrap}
+.showcase-list-heading h1{margin:0;font-size:var(--fs-title);font-weight:800;letter-spacing:-.025em;color:var(--ink)}
+.showcase-list-heading p{margin:0;color:var(--text-muted)}
+.showcase-filters{display:grid;grid-template-columns:minmax(220px,1.5fr) minmax(180px,.8fr) auto;align-items:end;gap:var(--sp-3);padding:var(--sp-4);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.showcase-filters label{display:block;margin-bottom:var(--sp-1);color:var(--text-soft);font-size:var(--fs-sm);font-weight:650}
+.showcase-filter-clear{align-self:end}
+.showcase-table-card{min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.showcase-table-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);padding:var(--sp-4);border-bottom:1px solid var(--border)}
+.showcase-table-heading-group{display:flex;align-items:baseline;gap:var(--sp-3);min-width:0}
+.showcase-table-head h2{margin:0;font-size:var(--fs-heading);font-weight:750}
+.showcase-table-count{color:var(--text-muted);font-size:var(--fs-sm)}
+.showcase-table-tools{display:flex;align-items:flex-end;justify-content:flex-end;gap:var(--sp-3);flex-wrap:wrap}
+.showcase-table-tools form{margin:0}
+.showcase-table-tools [data-bulk-delete-button][hidden]{display:none!important}
+.showcase-page-size{display:grid;gap:3px;min-width:9rem;color:var(--text-muted);font-size:var(--fs-micro);font-weight:650}
+.showcase-page-size .custom-select-wrap{min-width:7rem}
+.showcase-table{margin:0;vertical-align:middle}
+.showcase-table th{padding:var(--sp-3) var(--sp-4);color:var(--text-muted);font-size:var(--fs-micro);font-weight:750;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+.showcase-table td{padding:var(--sp-3) var(--sp-4);font-size:var(--fs-sm)}
+.showcase-table .showcase-select-column{width:3.25rem;padding-right:0;text-align:center}
+.showcase-select-column .form-check-input{width:1em;height:1em;margin:0;vertical-align:middle;border:2px solid var(--text-muted);border-radius:var(--radius-xs);background-color:var(--surface);cursor:pointer}
+.showcase-select-column .form-check-input:checked{border-color:var(--accent);background-color:var(--accent)}
+.showcase-select-column .form-check-input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.showcase-select-column .form-check-input:disabled{cursor:not-allowed}
+.showcase-table-name{color:var(--ink);font-size:var(--fs-body);font-weight:750;text-decoration:none}
+.showcase-table-name:hover{text-decoration:none}
+.showcase-table-secondary{display:block;margin-top:3px;color:var(--text-muted);font-size:var(--fs-micro)}
+.showcase-stage{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.showcase-stage-dot{width:7px;height:7px;border-radius:50%;background:var(--text-subtle)}
+.showcase-stage-dot.open{background:var(--success)}
+.showcase-stage-dot.draft{background:#d28a08}
+.showcase-stage-dot.closed{background:var(--text-subtle)}
+.showcase-stage-dot.published{background:var(--accent)}
+.showcase-empty{padding:var(--sp-6) var(--sp-4);text-align:center}
+.showcase-empty-icon{display:grid;width:3rem;height:3rem;place-items:center;margin:0 auto var(--sp-3);border-radius:var(--radius-card);background:var(--accent-soft);color:var(--accent);font-size:1.4rem}
+.showcase-empty h2{margin:0 0 var(--sp-2);font-size:var(--fs-title);font-weight:800;color:var(--ink)}
+.showcase-empty p{max-width:38rem;margin:0 auto var(--sp-4);color:var(--text-muted);line-height:1.55}
+.showcase-empty-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--sp-3);max-width:850px;margin:0 auto var(--sp-4);text-align:left}
+.showcase-empty-step{padding:var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface-hover)}
+.showcase-empty-step strong,.showcase-empty-step span{display:block}
+.showcase-empty-step strong{margin-bottom:var(--sp-1);font-size:var(--fs-sm)}
+.showcase-empty-step span{color:var(--text-muted);font-size:var(--fs-micro);line-height:1.45}
+.showcase-pagination{display:flex;align-items:center;justify-content:flex-end;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);border-top:1px solid var(--border)}
+.showcase-pagination-label{color:var(--text-muted);font-size:var(--fs-sm)}
+.showcase-pagination-links{display:flex;gap:var(--sp-2)}
+@media(max-width:767.98px){.showcase-filters{grid-template-columns:minmax(0,1fr)}.showcase-empty-steps{grid-template-columns:1fr}}
+@media(max-width:575.98px){.showcase-table-head{align-items:flex-start;flex-direction:column}.showcase-table-heading-group{align-items:flex-start;flex-direction:column;gap:var(--sp-1)}.showcase-table-tools{width:100%;justify-content:space-between}.showcase-table{min-width:820px}.showcase-pagination{align-items:flex-end;flex-direction:column}}
+</style>
+{% include 'service_domains/_partials/showcase_row_actions_styles.html' %}
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'showcase_event_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>New event</a>
+{% endblock %}
+
+{% block content %}
+<div class="showcase-list-page stage-content">
+  <header class="showcase-list-heading">
+    <div>
+      <h1 class="visually-hidden">Showcase events</h1>
+      <p class="text-muted mb-0">Search, filter, and manage the events in this Showcase workspace.</p>
+    </div>
+  </header>
+
+  <form class="showcase-filters" method="get" action="{% url 'showcase_event_table' %}" data-showcase-auto-filter>
+    <input type="hidden" name="per_page" value="{{ per_page }}" data-showcase-filter-page-size>
+    <div>
+      <label for="showcase-search">Search by event name</label>
+      <input id="showcase-search" class="form-control" name="q" type="search" value="{{ search_query }}" placeholder="Event name" autocomplete="off" aria-describedby="showcase-search-help">
+      <span id="showcase-search-help" class="visually-hidden">Results update after you stop typing. Press Enter to search immediately.</span>
+    </div>
+    <div>
+      <label for="showcase-status">Status</label>
+      <select id="showcase-status" class="form-select" name="status" aria-describedby="showcase-filter-help">
+        <option value="">All statuses ({{ status_counts.total }})</option>
+        <option value="draft" {% if status_filter == 'draft' %}selected{% endif %}>Draft ({{ status_counts.draft }})</option>
+        <option value="open" {% if status_filter == 'open' %}selected{% endif %}>Open for ratings ({{ status_counts.open }})</option>
+        <option value="closed" {% if status_filter == 'closed' %}selected{% endif %}>Closed ({{ status_counts.closed }})</option>
+        <option value="published" {% if status_filter == 'published' %}selected{% endif %}>Results published ({{ status_counts.published }})</option>
+      </select>
+      <span id="showcase-filter-help" class="visually-hidden">The list filters as soon as you choose a status.</span>
+    </div>
+    <a class="btn btn-outline-secondary showcase-filter-clear" href="{% url 'showcase_event_table' %}" data-showcase-clear-filters>Clear filters</a>
+  </form>
+
+  <p id="showcase-filter-feedback" class="visually-hidden" role="status" aria-live="polite"></p>
+  {% include 'service_domains/_partials/showcase_event_results.html' %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% include 'service_domains/_partials/showcase_clickable_rows_script.html' %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  const form = document.querySelector('[data-showcase-auto-filter]');
+  if (!form) return;
+  const search = form.querySelector('input[name="q"]');
+  const status = form.querySelector('select[name="status"]');
+  const feedback = document.getElementById('showcase-filter-feedback');
+  let results = document.getElementById('showcase-results');
+  let searchTimer;
+  let activeRequest;
+
+  function submitFilters(restorePageSizeFocus) {
+    window.clearTimeout(searchTimer);
+    const pageSize = results ? results.querySelector('[data-showcase-page-size]') : null;
+    const pageSizeInput = form.querySelector('[data-showcase-filter-page-size]');
+    if (pageSize && pageSizeInput) pageSizeInput.value = pageSize.value;
+    const url = new URL(form.action, window.location.href);
+    url.search = new URLSearchParams(new FormData(form)).toString();
+    updateResults(url, restorePageSizeFocus);
+  }
+
+  async function updateResults(url, restorePageSizeFocus) {
+    if (!results) return;
+    if (activeRequest) activeRequest.abort();
+    const controller = new AbortController();
+    activeRequest = controller;
+    results.setAttribute('aria-busy', 'true');
+    feedback.className = 'visually-hidden';
+    feedback.textContent = '';
+    try {
+      const response = await fetch(url.toString(), {
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+        credentials: 'same-origin',
+        signal: controller.signal
+      });
+      if (response.redirected) {
+        window.location.assign(response.url);
+        return;
+      }
+      if (!response.ok) throw new Error('Showcase event results could not be loaded');
+      const responsePage = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const nextResults = responsePage.getElementById('showcase-results');
+      if (!nextResults) throw new Error('Showcase event results were missing from the response');
+      if (controller.signal.aborted || activeRequest !== controller) return;
+
+      results.replaceWith(nextResults);
+      results = nextResults;
+      if (window.initCustomSelects) window.initCustomSelects(results);
+      syncSelection();
+      if (restorePageSizeFocus) {
+        const pageSizeTrigger = results.querySelector('.showcase-page-size .custom-select-trigger');
+        if (pageSizeTrigger) pageSizeTrigger.focus({preventScroll: true});
+      }
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+      const count = results.querySelector('.showcase-table-count');
+      feedback.textContent = count ? count.textContent.trim() : 'Event list updated.';
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      feedback.className = 'alert alert-warning mb-3';
+      feedback.textContent = 'Could not update the event list. Press Enter to try again.';
+    } finally {
+      if (activeRequest === controller) {
+        results.setAttribute('aria-busy', 'false');
+        activeRequest = null;
+      }
+    }
+  }
+
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+    submitFilters();
+  });
+  search.addEventListener('input', function () {
+    window.clearTimeout(searchTimer);
+    if (activeRequest) activeRequest.abort();
+    searchTimer = window.setTimeout(submitFilters, 350);
+  });
+  status.addEventListener('change', submitFilters);
+
+  function syncSelection() {
+    if (!results) return;
+    const selectable = Array.from(results.querySelectorAll('[data-showcase-select]'));
+    const selected = selectable.filter(function (checkbox) { return checkbox.checked; });
+    const selectAll = results.querySelector('[data-showcase-select-all]');
+    const deleteButton = results.querySelector('[data-bulk-delete-button]');
+    const count = results.querySelector('[data-selected-count]');
+    if (selectAll) {
+      selectAll.disabled = selectable.length === 0;
+      selectAll.checked = selectable.length > 0 && selected.length === selectable.length;
+      selectAll.indeterminate = selected.length > 0 && selected.length < selectable.length;
+    }
+    if (deleteButton) deleteButton.hidden = selected.length === 0;
+    if (count) count.textContent = String(selected.length);
+  }
+
+  syncSelection();
+
+  document.addEventListener('change', function (event) {
+    if (!results || !results.contains(event.target)) return;
+    if (event.target.matches('[data-showcase-select-all]')) {
+      results.querySelectorAll('[data-showcase-select]').forEach(function (checkbox) {
+        checkbox.checked = event.target.checked;
+      });
+      syncSelection();
+      return;
+    }
+    if (event.target.matches('[data-showcase-select]')) {
+      syncSelection();
+      return;
+    }
+    if (event.target.matches('[data-showcase-page-size]')) {
+      const pageSizeInput = form.querySelector('[data-showcase-filter-page-size]');
+      if (pageSizeInput) pageSizeInput.value = event.target.value;
+      submitFilters(true);
+    }
+  });
+
+  document.addEventListener('click', function (event) {
+    const clear = event.target.closest('[data-showcase-clear-filters]');
+    if (clear) {
+      event.preventDefault();
+      search.value = '';
+      status.value = '';
+      status.dispatchEvent(new Event('change', {bubbles: true}));
+      search.focus({preventScroll: true});
+      return;
+    }
+    const pageLink = event.target.closest('[data-showcase-page]');
+    if (!pageLink || !results || !results.contains(pageLink)) return;
+    event.preventDefault();
+    updateResults(new URL(pageLink.href, window.location.href));
+  });
+})();
+</script>
+{% endblock %}
+

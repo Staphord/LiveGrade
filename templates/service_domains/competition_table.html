@@ -1,0 +1,218 @@
+{% extends 'base.html' %}
+{% block title %}Competitions · LiveGrade{% endblock %}
+{% block page_title %}Competitions{% endblock %}
+
+{% block extra_css %}
+{% include 'partials/_service_dashboard_styles.html' %}
+<style nonce="{{ csp_nonce }}">
+.competition-list-page{max-width:1400px;margin:0 auto;display:grid;gap:var(--sp-4);min-width:0}
+.competition-list-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--sp-3);flex-wrap:wrap}
+.competition-list-heading h1{margin:0;font-size:var(--fs-title);font-weight:800;letter-spacing:-.025em;color:var(--ink)}
+.competition-list-heading p{margin:0;color:var(--text-muted)}
+.competition-filters{display:grid;grid-template-columns:minmax(220px,1.5fr) minmax(180px,.8fr) auto;align-items:end;gap:var(--sp-3);padding:var(--sp-4);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.competition-filters label{display:block;margin-bottom:var(--sp-1);color:var(--text-soft);font-size:var(--fs-sm);font-weight:650}
+.competition-filter-clear{align-self:end}
+.competition-table-card{min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.competition-table-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);padding:var(--sp-4);border-bottom:1px solid var(--border)}
+.competition-table-heading-group{display:flex;align-items:baseline;gap:var(--sp-3);min-width:0}
+.competition-table-head h2{margin:0;font-size:var(--fs-heading);font-weight:750}
+.competition-table-count{color:var(--text-muted);font-size:var(--fs-sm)}
+.competition-table-tools{display:flex;align-items:flex-end;justify-content:flex-end;gap:var(--sp-3);flex-wrap:wrap}
+.competition-table-tools form{margin:0}
+.competition-table-tools [data-bulk-delete-button][hidden]{display:none}
+.competition-page-size{display:grid;gap:3px;min-width:9rem;color:var(--text-muted);font-size:var(--fs-micro);font-weight:650}
+.competition-page-size .custom-select-wrap{min-width:7rem}
+.competition-table{margin:0;vertical-align:middle}
+.competition-table th{padding:var(--sp-3) var(--sp-4);color:var(--text-muted);font-size:var(--fs-micro);font-weight:750;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+.competition-table td{padding:var(--sp-3) var(--sp-4);font-size:var(--fs-sm)}
+.competition-table .competition-select-column{width:3.25rem;padding-right:0;text-align:center}
+.competition-select-column .form-check-input{width:1em;height:1em;margin:0;vertical-align:middle;border:2px solid var(--text-muted);border-radius:var(--radius-xs);background-color:var(--surface);cursor:pointer}
+.competition-select-column .form-check-input:checked{border-color:var(--accent);background-color:var(--accent)}
+.competition-select-column .form-check-input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.competition-select-column .form-check-input:disabled{cursor:not-allowed}
+.competition-table-name{color:var(--ink);font-size:var(--fs-body);font-weight:750;text-decoration:none}
+.competition-table-name:hover{text-decoration:none;color:var(--accent)}
+.competition-table-secondary{display:block;margin-top:3px;color:var(--text-muted);font-size:var(--fs-micro)}
+.competition-stage{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.competition-stage-dot{width:7px;height:7px;border-radius:50%;background:var(--text-subtle)}
+.competition-stage-dot.draft{background:#d28a08}
+.competition-stage-dot.active{background:var(--success)}
+.competition-stage-dot.complete{background:var(--accent)}
+.competition-stage-dot.revealed{background:var(--text-subtle)}
+.competition-empty{padding:var(--sp-6) var(--sp-4);text-align:center}
+.competition-empty-icon{display:grid;width:3rem;height:3rem;place-items:center;margin:0 auto var(--sp-3);border-radius:var(--radius-card);background:var(--accent-soft);color:var(--accent);font-size:1.4rem}
+.competition-empty h2{margin:0 0 var(--sp-2);font-size:var(--fs-title);font-weight:800;color:var(--ink)}
+.competition-empty p{max-width:38rem;margin:0 auto var(--sp-4);color:var(--text-muted);line-height:1.55}
+.competition-empty-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--sp-3);max-width:850px;margin:0 auto var(--sp-4);text-align:left}
+.competition-empty-step{padding:var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface-hover)}
+.competition-empty-step strong,.competition-empty-step span{display:block}
+.competition-empty-step strong{margin-bottom:var(--sp-1);font-size:var(--fs-sm)}
+.competition-empty-step span{color:var(--text-muted);font-size:var(--fs-micro);line-height:1.45}
+.competition-pagination{display:flex;align-items:center;justify-content:flex-end;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);border-top:1px solid var(--border)}
+.competition-pagination-label{color:var(--text-muted);font-size:var(--fs-sm)}
+.competition-pagination-links{display:flex;gap:var(--sp-2)}
+@media(max-width:767.98px){.competition-filters{grid-template-columns:minmax(0,1fr)}.competition-empty-steps{grid-template-columns:1fr}}
+@media(max-width:575.98px){.competition-table-head{align-items:flex-start;flex-direction:column}.competition-table-heading-group{align-items:flex-start;flex-direction:column;gap:var(--sp-1)}.competition-table-tools{width:100%;justify-content:space-between}.competition-table{min-width:820px}.competition-pagination{align-items:flex-end;flex-direction:column}}
+</style>
+{% include 'service_domains/_partials/competition_row_actions_styles.html' %}
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'competition_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>New competition</a>
+{% endblock %}
+
+{% block content %}
+<div class="competition-list-page">
+  <header class="competition-list-heading">
+    <div><h1 class="visually-hidden">Competitions</h1><p>Search, filter, and manage the competitions in this workspace.</p></div>
+  </header>
+
+  <form class="competition-filters" method="get" action="{% url 'competition_table' %}" data-competition-auto-filter>
+    <input type="hidden" name="per_page" value="{{ per_page }}" data-competition-filter-page-size>
+    <div><label for="competition-search">Competition name</label><input id="competition-search" class="form-control" name="q" type="search" value="{{ search_query }}" placeholder="Competition name" autocomplete="off" aria-describedby="competition-search-help"><span id="competition-search-help" class="visually-hidden">Results update after you stop typing. Press Enter to search immediately.</span></div>
+    <div><label for="competition-status">Status</label><select id="competition-status" class="form-select" name="status" aria-describedby="competition-filter-help"><option value="">All statuses ({{ status_counts.total }})</option><option value="draft" {% if status_filter == 'draft' %}selected{% endif %}>Draft ({{ status_counts.draft }})</option><option value="active" {% if status_filter == 'active' %}selected{% endif %}>In progress ({{ status_counts.active }})</option><option value="complete" {% if status_filter == 'complete' %}selected{% endif %}>Complete ({{ status_counts.complete }})</option><option value="revealed" {% if status_filter == 'revealed' %}selected{% endif %}>Leaderboard revealed ({{ status_counts.revealed }})</option></select><span id="competition-filter-help" class="visually-hidden">The list filters as soon as you choose a status.</span></div>
+    <a class="btn btn-outline-secondary competition-filter-clear" href="{% url 'competition_table' %}" data-competition-clear-filters>Clear filters</a>
+  </form>
+
+  <p id="competition-filter-feedback" class="visually-hidden" role="status" aria-live="polite"></p>
+  {% include 'service_domains/_partials/competition_results.html' %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% include 'service_domains/_partials/competition_clickable_rows_script.html' %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  const form = document.querySelector('[data-competition-auto-filter]');
+  if (!form) return;
+  const search = form.querySelector('input[name="q"]');
+  const status = form.querySelector('select[name="status"]');
+  const feedback = document.getElementById('competition-filter-feedback');
+  let results = document.getElementById('competition-results');
+  let searchTimer;
+  let activeRequest;
+
+  function submitFilters(restorePageSizeFocus) {
+    window.clearTimeout(searchTimer);
+    const pageSize = results ? results.querySelector('[data-competition-page-size]') : null;
+    const pageSizeInput = form.querySelector('[data-competition-filter-page-size]');
+    if (pageSize && pageSizeInput) pageSizeInput.value = pageSize.value;
+    const url = new URL(form.action, window.location.href);
+    url.search = new URLSearchParams(new FormData(form)).toString();
+    updateResults(url, restorePageSizeFocus);
+  }
+
+  async function updateResults(url, restorePageSizeFocus) {
+    if (!results) return;
+    if (activeRequest) activeRequest.abort();
+    const controller = new AbortController();
+    activeRequest = controller;
+    results.setAttribute('aria-busy', 'true');
+    feedback.className = 'visually-hidden';
+    feedback.textContent = '';
+    try {
+      const response = await fetch(url.toString(), {
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+        credentials: 'same-origin',
+        signal: controller.signal
+      });
+      if (response.redirected) {
+        window.location.assign(response.url);
+        return;
+      }
+      if (!response.ok) throw new Error('Competition results could not be loaded');
+      const responsePage = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const nextResults = responsePage.getElementById('competition-results');
+      if (!nextResults) throw new Error('Competition results were missing from the response');
+      if (controller.signal.aborted || activeRequest !== controller) return;
+
+      results.replaceWith(nextResults);
+      results = nextResults;
+      if (window.initCustomSelects) window.initCustomSelects(results);
+      syncSelection();
+      if (restorePageSizeFocus) {
+        const pageSizeTrigger = results.querySelector('.competition-page-size .custom-select-trigger');
+        if (pageSizeTrigger) pageSizeTrigger.focus({preventScroll: true});
+      }
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+      const count = results.querySelector('.competition-table-count');
+      feedback.textContent = count ? count.textContent.trim() : 'Competition list updated.';
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      feedback.className = 'alert alert-warning mb-3';
+      feedback.textContent = 'Could not update the competition list. Press Enter to try again.';
+    } finally {
+      if (activeRequest === controller) {
+        results.setAttribute('aria-busy', 'false');
+        activeRequest = null;
+      }
+    }
+  }
+
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+    submitFilters();
+  });
+  search.addEventListener('input', function () {
+    window.clearTimeout(searchTimer);
+    if (activeRequest) activeRequest.abort();
+    searchTimer = window.setTimeout(submitFilters, 350);
+  });
+  status.addEventListener('change', submitFilters);
+
+  function syncSelection() {
+    if (!results) return;
+    const selectable = Array.from(results.querySelectorAll('[data-competition-select]'));
+    const selected = selectable.filter(function (checkbox) { return checkbox.checked; });
+    const selectAll = results.querySelector('[data-competition-select-all]');
+    const deleteButton = results.querySelector('[data-bulk-delete-button]');
+    const count = results.querySelector('[data-selected-count]');
+    if (selectAll) {
+      selectAll.disabled = selectable.length === 0;
+      selectAll.checked = selectable.length > 0 && selected.length === selectable.length;
+      selectAll.indeterminate = selected.length > 0 && selected.length < selectable.length;
+    }
+    if (deleteButton) deleteButton.hidden = selected.length === 0;
+    if (count) count.textContent = String(selected.length);
+  }
+
+  syncSelection();
+
+  document.addEventListener('change', function (event) {
+    if (!results || !results.contains(event.target)) return;
+    if (event.target.matches('[data-competition-select-all]')) {
+      results.querySelectorAll('[data-competition-select]').forEach(function (checkbox) {
+        checkbox.checked = event.target.checked;
+      });
+      syncSelection();
+      return;
+    }
+    if (event.target.matches('[data-competition-select]')) {
+      syncSelection();
+      return;
+    }
+    if (event.target.matches('[data-competition-page-size]')) {
+      const pageSizeInput = form.querySelector('[data-competition-filter-page-size]');
+      if (pageSizeInput) pageSizeInput.value = event.target.value;
+      submitFilters(true);
+    }
+  });
+
+  document.addEventListener('click', function (event) {
+    const clear = event.target.closest('[data-competition-clear-filters]');
+    if (clear) {
+      event.preventDefault();
+      search.value = '';
+      status.value = '';
+      status.dispatchEvent(new Event('change', {bubbles: true}));
+      search.focus({preventScroll: true});
+      return;
+    }
+    const pageLink = event.target.closest('[data-competition-page]');
+    if (!pageLink || !results || !results.contains(pageLink)) return;
+    event.preventDefault();
+    updateResults(new URL(pageLink.href, window.location.href));
+  });
+})();
+</script>
+{% endblock %}

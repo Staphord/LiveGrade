@@ -1,0 +1,12 @@
+<script nonce="{{ csp_nonce }}">
+(function () {
+  document.addEventListener('click', function (event) {
+    const row = event.target.closest('tr[data-panel-row-href]');
+    if (!row || event.defaultPrevented || event.button !== 0) return;
+    if (event.target.closest('a,button,form,input,select,textarea,label,summary,.panel-actions,[data-bs-toggle]')) return;
+    const href = row.dataset.panelRowHref;
+    if (href) window.location.assign(href);
+  });
+})();
+</script>
+

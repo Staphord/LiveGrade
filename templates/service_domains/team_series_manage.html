@@ -1,39 +1,41 @@
 {% extends 'base.html' %}
-{% block title %}{{ series.name }} · Team and Training{% endblock %}
-{% block page_title %}{{ series.name }}{% endblock %}
+{% block title %}{% if is_new_series %}New training series{% else %}{{ series.name }}{% endif %} · Team and Training{% endblock %}
+{% block page_title %}{% if is_new_series %}New training series{% else %}{{ series.name }}{% endif %}{% endblock %}
 {% block content %}
 {% include 'service_domains/_workspace_styles.html' %}
 {% include 'service_domains/_team_competition_styles.html' %}
 {% include 'service_domains/_panel_ui_styles.html' %}
 <div class="container-fluid py-4 service-workspace tc-workspace">
-  <p><a href="{% url 'training_series_list' %}">← All series</a></p>
+  <p><a href="{% url 'training_series_table' %}">← Training series</a></p>
   <header class="tc-hero">
-    <div><h1>{{ series.name }}</h1>
+    <div><h1>{% if is_new_series %}Create a training series{% else %}{{ series.name }}{% endif %}</h1>
       {% if series.description %}<p>{{ series.description }}</p>{% else %}<p>Manage the team, competency criteria and demos for this series.</p>{% endif %}
+      {% if not is_new_series %}
       <div class="tc-context">
         {% if series.cadence_note %}<span class="tc-chip">Usual rhythm: {{ series.cadence_note }}</span>{% endif %}
         <span class="tc-chip"><strong>{{ participants|length }}</strong> team member{{ participants|length|pluralize }}</span>
         <span class="tc-chip"><strong>{{ competencies|length }}</strong> competenc{{ competencies|length|pluralize:"y,ies" }}</span>
         <span class="tc-chip"><strong>{{ sessions|length }}</strong> demo{{ sessions|length|pluralize }}</span>
       </div>
+      {% endif %}
     </div>
-    <span class="tc-status is-active">Active series</span>
+    {% if not is_new_series %}<span class="tc-status is-active">Active series</span>{% endif %}
   </header>
 
   {% if messages %}<div aria-live="polite">{% for message in messages %}<p class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'warning' %}alert-warning{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %}">{{ message }}</p>{% endfor %}</div>{% endif %}
   {% if roster_import_pending %}<div class="alert alert-info" role="status">Your roster is ready to review. <a href="{% url 'training_series_roster_preview' series_id=series.pk %}">Continue to import review</a>.</div>{% endif %}
 
-  <nav aria-label="Series setup progress">
+  {% if not is_new_series %}<nav aria-label="Series setup progress">
     <ol class="tc-step-nav">
       {% for step in setup_steps %}<li><a href="{{ step.href }}"{% if step.complete %} aria-label="{{ step.label }}, complete"{% endif %}><span class="tc-step-number">{{ forloop.counter }}</span>{{ step.label }}{% if step.complete %} · ✓{% endif %}</a></li>{% endfor %}
     </ol>
-  </nav>
+  </nav>{% endif %}
 
   <div class="panel-step-layout mt-3" data-panel-steps data-initial-step="{{ active_step|default:'details' }}">
     <ol class="panel-step-nav" aria-label="Setup steps">
       {% for step in setup_steps %}
       <li>
-        <button type="button" class="panel-step-btn{% if forloop.first %} is-active{% endif %}{% if step.complete %} is-done{% endif %}" data-panel-step="{{ step.key }}">
+        <button type="button" class="panel-step-btn{% if forloop.first %} is-active{% endif %}{% if step.complete %} is-done{% endif %}" data-panel-step="{{ step.key }}"{% if is_new_series and not forloop.first %} disabled aria-disabled="true"{% endif %}>
           <span class="panel-step-num">{% if step.complete %}<i class="bi bi-check-lg" aria-hidden="true"></i>{% else %}{{ forloop.counter }}{% endif %}</span>
           <span>
             <span class="panel-step-title">{{ step.label }}</span>
@@ -51,7 +53,7 @@
             <h2 id="series-details-heading">1. Series details</h2>
             <p>Set the series name, skill goal, and expected practice cadence.</p>
           </div>
-          <span class="tc-status is-success">Configured</span>
+          <span class="tc-status {% if is_new_series %}is-warn{% else %}is-success{% endif %}">{% if is_new_series %}Step 1 of 5{% else %}Configured{% endif %}</span>
         </header>
         {% if request.GET.saved == '1' %}
         <div class="alert alert-success d-flex align-items-center gap-2 mb-3" role="status">
@@ -72,7 +74,7 @@
       </section>
     </div>
 
-    <div data-panel-panel="roster" hidden>
+    {% if not is_new_series %}<div data-panel-panel="roster" hidden>
       <section id="team-roster" class="tc-panel mb-3" aria-labelledby="team-roster-heading">
         <header><div><h2 id="team-roster-heading">Team roster</h2><p>Add people one at a time or review a spreadsheet before importing.</p></div><span class="tc-status {% if participants %}is-success{% else %}is-warn{% endif %}">{% if participants %}{{ participants|length }} added{% else %}Needs team members{% endif %}</span></header>
         {% if participants %}
@@ -218,6 +220,7 @@
         <details class="tc-disclosure" {% if privacy_form.errors %}open{% endif %}><summary>Change response minimum</summary><div class="tc-disclosure-body"><form method="post" class="service-flow-form mt-2" data-panel-form novalidate>{% csrf_token %}<input type="hidden" name="action" value="feedback_privacy"><input type="hidden" name="setup_step" value="certification">{% include 'partials/_form_fields.html' with form=privacy_form %}<button class="btn btn-outline-secondary" type="submit">Save privacy setting</button></form></div></details>
       </section>
     </div>
+    {% endif %}
   </div>
 
   {% include 'partials/_unsaved_changes.html' with form_selector='form[data-panel-details-form]' dialog_id='team-unsaved-dialog' title_id='team-unsaved-title' dialog_title='Leave setup?' dialog_body='You have unsaved changes in setup details. Save your changes before leaving, or discard them.' save_btn_text='Save details' step_selector='[data-panel-step]' %}

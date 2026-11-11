@@ -26,8 +26,9 @@ from assessments.session_templates import (StarterTemplate, blueprint,
 from assessments.models import SessionTemplate
 
 from .models import (
+    CombinedPresentationAssessment, CombinedPresentationMapping,
     PanelAuditEvent, PanelAbstention, PanelCandidate, PanelCommentRedaction, PanelConflict,
-    PanelCriterion, PanelHearing, PanelScoringPanel,
+    PanelCriterion, PanelCriterionLevel, PanelHearing, PanelScoringPanel,
     PanelInvitation, PanelInvitationAttempt, PanelScore, PanelResultSnapshot, PanelResultAdjustment,
     PanelEntrantResultLink, PanelLiveDisplayLink, PanelDecision, PanelVote, PanelWrittenReview,
     ShowcaseCertificate, ShowcaseEvent, ShowcaseEventAudit, ShowcaseConsentAudit,
@@ -41,8 +42,8 @@ from .models import (
     CompetitionLeaderboardTieDecision, CompetitionRound, CompetitionRoundEntry,
     CompetitionTrack, CompetitionTransitionAudit,
     CompetitionJudgeInvitation, CompetitionJudgeScore,
-    CompetitionJudgeAudit,
-    CompetitionWeightedResultAudit,
+    CompetitionJudgeAudit, CompetitionJudgeAbstention,
+    CompetitionWeightedResultAudit, CompetitionAudienceJoinCode,
 )
 from .realtime import schedule_competition_leaderboard_update
 from .rules import (advance_entries, aggregate_anonymous_feedback, aggregate_scores,
@@ -746,6 +747,85 @@ def revoke_panel_invitation(hearing, invitation, reason, *, organization, user, 
     _record_panel_audit(locked_hearing, PanelAuditEvent.Action.INVITATION_REVOKED,
         reason, invitation=locked_invitation, actor_user=user)
     return locked_invitation
+
+
+def delete_panel_hearings(hearings, using='default'):
+    """Atomically delete panel hearings and cascade all dependent records."""
+    if not hearings:
+        return 0
+    hearing_ids = [h.pk if hasattr(h, 'pk') else int(h) for h in hearings]
+    if (CombinedPresentationAssessment.objects.filter(panel_hearing_id__in=hearing_ids).exists()
+            or CombinedPresentationMapping.objects.filter(candidate__hearing_id__in=hearing_ids).exists()):
+        raise ValidationError('One or more selected assessments are linked to a combined assessment and cannot be deleted.')
+
+    with transaction.atomic(using=using):
+        PanelHearing.objects.filter(pk__in=hearing_ids).update(active_candidate=None)
+
+        PanelCommentRedaction.objects.filter(hearing_id__in=hearing_ids)._raw_delete(using=using)
+        PanelResultAdjustment.objects.filter(snapshot__hearing_id__in=hearing_ids)._raw_delete(using=using)
+        PanelResultSnapshot.objects.filter(hearing_id__in=hearing_ids)._raw_delete(using=using)
+        PanelEntrantResultLink.objects.filter(hearing_id__in=hearing_ids)._raw_delete(using=using)
+        PanelLiveDisplayLink.objects.filter(hearing_id__in=hearing_ids)._raw_delete(using=using)
+        PanelAuditEvent.objects.filter(hearing_id__in=hearing_ids)._raw_delete(using=using)
+
+        PanelScore.objects.filter(candidate__hearing_id__in=hearing_ids)._raw_delete(using=using)
+        PanelConflict.objects.filter(invitation__hearing_id__in=hearing_ids)._raw_delete(using=using)
+        PanelAbstention.objects.filter(invitation__hearing_id__in=hearing_ids)._raw_delete(using=using)
+        PanelWrittenReview.objects.filter(hearing_id__in=hearing_ids)._raw_delete(using=using)
+        PanelDecision.objects.filter(hearing_id__in=hearing_ids)._raw_delete(using=using)
+        PanelVote.objects.filter(hearing_id__in=hearing_ids)._raw_delete(using=using)
+        PanelInvitationAttempt.objects.filter(invitation__hearing_id__in=hearing_ids)._raw_delete(using=using)
+        PanelInvitation.objects.filter(hearing_id__in=hearing_ids)._raw_delete(using=using)
+
+        PanelCriterionLevel.objects.filter(criterion__hearing_id__in=hearing_ids)._raw_delete(using=using)
+        PanelScoringPanel.criteria.through.objects.filter(panelscoringpanel__hearing_id__in=hearing_ids)._raw_delete(using=using)
+        PanelScoringPanel.objects.filter(hearing_id__in=hearing_ids)._raw_delete(using=using)
+        PanelCriterion.objects.filter(hearing_id__in=hearing_ids)._raw_delete(using=using)
+        PanelCandidate.objects.filter(hearing_id__in=hearing_ids)._raw_delete(using=using)
+
+        count = PanelHearing.objects.filter(pk__in=hearing_ids)._raw_delete(using=using)
+        return count
+
+
+def delete_showcase_events(events, using='default'):
+    """Atomically delete showcase events and cascade all dependent records."""
+    if not events:
+        return 0
+    event_ids = [e.pk if hasattr(e, 'pk') else int(e) for e in events]
+    with transaction.atomic(using=using):
+        ShowcaseJudgeEvaluation.objects.filter(assignment__event_id__in=event_ids)._raw_delete(using=using)
+        ShowcaseJudgeConflict.objects.filter(assignment__event_id__in=event_ids)._raw_delete(using=using)
+        ShowcaseCertificate.objects.filter(event_id__in=event_ids)._raw_delete(using=using)
+        ShowcaseConsentAudit.objects.filter(event_id__in=event_ids)._raw_delete(using=using)
+        ShowcaseEventAudit.objects.filter(event_id__in=event_ids)._raw_delete(using=using)
+        count, _ = ShowcaseEvent.objects.filter(pk__in=event_ids).delete()
+        return len(event_ids)
+
+
+def delete_competitions(competitions, using='default'):
+    """Atomically delete competitions and cascade all dependent records."""
+    if not competitions:
+        return 0
+    competition_ids = [c.pk if hasattr(c, 'pk') else int(c) for c in competitions]
+    with transaction.atomic(using=using):
+        CompetitionLeaderboardAudit.objects.filter(competition_id__in=competition_ids)._raw_delete(using=using)
+        CompetitionTransitionAudit.objects.filter(competition_id__in=competition_ids)._raw_delete(using=using)
+        CompetitionAudienceBallot.objects.filter(competition_id__in=competition_ids)._raw_delete(using=using)
+        CompetitionLeaderboardTieDecision.objects.filter(round__competition_id__in=competition_ids)._raw_delete(using=using)
+        CompetitionAdvancementDecision.objects.filter(source_round__competition_id__in=competition_ids)._raw_delete(using=using)
+        CompetitionJudgeAudit.objects.filter(invitation__competition_id__in=competition_ids)._raw_delete(using=using)
+        CompetitionJudgeScore.objects.filter(invitation__competition_id__in=competition_ids)._raw_delete(using=using)
+        CompetitionJudgeAbstention.objects.filter(invitation__competition_id__in=competition_ids)._raw_delete(using=using)
+        CompetitionJudgeInvitation.objects.filter(competition_id__in=competition_ids)._raw_delete(using=using)
+        CompetitionWeightedResultAudit.objects.filter(round__competition_id__in=competition_ids)._raw_delete(using=using)
+        CompetitionAudienceJoinCode.objects.filter(round__competition_id__in=competition_ids)._raw_delete(using=using)
+        CompetitionRoundEntry.objects.filter(round__competition_id__in=competition_ids)._raw_delete(using=using)
+        CompetitionRound.objects.filter(competition_id__in=competition_ids)._raw_delete(using=using)
+        CompetitionEntry.objects.filter(track__competition_id__in=competition_ids)._raw_delete(using=using)
+        CompetitionCriterion.objects.filter(track__competition_id__in=competition_ids)._raw_delete(using=using)
+        CompetitionTrack.objects.filter(competition_id__in=competition_ids)._raw_delete(using=using)
+        count = Competition.objects.filter(pk__in=competition_ids)._raw_delete(using=using)
+        return count
 
 
 @transaction.atomic

@@ -697,3 +697,173 @@ class CombinedAssessmentTests(TestCase):
         # Moderate: invalid decision sets error message
         res = self.client.post(detail_url, {'action': 'moderate', 'mapping_id': str(mapping.pk), 'decision': 'invalid_decision'})
         self.assertEqual(res.status_code, 302)
+
+
+class CombinedAssessmentTableTests(CombinedAssessmentTests):
+    def test_search_and_filters_on_combined_assessment_list(self):
+        sign_in(self.client, self.owner, self.org)
+        # Create a second combined assessment with weighted policy
+        sess2 = AssessmentSession.objects.create(
+            name='Physics Session', organization_id=self.org.pk,
+            created_by=self.owner, service='classroom')
+        hearing2 = PanelHearing.objects.create(
+            name='Physics Hearing', organization_id=self.org.pk,
+            created_by=self.owner, workflow=PanelHearing.Workflow.SCORED)
+        comb2 = CombinedPresentationAssessment.objects.create(
+            name='Weighted Science Evaluation', classroom_session=sess2, panel_hearing=hearing2,
+            result_policy=CombinedPresentationAssessment.ResultPolicy.WEIGHTED,
+            peer_weight=Decimal('60'), panel_weight=Decimal('40'),
+            moderation_threshold=Decimal('10'), status=CombinedPresentationAssessment.Status.ACTIVE,
+            organization_id=self.org.pk, created_by=self.owner)
+
+        # Base list renders both
+        res = self.client.get(reverse('combined_assessment_list'))
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'Combined event')
+        self.assertContains(res, 'Weighted Science Evaluation')
+        self.assertContains(res, 'Separate reporting')
+        self.assertContains(res, 'Weighted (60% peer · 40% panel)')
+
+        # Search by assessment name
+        res_search = self.client.get(reverse('combined_assessment_list'), {'q': 'Science'})
+        self.assertContains(res_search, 'Weighted Science Evaluation')
+        self.assertNotContains(res_search, '>Combined event<')
+
+        # Search by source classroom session name
+        res_source = self.client.get(reverse('combined_assessment_list'), {'q': 'Physics Session'})
+        self.assertContains(res_source, 'Weighted Science Evaluation')
+        self.assertNotContains(res_source, '>Combined event<')
+
+        # Filter by status
+        res_status = self.client.get(reverse('combined_assessment_list'), {'status': 'active'})
+        self.assertContains(res_status, 'Weighted Science Evaluation')
+        self.assertNotContains(res_status, '>Combined event<')
+
+        # Filter by policy
+        sess3 = AssessmentSession.objects.create(
+            name='Biology Session', organization_id=self.org.id,
+            created_by=self.owner, service='classroom')
+        hearing3 = PanelHearing.objects.create(
+            name='Biology Hearing', organization_id=self.org.id,
+            created_by=self.owner, workflow=PanelHearing.Workflow.SCORED)
+        comb_sep = CombinedPresentationAssessment.objects.create(
+            name='Unique Separate Evaluation', classroom_session=sess3, panel_hearing=hearing3,
+            result_policy=CombinedPresentationAssessment.ResultPolicy.SEPARATE,
+            status=CombinedPresentationAssessment.Status.DRAFT,
+            organization_id=self.org.pk, created_by=self.owner)
+        res_policy = self.client.get(reverse('combined_assessment_list'), {'policy': 'separate'})
+        self.assertContains(res_policy, 'Unique Separate Evaluation')
+        self.assertNotContains(res_policy, 'Weighted Science Evaluation')
+
+        # AJAX request returns fragment
+        res_ajax = self.client.get(reverse('combined_assessment_list'), HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res_ajax.status_code, 200)
+        self.assertIn('X-Requested-With', res_ajax.headers.get('Vary', ''))
+        self.assertContains(res_ajax, 'id="panel-results"')
+
+    def test_delete_draft_combined_assessment(self):
+        sign_in(self.client, self.owner, self.org)
+        # self.assessment is draft
+        self.assertEqual(self.assessment.status, CombinedPresentationAssessment.Status.DRAFT)
+        delete_url = reverse('combined_assessment_delete', args=[self.assessment.pk])
+        res = self.client.post(delete_url)
+        self.assertEqual(res.status_code, 302)
+        self.assertFalse(CombinedPresentationAssessment.objects.filter(pk=self.assessment.pk).exists())
+
+    def test_delete_active_combined_assessment_rejected(self):
+        sign_in(self.client, self.owner, self.org)
+        self.assessment.status = CombinedPresentationAssessment.Status.ACTIVE
+        self.assessment.save(update_fields=['status'])
+        delete_url = reverse('combined_assessment_delete', args=[self.assessment.pk])
+        res = self.client.post(delete_url)
+        self.assertEqual(res.status_code, 302)
+        self.assertTrue(CombinedPresentationAssessment.objects.filter(pk=self.assessment.pk).exists())
+
+    def test_combined_assessment_bulk_delete(self):
+        sign_in(self.client, self.owner, self.org)
+        sess_b1 = AssessmentSession.objects.create(
+            name='Bulk Sess 1', organization_id=self.org.pk,
+            created_by=self.owner, service='classroom')
+        hearing_b1 = PanelHearing.objects.create(
+            name='Bulk Hearing 1', organization_id=self.org.pk,
+            created_by=self.owner, workflow=PanelHearing.Workflow.SCORED)
+        comb_b1 = CombinedPresentationAssessment.objects.create(
+            name='Bulk Combined 1', classroom_session=sess_b1, panel_hearing=hearing_b1,
+            result_policy=CombinedPresentationAssessment.ResultPolicy.SEPARATE,
+            status=CombinedPresentationAssessment.Status.DRAFT,
+            organization_id=self.org.pk, created_by=self.owner)
+
+        sess_b2 = AssessmentSession.objects.create(
+            name='Bulk Sess 2', organization_id=self.org.pk,
+            created_by=self.owner, service='classroom')
+        hearing_b2 = PanelHearing.objects.create(
+            name='Bulk Hearing 2', organization_id=self.org.pk,
+            created_by=self.owner, workflow=PanelHearing.Workflow.SCORED)
+        comb_b2 = CombinedPresentationAssessment.objects.create(
+            name='Bulk Combined 2', classroom_session=sess_b2, panel_hearing=hearing_b2,
+            result_policy=CombinedPresentationAssessment.ResultPolicy.SEPARATE,
+            status=CombinedPresentationAssessment.Status.DRAFT,
+            organization_id=self.org.pk, created_by=self.owner)
+
+        bulk_url = reverse('combined_assessment_bulk_delete')
+
+        # Empty selection validation
+        res_empty = self.client.post(bulk_url, {'assessment_ids': []})
+        self.assertEqual(res_empty.status_code, 302)
+
+        # Invalid ID validation
+        res_invalid = self.client.post(bulk_url, {'assessment_ids': ['abc']})
+        self.assertEqual(res_invalid.status_code, 302)
+
+        # Over 100 IDs limit validation
+        res_overflow = self.client.post(bulk_url, {'assessment_ids': [str(i) for i in range(101)]})
+        self.assertEqual(res_overflow.status_code, 302)
+
+        # Active status cannot be bulk deleted
+        comb_b2.status = CombinedPresentationAssessment.Status.ACTIVE
+        comb_b2.save(update_fields=['status'])
+        res_active = self.client.post(bulk_url, {'assessment_ids': [str(comb_b1.pk), str(comb_b2.pk)]})
+        self.assertEqual(res_active.status_code, 302)
+        self.assertTrue(CombinedPresentationAssessment.objects.filter(pk=comb_b1.pk).exists())
+        self.assertTrue(CombinedPresentationAssessment.objects.filter(pk=comb_b2.pk).exists())
+
+        # Deletion of draft items
+        sess_b3 = AssessmentSession.objects.create(
+            name='Bulk Sess 3', organization_id=self.org.pk,
+            created_by=self.owner, service='classroom')
+        hearing_b3 = PanelHearing.objects.create(
+            name='Bulk Hearing 3', organization_id=self.org.pk,
+            created_by=self.owner, workflow=PanelHearing.Workflow.SCORED)
+        comb_b3 = CombinedPresentationAssessment.objects.create(
+            name='Bulk Combined 3', classroom_session=sess_b3, panel_hearing=hearing_b3,
+            result_policy=CombinedPresentationAssessment.ResultPolicy.SEPARATE,
+            status=CombinedPresentationAssessment.Status.DRAFT,
+            organization_id=self.org.pk, created_by=self.owner)
+
+        res_ok = self.client.post(bulk_url, {'assessment_ids': [str(comb_b1.pk), str(comb_b3.pk)]})
+        self.assertEqual(res_ok.status_code, 302)
+        self.assertFalse(CombinedPresentationAssessment.objects.filter(pk=comb_b1.pk).exists())
+        self.assertFalse(CombinedPresentationAssessment.objects.filter(pk=comb_b3.pk).exists())
+        # Active comb_b2 remains untouched
+        self.assertTrue(CombinedPresentationAssessment.objects.filter(pk=comb_b2.pk).exists())
+
+    def test_sidebar_and_tab_navigation(self):
+        sign_in(self.client, self.owner, self.org)
+
+        # Panel assessments table page
+        res_table = self.client.get(reverse('panel_hearing_table'))
+        self.assertEqual(res_table.status_code, 200)
+        self.assertContains(res_table, 'aria-label="Assessment views"')
+        self.assertContains(res_table, 'panel-view-tab active')
+        self.assertContains(res_table, reverse('combined_assessment_list'))
+        self.assertContains(res_table, '<span class="nav-text">Assessments</span>')
+        self.assertNotContains(res_table, '<span class="nav-text">Combined assessments</span>')
+
+        # Combined assessments list page
+        res_combined = self.client.get(reverse('combined_assessment_list'))
+        self.assertEqual(res_combined.status_code, 200)
+        self.assertContains(res_combined, 'aria-label="Assessment views"')
+        self.assertContains(res_combined, 'panel-view-tab active')
+        self.assertContains(res_combined, reverse('panel_hearing_table'))
+        self.assertContains(res_combined, '<span class="nav-text">Assessments</span>')
+        self.assertNotContains(res_combined, '<span class="nav-text">Combined assessments</span>')

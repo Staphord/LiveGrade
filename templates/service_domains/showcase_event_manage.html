@@ -17,7 +17,6 @@
 </style>
 <div class="container-fluid py-4 service-workspace showcase-manage">
   <p class="small mb-2"><a href="{% url 'showcase_event_list' %}">← All showcases</a></p>
-  {% if messages %}<div aria-live="polite">{% for message in messages %}<p class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'warning' %}alert-warning{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %}">{{ message }}</p>{% endfor %}</div>{% endif %}
   <header class="showcase-head">
     <div><p class="text-uppercase text-primary small fw-bold mb-1">Showcase event</p><h1 class="page-title mb-2">{{ event.name }}</h1><p class="text-muted mb-0">{% if event.starts_at %}{{ event.starts_at|date:'l, j F Y · H:i' }}{% else %}Date not set{% endif %}{% if event.ends_at %} – {{ event.ends_at|date:'H:i' }}{% endif %}</p></div>
     <div class="d-flex gap-2 align-items-center flex-wrap"><span class="showcase-state" data-state="{{ event.status }}">{{ event.get_status_display }}</span>{% if event.status == 'draft' %}<a class="btn btn-outline-secondary" href="#overview">Edit event details</a>{% endif %}{% if event.status == 'open' or event.status == 'closed' %}<a class="btn btn-primary" href="{% url 'showcase_live_monitor' event.pk %}">View live activity</a>{% endif %}{% if event.status == 'published' and event.public_results %}<a class="btn btn-outline-primary" href="{% url 'showcase_public_results' event.public_id %}">View public results</a>{% endif %}</div>

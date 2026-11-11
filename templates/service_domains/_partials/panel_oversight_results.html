@@ -1,0 +1,111 @@
+<div id="panel-results" aria-busy="false">
+  <section class="panel-table-card" aria-labelledby="oversight-table-heading">
+    <div class="panel-table-head">
+      <div class="panel-table-heading-group">
+        <h2 id="oversight-table-heading">Approved assessments</h2>
+        <span class="panel-table-count">{% if search_query or status_filter or workflow_filter %}{{ filtered_count }} matching{% else %}{{ status_counts.total }} total{% endif %} approved assessment{{ filtered_count|pluralize }}</span>
+      </div>
+      <div class="panel-table-tools">
+        <div class="panel-page-size">
+          <label for="panel-page-size">Rows per page</label>
+          <select id="panel-page-size" class="form-select form-select-sm" name="per_page" data-panel-page-size>
+            {% for size in page_sizes %}
+            <option value="{{ size }}"{% if size == per_page %} selected{% endif %}>{{ size }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+    {% if page_obj.object_list %}
+    <div class="table-responsive">
+      <table class="table table-hover panel-table" data-panel-row-navigation>
+        <caption class="visually-hidden">Approved panel assessments compiled for oversight review, including organizer, status, evaluation counts, and date.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Assessment</th>
+            <th scope="col">Lead organizer</th>
+            <th scope="col">Status</th>
+            <th scope="col">Evaluations</th>
+            <th scope="col">Hearing date</th>
+            <th scope="col" class="text-end"><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for hearing in page_obj %}
+          <tr class="panel-row-clickable" data-panel-row-href="{% url 'panel_oversight_detail' hearing_id=hearing.pk %}">
+            <td>
+              <a class="panel-table-name" href="{% url 'panel_oversight_detail' hearing_id=hearing.pk %}">{{ hearing.name }}</a>
+              <span class="panel-table-secondary">{{ hearing.get_workflow_display }}</span>
+            </td>
+            <td>
+              {% if hearing.created_by %}
+                <span class="fw-semibold">{{ hearing.created_by.display_name }}</span>
+                {% if hearing.created_by.email %}
+                  <span class="panel-table-secondary">{{ hearing.created_by.email }}</span>
+                {% endif %}
+              {% else %}
+                <span class="text-muted">Not recorded</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="panel-stage"><span class="panel-stage-dot {{ hearing.status }}" aria-hidden="true"></span>{{ hearing.get_status_display }}</span>
+            </td>
+            <td>
+              <span class="fw-semibold">{{ hearing.candidate_count }}</span>
+              <span class="text-muted small">candidate{{ hearing.candidate_count|pluralize }} · {{ hearing.result_count }} record{{ hearing.result_count|pluralize }}</span>
+            </td>
+            <td>{% if hearing.hearing_date %}{{ hearing.hearing_date|date:'d M Y' }}{% else %}Not set{% endif %}</td>
+            <td class="text-end">
+              <div class="dropdown panel-actions">
+                <button class="dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Actions for {{ hearing.name }}">
+                  <i class="bi bi-three-dots" aria-hidden="true"></i>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                  <li>
+                    <a class="dropdown-item" href="{% url 'panel_oversight_detail' hearing_id=hearing.pk %}">
+                      <i class="bi bi-file-earmark-bar-graph me-2" aria-hidden="true"></i>View compiled report
+                    </a>
+                  </li>
+                  <li>
+                    <a class="dropdown-item" href="{% url 'panel_results_export' hearing_id=hearing.pk %}">
+                      <i class="bi bi-file-earmark-spreadsheet me-2" aria-hidden="true"></i>Export results (.xlsx)
+                    </a>
+                  </li>
+                </ul>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if paginator.num_pages > 1 %}
+    <nav class="panel-pagination" aria-label="Oversight assessment pages">
+      <span class="panel-pagination-label">Page {{ page_obj.number }} of {{ paginator.num_pages }} · {{ paginator.count }} approved assessments</span>
+      <div class="panel-pagination-links">
+        {% if page_obj.has_previous %}
+        <a class="btn btn-sm btn-outline-secondary" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page_obj.previous_page_number }}" data-panel-page>Previous</a>
+        {% endif %}
+        {% if page_obj.has_next %}
+        <a class="btn btn-sm btn-outline-secondary" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page_obj.next_page_number }}" data-panel-page>Next</a>
+        {% endif %}
+      </div>
+    </nav>
+    {% endif %}
+    {% elif search_query or status_filter or workflow_filter %}
+    <div class="panel-empty">
+      <div class="panel-empty-icon" aria-hidden="true"><i class="bi bi-search"></i></div>
+      <h2>No matching oversight records</h2>
+      <p>Try a different assessment name, organizer, status, or decision process.</p>
+      <a href="{% url 'panel_oversight_list' %}" class="btn btn-outline-secondary" data-panel-clear-filters>Clear filters</a>
+    </div>
+    {% else %}
+    <div class="panel-empty">
+      <div class="panel-empty-icon" aria-hidden="true"><i class="bi bi-shield-check"></i></div>
+      <h2>No approved results yet</h2>
+      <p class="panel-muted mb-0">Results appear here automatically after a panel assessment is closed, reviewed, and approved or released by its chair.</p>
+    </div>
+    {% endif %}
+  </section>
+</div>
+

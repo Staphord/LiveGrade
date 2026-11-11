@@ -1,11 +1,14 @@
 from django.urls import path
 from .combined_views import (combined_assessment_create, combined_assessment_detail,
-                             combined_assessment_list)
+                             combined_assessment_list, combined_assessment_delete,
+                             combined_assessment_bulk_delete)
 
 from .views import (panel_candidate_import, panel_candidate_import_sample,
                     panel_rubric_import, panel_rubric_import_sample,
                     panel_invitation_import, panel_invitation_import_sample,
-                    panel_examiner, panel_hearing_list, panel_hearing_manage,
+                    panel_examiner, panel_hearing_list, panel_hearing_table,
+                    panel_hearing_create, panel_hearing_delete, panel_hearing_bulk_delete,
+                    panel_hearing_manage,
                     panel_live_display, panel_live_display_updates,
                     panel_recusal_export, panel_results_export, panel_results_review, panel_entrant_results,
                     panel_oversight_list, panel_oversight_detail)
@@ -14,9 +17,16 @@ from .views import (panel_candidate_import, panel_candidate_import_sample,
 urlpatterns = [
     path('app/combined/', combined_assessment_list, name='combined_assessment_list'),
     path('app/combined/new/', combined_assessment_create, name='combined_assessment_create'),
+    path('app/combined/delete/', combined_assessment_bulk_delete, name='combined_assessment_bulk_delete'),
     path('app/combined/<int:assessment_id>/', combined_assessment_detail,
          name='combined_assessment_detail'),
+    path('app/combined/<int:assessment_id>/delete/', combined_assessment_delete,
+         name='combined_assessment_delete'),
     path('app/hearings/', panel_hearing_list, name='panel_hearing_list'),
+    path('app/hearings/all/', panel_hearing_table, name='panel_hearing_table'),
+    path('app/hearings/new/', panel_hearing_create, name='panel_hearing_create'),
+    path('app/hearings/delete/', panel_hearing_bulk_delete, name='panel_hearing_bulk_delete'),
+    path('app/hearings/<int:hearing_id>/delete/', panel_hearing_delete, name='panel_hearing_delete'),
     path('app/hearings/<int:hearing_id>/', panel_hearing_manage, name='panel_hearing_manage'),
     path('app/hearings/<int:hearing_id>/candidates/import/', panel_candidate_import,
          name='panel_candidate_import'),

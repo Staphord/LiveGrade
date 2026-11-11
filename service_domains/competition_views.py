@@ -2,6 +2,7 @@
 
 from functools import wraps
 import hmac
+import re
 
 from django.conf import settings
 from django.contrib import messages
@@ -10,15 +11,16 @@ from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
-from django.db.models import Count
-from django.http import Http404, HttpResponse, JsonResponse
+from django.db.models import Count, Q
+from django.http import Http404, HttpResponse, JsonResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.cache import patch_vary_headers
 from django.views.decorators.cache import never_cache
-from django.views.decorators.http import require_http_methods
-from django.views.decorators.http import require_safe
+from django.views.decorators.http import require_http_methods, require_POST, require_safe
 
 from accounts.access import lecturer_required
+from assessments.pagination import PAGE_SIZE, PAGE_SIZES, paginate
 
 from .competition_forms import (CompetitionEntryForm, CompetitionEntryImportApplyForm,
     CompetitionEntryImportForm, CompetitionFirstRoundForm,
@@ -30,7 +32,7 @@ from .competition_import import (apply_competition_entry_import, parse_competiti
 from .models import (Competition, CompetitionAudienceBallot, CompetitionCriterion, CompetitionEntry, CompetitionJudgeInvitation,
     CompetitionJudgeScore, CompetitionRound, CompetitionRoundEntry, CompetitionTrack)
 from .operations import (create_initial_competition_round,
-    compile_competition_judge_scores, issue_competition_judge_invitation,
+    compile_competition_judge_scores, delete_competitions, issue_competition_judge_invitation,
     create_next_competition_round, revoke_competition_judge_invitation,
     start_competition, complete_competition, reveal_competition_leaderboard)
 from .operations import set_competition_public_leaderboard
@@ -68,7 +70,7 @@ def _owned_competition(request, competition_id):
     return competition
 
 
-@require_http_methods(['GET', 'POST'])
+@require_safe
 @never_cache
 @_competition_owner
 def competition_list(request):
@@ -76,14 +78,8 @@ def competition_list(request):
                         .owned_by(request.user)
                         .annotate(track_count=Count('tracks', distinct=True),
                                   round_count=Count('rounds', distinct=True))
-                        .order_by('-created_at', 'pk'))
-    latest_competition = competitions[0] if competitions else None
-    audience_pct = int(round(float(latest_competition.effective_audience_weight))) if latest_competition else 20
-    judge_pct = max(0, 100 - audience_pct)
-    circumference = 339
-    judge_dash = round(circumference * judge_pct / 100)
-    audience_dash = circumference - judge_dash
-    dashboard_stats = {
+                        .order_by('-created_at', '-pk'))
+    counts = {
         'total': len(competitions),
         'active': sum(c.status == Competition.Status.ACTIVE for c in competitions),
         'draft': sum(c.status == Competition.Status.DRAFT for c in competitions),
@@ -91,37 +87,210 @@ def competition_list(request):
         'revealed': sum(c.status == Competition.Status.REVEALED for c in competitions),
         'total_tracks': sum(c.track_count for c in competitions),
         'total_rounds': sum(c.round_count for c in competitions),
-        'judge_pct': judge_pct,
-        'audience_pct': audience_pct,
-        'judge_dash': judge_dash,
-        'audience_dash': audience_dash,
-        'audience_offset': -judge_dash,
     }
     attention_competitions = [
         c for c in competitions
         if c.status in (Competition.Status.ACTIVE, Competition.Status.COMPLETE)
     ]
-    form = CompetitionForm(request.POST or None)
-    if request.method == 'POST' and form.is_valid():
-        competition = form.save(commit=False)
-        competition.organization_id = request.organization['id']
-        competition.created_by = request.user
-        try:
-            competition.full_clean()
-        except ValidationError as exc:
-            form.add_error(None, '; '.join(exc.messages))
-        else:
-            competition.save(force_insert=True)
-            return redirect('competition_manage', competition_id=competition.pk)
+
+    stage_distribution = []
+    stage_colors = {
+        'draft': '#d28a08',
+        'active': 'var(--success)',
+        'complete': 'var(--accent)',
+        'revealed': 'var(--text-muted)',
+    }
+    pie_segments = []
+    cumulative = 0
+    stage_definitions = (
+        ('draft', 'Draft', counts['draft']),
+        ('active', 'In progress', counts['active']),
+        ('complete', 'Complete', counts['complete']),
+        ('revealed', 'Leaderboard revealed', counts['revealed']),
+    )
+    for key, label, count in stage_definitions:
+        start_deg = cumulative * 360 / counts['total'] if counts['total'] else 0
+        cumulative += count
+        end_deg = cumulative * 360 / counts['total'] if counts['total'] else 0
+        stage_distribution.append({
+            'key': key,
+            'label': label,
+            'count': count,
+            'percentage': round(count * 100 / counts['total'], 1) if counts['total'] else 0,
+        })
+        if count:
+            pie_segments.append(f'{stage_colors[key]} {start_deg:.3f}deg {end_deg:.3f}deg')
+    stage_pie_background = (
+        f"conic-gradient({', '.join(pie_segments)})" if pie_segments else ''
+    )
+
+    largest_competitions = sorted(
+        competitions,
+        key=lambda c: (-c.round_count, -c.created_at.timestamp() if c.created_at else 0, c.pk)
+    )[:5]
+    largest = max((c.round_count for c in largest_competitions), default=0)
+    for comp in largest_competitions:
+        comp.round_bar_percent = round(comp.round_count * 100 / largest, 1) if largest else 0
+
+    recent_competitions = competitions[:5]
+
     return render(request, 'service_domains/competition_list.html', {
-        'competitions': competitions, 'form': form,
-        'dashboard_stats': dashboard_stats,
+        'dashboard_stats': counts,
         'attention_competitions': attention_competitions,
-        'onboarding': service_onboarding('competition',
-            resume_url=(reverse('competition_manage', args=(latest_competition.pk,))
-                        if latest_competition else ''),
-            resume_name=(latest_competition.name if latest_competition else '')),
+        'stage_distribution': stage_distribution,
+        'stage_pie_background': stage_pie_background,
+        'largest_competitions': largest_competitions,
+        'largest': largest,
+        'recent_competitions': recent_competitions,
     })
+
+
+@require_safe
+@never_cache
+@_competition_owner
+def competition_table(request):
+    visible = (Competition.objects.for_organization(request.organization)
+               .owned_by(request.user))
+    counts = visible.aggregate(
+        total=Count('pk'),
+        draft=Count('pk', filter=Q(status=Competition.Status.DRAFT)),
+        active=Count('pk', filter=Q(status=Competition.Status.ACTIVE)),
+        complete=Count('pk', filter=Q(status=Competition.Status.COMPLETE)),
+        revealed=Count('pk', filter=Q(status=Competition.Status.REVEALED)),
+    )
+    search_query = request.GET.get('q', '').strip()[:100]
+    status_filter = request.GET.get('status', '')
+    if status_filter not in Competition.Status.values:
+        status_filter = ''
+    filtered = visible
+    if search_query:
+        filtered = filtered.filter(name__icontains=search_query)
+    if status_filter:
+        filtered = filtered.filter(status=status_filter)
+
+    queryset = (filtered
+        .annotate(track_count=Count('tracks', distinct=True),
+                  round_count=Count('rounds', distinct=True))
+        .order_by('-created_at', '-pk'))
+
+    paginator, page = paginate(request, queryset)
+
+    query_params = QueryDict('', mutable=True)
+    if search_query:
+        query_params['q'] = search_query
+    if status_filter:
+        query_params['status'] = status_filter
+    query_params['per_page'] = str(page.paginator.per_page)
+
+    context = {
+        'competitions': page,
+        'page_obj': page,
+        'paginator': paginator,
+        'per_page': page.paginator.per_page,
+        'page_sizes': PAGE_SIZES,
+        'status_counts': counts,
+        'status_filter': status_filter,
+        'search_query': search_query,
+        'querystring': query_params.urlencode(),
+        'filtered_count': paginator.count,
+    }
+
+    template = 'service_domains/_partials/competition_results.html' if request.headers.get('x-requested-with') == 'XMLHttpRequest' else 'service_domains/competition_table.html'
+    response = render(request, template, context)
+    patch_vary_headers(response, ['X-Requested-With'])
+    return response
+
+
+@require_http_methods(['GET', 'POST'])
+@never_cache
+@_competition_owner
+def competition_create(request):
+    """Create a new Competition and proceed directly to setup steps."""
+    org_id = request.organization.pk if hasattr(request.organization, 'pk') else (
+        request.organization['id'] if isinstance(request.organization, dict) else request.organization)
+
+    if request.method == 'POST':
+        form = CompetitionForm(request.POST, auto_id='competition_details_%s')
+        if form.is_valid():
+            competition = form.save(commit=False)
+            competition.organization_id = org_id
+            competition.created_by = request.user
+            try:
+                competition.full_clean()
+            except ValidationError as exc:
+                form.add_error(None, '; '.join(exc.messages))
+                messages.error(request, '; '.join(exc.messages))
+                return render(request, 'service_domains/competition_create.html', {'form': form})
+            competition.save(force_insert=True)
+            messages.success(request, f'"{competition.name}" created.')
+            if request.POST.get('advance') == '1':
+                return redirect(f"{reverse('competition_manage', kwargs={'competition_id': competition.pk})}?step=tracks")
+            return redirect('competition_manage', competition_id=competition.pk)
+        messages.error(request, 'Please correct the highlighted fields and try again.')
+        return render(request, 'service_domains/competition_create.html', {'form': form})
+
+    form = CompetitionForm(auto_id='competition_details_%s')
+    return render(request, 'service_domains/competition_create.html', {'form': form})
+
+
+@require_POST
+@never_cache
+@_competition_owner
+def competition_delete(request, competition_id):
+    competition = _owned_competition(request, competition_id)
+    name = competition.name
+    delete_competitions([competition])
+    messages.success(request, f'"{name}" deleted.')
+    return redirect('competition_table')
+
+
+def _competition_bulk_delete_redirect(request):
+    """Return to the current filtered view, with a valid page-size."""
+    params = QueryDict('', mutable=True)
+    query = (request.POST.get('q') or '').strip()[:100]
+    status_filter = request.POST.get('status', '')
+    if query:
+        params['q'] = query
+    if status_filter in Competition.Status.values:
+        params['status'] = status_filter
+    try:
+        per_page = int(request.POST.get('per_page', PAGE_SIZE))
+    except (TypeError, ValueError):
+        per_page = PAGE_SIZE
+    if per_page not in PAGE_SIZES:
+        per_page = PAGE_SIZE
+    params['per_page'] = str(per_page)
+    url = reverse('competition_table')
+    return redirect(f'{url}?{params.urlencode()}' if params else url)
+
+
+@require_POST
+@never_cache
+@_competition_owner
+def competition_bulk_delete(request):
+    """Delete an explicitly selected set of the current owner's competitions."""
+    raw_ids = request.POST.getlist('competition_ids')
+    if (not raw_ids or len(raw_ids) > max(PAGE_SIZES)
+            or any(not re.fullmatch(r'[1-9][0-9]*', value)
+                   or len(value) > 19
+                   or (len(value) == 19 and value > '9223372036854775807')
+                   for value in raw_ids)):
+        messages.error(request, 'Select one or more valid competitions to delete.')
+        return _competition_bulk_delete_redirect(request)
+
+    competition_ids = {int(value) for value in raw_ids}
+    owned_competitions = (Competition.objects.for_organization(request.organization)
+                          .owned_by(request.user))
+    with transaction.atomic():
+        selected = list(owned_competitions.select_for_update().filter(pk__in=competition_ids))
+        if len(selected) != len(competition_ids):
+            messages.error(request, 'One or more selected competitions are no longer available to delete.')
+            return _competition_bulk_delete_redirect(request)
+        count = len(selected)
+        delete_competitions(selected)
+
+    messages.success(request, f'{count} competition{"s" if count != 1 else ""} deleted.')
+    return _competition_bulk_delete_redirect(request)
 
 
 def _load_competition_import_preview(request, competition):

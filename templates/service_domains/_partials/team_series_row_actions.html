@@ -1,0 +1,11 @@
+<div class="dropdown team-series-actions">
+  <button class="dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Actions for {{ series.name }}"><i class="bi bi-three-dots" aria-hidden="true"></i></button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><a class="dropdown-item" href="{% url 'training_series_manage' series.pk %}"><i class="bi bi-folder2-open me-2" aria-hidden="true"></i>Open series</a></li>
+    <li><a class="dropdown-item" href="{% url 'training_series_trends' series.pk %}"><i class="bi bi-graph-up me-2" aria-hidden="true"></i>View trends</a></li>
+    <li><a class="dropdown-item" href="{% url 'training_series_roster_import' series.pk %}"><i class="bi bi-upload me-2" aria-hidden="true"></i>Import roster</a></li>
+    <li><a class="dropdown-item" href="{% url 'training_series_export' series.pk %}"><i class="bi bi-file-earmark-spreadsheet me-2" aria-hidden="true"></i>Export outcomes (.csv)</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><button class="dropdown-item text-danger" type="button" aria-haspopup="dialog" aria-controls="team-series-delete-modal" data-team-delete-trigger data-series-id="{{ series.pk }}" data-series-name="{{ series.name }}" data-delete-url="{% url 'training_series_delete' series.pk %}" data-export-url="{% url 'training_series_delete_export' series.pk %}" data-query="{{ search_query|default:'' }}" data-page-size="{{ per_page|default:25 }}" aria-label="Delete series {{ series.name }}"><i class="bi bi-trash me-2" aria-hidden="true"></i>Delete series</button></li>
+  </ul>
+</div>

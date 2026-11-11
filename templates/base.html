@@ -248,7 +248,7 @@ display:none!important;
     {% if request.user.is_authenticated and current_service %}
     {% with url_name=request.resolver_match.url_name %}
     <div class="nav-section">{{ current_service.name }} Service</div>
-    <a href="{{ service_dashboard }}" class="nav-link {% if current_service.slug == 'classroom' %}{% if url_name == 'assessment_dashboard' %}active{% endif %}{% elif url_name != 'assessment_session_create' and url_name != 'assessment_template_list' and url_name != 'combined_assessment_list' and url_name != 'showcase_event_create' %}active{% endif %}"{% if request.path == service_dashboard %} aria-current="page"{% endif %}>
+    <a href="{{ service_dashboard }}" class="nav-link {% if current_service.slug == 'classroom' %}{% if url_name == 'assessment_dashboard' %}active{% endif %}{% elif current_service.slug == 'panel' %}{% if url_name == 'panel_hearing_list' %}active{% endif %}{% elif current_service.slug == 'team' %}{% if url_name == 'training_series_list' %}active{% endif %}{% elif current_service.slug == 'showcase' %}{% if url_name == 'showcase_event_list' %}active{% endif %}{% elif current_service.slug == 'competition' %}{% if url_name == 'competition_list' %}active{% endif %}{% elif url_name != 'assessment_session_create' and url_name != 'assessment_template_list' and url_name != 'combined_assessment_list' %}active{% endif %}"{% if current_service.slug == 'classroom' %}{% if url_name == 'assessment_dashboard' %} aria-current="page"{% endif %}{% elif current_service.slug == 'panel' %}{% if url_name == 'panel_hearing_list' %} aria-current="page"{% endif %}{% elif current_service.slug == 'team' %}{% if url_name == 'training_series_list' %} aria-current="page"{% endif %}{% elif current_service.slug == 'showcase' %}{% if url_name == 'showcase_event_list' %} aria-current="page"{% endif %}{% elif current_service.slug == 'competition' %}{% if url_name == 'competition_list' %} aria-current="page"{% endif %}{% elif request.path == service_dashboard %} aria-current="page"{% endif %}>
       <i class="bi bi-clipboard2-data" aria-hidden="true"></i><span class="nav-text">{{ current_service.name }} dashboard</span>
     </a>
     {% if current_service.slug == 'classroom' %}
@@ -261,17 +261,30 @@ display:none!important;
     <a href="{% url 'assessment_template_list' %}" class="nav-link {% if url_name == 'assessment_template_list' %}active{% endif %}"{% if url_name == 'assessment_template_list' %} aria-current="page"{% endif %}>
       <i class="bi bi-journal-bookmark" aria-hidden="true"></i><span class="nav-text">Session templates</span>
     </a>
-    {% elif current_service.slug == 'panel' %}
-    <a href="{% url 'combined_assessment_list' %}" class="nav-link {% if url_name == 'combined_assessment_list' %}active{% endif %}"{% if url_name == 'combined_assessment_list' %} aria-current="page"{% endif %}>
-      <i class="bi bi-diagram-3" aria-hidden="true"></i><span class="nav-text">Combined assessments</span>
+    {% elif current_service.slug == 'team' %}
+    <a href="{% url 'training_series_table' %}" class="nav-link {% if url_name == 'training_series_table' or url_name == 'training_series_manage' or url_name == 'training_series_trends' or url_name == 'training_series_roster_import' or url_name == 'training_series_roster_preview' %}active{% endif %}"{% if url_name == 'training_series_table' or url_name == 'training_series_manage' or url_name == 'training_series_trends' or url_name == 'training_series_roster_import' or url_name == 'training_series_roster_preview' %} aria-current="page"{% endif %}>
+      <i class="bi bi-list-ul" aria-hidden="true"></i><span class="nav-text">Training series</span>
     </a>
+    {% elif current_service.slug == 'panel' %}
+    <a href="{% url 'panel_hearing_table' %}" class="nav-link {% if url_name == 'panel_hearing_table' or url_name == 'panel_hearing_manage' or url_name == 'panel_hearing_create' or url_name == 'panel_results_review' or url_name == 'panel_candidate_import' or url_name == 'panel_rubric_import' or url_name == 'panel_invitation_import' or url_name == 'combined_assessment_list' or url_name == 'combined_assessment_create' or url_name == 'combined_assessment_detail' %}active{% endif %}"{% if url_name == 'panel_hearing_table' or url_name == 'combined_assessment_list' %} aria-current="page"{% endif %}>
+      <i class="bi bi-list-ul" aria-hidden="true"></i><span class="nav-text">Assessments</span>
+    </a>
+    {% if can_oversee_panel %}
+    <a href="{% url 'panel_oversight_list' %}" class="nav-link {% if url_name == 'panel_oversight_list' or url_name == 'panel_oversight_detail' %}active{% endif %}"{% if url_name == 'panel_oversight_list' %} aria-current="page"{% endif %}>
+      <i class="bi bi-shield-check" aria-hidden="true"></i><span class="nav-text">Oversight results</span>
+    </a>
+    {% endif %}
     {% elif current_service.slug == 'showcase' %}
-    <a href="{% url 'showcase_event_create' %}" class="nav-link {% if url_name == 'showcase_event_create' %}active{% endif %}"{% if url_name == 'showcase_event_create' %} aria-current="page"{% endif %}>
-      <i class="bi bi-plus-circle" aria-hidden="true"></i><span class="nav-text">Create event</span>
+    <a href="{% url 'showcase_event_table' %}" class="nav-link {% if url_name == 'showcase_event_table' or url_name == 'showcase_event_manage' or url_name == 'showcase_live_monitor' or url_name == 'showcase_event_labels' or url_name == 'showcase_exhibit_import' %}active{% endif %}"{% if url_name == 'showcase_event_table' or url_name == 'showcase_event_manage' or url_name == 'showcase_live_monitor' or url_name == 'showcase_event_labels' or url_name == 'showcase_exhibit_import' %} aria-current="page"{% endif %}>
+      <i class="bi bi-list-ul" aria-hidden="true"></i><span class="nav-text">Events</span>
+    </a>
+    {% elif current_service.slug == 'competition' %}
+    <a href="{% url 'competition_table' %}" class="nav-link {% if url_name == 'competition_table' or url_name == 'competition_manage' or url_name == 'competition_entry_import' %}active{% endif %}"{% if url_name == 'competition_table' %} aria-current="page"{% endif %}>
+      <i class="bi bi-list-ul" aria-hidden="true"></i><span class="nav-text">Competitions</span>
     </a>
     {% endif %}
     <div class="nav-section">Platform Services</div>
-    <a href="{% url 'home' %}" class="nav-link">
+    <a href="{% url 'home' %}#services" class="nav-link">
       <i class="bi bi-grid-1x2" aria-hidden="true"></i><span class="nav-text">All services</span>
     </a>
     {% endwith %}

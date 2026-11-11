@@ -1,20 +1,26 @@
 import csv
 import io
+import json
 import re
 import uuid
+import zipfile
+from datetime import timedelta
 from collections import Counter
 from unittest.mock import patch
 
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import IntegrityError
+from django.db import IntegrityError, connection
 from django.http import Http404
 from django.test import RequestFactory, TestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
+from django.utils import timezone
 
 from accounts.testing import make_org, make_user, sign_in
 from assessments.models import (AssessmentSession, GroupMembership, PresentationGroup,
                                 SessionTemplate, Student, TemplateRubricCategory)
 from service_domains.models import (TrainingCompetency, TrainingCompetencyResult,
+                                    TrainingFeedback, TrainingLearnerReportLink,
                                     TrainingParticipant, TrainingSeries, TrainingSeriesSession,
                                     TrainingSessionCompetency, TrainingCertificate)
 from service_domains.team_forms import CreateTrainingSessionForm
@@ -31,7 +37,8 @@ class TrainingSeriesWorkspaceTests(TestCase):
         self.other = make_user('training-workspace-other')
 
     def request(self, method, url, *args, **kwargs):
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'team'):
+        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'team'), \
+                patch('accounts.context.is_released', side_effect=lambda slug: slug == 'team'):
             return getattr(self.client, method)(url, *args, **kwargs)
 
     def test_series_manage_forms_have_unique_control_ids(self):
@@ -304,7 +311,7 @@ class TrainingSeriesWorkspaceTests(TestCase):
 
     def test_owner_can_manage_series_and_create_next_session_with_reused_roster_and_rubric(self):
         sign_in(self.client, self.owner, self.org)
-        response = self.request('post', reverse('training_series_list'), {
+        response = self.request('post', reverse('training_series_create'), {
             'name': 'Product demos', 'description': 'Weekly team practice',
         })
         series = TrainingSeries.objects.get(name='Product demos')
@@ -685,24 +692,25 @@ class TrainingSeriesWorkspaceTests(TestCase):
             response = self.request('get', reverse('training_series_export', args=(series.pk,)))
         self.assertEqual(response.status_code, 404)
 
-    def test_series_list_get_and_invalid_create_render_validation(self):
+    def test_series_dashboard_is_read_only_and_creation_validates(self):
         sign_in(self.client, self.owner, self.org)
         page = self.request('get', reverse('training_series_list'))
         self.assertEqual(page.status_code, 200)
+        self.assertContains(page, 'Team and Training dashboard')
         self.assertContains(page, 'Getting started')
         self.assertContains(page, 'Set up your first Team and Training series')
-        self.assertContains(page, 'Create a Team demo setup')
-        self.assertContains(page, 'Create each demo from the series')
-        self.assertContains(page, 'href="#create-series"')
-        self.assertContains(page, 'Purpose or intended skill goal')
+        self.assertContains(page, 'Largest team rosters')
+        self.assertNotContains(page, 'Purpose or intended skill goal')
+        self.assertNotContains(page, 'Longitudinal Competency Growth')
+        self.assertEqual(self.request('post', reverse('training_series_list')).status_code, 405)
         TrainingSeries.objects.create(organization_id=self.org.id, created_by=self.owner,
             name='Existing series')
         existing = self.request('get', reverse('training_series_list'))
-        self.assertContains(existing, 'Your workflow')
-        self.assertContains(existing, 'Your Team and Training workspace')
+        self.assertNotContains(existing, 'Your workflow')
+        self.assertNotContains(existing, 'Your Team and Training workspace')
         self.assertNotContains(existing, 'Set up your first Team and Training series')
-        self.assertContains(existing, 'Continue your latest series: Existing series')
-        invalid = self.request('post', reverse('training_series_list'), {'name': '', 'description': ''})
+        self.assertContains(existing, 'Existing series')
+        invalid = self.request('post', reverse('training_series_create'), {'name': '', 'description': ''})
         self.assertEqual(invalid.status_code, 200)
         self.assertContains(invalid, 'This field is required.')
 
@@ -726,12 +734,13 @@ class TrainingSeriesWorkspaceTests(TestCase):
 
     def test_new_series_explains_how_to_create_its_first_team_template(self):
         sign_in(self.client, self.owner, self.org)
-        created = self.request('post', reverse('training_series_list'), {
+        created = self.request('post', reverse('training_series_create'), {
             'name': 'New staff induction', 'description': '',
-        })
-        self.assertEqual(created.status_code, 302)
+        }, follow=True)
+        self.assertEqual(created.status_code, 200)
+        self.assertContains(created, 'Training series created.')
         series = TrainingSeries.objects.get(name='New staff induction')
-        detail = self.request('get', reverse('training_series_manage', args=(series.pk,)))
+        detail = created
         self.assertContains(detail, 'built-in or saved Team rubric')
         self.assertContains(detail, 'Import a roster')
         self.assertContains(detail, 'Create demo session')
@@ -796,7 +805,7 @@ class TrainingSeriesWorkspaceTests(TestCase):
 
     def test_template_queryset_is_limited_to_team_owner_and_organization(self):
         sign_in(self.client, self.owner, self.org)
-        response = self.request('post', reverse('training_series_list'), {'name': 'Team', 'description': ''})
+        response = self.request('post', reverse('training_series_create'), {'name': 'Team', 'description': ''})
         series = TrainingSeries.objects.get(name='Team')
         detail = reverse('training_series_manage', args=(series.pk,))
         template = SessionTemplate.objects.create(organization_id=self.org.id,
@@ -806,6 +815,344 @@ class TrainingSeriesWorkspaceTests(TestCase):
         })
         self.assertEqual(rejected.status_code, 200)
         self.assertFalse(AssessmentSession.objects.filter(name='Week 1').exists())
+
+
+class TrainingSeriesDashboardAndListTests(TestCase):
+    def setUp(self):
+        self.org = make_org('Training series UI')
+        self.other_org = make_org('Other training series UI')
+        self.owner = make_user('training-series-ui-owner')
+        self.other = make_user('training-series-ui-other')
+        sign_in(self.client, self.owner, self.org)
+
+    def request(self, method, url, *args, **kwargs):
+        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'team'), \
+                patch('accounts.context.is_released', side_effect=lambda slug: slug == 'team'):
+            return getattr(self.client, method)(url, *args, **kwargs)
+
+    def create_series(self, name, *, owner=None, org=None, active=True):
+        return TrainingSeries.objects.create(
+            organization_id=(org or self.org).id, created_by=owner or self.owner,
+            name=name, active=active)
+
+    def test_dashboard_uses_workspace_totals_and_has_no_inline_create_form(self):
+        first = self.create_series('Newest series')
+        older = self.create_series('Older series')
+        TrainingParticipant.objects.create(organization_id=self.org.id,
+            created_by=self.owner, series=first, display_name='Amina', group_name='Blue')
+        TrainingCompetency.objects.create(organization_id=self.org.id,
+            created_by=self.owner, series=first, name='Communication', passing_score=70)
+        session = AssessmentSession.objects.create(organization_id=self.org.id,
+            created_by=self.owner, service='team', name='First demo')
+        TrainingSeriesSession.objects.create(organization_id=self.org.id,
+            created_by=self.owner, series=first, assessment_session=session, sequence=1)
+        self.create_series('Other owner series', owner=self.other)
+        self.create_series('Other organization series', org=self.other_org)
+        self.create_series('Inactive series', active=False)
+
+        response = self.request('get', reverse('training_series_list'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['dashboard_stats']['total_series'], 2)
+        self.assertEqual(response.context['dashboard_stats']['total_participants'], 1)
+        self.assertEqual(response.context['dashboard_stats']['total_competencies'], 1)
+        self.assertEqual(response.context['dashboard_stats']['total_demos'], 1)
+        self.assertEqual([item.pk for item in response.context['recent_series']],
+            [older.pk, first.pk])
+        self.assertContains(response, 'Team and Training dashboard')
+        self.assertContains(response, 'Largest team rosters')
+        self.assertContains(response, 'Series status')
+        self.assertNotContains(response, 'Longitudinal Competency Growth')
+        self.assertNotContains(response, 'Competency Pillar Overview')
+        self.assertNotContains(response, 'Getting started')
+        self.assertNotContains(response, 'name="name"')
+        self.assertNotContains(response, 'Inactive series')
+
+    def test_dashboard_empty_state_contains_onboarding_and_create_action(self):
+        response = self.request('get', reverse('training_series_list'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'You haven’t created a training series yet')
+        self.assertContains(response, 'Create a series')
+        self.assertContains(response, 'Name the series and add its purpose.')
+        self.assertNotContains(response, 'Inactive series')
+
+    def test_series_create_get_is_read_only_and_valid_post_enters_setup(self):
+        create_url = reverse('training_series_create')
+
+        page = self.request('get', create_url)
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(TrainingSeries.objects.count(), 0)
+        self.assertContains(page, 'Series details')
+        self.assertContains(page, 'data-panel-steps')
+        self.assertContains(page, 'disabled')
+        self.assertNotContains(page, 'Your series has been created')
+
+        invalid = self.request('post', create_url, {'name': '', 'description': ''})
+        self.assertEqual(invalid.status_code, 200)
+        self.assertEqual(TrainingSeries.objects.count(), 0)
+        self.assertContains(invalid, 'This field is required.')
+
+        created = self.request('post', create_url, {
+            'action': 'series_details', 'name': 'New staff training',
+            'description': 'Practice clear feedback.', 'cadence_note': 'Monthly',
+        })
+        self.assertEqual(created.status_code, 302)
+        series = TrainingSeries.objects.get(name='New staff training')
+        self.assertEqual(created['Location'], reverse('training_series_manage', args=(series.pk,)))
+        self.assertEqual(list(self.client.session.get('_messages', [])), [])
+
+    def test_table_search_pagination_and_ajax_fragment(self):
+        for index in range(26):
+            self.create_series(f'Training {index:02}')
+        url = reverse('training_series_table')
+
+        first_page = self.request('get', url)
+        self.assertEqual(first_page.status_code, 200)
+        self.assertEqual(first_page.context['paginator'].per_page, 25)
+        self.assertEqual(first_page.context['paginator'].count, 26)
+        self.assertContains(first_page, 'Page 1 of 2')
+        self.assertContains(first_page, 'Rows per page')
+        self.assertNotContains(first_page, 'Inactive')
+
+        invalid_size = self.request('get', url, {'per_page': '10', 'page': 'x'})
+        self.assertEqual(invalid_size.context['per_page'], 25)
+        self.assertEqual(invalid_size.context['page_obj'].number, 1)
+        last_page = self.request('get', url, {'page': '999'})
+        self.assertEqual(last_page.context['page_obj'].number, 2)
+        first_page_again = self.request('get', url, {'page': '0'})
+        # The shared assessment paginator clamps out-of-range pages to the last page.
+        self.assertEqual(first_page_again.context['page_obj'].number, 2)
+        bad_size = self.request('get', url, {'per_page': 'abc'})
+        self.assertEqual(bad_size.context['per_page'], 25)
+        unknown_status = self.request('get', url, {'status': 'unknown'})
+        self.assertEqual(unknown_status.context['filtered_count'], 26)
+        for page_size in (25, 50, 100):
+            with self.subTest(page_size=page_size):
+                page = self.request('get', url, {'per_page': str(page_size)})
+                self.assertEqual(page.context['per_page'], page_size)
+
+        searched = self.request('get', url, {'q': 'Training 25'})
+        self.assertEqual(searched.context['filtered_count'], 1)
+        self.assertContains(searched, 'Training 25')
+        self.assertNotContains(searched, 'Training 24')
+        too_long = self.request('get', url, {'q': 'x' * 101})
+        self.assertEqual(len(too_long.context['search_query']), 100)
+        max_length = self.request('get', url, {'q': 'x' * 100})
+        self.assertEqual(len(max_length.context['search_query']), 100)
+
+        ajax = self.request('get', url, {'q': 'Training 25'},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(ajax.status_code, 200)
+        self.assertIn('X-Requested-With', ajax['Vary'])
+        self.assertNotContains(ajax, '<html')
+        self.assertContains(ajax, 'team-results')
+        self.assertContains(first_page, 'aria-label="Select all training series on this page"')
+        self.assertContains(first_page, 'aria-label="Actions for Training 25"')
+        self.assertContains(first_page, 'data-team-delete-trigger')
+        self.assertContains(first_page, 'Download export')
+        self.assertContains(first_page, 'I have saved this export')
+        self.assertNotContains(first_page, 'data-confirm=')
+
+    def test_table_has_three_distinct_empty_states_and_sidebar_routes(self):
+        empty = self.request('get', reverse('training_series_table'))
+        self.assertContains(empty, 'No training series yet')
+        self.assertContains(empty, 'Create a series')
+
+        self.create_series('Existing series')
+        filtered = self.request('get', reverse('training_series_table'), {'q': 'missing'})
+        self.assertContains(filtered, 'No matching series')
+        self.assertContains(filtered, 'Try a different series name')
+
+        dashboard = self.request('get', reverse('training_series_list'))
+        listing = self.request('get', reverse('training_series_table'))
+        self.assertEqual(dashboard.context['current_service'].slug, 'team')
+        self.assertEqual(dashboard.wsgi_request.resolver_match.url_name, 'training_series_list')
+        self.assertContains(dashboard, 'aria-current="page"')
+        self.assertContains(listing, 'Training series')
+        self.assertNotContains(listing, 'Team and Training dashboard" class="nav-link active')
+
+    def test_table_pagination_boundary_at_25_and_26(self):
+        url = reverse('training_series_table')
+        for index in range(25):
+            self.create_series(f'Boundary {index:02}')
+        page_25 = self.request('get', url)
+        self.assertEqual(page_25.context['paginator'].num_pages, 1)
+        self.assertNotContains(page_25, 'Page 1 of 1')
+        self.create_series('Boundary 25')
+        page_26 = self.request('get', url)
+        self.assertEqual(page_26.context['paginator'].num_pages, 2)
+        self.assertContains(page_26, 'Page 1 of 2')
+
+    def test_delete_export_contains_protected_records_and_removes_linked_session_tree(self):
+        series = self.create_series('Series with protected records')
+        series.feedback_minimum_responses = 2
+        series.save(update_fields=('feedback_minimum_responses', 'updated_at'))
+        session = AssessmentSession.objects.create(organization_id=self.org.id,
+            created_by=self.owner, service='team', name='Closed demo',
+            status=AssessmentSession.Status.CLOSED)
+        student = Student.objects.create(assessment_session=session,
+            full_name='Amina Juma', student_id='TEAM-42', email='learner@example.test')
+        link = TrainingSeriesSession.objects.create(organization_id=self.org.id,
+            created_by=self.owner, series=series, assessment_session=session, sequence=1)
+        criterion = TrainingSessionCompetency.objects.create(
+            organization_id=self.org.id, created_by=self.owner, series_session=link,
+            name='Clear communication', passing_score=70)
+        result = record_training_competency_result(session, criterion, student, 80,
+            'Used specific evidence to explain the outcome.',
+            organization=self.org.as_claim(), user=self.owner)
+        correction = record_training_competency_result(session, criterion, student, 85,
+            'Followed up with a stronger demonstration.',
+            organization=self.org.as_claim(), user=self.owner,
+            correction_reason='A second assessor reviewed the evidence.')
+        TrainingCertificate.objects.create(organization_id=self.org.id,
+            created_by=self.owner, result=result, learner_name='Amina Juma',
+            learner_reference='TEAM-42', series_name=series.name, session_name=session.name,
+            competency_name=criterion.name, score=80, passing_score=70)
+        TrainingLearnerReportLink.objects.create(organization_id=self.org.id,
+            created_by=self.owner, series_session=link, student=student,
+            token_digest='a' * 64, expires_at=timezone.now() + timedelta(days=1),
+            snapshot={'summary': 'private learner report'})
+        TrainingFeedback.objects.create(organization_id=self.org.id,
+            created_by=None, series_session=link, device_digest='b' * 64, score=5)
+
+        export = self.request('get', reverse('training_series_delete_export', args=(series.pk,)))
+        self.assertEqual(export.status_code, 200)
+        archive = zipfile.ZipFile(io.BytesIO(export.content))
+        data = json.loads(archive.read('team-series-export.json'))
+        self.assertEqual(len(data['learner_reports']), 1)
+        self.assertEqual(data['anonymous_feedback'][0]['score'], 5)
+        self.assertEqual(len(data['competency_results']), 2)
+        self.assertEqual(len(data['certificates']), 1)
+        self.assertNotIn('token_digest', json.dumps(data))
+        self.assertNotIn('device_digest', json.dumps(data))
+        self.assertIn('assessments.student', {row['model'] for row in data['linked_assessment_records']})
+        self.assertIn('Used specific evidence', json.dumps(data))
+
+        removed = self.request('post', reverse('training_series_delete', args=(series.pk,)), {
+            'delete_export_token': export['X-Delete-Export-Token'],
+        })
+        self.assertEqual(removed.status_code, 302)
+        self.assertFalse(TrainingSeries.objects.filter(pk=series.pk).exists())
+        self.assertFalse(AssessmentSession.objects.filter(pk=session.pk).exists())
+        self.assertFalse(TrainingLearnerReportLink.objects.filter(pk=data['learner_reports'][0]['id']).exists())
+        self.assertFalse(TrainingFeedback.objects.filter(series_session_id=link.pk).exists())
+        self.assertFalse(TrainingCompetencyResult.objects.filter(pk__in=[result.pk, correction.pk]).exists())
+        self.assertFalse(TrainingCertificate.objects.filter(result_id=result.pk).exists())
+
+    def test_list_query_count_does_not_grow_with_page_size(self):
+        for index in range(25):
+            self.create_series(f'Series {index:02}')
+
+        counts = []
+        for per_page in ('25', '50'):
+            with CaptureQueriesContext(connection) as queries:
+                self.request('get', reverse('training_series_table'), {'per_page': per_page})
+            counts.append(len(queries))
+
+        self.assertEqual(counts[0], counts[1])
+
+    def test_single_delete_requires_export_then_deletes_linked_session(self):
+        series = self.create_series('Series to remove')
+        session = AssessmentSession.objects.create(organization_id=self.org.id,
+            created_by=self.owner, service='team', name='Linked demo')
+        TrainingSeriesSession.objects.create(organization_id=self.org.id,
+            created_by=self.owner, series=series, assessment_session=session, sequence=1)
+        delete_url = reverse('training_series_delete', args=(series.pk,))
+
+        self.assertEqual(self.request('get', delete_url).status_code, 405)
+        denied = self.request('post', delete_url)
+        self.assertEqual(denied.status_code, 302)
+        self.assertTrue(TrainingSeries.objects.filter(pk=series.pk).exists())
+
+        export = self.request('get', reverse('training_series_delete_export', args=(series.pk,)))
+        self.assertEqual(export.status_code, 200)
+        self.assertEqual(export['Content-Type'], 'application/zip')
+        self.assertTrue(export['X-Delete-Export-Token'])
+        archive = zipfile.ZipFile(io.BytesIO(export.content))
+        exported = json.loads(archive.read('team-series-export.json'))
+        self.assertEqual(exported['series'][0]['name'], 'Series to remove')
+        deleted = self.request('post', delete_url, {
+            'delete_export_token': export['X-Delete-Export-Token'],
+        })
+        self.assertEqual(deleted.status_code, 302)
+        self.assertFalse(TrainingSeries.objects.filter(pk=series.pk).exists())
+        self.assertFalse(AssessmentSession.objects.filter(pk=session.pk).exists())
+
+    def test_bulk_delete_is_all_or_nothing_and_rejects_bad_or_oversized_ids(self):
+        first = self.create_series('First series')
+        second = self.create_series('Second series')
+        foreign = self.create_series('Other owner series', owner=self.other)
+        url = reverse('training_series_bulk_delete')
+
+        invalid_ids = ([], ['abc'], [str(index) for index in range(101)], ['1' * 20])
+        for series_ids in invalid_ids:
+            with self.subTest(ids=len(series_ids)):
+                response = self.request('post', url, {'series_ids': series_ids})
+                self.assertEqual(response.status_code, 302)
+        self.assertTrue(TrainingSeries.objects.filter(pk=first.pk, pk__in=[first.pk]).exists())
+        self.assertTrue(TrainingSeries.objects.filter(pk=second.pk).exists())
+
+        export = self.request('post', reverse('training_series_bulk_delete_export'), {
+            'series_ids': [str(first.pk), str(foreign.pk)],
+        })
+        self.assertEqual(export.status_code, 404)
+        self.assertTrue(TrainingSeries.objects.filter(pk=first.pk).exists())
+
+        own_export = self.request('post', reverse('training_series_bulk_delete_export'), {
+            'series_ids': [str(first.pk)],
+        })
+        mixed_delete = self.request('post', url, {
+            'series_ids': [str(first.pk), str(foreign.pk)],
+            'delete_export_token': own_export['X-Delete-Export-Token'],
+        })
+        self.assertEqual(mixed_delete.status_code, 302)
+        self.assertTrue(TrainingSeries.objects.filter(pk=first.pk).exists())
+        self.assertTrue(TrainingSeries.objects.filter(pk=foreign.pk).exists())
+
+        export = self.request('post', reverse('training_series_bulk_delete_export'), {
+            'series_ids': [str(first.pk), str(second.pk), str(first.pk)],
+        })
+        self.assertEqual(export.status_code, 200)
+        deleted = self.request('post', url, {
+            'series_ids': [str(first.pk), str(second.pk), str(first.pk)],
+            'delete_export_token': export['X-Delete-Export-Token'],
+        })
+        self.assertEqual(deleted.status_code, 302)
+        self.assertFalse(TrainingSeries.objects.filter(pk__in=[first.pk, second.pk]).exists())
+        self.assertTrue(TrainingSeries.objects.filter(pk=foreign.pk).exists())
+
+    def test_delete_last_item_from_last_page_returns_to_a_valid_page(self):
+        series = [self.create_series(f'Page item {index:02}') for index in range(26)]
+        target = series[-1]
+        export = self.request('get', reverse('training_series_delete_export', args=(target.pk,)))
+        response = self.request('post', reverse('training_series_delete', args=(target.pk,)), {
+            'delete_export_token': export['X-Delete-Export-Token'],
+            'page': '2', 'per_page': '25',
+        }, follow=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['page_obj'].number, 1)
+        self.assertEqual(response.context['paginator'].count, 25)
+
+    def test_new_routes_enforce_login_owner_and_organization_scope(self):
+        series = self.create_series('Privately owned series')
+        table_url = reverse('training_series_table')
+        create_url = reverse('training_series_create')
+        self.client.logout()
+        anonymous = self.request('get', table_url)
+        self.assertEqual(anonymous.status_code, 302)
+        self.assertEqual(anonymous['Location'], reverse('service_entry', kwargs={'slug': 'team'}))
+
+        sign_in(self.client, self.other, self.org)
+        self.assertEqual(self.request('get', reverse('training_series_manage', args=(series.pk,))).status_code, 404)
+        self.assertEqual(self.request('get', reverse('training_series_delete_export', args=(series.pk,))).status_code, 404)
+        self.assertEqual(self.request('post', reverse('training_series_delete', args=(series.pk,))).status_code, 404)
+        self.assertEqual(self.request('get', create_url).status_code, 200)
+
+        sign_in(self.client, self.owner, self.other_org)
+        self.assertEqual(self.request('get', reverse('training_series_delete_export', args=(series.pk,))).status_code, 404)
+        self.assertEqual(self.request('post', reverse('training_series_delete', args=(series.pk,))).status_code, 404)
+        self.assertTrue(TrainingSeries.objects.filter(pk=series.pk).exists())
 
 
 class TrainingCompetencyDecisionOperationTests(TestCase):

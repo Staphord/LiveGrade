@@ -109,16 +109,29 @@ CLOSED_SERVICE_ROUTES = {
     'showcase_exhibit_import': GET,
     'showcase_exhibit_import_sample': GET,
     'training_series_list': GET,
+    'training_series_table': GET,
+    'training_series_create': GET,
     'training_series_manage': GET,
+    'training_series_delete': POST,
+    'training_series_bulk_delete': POST,
+    'training_series_delete_export': GET,
+    'training_series_bulk_delete_export': POST,
     'training_session_competencies': GET,
     'training_series_trends': GET,
     'training_series_export': GET,
+    'training_series_roster_import': GET,
     'training_series_roster_preview': GET,
     'training_series_roster_sample': GET,
     'panel_hearing_list': GET,
+    'panel_hearing_table': GET,
+    'panel_hearing_create': GET,
+    'panel_hearing_delete': POST,
+    'panel_hearing_bulk_delete': POST,
     'combined_assessment_list': GET,
     'combined_assessment_create': GET,
     'combined_assessment_detail': GET,
+    'combined_assessment_delete': POST,
+    'combined_assessment_bulk_delete': POST,
     'panel_hearing_manage': GET,
     'panel_candidate_import': GET,
     'panel_candidate_import_sample': GET,
@@ -164,11 +177,6 @@ URL_MATRIX.update({name: (method, LOGIN, 403, 404) for name, method in LECTURER_
 URL_MATRIX.update({name: (method, 404, 404, 404) for name, method in STUDENT_ROUTES.items()})
 URL_MATRIX.update({name: (method, 404, 404, 404) for name, method in CLOSED_SERVICE_ROUTES.items()})
 URL_MATRIX.update(ACCOUNT_ROUTES)
-# The roster import route accepts POST only; its method guard answers GET with
-# 405 before authentication or service availability is relevant.
-URL_MATRIX['training_series_roster_import'] = (GET, 405, 405, 405)
-
-
 def named_patterns(resolver=None):
     """Every named URL in the project."""
     for pattern in (resolver or get_resolver()).url_patterns:

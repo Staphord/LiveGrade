@@ -1,235 +1,219 @@
 {% extends 'base.html' %}
 {% block title %}Showcase dashboard · LiveGrade{% endblock %}
 {% block page_title %}Showcase dashboard{% endblock %}
-{% block content %}
-{% include 'service_domains/_workspace_styles.html' %}
+
+{% block extra_css %}
 {% include 'partials/_service_dashboard_styles.html' %}
 <style nonce="{{ csp_nonce }}">
-.showcase-dashboard{max-width:1500px}
-.showcase-dashboard :is(.kpi-value,.sc-event-stat strong,.sc-bar-row strong){font-variant-numeric:tabular-nums}
-.sc-event:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
-.sc-bar-fill.draft{background:var(--warn)}
-.sc-bar-fill.open{background:var(--success)}
-.sc-bar-fill.closed{background:var(--text-muted)}
-.sc-bar-fill.published{background:var(--accent)}
-.sc-event{display:grid;grid-template-columns:minmax(0,1.5fr) repeat(3,minmax(90px,.55fr)) auto;align-items:center;gap:.8rem;padding:.9rem .4rem;border-top:1px solid var(--border);color:var(--text);text-decoration:none;border-radius:var(--sd-radius-sm);transition:background-color .15s ease}
-.sc-event:hover{background:var(--sd-surface-hover)}
-.sc-event:hover .sc-event-name{color:var(--accent)}
-.sc-event-name{color:var(--ink);font-weight:700}
-.sc-meta,.sc-event-stat{font-size:var(--fs-sm);color:var(--text-muted)}
-.sc-event-stat strong{display:block;color:var(--ink);font-size:1rem}
-.sc-status{display:inline-flex;border-radius:99px;padding:.2rem .65rem;font-size:.78rem;font-weight:700;background:var(--surface-hover)}
-.sc-status.open{background:var(--tone-success-bg);color:var(--tone-success-fg)}
-.sc-status.draft{background:var(--tone-warn-bg);color:var(--tone-warn-fg)}
-.sc-status.published{background:var(--tone-info-bg);color:var(--tone-info-fg)}
-.sc-bars{display:grid;gap:.95rem;margin-top:.5rem}
-.sc-bar-row{display:grid;grid-template-columns:80px minmax(0,1fr) 32px;gap:.6rem;align-items:center;font-size:var(--fs-sm)}
-.sc-bar-track{height:10px;background:var(--surface-hover);border-radius:99px;overflow:hidden}
-.sc-bar-fill{height:100%;background:var(--accent);border-radius:99px;min-width:0}
-.sc-progress{height:8px;background:var(--surface-hover);border-radius:99px;overflow:hidden;margin-top:.5rem}
-.sc-progress span{display:block;height:100%;background:var(--success);border-radius:99px}
-@media(max-width:1000px){.sc-event{grid-template-columns:minmax(0,1.5fr) repeat(2,minmax(70px,.5fr)) auto}.sc-event-stat.rating{display:none}}
-@media(max-width:600px){.sc-event{grid-template-columns:1fr auto}.sc-event-stat{display:none!important}}
+.showcase-dashboard{gap:var(--sp-4)}
+.showcase-dashboard a,.showcase-dashboard a:hover{text-decoration:none}
+.showcase-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:var(--sp-3)}
+.showcase-kpi{min-width:0;padding:var(--sp-4);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);box-shadow:var(--elev-1)}
+.showcase-kpi-label{color:var(--text-muted);font-size:var(--fs-sm);font-weight:650}
+.showcase-kpi-value{margin-top:var(--sp-2);font-size:1.8rem;line-height:1.1;font-weight:800;letter-spacing:-.04em;color:var(--ink);font-variant-numeric:tabular-nums}
+.showcase-kpi-note{margin-top:var(--sp-2);color:var(--text-muted);font-size:var(--fs-micro);line-height:1.45}
+.showcase-live-panel{padding:var(--sp-4);border:1px solid var(--tone-success-bg);border-radius:var(--radius-card);background:var(--surface)}
+.showcase-live-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:var(--sp-3);margin-top:var(--sp-3)}
+.showcase-live-card-link{display:block;height:100%;border-radius:var(--radius-control);color:var(--text)}
+.showcase-live-card-link:focus-visible{outline:0;box-shadow:var(--focus-ring)}
+.showcase-live-item{height:100%;padding:var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface-hover);transition:border-color var(--motion-fast) var(--ease),background var(--motion-fast) var(--ease),transform var(--motion-fast) var(--ease)}
+.showcase-live-card-link:hover .showcase-live-item{border-color:var(--accent);background:var(--surface);transform:translateY(-1px)}
+.showcase-live-item h3{margin:0;color:var(--ink);font-size:var(--fs-strong);font-weight:750}
+.showcase-live-meta{display:flex;flex-wrap:wrap;gap:var(--sp-1) var(--sp-2);margin-top:var(--sp-2);color:var(--text-muted);font-size:var(--fs-sm)}
+.showcase-live-now{display:inline-flex;align-items:center;gap:6px;color:var(--tone-success-fg);font-size:var(--fs-micro);font-weight:750;text-transform:uppercase;letter-spacing:.04em}
+.showcase-live-dot{width:8px;height:8px;border-radius:50%;background:var(--success)}
+.showcase-visual-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-3)}
+.showcase-data-card{min-width:0;padding:var(--sp-4);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.showcase-data-card h2{margin:0;font-size:var(--fs-heading);font-weight:750}
+.showcase-data-subtitle{margin:var(--sp-1) 0 var(--sp-4);color:var(--text-muted);font-size:var(--fs-sm)}
+.showcase-stage-chart{display:grid;grid-template-columns:minmax(140px,180px) minmax(0,1fr);align-items:center;gap:var(--sp-4)}
+.showcase-stage-pie{width:100%;aspect-ratio:1;border:1px solid var(--border);border-radius:50%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.4)}
+.showcase-stage-legend{display:grid;gap:var(--sp-3);margin:0;padding:0;list-style:none}
+.showcase-stage-legend li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:var(--sp-2);font-size:var(--fs-sm)}
+.showcase-stage-swatch{width:11px;height:11px;border-radius:3px;background:var(--text-subtle)}
+.showcase-stage-swatch.draft{background:#d28a08}
+.showcase-stage-swatch.open{background:var(--success)}
+.showcase-stage-swatch.closed{background:var(--text-muted)}
+.showcase-stage-swatch.published{background:var(--accent)}
+.showcase-stage-legend strong{white-space:nowrap;color:var(--ink);font-variant-numeric:tabular-nums}
+.showcase-stage-legend small{color:var(--text-muted);font-weight:500}
+.showcase-bars-list{display:grid;gap:var(--sp-3);margin:0;padding:0;list-style:none}
+.showcase-bars-label{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2);margin-bottom:var(--sp-1);font-size:var(--fs-sm)}
+.showcase-bars-label a{overflow:hidden;color:var(--text);font-weight:650;text-overflow:ellipsis;white-space:nowrap}
+.showcase-bars-label a:hover,.showcase-recent-name:hover{color:var(--accent)}
+.showcase-bars-label strong{flex:0 0 auto;font-variant-numeric:tabular-nums}
+.showcase-bars-track{height:12px;overflow:hidden;border-radius:var(--radius-pill);background:var(--surface-sunken);background-image:linear-gradient(to right,transparent calc(50% - .5px),var(--border) calc(50% - .5px),var(--border) calc(50% + .5px),transparent calc(50% + .5px))}
+.showcase-bars-fill{height:100%;border-radius:inherit;background:var(--accent);transition:width var(--motion) var(--ease)}
+.showcase-bars-axis{display:flex;justify-content:space-between;margin-top:var(--sp-1);padding-left:0;color:var(--text-muted);font-size:var(--fs-micro)}
+.showcase-recent{overflow:hidden;padding:0;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.showcase-recent-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);padding:var(--sp-4);border-bottom:1px solid var(--border)}
+.showcase-recent-head h2{margin:0;font-size:var(--fs-heading);font-weight:750}
+.showcase-recent .table{margin:0;vertical-align:middle}
+.showcase-recent .table th{color:var(--text-muted);font-size:var(--fs-micro);font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.showcase-recent .table td{font-size:var(--fs-sm)}
+.showcase-recent-name{color:var(--text);font-size:var(--fs-body);font-weight:700;text-decoration:none}
+.showcase-recent-name:hover{text-decoration:none}
+.showcase-table-secondary{display:block;margin-top:3px;color:var(--text-muted);font-size:var(--fs-micro)}
+.showcase-recent .showcase-actions-cell{width:1%;white-space:nowrap}
+.showcase-recent .showcase-actions-cell .dropdown-menu{z-index:var(--z-dropdown)}
+.showcase-empty{padding:var(--sp-6) var(--sp-4);text-align:center}
+.showcase-empty-icon{display:grid;width:3rem;height:3rem;place-items:center;margin:0 auto var(--sp-3);border-radius:var(--radius-card);background:var(--accent-soft);color:var(--accent);font-size:1.4rem}
+.showcase-empty h2{margin:0 0 var(--sp-2);font-size:var(--fs-title);font-weight:800;color:var(--ink)}
+.showcase-empty p{max-width:38rem;margin:0 auto var(--sp-4);color:var(--text-muted);line-height:1.55}
+.showcase-empty-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--sp-3);max-width:850px;margin:0 auto var(--sp-4);text-align:left}
+.showcase-empty-step{padding:var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface-hover)}
+.showcase-empty-step strong,.showcase-empty-step span{display:block}
+.showcase-empty-step strong{margin-bottom:var(--sp-1);font-size:var(--fs-sm)}
+.showcase-empty-step span{color:var(--text-muted);font-size:var(--fs-micro);line-height:1.45}
+@media(max-width:1199.98px){.showcase-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:767.98px){.showcase-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.showcase-visual-grid{grid-template-columns:1fr}.showcase-empty-steps{grid-template-columns:1fr}}
+@media(max-width:575.98px){.showcase-kpi{padding:var(--sp-3)}.showcase-kpi-value{font-size:1.5rem}.showcase-stage-chart{grid-template-columns:minmax(120px,150px) minmax(0,1fr);gap:var(--sp-3)}.showcase-recent-head{align-items:flex-start;flex-direction:column}.showcase-recent .table{min-width:680px}}
 </style>
-<div class="container-fluid py-4 service-workspace showcase-dashboard stage-content">
-  <header class="hero-banner {% if not open_events %}between-banner{% endif %}">
+{% include 'service_domains/_partials/showcase_row_actions_styles.html' %}
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'showcase_event_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>New event</a>
+{% endblock %}
+
+{% block content %}
+<div class="stage-content showcase-dashboard">
+  <header class="hero-banner between-banner">
     <div class="hero-meta">
-      {% if open_events %}
-        <div class="status-pill live mb-2"><span class="live-dot"></span> EXHIBITION FLOOR OPEN</div>
-      {% elif events %}
-        <div class="status-pill closed mb-2"><i class="bi bi-calendar-event" aria-hidden="true"></i> BETWEEN EXPOS — SCHEDULED</div>
-      {% else %}
-        <div class="status-pill action mb-2"><i class="bi bi-easel2" aria-hidden="true"></i> LIVEGRADE SHOWCASE</div>
-      {% endif %}
-      <h1 class="page-title">Showcase dashboard</h1>
-      <p class="page-subtitle mb-0">A clear view of your events, exhibits, visitor feedback, and judge scorecards.</p>
+      <p>A live summary of your events, exhibits, visitor ratings, and judge scorecards.</p>
     </div>
     <div class="hero-actions">
+      <a href="{% url 'showcase_event_table' %}" class="btn btn-outline-primary">Browse events</a>
       <a href="{% url 'showcase_event_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create event</a>
     </div>
   </header>
 
-  {% if events %}
-  <section class="kpi-row kpi-row-5 sc-kpis" aria-label="Showcase summary">
-    <article class="kpi-tile sc-kpi" data-filter-trigger="all">
-      <div class="kpi-label sc-kpi-label">Events</div>
-      <div class="kpi-value sc-kpi-value">{{ total_events }}</div>
-      <div class="kpi-footer sc-kpi-note"><span class="kpi-trend">All stages</span><span>Configured expos</span></div>
-    </article>
-    <article class="kpi-tile sc-kpi" data-filter-trigger="open">
-      <div class="kpi-label sc-kpi-label">Open now {% if open_events %}<span class="live-dot"></span>{% endif %}</div>
-      <div class="kpi-value sc-kpi-value">{{ open_events }}</div>
-      <div class="kpi-footer sc-kpi-note"><span>Accepting visitor ratings</span></div>
-    </article>
-    <article class="kpi-tile sc-kpi" data-filter-trigger="all">
-      <div class="kpi-label sc-kpi-label">Exhibits</div>
-      <div class="kpi-value sc-kpi-value">{{ total_exhibits }}</div>
-      <div class="kpi-footer sc-kpi-note"><span>Across your events</span></div>
-    </article>
-    <article class="kpi-tile sc-kpi" data-filter-trigger="open">
-      <div class="kpi-label sc-kpi-label">Visitor ratings</div>
-      <div class="kpi-value sc-kpi-value">{{ total_ratings }}</div>
-      <div class="kpi-footer sc-kpi-note"><span>Feedback submitted</span></div>
-    </article>
-    <article class="kpi-tile sc-kpi" data-filter-trigger="all">
-      <div class="kpi-label sc-kpi-label">Judge scorecards</div>
-      <div class="kpi-value sc-kpi-value">{{ judge_submitted }}<span class="fs-6 text-muted"> / {{ judge_assigned }}</span></div>
-      <div class="kpi-footer sc-kpi-note"><span>Submitted / assigned</span></div>
-    </article>
+  <section class="showcase-kpis" aria-label="Showcase key metrics">
+    <article class="showcase-kpi"><div class="showcase-kpi-label">Events</div><div class="showcase-kpi-value">{{ total_events }}</div><div class="showcase-kpi-note">Your events in this organization</div></article>
+    <article class="showcase-kpi"><div class="showcase-kpi-label">Open now</div><div class="showcase-kpi-value">{{ open_events }}</div><div class="showcase-kpi-note">Accepting visitor ratings</div></article>
+    <article class="showcase-kpi"><div class="showcase-kpi-label">Results published</div><div class="showcase-kpi-value">{{ status_counts.published }}</div><div class="showcase-kpi-note">Events with public results</div></article>
+    <article class="showcase-kpi"><div class="showcase-kpi-label">Exhibits</div><div class="showcase-kpi-value">{{ total_exhibits }}</div><div class="showcase-kpi-note">Across your events</div></article>
+    <article class="showcase-kpi"><div class="showcase-kpi-label">Visitor ratings</div><div class="showcase-kpi-value">{{ total_ratings }}</div><div class="showcase-kpi-note">Feedback submitted</div></article>
+    <article class="showcase-kpi"><div class="showcase-kpi-label">Judge scorecards</div><div class="showcase-kpi-value">{{ judge_submitted }}<span class="fs-6 text-muted"> / {{ judge_assigned }}</span></div><div class="showcase-kpi-note">Submitted / assigned</div></article>
   </section>
 
-  <div class="bento-grid sc-grid">
-    <section class="bento-card col-8 sc-panel" aria-labelledby="events-heading">
-      <div class="bento-header sc-panel-head">
-        <div class="bento-title">
-          <h2 id="events-heading">Your events</h2>
-          <p>Open an event to manage setup or follow live activity.</p>
-        </div>
-        <a href="{% url 'showcase_event_create' %}" class="btn btn-sm btn-outline-primary">New event</a>
-      </div>
-
-      <div class="chart-container" aria-label="Exhibition Hall Rating Velocity">
-        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-          <span class="small fw-bold text-dark">Exhibition Hall Rating &amp; Scorecard Telemetry</span>
-          <span class="small text-muted">{{ total_exhibits }} exhibit{{ total_exhibits|pluralize }} · {{ total_ratings }} visitor rating{{ total_ratings|pluralize }}</span>
-        </div>
-        <svg class="chart-svg" viewBox="0 0 600 140" role="img" aria-label="Exhibition activity overview">
-          <line x1="30" y1="20" x2="580" y2="20" stroke="#e2e8f0" stroke-dasharray="4"/>
-          <line x1="30" y1="70" x2="580" y2="70" stroke="#e2e8f0" stroke-dasharray="4"/>
-          <line x1="30" y1="115" x2="580" y2="115" stroke="#cbd5e1"/>
-          <rect x="65" y="45" width="75" height="70" rx="5" fill="#93c5fd"/>
-          <text x="102" y="132" font-size="11" font-weight="600" fill="#334155" text-anchor="middle">Draft ({{ status_counts.draft }})</text>
-          <rect x="195" y="25" width="75" height="90" rx="5" fill="#059669"/>
-          <text x="232" y="132" font-size="11" font-weight="700" fill="#065f46" text-anchor="middle">Open ({{ status_counts.open }})</text>
-          <rect x="325" y="55" width="75" height="60" rx="5" fill="#64748b"/>
-          <text x="362" y="132" font-size="11" font-weight="600" fill="#334155" text-anchor="middle">Closed ({{ status_counts.closed }})</text>
-          <rect x="455" y="35" width="75" height="80" rx="5" fill="#2563eb"/>
-          <text x="492" y="132" font-size="11" font-weight="600" fill="#1e40af" text-anchor="middle">Published ({{ status_counts.published }})</text>
-        </svg>
-      </div>
-
-      <div class="filter-bar event-filters" role="group" aria-label="Filter events">
-        <div class="filter-tabs">
-          <button type="button" class="filter-tab active" data-event-filter="all" aria-pressed="true">All <span class="ms-1">{{ total_events }}</span></button>
-          <button type="button" class="filter-tab" data-event-filter="draft" aria-pressed="false">Drafts {{ status_counts.draft }}</button>
-          <button type="button" class="filter-tab" data-event-filter="open" aria-pressed="false">Open {{ status_counts.open }}</button>
-          <button type="button" class="filter-tab" data-event-filter="closed" aria-pressed="false">Closed {{ status_counts.closed }}</button>
-          <button type="button" class="filter-tab" data-event-filter="published" aria-pressed="false">Published {{ status_counts.published }}</button>
-        </div>
-        <div class="sd-search-box">
-          <label class="visually-hidden" for="showcase-event-search">Filter events by name</label>
-          <i class="bi bi-search" aria-hidden="true"></i>
-          <input type="search" id="showcase-event-search" class="form-control form-control-sm" placeholder="Search events..." data-event-search>
-        </div>
-      </div>
-
-      <div id="showcase-event-list">
-        {% for event in events %}
-        <a class="sc-event" data-event-status="{{ event.status }}" data-event-name="{{ event.name|lower }}" href="{% url 'showcase_event_manage' event_id=event.pk %}">
-          <span>
-            <span class="sc-event-name d-block">{{ event.name }}</span>
-            <span class="sc-meta">{% if event.starts_at %}{{ event.starts_at|date:'j M Y, H:i' }}{% else %}Date not set{% endif %} · Updated {{ event.updated_at|timesince }} ago</span>
-          </span>
-          <span class="sc-event-stat"><strong>{{ event.exhibit_count }}</strong>Exhibits</span>
-          <span class="sc-event-stat rating"><strong>{{ event.rating_count }}{% if event.average_rating %} · {{ event.average_rating|floatformat:1 }}★{% endif %}</strong>Visitor ratings</span>
-          <span class="sc-event-stat"><strong>{{ event.judge_submitted_count }} / {{ event.judge_assignment_count }}</strong>Judge cards</span>
-          <span class="sc-status {{ event.status }}">{{ event.get_status_display }}</span>
-        </a>
-        {% endfor %}
-      </div>
-      <p id="showcase-event-filter-empty" class="text-muted mt-3 mb-0" hidden>No events match this filter.</p>
-    </section>
-
-    <aside class="bento-card col-4 sc-panel" aria-labelledby="activity-heading">
-      <div class="bento-header">
-        <div class="bento-title">
-          <h2 id="activity-heading">Event overview</h2>
-          <p>How your events are progressing.</p>
-        </div>
-      </div>
-      <div class="sc-bars" aria-label="Events by stage">
-        <div class="sc-bar-row"><span>Draft</span><div class="sc-bar-track"><div class="sc-bar-fill draft" style="width:{% widthratio status_counts.draft total_events 100 %}%"></div></div><strong>{{ status_counts.draft }}</strong></div>
-        <div class="sc-bar-row"><span>Open</span><div class="sc-bar-track"><div class="sc-bar-fill open" style="width:{% widthratio status_counts.open total_events 100 %}%"></div></div><strong>{{ status_counts.open }}</strong></div>
-        <div class="sc-bar-row"><span>Closed</span><div class="sc-bar-track"><div class="sc-bar-fill closed" style="width:{% widthratio status_counts.closed total_events 100 %}%"></div></div><strong>{{ status_counts.closed }}</strong></div>
-        <div class="sc-bar-row"><span>Published</span><div class="sc-bar-track"><div class="sc-bar-fill published" style="width:{% widthratio status_counts.published total_events 100 %}%"></div></div><strong>{{ status_counts.published }}</strong></div>
-      </div>
-      <hr class="my-2">
-      <div>
-        <div class="d-flex justify-content-between"><span>Judge scorecards</span><strong>{{ judge_submitted }} / {{ judge_assigned }}</strong></div>
-        <div class="sc-progress" role="progressbar" aria-label="Judge scorecards submitted" aria-valuemin="0" aria-valuemax="{{ judge_assigned|default:1 }}" aria-valuenow="{{ judge_submitted }}">
-          <span style="width:{% if judge_assigned %}{% widthratio judge_submitted judge_assigned 100 %}{% else %}0{% endif %}%"></span>
-        </div>
-        <p class="sc-meta mt-2 mb-0">Submitted scorecards across all events</p>
-      </div>
-    </aside>
-  </div>
+  {% if live_events %}
+  <section class="showcase-live-panel" aria-labelledby="showcase-live-heading">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <div><span class="showcase-live-now"><span class="showcase-live-dot" aria-hidden="true"></span>Open for ratings</span><h2 class="h5 mt-1 mb-0" id="showcase-live-heading">{{ open_events }} open event{{ open_events|pluralize }}</h2></div>
+      <a href="{% url 'showcase_event_table' %}?status=open" class="btn btn-sm btn-outline-primary">View open events</a>
+    </div>
+    <div class="showcase-live-list">
+      {% for event in live_events %}
+      <a class="showcase-live-card-link" href="{% url 'showcase_event_manage' event_id=event.pk %}">
+        <article class="showcase-live-item">
+          <h3>{{ event.name }}</h3>
+          <div class="showcase-live-meta"><span>{{ event.exhibit_count }} exhibit{{ event.exhibit_count|pluralize }}</span><span> · {{ event.rating_count }} visitor rating{{ event.rating_count|pluralize }}{% if event.average_rating %} · {{ event.average_rating|floatformat:1 }}★{% endif %}</span></div>
+          <div class="showcase-live-meta"><span>Judge cards: {{ event.judge_submitted_count }} of {{ event.judge_assignment_count }} submitted</span></div>
+        </article>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
   {% else %}
-  <section class="empty-hero sc-empty">
-    <div class="empty-icon-wrap" aria-hidden="true"><i class="bi bi-easel2"></i></div>
-    <div>
-      <div class="status-pill action mb-2">Getting started</div>
-      <h2 class="h4">Set up your first Showcase event</h2>
-      <p class="mt-2 mx-auto">The guided setup will help you name the event, choose its schedule, and set judging expectations.</p>
-    </div>
-    <div class="empty-steps" role="list">
-      <div class="empty-step-card" role="listitem">
-        <div class="empty-step-num">1</div>
-        <strong>Create the Event</strong>
-        <span>Set event times, branding accent, and minor participation rules.</span>
-      </div>
-      <div class="empty-step-card" role="listitem">
-        <div class="empty-step-num">2</div>
-        <strong>Import Exhibits &amp; Criteria</strong>
-        <span>Upload exhibit booths by spreadsheet and configure judge rubrics.</span>
-      </div>
-      <div class="empty-step-card" role="listitem">
-        <div class="empty-step-num">3</div>
-        <strong>Print QR Labels &amp; Open</strong>
-        <span>Generate booth QR sheets, confirm minor consent, and open floor voting.</span>
-      </div>
-    </div>
-    <a class="btn btn-primary btn-lg" href="{% url 'showcase_event_create' %}">Start event setup</a>
+  <section class="showcase-live-panel" aria-labelledby="showcase-live-heading">
+    <h2 class="h6 mb-1" id="showcase-live-heading">None of your events are open right now</h2>
+    <p class="text-muted small mb-0">Open events will appear here with live ratings.</p>
   </section>
   {% endif %}
+
+  <section class="showcase-visual-grid" aria-label="Showcase data visualizations">
+    <article class="showcase-data-card" aria-labelledby="showcase-stage-heading">
+      <h2 id="showcase-stage-heading">Event stages</h2>
+      <p class="showcase-data-subtitle">Distribution across your {{ total_events }} event{{ total_events|pluralize }}.</p>
+      {% if total_events %}
+      <div class="showcase-stage-chart">
+        <div class="showcase-stage-pie" style="background:{{ stage_pie_background }}" aria-hidden="true"></div>
+        <ul class="showcase-stage-legend" aria-label="Event stage breakdown">
+          {% for stage in stage_distribution %}
+          <li><span class="showcase-stage-swatch {{ stage.key }}" aria-hidden="true"></span><span>{{ stage.label }}</span><strong>{{ stage.count }} <small>({{ stage.percentage }}%)</small></strong></li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% else %}
+        <p class="showcase-empty mb-0">Event stage data will appear after you create an event.</p>
+      {% endif %}
+    </article>
+
+    <article class="showcase-data-card" aria-labelledby="showcase-bars-heading">
+      <h2 id="showcase-bars-heading">Largest exhibit lists</h2>
+      <p class="showcase-data-subtitle">Exhibit counts by event; bars are scaled to the largest event shown.</p>
+      {% if exhibit_events and largest_exhibits %}
+      <ol class="showcase-bars-list">
+        {% for event in exhibit_events %}
+        <li>
+          <div class="showcase-bars-label"><a href="{% url 'showcase_event_manage' event_id=event.pk %}">{{ event.name }}</a><strong>{{ event.exhibit_count }}</strong></div>
+          <div class="showcase-bars-track" aria-hidden="true"><div class="showcase-bars-fill" style="width:{{ event.exhibit_bar_percent }}%"></div></div>
+        </li>
+        {% endfor %}
+      </ol>
+      <div class="showcase-bars-axis" aria-hidden="true"><span>0 exhibits</span><span>{{ largest_exhibits }} exhibit{{ largest_exhibits|pluralize }}</span></div>
+      {% else %}
+        <p class="showcase-empty mb-0">Exhibit data will appear after exhibits are added to an event.</p>
+      {% endif %}
+    </article>
+  </section>
+
+  <section class="showcase-recent" aria-labelledby="showcase-recent-heading">
+    <div class="showcase-recent-head"><div><h2 id="showcase-recent-heading">Recent events</h2><p class="showcase-data-subtitle mb-0">Your five most recently created events.</p></div><a href="{% url 'showcase_event_table' %}" class="btn btn-outline-primary btn-sm">View all events</a></div>
+    {% if recent_events %}
+    <div class="table-responsive">
+      <table class="table table-hover" data-showcase-row-navigation>
+        <caption class="visually-hidden">Five most recently created Showcase events</caption>
+        <thead>
+          <tr>
+            <th scope="col">Event</th>
+            <th scope="col">Status</th>
+            <th scope="col">Exhibits</th>
+            <th scope="col">Visitor ratings</th>
+            <th scope="col">Judge scorecards</th>
+            <th scope="col">Starts</th>
+            <th scope="col">Created</th>
+            <th scope="col"><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for event in recent_events %}
+          <tr class="showcase-row-clickable" data-showcase-row-href="{% url 'showcase_event_manage' event_id=event.pk %}">
+            <td>
+              <a class="showcase-recent-name" href="{% url 'showcase_event_manage' event_id=event.pk %}">{{ event.name }}</a>
+            </td>
+            <td>
+              <span class="badge {% if event.status == 'open' %}bg-success-subtle text-success-emphasis{% elif event.status == 'draft' %}bg-warning-subtle text-warning-emphasis{% else %}bg-secondary-subtle text-secondary-emphasis{% endif %}">{{ event.get_status_display }}</span>
+            </td>
+            <td>{{ event.exhibit_count }}</td>
+            <td>{{ event.rating_count }}{% if event.average_rating %}<span class="showcase-table-secondary">{{ event.average_rating|floatformat:1 }}★</span>{% endif %}</td>
+            <td>{{ event.judge_submitted_count }} / {{ event.judge_assignment_count }}</td>
+            <td>{% if event.starts_at %}{{ event.starts_at|date:'j M Y, H:i' }}{% else %}Date not set{% endif %}</td>
+            <td>{{ event.created_at|date:'d M Y' }}</td>
+            <td class="showcase-actions-cell text-end">{% include 'service_domains/_partials/showcase_row_actions.html' %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <div class="showcase-empty">
+        <div class="showcase-empty-icon" aria-hidden="true"><i class="bi bi-easel2"></i></div>
+        <h2>Set up your first Showcase event</h2>
+        <p>The guided setup will help you name the event, choose its schedule, and set judging expectations.</p>
+        <div class="showcase-empty-steps" aria-label="Event setup steps">
+          <div class="showcase-empty-step"><strong>1. Create the Event</strong><span>Set event times, branding accent, and minor participation rules.</span></div>
+          <div class="showcase-empty-step"><strong>2. Import Exhibits &amp; Criteria</strong><span>Upload exhibit booths by spreadsheet and configure judge rubrics.</span></div>
+          <div class="showcase-empty-step"><strong>3. Print QR Labels &amp; Open</strong><span>Generate booth QR sheets, confirm minor consent, and open floor voting.</span></div>
+        </div>
+        <a class="btn btn-primary" href="{% url 'showcase_event_create' %}">Start event setup</a>
+      </div>
+    {% endif %}
+  </section>
 </div>
-{% if events %}
-<script nonce="{{ csp_nonce }}">
-(()=>{
-  const buttons=[...document.querySelectorAll('[data-event-filter]')];
-  const rows=[...document.querySelectorAll('[data-event-status]')];
-  const searchInput=document.querySelector('[data-event-search]');
-  const empty=document.getElementById('showcase-event-filter-empty');
-  const kpiTriggers=[...document.querySelectorAll('[data-filter-trigger]')];
-  let activeFilter='all';
+{% endblock %}
 
-  function applyFilter(){
-    const query=(searchInput?searchInput.value.trim().toLowerCase():'');
-    let shown=0;
-    buttons.forEach(item=>{
-      const active=item.dataset.eventFilter===activeFilter;
-      item.setAttribute('aria-pressed',String(active));
-      item.classList.toggle('active',active);
-    });
-    rows.forEach(row=>{
-      const statusMatch=activeFilter==='all'||row.dataset.eventStatus===activeFilter;
-      const nameMatch=!query||(row.dataset.eventName||'').includes(query);
-      const visible=statusMatch&&nameMatch;
-      row.hidden=!visible;
-      if(visible)shown++;
-    });
-    if(empty)empty.hidden=shown>0;
-  }
-
-  buttons.forEach(button=>button.addEventListener('click',()=>{
-    activeFilter=button.dataset.eventFilter;
-    applyFilter();
-  }));
-  kpiTriggers.forEach(tile=>tile.addEventListener('click',()=>{
-    activeFilter=tile.dataset.filterTrigger||'all';
-    applyFilter();
-  }));
-  if(searchInput)searchInput.addEventListener('input',applyFilter);
-})();
-</script>
-{% endif %}
+{% block scripts %}
+{% include 'service_domains/_partials/showcase_clickable_rows_script.html' %}
 {% endblock %}

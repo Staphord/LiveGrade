@@ -3,7 +3,9 @@ from django.urls import path
 from .views import (
     rate_showcase_exhibit, showcase_exhibit_label, showcase_exhibit_qr,
     showcase_event_labels,
-    showcase_public_results, showcase_event_list, showcase_event_create, showcase_event_manage,
+    showcase_public_results, showcase_event_list, showcase_event_table,
+    showcase_event_create, showcase_event_manage,
+    showcase_event_delete, showcase_event_bulk_delete,
     showcase_exhibit_import, showcase_exhibit_import_sample,
     showcase_event_transition, showcase_certificate_verify,
     showcase_judge_workspace, showcase_live_monitor, showcase_live_activity_view,
@@ -12,7 +14,10 @@ from .views import (
 
 urlpatterns = [
     path('organizer/', showcase_event_list, name='showcase_event_list'),
+    path('organizer/events/', showcase_event_table, name='showcase_event_table'),
     path('organizer/events/new/', showcase_event_create, name='showcase_event_create'),
+    path('organizer/events/delete/', showcase_event_bulk_delete, name='showcase_event_bulk_delete'),
+    path('organizer/events/<int:event_id>/delete/', showcase_event_delete, name='showcase_event_delete'),
     path('organizer/events/<int:event_id>/', showcase_event_manage, name='showcase_event_manage'),
     path('organizer/events/<int:event_id>/live/', showcase_live_monitor,
          name='showcase_live_monitor'),

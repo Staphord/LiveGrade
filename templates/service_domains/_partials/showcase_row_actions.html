@@ -1,0 +1,29 @@
+<div class="dropdown showcase-actions">
+  <button class="dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Actions for {{ event.name }}"><i class="bi bi-three-dots" aria-hidden="true"></i></button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><a class="dropdown-item" href="{% url 'showcase_event_manage' event_id=event.pk %}"><i class="bi bi-pencil me-2" aria-hidden="true"></i>Manage event</a></li>
+
+    {% if event.status == 'open' %}
+    <li><a class="dropdown-item" href="{% url 'showcase_live_monitor' event_id=event.pk %}"><i class="bi bi-broadcast me-2" aria-hidden="true"></i>Open live monitor</a></li>
+    {% endif %}
+
+    {% if event.status == 'draft' or event.status == 'open' %}
+    <li><a class="dropdown-item" href="{% url 'showcase_exhibit_import' event_id=event.pk %}"><i class="bi bi-upload me-2" aria-hidden="true"></i>Import exhibits</a></li>
+    {% endif %}
+
+    <li><a class="dropdown-item" href="{% url 'showcase_event_labels' event_id=event.pk %}"><i class="bi bi-qr-code me-2" aria-hidden="true"></i>Print labels</a></li>
+
+    {% if event.status == 'published' %}
+    <li><a class="dropdown-item" href="{% url 'showcase_public_results' public_id=event.public_id %}" target="_blank" rel="noopener"><i class="bi bi-bar-chart me-2" aria-hidden="true"></i>View public results</a></li>
+    {% endif %}
+
+    <li><hr class="dropdown-divider"></li>
+    <li>
+      <form method="post" action="{% url 'showcase_event_delete' event_id=event.pk %}" data-confirm="Delete &quot;{{ event.name }}&quot;? This permanently removes its exhibits, ratings, judge scorecards, and certificates." data-confirm-title="Delete event?" data-confirm-label="Delete event" data-confirm-tone="danger">
+        {% csrf_token %}
+        <button type="submit" class="dropdown-item text-danger"><i class="bi bi-trash me-2" aria-hidden="true"></i>Delete event</button>
+      </form>
+    </li>
+  </ul>
+</div>
+

@@ -4,9 +4,10 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import IntegrityError
+from django.db import connection, IntegrityError
 from django.core.cache import cache
-from django.test import TestCase
+from django.test import TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -24,6 +25,7 @@ from service_domains.models import (Competition, CompetitionEntry, CompetitionRo
 from service_domains.models import CompetitionWeightedResultAudit
 from service_domains.operations import (create_initial_competition_round,
                                         compile_competition_judge_scores,
+                                        delete_competitions,
                                         issue_competition_judge_invitation,
                                         start_competition,
                                         complete_competition,
@@ -264,15 +266,14 @@ class CompetitionWorkspaceTests(TestCase):
 
     def test_list_and_invalid_competition_model_error_are_rendered(self):
         sign_in(self.client, self.owner, self.org)
-        empty = self.request('get', reverse('competition_list'))
-        self.assertEqual(empty.status_code, 200)
-        self.assertContains(empty, 'Getting started')
-        self.assertContains(empty, 'Your Competition workspace')
-        self.assertNotContains(empty, 'Set up your first competition')
-        self.assertContains(empty, 'Add tracks and entries')
-        self.assertContains(empty, 'The public leaderboard remains hidden')
-        self.assertContains(empty, 'href="#create-competition"')
-        invalid = self.request('post', reverse('competition_list'), {'name': ''})
+        dashboard = self.request('get', reverse('competition_list'))
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertContains(dashboard, 'Competition dashboard')
+        self.assertContains(dashboard, 'A live summary of your competitions')
+        self.assertContains(dashboard, 'Total competitions')
+        self.assertEqual(self.request('post', reverse('competition_list')).status_code, 405)
+
+        invalid = self.request('post', reverse('competition_create'), {'name': ''})
         self.assertContains(invalid, 'This field is required')
 
         original = Competition.full_clean
@@ -286,22 +287,22 @@ class CompetitionWorkspaceTests(TestCase):
             return original(instance, *args, **kwargs)
 
         with patch.object(Competition, 'full_clean', new=fail_after_form_validation):
-            refused = self.request('post', reverse('competition_list'), {'name': 'Refused'})
+            refused = self.request('post', reverse('competition_create'), {'name': 'Refused'})
         self.assertContains(refused, 'Competition model refused the draft')
 
     def test_first_time_owner_sees_getting_started_guidance(self):
-        self.competition.delete()
+        delete_competitions([self.competition])
         sign_in(self.client, self.owner, self.org)
 
         response = self.request('get', reverse('competition_list'))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Getting started')
-        self.assertContains(response, 'Set up your first competition')
+        self.assertContains(response, 'You haven’t created a competition yet')
+        self.assertContains(response, 'Create a competition')
 
     def test_audience_weight_is_owner_configured_and_validated(self):
         sign_in(self.client, self.owner, self.org)
-        url = reverse('competition_list')
+        url = reverse('competition_create')
         invalid = self.request('post', url, {'name': 'Out of range', 'audience_weight': '100.01'})
         self.assertEqual(invalid.status_code, 200)
         self.assertFalse(Competition.objects.filter(name='Out of range').exists())
@@ -570,7 +571,7 @@ class CompetitionWorkspaceTests(TestCase):
 
     def test_owner_creates_competition_track_and_entry_in_scoped_draft(self):
         sign_in(self.client, self.owner, self.org)
-        created = self.request('post', reverse('competition_list'), {'name': 'Build week'})
+        created = self.request('post', reverse('competition_create'), {'name': 'Build week'})
         competition = Competition.objects.get(name='Build week')
         self.assertEqual(created.status_code, 302)
         self.assertEqual(created['Location'], reverse('competition_manage', args=(competition.pk,)))
@@ -2064,4 +2065,409 @@ class CompetitionWorkspaceTests(TestCase):
                 self.competition, parsed_clean,
                 organization=self.org.as_claim(), user=self.owner,
             )
+
+
+@override_settings(LIVEGRADE_LIVE_SERVICES=['classroom', 'panel', 'polls', 'team', 'showcase', 'competition'])
+class CompetitionWorkspaceUiTests(TestCase):
+    def setUp(self):
+        self.org = make_org('Competition UI Org')
+        self.other_org = make_org('Other Competition UI Org')
+        self.owner = make_user('competition-ui-owner')
+        self.other = make_user('competition-ui-other')
+        sign_in(self.client, self.owner, self.org)
+
+    def request(self, method, url, *args, **kwargs):
+        return getattr(self.client, method)(url, *args, **kwargs)
+
+    def create_comp(self, name, status=Competition.Status.DRAFT, owner=None, org=None):
+        return Competition.objects.create(
+            organization_id=(org or self.org).id,
+            created_by=owner or self.owner,
+            name=name,
+            status=status,
+        )
+
+    def test_dashboard_metrics_and_visuals(self):
+        c_draft = self.create_comp('Draft Comp', Competition.Status.DRAFT)
+        c_active = self.create_comp('Active Comp', Competition.Status.ACTIVE)
+        c_complete = self.create_comp('Complete Comp', Competition.Status.COMPLETE)
+        c_revealed = self.create_comp('Revealed Comp', Competition.Status.REVEALED)
+
+        CompetitionTrack.objects.create(organization_id=self.org.id, created_by=self.owner,
+            competition=c_active, name='Track A')
+        CompetitionTrack.objects.create(organization_id=self.org.id, created_by=self.owner,
+            competition=c_active, name='Track B')
+        CompetitionRound.objects.create(organization_id=self.org.id, created_by=self.owner,
+            competition=c_active, name='Round 1', order=1)
+        CompetitionRound.objects.create(organization_id=self.org.id, created_by=self.owner,
+            competition=c_active, name='Round 2', order=2)
+
+        response = self.request('get', reverse('competition_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '<span class="topbar-title">Competition dashboard</span>', html=False)
+        self.assertContains(response, 'A live summary of your competitions, tracks, rounds, and leaderboard status.')
+        self.assertNotContains(response, '<h1>Competition dashboard</h1>', html=False)
+        self.assertNotContains(response, 'tc-chip')
+        self.assertNotContains(response, 'Advancement Differential &amp; Composite Scoring')
+        self.assertNotContains(response, 'Scoring Formula Architecture')
+
+        stats = response.context['dashboard_stats']
+        self.assertEqual(stats['total'], 4)
+        self.assertEqual(stats['active'], 1)
+        self.assertEqual(stats['draft'], 1)
+        self.assertEqual(stats['complete'], 1)
+        self.assertEqual(stats['revealed'], 1)
+        self.assertEqual(stats['total_tracks'], 2)
+        self.assertEqual(stats['total_rounds'], 2)
+
+        attention = response.context['attention_competitions']
+        self.assertEqual(len(attention), 2)
+        attention_pks = {c.pk for c in attention}
+        self.assertEqual(attention_pks, {c_active.pk, c_complete.pk})
+        self.assertContains(response, '2 competitions need attention')
+        self.assertContains(response, 'Live and ready to reveal')
+        self.assertContains(response, 'Active round in progress · Compile judge scores or lock audience ballots')
+        self.assertContains(response, 'Scoring complete · Review final tie decisions and reveal public leaderboard')
+        self.assertContains(response, 'Manage live round')
+        self.assertContains(response, 'Review &amp; reveal')
+
+        dist = {item['key']: item for item in response.context['stage_distribution']}
+        self.assertEqual(dist['draft']['count'], 1)
+        self.assertEqual(dist['active']['count'], 1)
+        self.assertEqual(dist['complete']['count'], 1)
+        self.assertEqual(dist['revealed']['count'], 1)
+        self.assertEqual(dist['draft']['percentage'], 25.0)
+        self.assertIn('conic-gradient(', response.context['stage_pie_background'])
+
+        self.assertEqual(response.context['largest'], 2)
+        self.assertEqual(len(response.context['recent_competitions']), 4)
+        self.assertContains(response, '0 rounds')
+        self.assertContains(response, '2 rounds')
+        self.assertContains(response, 'Recent competitions')
+        self.assertContains(response, reverse('competition_table'))
+        self.assertContains(response, reverse('competition_create'))
+
+    def test_dashboard_empty_state_when_zero_competitions(self):
+        delete_competitions(list(Competition.objects.all()))
+        response = self.request('get', reverse('competition_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['dashboard_stats']['total'], 0)
+        self.assertEqual(response.context['stage_distribution'][0]['percentage'], 0)
+        self.assertEqual(response.context['largest'], 0)
+        self.assertContains(response, 'You haven’t created a competition yet')
+        self.assertContains(response, 'None of your competitions are in progress right now')
+        self.assertContains(response, 'Stage data will appear after you create a competition.')
+        self.assertContains(response, 'Round data will appear after rounds are added to a competition.')
+        self.assertContains(response, 'Create a competition')
+
+    def test_table_search_status_filter_and_counts(self):
+        self.create_comp('Robotics Invitational', Competition.Status.DRAFT)
+        self.create_comp('Robotics League Final', Competition.Status.ACTIVE)
+        self.create_comp('Coding Hackathon', Competition.Status.COMPLETE)
+
+        response = self.request('get', reverse('competition_table'), {
+            'q': 'Robotics', 'status': 'draft',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['status_counts']['total'], 3)
+        self.assertEqual(response.context['status_counts']['draft'], 1)
+        self.assertEqual(response.context['status_counts']['active'], 1)
+        self.assertEqual(response.context['status_counts']['complete'], 1)
+        self.assertEqual(response.context['filtered_count'], 1)
+        self.assertEqual([c.name for c in response.context['competitions']], ['Robotics Invitational'])
+        self.assertContains(response, '1 matching competition')
+
+        all_resp = self.request('get', reverse('competition_table'), {'status': 'unknown_status'})
+        self.assertEqual(all_resp.status_code, 200)
+        self.assertEqual(all_resp.context['filtered_count'], 3)
+
+        long_q = 'Robotics' + 'x' * 95
+        long_resp = self.request('get', reverse('competition_table'), {'q': long_q})
+        self.assertEqual(len(long_resp.context['search_query']), 100)
+
+    def test_table_ajax_fragment(self):
+        self.create_comp('Robotics Final', Competition.Status.ACTIVE)
+        self.create_comp('Coding Sprint', Competition.Status.DRAFT)
+
+        response = self.request('get', reverse('competition_table'), {
+            'q': 'Robotics',
+        }, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('X-Requested-With', response.headers.get('Vary', ''))
+        self.assertContains(response, 'id="competition-results"')
+        self.assertContains(response, 'Robotics Final')
+        self.assertNotContains(response, 'Coding Sprint')
+        self.assertNotContains(response, '<html', html=False)
+
+    def test_row_navigation_and_next_line_per_status(self):
+        c_draft = self.create_comp('Draft Event', Competition.Status.DRAFT)
+        c_active = self.create_comp('Active Event', Competition.Status.ACTIVE)
+        c_complete = self.create_comp('Complete Event', Competition.Status.COMPLETE)
+        c_revealed = self.create_comp('Revealed Event', Competition.Status.REVEALED)
+
+        response = self.request('get', reverse('competition_table'))
+        self.assertEqual(response.status_code, 200)
+
+        self.assertContains(response, 'Next: finish setup')
+        self.assertContains(response, 'Next: manage live event')
+        self.assertContains(response, 'Next: review and reveal results')
+        self.assertContains(response, 'Next: manage public display')
+
+        for comp in (c_draft, c_active, c_complete, c_revealed):
+            manage_url = reverse('competition_manage', kwargs={'competition_id': comp.pk})
+            self.assertContains(response, f'data-competition-row-href="{manage_url}"')
+
+    def test_kebab_items_visibility_per_status(self):
+        c_draft = self.create_comp('Draft Event', Competition.Status.DRAFT)
+        c_active = self.create_comp('Active Event', Competition.Status.ACTIVE)
+        c_complete = self.create_comp('Complete Event', Competition.Status.COMPLETE)
+        c_revealed = self.create_comp('Revealed Event', Competition.Status.REVEALED)
+
+        response = self.request('get', reverse('competition_table'))
+        self.assertEqual(response.status_code, 200)
+
+        # Draft
+        self.assertContains(response, 'Continue setup')
+        self.assertContains(response, reverse('competition_entry_import', kwargs={'competition_id': c_draft.pk}))
+        # Active
+        self.assertContains(response, 'Manage live round')
+        self.assertContains(response, reverse('competition_entry_import', kwargs={'competition_id': c_active.pk}))
+        # Complete
+        self.assertContains(response, 'Review &amp; reveal')
+        self.assertContains(response, reverse('competition_results_export', kwargs={'competition_id': c_complete.pk}))
+        # Revealed
+        self.assertContains(response, 'Manage public display')
+        self.assertContains(response, reverse('competition_results_export', kwargs={'competition_id': c_revealed.pk}))
+        self.assertContains(response, reverse('competition_public_leaderboard', kwargs={'competition_id': c_revealed.public_id}))
+        self.assertContains(response, 'rel="noopener"')
+        # Delete competition for each
+        for comp in (c_draft, c_active, c_complete, c_revealed):
+            self.assertContains(response, reverse('competition_delete', kwargs={'competition_id': comp.pk}))
+
+    def test_competition_creation_flow(self):
+        create_url = reverse('competition_create')
+        initial_count = Competition.objects.count()
+
+        # GET: zero rows created, stepper has Step 1 active and others disabled, no toast
+        get_response = self.request('get', create_url)
+        self.assertEqual(get_response.status_code, 200)
+        self.assertEqual(Competition.objects.count(), initial_count)
+        self.assertContains(get_response, 'aria-current="step"')
+        self.assertContains(get_response, 'Save competition details to unlock tracks')
+        self.assertContains(get_response, 'disabled title="Save competition details to unlock')
+
+        # POST invalid: form error, 0 rows created
+        bad_response = self.request('post', create_url, {'name': ''})
+        self.assertEqual(bad_response.status_code, 200)
+        self.assertEqual(Competition.objects.count(), initial_count)
+        self.assertContains(bad_response, 'This field is required')
+
+        # POST valid: creates Competition, redirects to competition_manage
+        valid_response = self.request('post', create_url, {
+            'name': 'New Championship',
+            'audience_weight': '25.00',
+            'minimum_judges_per_entry': '2',
+            'minimum_audience_ballots_per_track': '10',
+        })
+        self.assertEqual(valid_response.status_code, 302)
+        created = Competition.objects.get(name='New Championship')
+        self.assertEqual(created.audience_weight, Decimal('25.00'))
+        self.assertEqual(created.created_by, self.owner)
+        self.assertEqual(created.organization_id, self.org.id)
+        self.assertEqual(valid_response['Location'], reverse('competition_manage', kwargs={'competition_id': created.pk}))
+
+        # POST with advance=1: redirects to step=tracks
+        advance_response = self.request('post', create_url, {
+            'name': 'Next Step Championship',
+            'advance': '1',
+        })
+        self.assertEqual(advance_response.status_code, 302)
+        created2 = Competition.objects.get(name='Next Step Championship')
+        self.assertEqual(advance_response['Location'], f"{reverse('competition_manage', kwargs={'competition_id': created2.pk})}?step=tracks")
+
+    def test_row_delete_and_permissions(self):
+        comp = self.create_comp('To Delete')
+        delete_url = reverse('competition_delete', kwargs={'competition_id': comp.pk})
+
+        # GET is rejected (405)
+        self.assertEqual(self.request('get', delete_url).status_code, 405)
+
+        # Non-owner gets 404
+        sign_in(self.client, self.other, self.org)
+        self.assertEqual(self.request('post', delete_url).status_code, 404)
+        self.assertTrue(Competition.objects.filter(pk=comp.pk).exists())
+
+        # Other organization gets 404
+        sign_in(self.client, self.owner, self.other_org)
+        self.assertEqual(self.request('post', delete_url).status_code, 404)
+        self.assertTrue(Competition.objects.filter(pk=comp.pk).exists())
+
+        # Owner deletes
+        sign_in(self.client, self.owner, self.org)
+        response = self.request('post', delete_url)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response['Location'], reverse('competition_table'))
+        self.assertFalse(Competition.objects.filter(pk=comp.pk).exists())
+
+    def test_bulk_delete_active_competition_with_cascades(self):
+        # Create active scored round with tracks, rounds, entries, scores, ballots, and audits
+        comp = self.create_comp('Active Cascaded Comp', Competition.Status.DRAFT)
+        comp.audience_weight = Decimal('20')
+        comp.save(update_fields=('audience_weight',))
+        track = CompetitionTrack.objects.create(organization_id=self.org.id,
+            created_by=self.owner, competition=comp, name='Sprint Track',
+            advancement_rule='top_n', advancement_value=2)
+        entries = [CompetitionEntry.objects.create(organization_id=self.org.id,
+            created_by=self.owner, track=track, name=f'Racer {i}', order=i)
+            for i in range(2)]
+        source = create_initial_competition_round(comp, 'Sprint Round 1',
+            organization=self.org.as_claim(), user=self.owner)
+        start_competition(comp, organization=self.org.as_claim(), user=self.owner)
+        _, token = issue_competition_judge_invitation(comp, source, track,
+            'judge_cascade@example.org', timezone.now() + timedelta(hours=1),
+            organization=self.org.as_claim(), user=self.owner)
+        round_entries = list(source.round_entries.order_by('entry_id'))
+        submit_competition_judge_scores(token, {
+            str(round_entries[0].pk): '85',
+            str(round_entries[1].pk): '75',
+        })
+        compile_competition_judge_scores(comp, source, track,
+            organization=self.org.as_claim(), user=self.owner)
+        ballot_token = CompetitionAudienceBallot.issue_device_token(comp, source, track)
+        submit_competition_audience_ballot(comp.public_id, source.pk, track.pk,
+            ballot_token, [entries[0].pk, entries[1].pk])
+        finalize_competition_weighted_scores(comp, source,
+            organization=self.org.as_claim(), user=self.owner)
+
+        comp.refresh_from_db()
+        self.assertEqual(comp.status, Competition.Status.ACTIVE)
+        self.assertTrue(CompetitionTransitionAudit.objects.filter(competition=comp).exists())
+        self.assertTrue(CompetitionAudienceBallot.objects.filter(competition=comp).exists())
+        self.assertTrue(CompetitionWeightedResultAudit.objects.filter(round=source).exists())
+
+        bulk_url = reverse('competition_bulk_delete')
+        response = self.request('post', bulk_url, {
+            'competition_ids': [str(comp.pk)],
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response['Location'], f"{reverse('competition_table')}?per_page=25")
+        self.assertFalse(Competition.objects.filter(pk=comp.pk).exists())
+        self.assertFalse(CompetitionTrack.objects.filter(pk=track.pk).exists())
+        self.assertFalse(CompetitionRound.objects.filter(pk=source.pk).exists())
+        self.assertFalse(CompetitionTransitionAudit.objects.filter(competition_id=comp.pk).exists())
+
+    def test_bulk_delete_validations_and_atomicity(self):
+        c1 = self.create_comp('Comp 1')
+        c2 = self.create_comp('Comp 2')
+        other_comp = self.create_comp('Other Comp', owner=self.other)
+        bulk_url = reverse('competition_bulk_delete')
+
+        # GET rejected
+        self.assertEqual(self.request('get', bulk_url).status_code, 405)
+
+        # Invalid IDs rejected
+        for bad_ids in ([], ['bad'], ['9' * 20], ['1'] * 101):
+            with self.subTest(bad_ids=bad_ids):
+                res = self.request('post', bulk_url, {'competition_ids': bad_ids})
+                self.assertEqual(res.status_code, 302)
+                self.assertTrue(Competition.objects.filter(pk=c1.pk).exists())
+
+        # Unowned ID mixed in: atomically rejects whole batch
+        mixed_res = self.request('post', bulk_url, {
+            'competition_ids': [str(c1.pk), str(other_comp.pk)],
+        })
+        self.assertEqual(mixed_res.status_code, 302)
+        self.assertTrue(Competition.objects.filter(pk=c1.pk).exists())
+        self.assertTrue(Competition.objects.filter(pk=other_comp.pk).exists())
+
+        # Duplicate IDs handled cleanly
+        dup_res = self.request('post', bulk_url, {
+            'competition_ids': [str(c1.pk), str(c1.pk)],
+            'q': 'Comp',
+            'status': 'draft',
+            'per_page': '50',
+        })
+        self.assertEqual(dup_res.status_code, 302)
+        self.assertEqual(dup_res['Location'], f"{reverse('competition_table')}?q=Comp&status=draft&per_page=50")
+        self.assertFalse(Competition.objects.filter(pk=c1.pk).exists())
+        self.assertTrue(Competition.objects.filter(pk=c2.pk).exists())
+
+    def test_pagination_boundaries_and_page_sizes(self):
+        delete_competitions(list(Competition.objects.all()))
+        comps = [self.create_comp(f'Event {i:02d}') for i in range(25)]
+
+        res25 = self.request('get', reverse('competition_table'))
+        self.assertEqual(res25.context['paginator'].num_pages, 1)
+        self.assertNotContains(res25, 'class="competition-pagination"')
+
+        c26 = self.create_comp('Event 25')
+        res26 = self.request('get', reverse('competition_table'))
+        self.assertEqual(res26.context['paginator'].num_pages, 2)
+        self.assertContains(res26, 'Page 1 of 2 · 26 competitions')
+
+        # Invalid per_page falls back to 25
+        res_bad_per_page = self.request('get', reverse('competition_table'), {'per_page': '10'})
+        self.assertEqual(res_bad_per_page.context['per_page'], 25)
+
+        # Valid page sizes: 50
+        res50 = self.request('get', reverse('competition_table'), {'per_page': '50'})
+        self.assertEqual(res50.context['per_page'], 50)
+        self.assertEqual(res50.context['paginator'].num_pages, 1)
+
+        # Bad page numbers
+        res_page_x = self.request('get', reverse('competition_table'), {'page': 'x'})
+        self.assertEqual(res_page_x.context['page_obj'].number, 1)
+        res_page_high = self.request('get', reverse('competition_table'), {'page': '999'})
+        self.assertEqual(res_page_high.context['page_obj'].number, 2)
+
+        # Deleting last item of last page lands on valid page
+        delete_res = self.request('post', reverse('competition_delete', kwargs={'competition_id': c26.pk}))
+        self.assertEqual(delete_res.status_code, 302)
+        res_after = self.request('get', reverse('competition_table'), {'page': '2'})
+        self.assertEqual(res_after.context['page_obj'].number, 1)
+
+    def test_sidebar_active_states(self):
+        comp = self.create_comp('Sidebar Comp')
+        list_url = reverse('competition_list')
+        table_url = reverse('competition_table')
+        manage_url = reverse('competition_manage', kwargs={'competition_id': comp.pk})
+        import_url = reverse('competition_entry_import', kwargs={'competition_id': comp.pk})
+
+        res_list = self.request('get', list_url)
+        self.assertContains(res_list, 'Competition Service')
+        self.assertContains(res_list, 'Competition dashboard')
+        self.assertContains(res_list, 'Competitions')
+        self.assertNotContains(res_list, 'New competition</span>')
+
+        # Active states
+        res_table = self.request('get', table_url)
+        self.assertEqual(res_table.status_code, 200)
+
+        res_manage = self.request('get', manage_url)
+        self.assertEqual(res_manage.status_code, 200)
+
+        res_import = self.request('get', import_url)
+        self.assertEqual(res_import.status_code, 302)
+
+    def test_query_count_is_independent_of_row_count(self):
+        delete_competitions(list(Competition.objects.all()))
+        for i in range(3):
+            c = self.create_comp(f'Comp A {i}')
+            CompetitionTrack.objects.create(organization_id=self.org.id, created_by=self.owner, competition=c, name='T1')
+            CompetitionRound.objects.create(organization_id=self.org.id, created_by=self.owner, competition=c, name='R1', order=1)
+
+        with CaptureQueriesContext(connection) as ctx_small:
+            self.request('get', reverse('competition_table'))
+        count_small = len(ctx_small.captured_queries)
+
+        for i in range(12):
+            c = self.create_comp(f'Comp B {i}')
+            CompetitionTrack.objects.create(organization_id=self.org.id, created_by=self.owner, competition=c, name='T1')
+            CompetitionRound.objects.create(organization_id=self.org.id, created_by=self.owner, competition=c, name='R1', order=1)
+
+        with CaptureQueriesContext(connection) as ctx_large:
+            self.request('get', reverse('competition_table'))
+        count_large = len(ctx_large.captured_queries)
+
+        self.assertEqual(count_small, count_large)
 

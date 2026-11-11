@@ -143,7 +143,7 @@ class CompetitionJudgeScorecardViewTests(TestCase):
 
     def test_owner_invites_judge_and_tallies_private_scores(self):
         sign_in(self.client, self.owner, self.org)
-        create = self.request(self.client, 'post', reverse('competition_list'), {
+        create = self.request(self.client, 'post', reverse('competition_create'), {
             'name': 'Needs round', 'audience_weight': '0'})
         self.assertEqual(create.status_code, 302)
 

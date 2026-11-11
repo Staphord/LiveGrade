@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.urls import reverse
 
-from .access import ORGS_KEY, active_organization
+from .access import ORGS_KEY, active_organization, can_oversee
 from portal.services import dashboard_url, get_service, is_released
 
 
@@ -87,6 +87,7 @@ def livegrade(request):
         'csp_nonce': getattr(request, 'csp_nonce', ''),
         'devperf_url': settings.DEVPERF_URL,
         'active_org': organization,
+        'can_oversee_panel': can_oversee(request),
         'classroom_walkthrough': _classroom_walkthrough(request, organization),
         'my_orgs': [{**org, 'display_name': PERSONAL if org.get('public') else org['name']}
                     for org in organizations],

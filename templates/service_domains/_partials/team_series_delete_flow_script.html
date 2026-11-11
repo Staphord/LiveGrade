@@ -1,0 +1,153 @@
+<script nonce="{{ csp_nonce }}">
+(function () {
+  const modalElement = document.getElementById('team-series-delete-modal');
+  if (!modalElement || !window.bootstrap || !window.bootstrap.Modal) return;
+
+  const modal = window.bootstrap.Modal.getOrCreateInstance(modalElement);
+  const title = modalElement.querySelector('#team-series-delete-title');
+  const summary = modalElement.querySelector('[data-team-delete-summary]');
+  const status = modalElement.querySelector('[data-team-delete-status]');
+  const exportButton = modalElement.querySelector('[data-team-export-download]');
+  const acknowledge = modalElement.querySelector('[data-team-delete-ack]');
+  const deleteButton = modalElement.querySelector('[data-team-delete-confirm]');
+  const deleteForm = modalElement.querySelector('[data-team-delete-submit]');
+  const tokenInput = modalElement.querySelector('[data-team-delete-token]');
+  const queryInput = modalElement.querySelector('[data-team-delete-query]');
+  const pageSizeInput = modalElement.querySelector('[data-team-delete-page-size]');
+  const idFields = modalElement.querySelector('[data-team-delete-id-fields]');
+  let activeMode = '';
+  let selectedIds = [];
+  let exportUrl = '';
+  let exportToken = '';
+
+  function resetFlow() {
+    activeMode = '';
+    selectedIds = [];
+    exportUrl = '';
+    exportToken = '';
+    tokenInput.value = '';
+    idFields.replaceChildren();
+    acknowledge.checked = false;
+    acknowledge.disabled = true;
+    deleteButton.disabled = true;
+    exportButton.disabled = false;
+    status.textContent = '';
+    status.className = 'team-delete-status mb-0';
+  }
+
+  function openSingle(trigger) {
+    resetFlow();
+    activeMode = 'single';
+    selectedIds = [trigger.dataset.seriesId];
+    exportUrl = trigger.dataset.exportUrl;
+    deleteForm.action = trigger.dataset.deleteUrl;
+    title.textContent = 'Delete series?';
+    deleteButton.textContent = 'Delete series';
+    summary.textContent = 'Delete “' + trigger.dataset.seriesName + '”? This action cannot be undone.';
+    queryInput.value = trigger.dataset.query || '';
+    pageSizeInput.value = trigger.dataset.pageSize || '25';
+    modal.show();
+  }
+
+  function openBulk(trigger) {
+    const selected = Array.from(document.querySelectorAll('[data-team-select]:checked'));
+    if (!selected.length) return;
+    resetFlow();
+    activeMode = 'bulk';
+    selectedIds = selected.map(function (checkbox) { return checkbox.value; });
+    exportUrl = trigger.dataset.exportUrl;
+    deleteForm.action = trigger.dataset.deleteUrl;
+    title.textContent = 'Delete selected series?';
+    deleteButton.textContent = 'Delete selected';
+    summary.textContent = 'Delete ' + selectedIds.length + ' selected series? This action cannot be undone.';
+    queryInput.value = trigger.dataset.query || '';
+    const pageSize = trigger.dataset.pageSize || '25';
+    pageSizeInput.value = pageSize;
+    selectedIds.forEach(function (id) {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'series_ids';
+      input.value = id;
+      idFields.appendChild(input);
+    });
+    modal.show();
+  }
+
+  document.addEventListener('click', function (event) {
+    const single = event.target.closest('[data-team-delete-trigger]');
+    if (single) {
+      event.preventDefault();
+      openSingle(single);
+      return;
+    }
+    const bulk = event.target.closest('[data-team-bulk-delete-trigger]');
+    if (bulk) {
+      event.preventDefault();
+      openBulk(bulk);
+    }
+  });
+
+  exportButton.addEventListener('click', async function () {
+    if (!activeMode || exportButton.disabled) return;
+    exportButton.disabled = true;
+    status.textContent = 'Preparing your export…';
+    status.setAttribute('aria-busy', 'true');
+    try {
+      const options = {method: 'GET', credentials: 'same-origin', cache: 'no-store'};
+      if (activeMode === 'bulk') {
+        const selectionForm = document.getElementById('team-bulk-selection');
+        const csrf = selectionForm && selectionForm.querySelector('[name="csrfmiddlewaretoken"]');
+        const body = new FormData();
+        if (csrf) body.append('csrfmiddlewaretoken', csrf.value);
+        selectedIds.forEach(function (id) { body.append('series_ids', id); });
+        options.method = 'POST';
+        options.body = body;
+        options.headers = {'X-Requested-With': 'XMLHttpRequest'};
+      }
+      const response = await fetch(exportUrl, options);
+      if (response.redirected) {
+        window.location.assign(response.url);
+        return;
+      }
+      if (!response.ok) throw new Error('Export is unavailable');
+      const token = response.headers.get('X-Delete-Export-Token');
+      if (!token) throw new Error('Export token is missing');
+      const archive = await response.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(archive);
+      link.download = 'team-series-deletion-export.zip';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(function () { URL.revokeObjectURL(link.href); }, 1000);
+      exportToken = token;
+      tokenInput.value = token;
+      acknowledge.disabled = false;
+      status.textContent = 'The export has downloaded. Save it somewhere safe before continuing.';
+      status.classList.add('text-success');
+    } catch (_) {
+      status.textContent = 'The export could not be downloaded. Try again before deleting.';
+      status.classList.add('text-danger');
+    } finally {
+      status.removeAttribute('aria-busy');
+      exportButton.disabled = false;
+    }
+  });
+
+  acknowledge.addEventListener('change', function () {
+    deleteButton.disabled = !acknowledge.checked || !exportToken;
+  });
+
+  deleteForm.addEventListener('submit', function (event) {
+    if (!exportToken || !acknowledge.checked || tokenInput.value !== exportToken) {
+      event.preventDefault();
+      status.textContent = 'Download and save the export before deleting.';
+      status.classList.add('text-danger');
+      return;
+    }
+    deleteButton.disabled = true;
+  });
+
+  modalElement.addEventListener('hidden.bs.modal', resetFlow);
+})();
+</script>

@@ -1,0 +1,10 @@
+<script nonce="{{ csp_nonce }}">
+(function () {
+  document.addEventListener('click', function (event) {
+    const row = event.target.closest('tr[data-team-row-href]');
+    if (!row || event.defaultPrevented || event.button !== 0) return;
+    if (event.target.closest('a,button,form,input,select,textarea,label,summary,.team-series-actions,[data-bs-toggle]')) return;
+    if (row.dataset.teamRowHref) window.location.assign(row.dataset.teamRowHref);
+  });
+})();
+</script>
