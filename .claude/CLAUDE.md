@@ -35,6 +35,7 @@ same line. Do not use a pragma to skip a path that merely lacks a test.
 - Cookie names are LiveGrade's own (`livegrade_sessionid`, `livegrade_csrftoken`)
   so `localhost:8000` and `localhost:8001` do not log each other out. Never set
   `SESSION_COOKIE_DOMAIN`.
+- Never use em dashes (`—` or `&mdash;`) in user-facing copy, page titles, templates, UI elements, or documentation. Use hyphens (`-`), colons (`:`), commas, or concise sentence structures instead.
 - Implementation plans go in `plans/` (gitignored). The migration plan lives in
   `../devperf/plans/livegrade-microservice.md`.
 
