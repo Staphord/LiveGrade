@@ -1,4 +1,4 @@
-<section id="panel-live-convergence" class="card assess-stagger shadow-sm mb-4" aria-labelledby="convergence-head">
+<section id="panel-live-convergence" class="card shadow-sm mb-4" aria-labelledby="convergence-head">
   <div class="card-header bg-surface d-flex justify-content-between align-items-center py-3">
     <div class="d-flex align-items-center gap-2">
       <div class="icon-badge bg-info-subtle text-info rounded-circle p-2 d-inline-flex">
@@ -44,13 +44,13 @@
                 <td class="fw-semibold">{{ item.criterion.name }}</td>
                 <td class="text-center">{{ item.count }}</td>
                 <td class="text-center fw-bold">
-                  {% if item.mean is not None %}{{ item.mean }}{% else %}<span class="text-muted">—</span>{% endif %}
+                  {% if item.mean is not None %}{{ item.mean }}{% else %}<span class="text-muted">-</span>{% endif %}
                 </td>
                 <td class="text-center">
                   {% if item.min is not None %}
                     <span class="badge bg-light text-dark border">{{ item.min }}</span> to <span class="badge bg-light text-dark border">{{ item.max }}</span>
                   {% else %}
-                    <span class="text-muted">—</span>
+                    <span class="text-muted">-</span>
                   {% endif %}
                 </td>
                 <td class="text-end">

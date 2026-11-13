@@ -1,4 +1,4 @@
-<section id="panel-live-docket" class="card assess-stagger shadow-sm mb-4" aria-labelledby="docket-head">
+<section id="panel-live-docket" class="card shadow-sm mb-4" aria-labelledby="docket-head">
   <div class="card-header bg-surface d-flex justify-content-between align-items-center py-3">
     <div class="d-flex align-items-center gap-2">
       <div class="icon-badge bg-primary-subtle text-primary rounded-circle p-2 d-inline-flex">
@@ -42,7 +42,13 @@
             </span>
           {% else %}
             <button type="button" class="btn btn-outline-primary btn-sm"
-                    data-panel-live-action="set_candidate" data-candidate-id="{{ item.candidate.pk }}">
+                    data-panel-live-action="set_candidate" data-candidate-id="{{ item.candidate.pk }}"
+                    {% if active_candidate %}
+                      data-confirm="Candidate {{ active_candidate.display_name }} is currently on the floor. Switch to {{ item.candidate.display_name }}?"
+                      data-confirm-title="Switch presenter on the floor?"
+                      data-confirm-label="Call to floor"
+                      data-confirm-tone="primary"
+                    {% endif %}>
               <i class="bi bi-mic me-1" aria-hidden="true"></i>Call to floor
             </button>
           {% endif %}

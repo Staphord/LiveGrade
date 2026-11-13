@@ -12,7 +12,11 @@
     </div>
     <div class="panel-hero__actions"><span class="panel-state {% if hearing.status == 'open' %}panel-state--live{% else %}panel-state--done{% endif %}" data-hearing-state>{{ hearing.get_status_display }}</span></div>
   </header>
-  <div class="alert alert-danger" role="alert" {% if not form_error %}hidden{% endif %}>{% if form_error %}{{ form_error }}{% endif %}</div>
+  {% if form_error %}
+    <div class="mb-3">
+      {% include 'partials/_inline_message.html' with tone='danger' message_id='panel-examiner-form-error' message=form_error only %}
+    </div>
+  {% endif %}
   <div class="alert alert-info" role="status" aria-live="polite" data-live-change hidden></div>
   {% if candidate_rows %}
     <nav class="panel-card mb-4" aria-label="Candidates"><div class="panel-section-heading"><div><h2 class="h5">Candidate list</h2><p>Choose a name to jump to its review.</p></div></div><div class="d-flex flex-wrap gap-2">{% for row in candidate_rows %}<a class="btn btn-sm {% if row.active %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="#candidate-{{ row.candidate.pk }}" data-candidate-link="{{ row.candidate.pk }}">{{ row.candidate.display_name }}{% if row.active %}<span class="visually-hidden">, active now</span>{% endif %}</a>{% endfor %}</div></nav>
@@ -37,7 +41,7 @@
           {% elif item.abstained %}<article class="panel-score-form mb-3"><div class="panel-card__top"><h3 class="h5">{{ item.criterion.name }}</h3><span class="badge text-bg-secondary">Skipped</span></div><p class="panel-muted mb-0">You chose not to score this criterion.</p></article>
           {% elif row.active and hearing.status == 'open' %}<form method="post" class="panel-score-form mb-3">{% csrf_token %}<input type="hidden" name="candidate_id" value="{{ row.candidate.pk }}"><input type="hidden" name="criterion_id" value="{{ item.criterion.pk }}"><h3 class="h5">{{ item.criterion.name }}</h3>{% if item.criterion.description %}<p class="panel-muted">{{ item.criterion.description }}</p>{% endif %}
             {% if item.levels %}<details class="mb-3"><summary class="small fw-semibold">View score guidance</summary><ul class="small panel-muted mt-2">{% for level in item.levels %}<li><strong>{{ level.score|floatformat:'-2' }} points:</strong> {{ level.description }}</li>{% endfor %}</ul></details>{% endif %}
-            <div class="row g-3 align-items-end"><div class="col-12 col-sm-4"><label class="form-label" for="score-{{ row.candidate.pk }}-{{ item.criterion.pk }}">Score (0–100)</label><input class="form-control" type="number" min="0" max="100" step="0.01" inputmode="decimal" required id="score-{{ row.candidate.pk }}-{{ item.criterion.pk }}" name="score"></div><div class="col-12 col-sm-8"><label class="form-label" for="comment-{{ row.candidate.pk }}-{{ item.criterion.pk }}">Comment (optional)</label><textarea class="form-control" id="comment-{{ row.candidate.pk }}-{{ item.criterion.pk }}" name="comment" maxlength="2000" rows="2"></textarea></div></div>
+            <div class="row g-3 align-items-end"><div class="col-12 col-sm-4"><label class="form-label" for="score-{{ row.candidate.pk }}-{{ item.criterion.pk }}">Score (0-100)</label><input class="form-control" type="number" min="0" max="100" step="0.01" inputmode="decimal" required id="score-{{ row.candidate.pk }}-{{ item.criterion.pk }}" name="score"></div><div class="col-12 col-sm-8"><label class="form-label" for="comment-{{ row.candidate.pk }}-{{ item.criterion.pk }}">Comment (optional)</label><textarea class="form-control" id="comment-{{ row.candidate.pk }}-{{ item.criterion.pk }}" name="comment" maxlength="2000" rows="2"></textarea></div></div>
             <details class="mt-3"><summary>Unable to score?</summary><label class="form-label mt-2" for="skip-{{ row.candidate.pk }}-{{ item.criterion.pk }}">Reason for skipping</label><textarea class="form-control" id="skip-{{ row.candidate.pk }}-{{ item.criterion.pk }}" name="abstention_reason" maxlength="1000" rows="2"></textarea><p class="small panel-muted">Required only when you skip this criterion. Visible to the organizer.</p></details><div class="d-flex flex-wrap gap-2 mt-3"><button class="btn btn-primary" type="submit" name="action" value="score">Submit score</button><button class="btn btn-outline-secondary" type="submit" name="action" value="abstain" formnovalidate>Skip this criterion</button></div>
           </form>{% endif %}
         {% endfor %}
@@ -51,36 +55,135 @@
 <script nonce="{{ csp_nonce }}">
 (() => {
   const change = document.querySelector('[data-live-change]');
-  const stateUrl = `${window.location.pathname}?state=1`;
+  const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const token = '{{ token|default:"" }}' || window.location.pathname.split('/').filter(Boolean).pop();
+  const wsUrl = `${scheme}://${window.location.host}/ws/panel/examiner/${encodeURIComponent(token)}/`;
   let lastActive = [...document.querySelectorAll('[data-candidate-card]')].find(card => card.querySelector('[data-active-badge]'))?.dataset.candidateCard || '';
   let dirty = false;
+  let socket = null;
+  let reconnectTimer = null;
+  let retryCount = 0;
+  let fetchingHtml = false;
+
   document.addEventListener('input', () => { dirty = true; });
   document.addEventListener('change', () => { dirty = true; });
-  async function refreshState() {
+
+  function showNotification(nextActive, candidateName) {
+    if (!change) return;
+    change.hidden = false;
+    change.textContent = nextActive
+      ? `${candidateName || 'A candidate'} is now active. Refresh this page to start scoring.`
+      : 'The organizer has paused scoring. Refresh this page for the latest status.';
+    if (!change.querySelector('a')) {
+      const link = document.createElement('a');
+      link.className = 'alert-link ms-1';
+      link.href = window.location.pathname;
+      link.textContent = 'Refresh workspace';
+      change.append(document.createTextNode(' '), link);
+    }
+  }
+
+  async function applyCandidateChange(nextCandidateId, candidateName) {
+    const nextActive = nextCandidateId == null ? '' : String(nextCandidateId);
+    if (nextActive === lastActive) return;
+
+    if (dirty) {
+      showNotification(nextActive, candidateName);
+      lastActive = nextActive;
+      return;
+    }
+
+    if (fetchingHtml) return;
+    fetchingHtml = true;
     try {
-      const response = await fetch(stateUrl, {headers: {'Accept': 'application/json'}, cache: 'no-store', credentials: 'same-origin'});
-      if (!response.ok) return;
-      const data = await response.json();
-      const nextActive = data.active_candidate_id == null ? '' : String(data.active_candidate_id);
-      if (nextActive !== lastActive) {
-        if (!dirty) {
-          window.location.reload();
+      const pageRes = await fetch(window.location.href, {
+        headers: { 'Accept': 'text/html' },
+        cache: 'no-store',
+        credentials: 'same-origin',
+      });
+      if (pageRes.status === 429) {
+        return;
+      }
+      if (pageRes.ok) {
+        const html = await pageRes.text();
+        const freshDoc = new DOMParser().parseFromString(html, 'text/html');
+        const fresh = freshDoc.querySelector('#public-main');
+        const current = document.querySelector('#public-main');
+        if (fresh && current) {
+          current.replaceWith(fresh);
+          lastActive = nextActive;
+          const activeSection = document.querySelector(`[data-candidate-card="${nextActive}"]`);
+          if (activeSection) {
+            activeSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
           return;
         }
-        change.hidden = false;
-        change.textContent = nextActive ? `${data.active_candidate_name} is now active. Refresh this page to start scoring.` : 'The organizer has paused scoring. Refresh this page for the latest status.';
-        if (!change.querySelector('a')) {
-          const link = document.createElement('a');
-          link.className = 'alert-link ms-1';
-          link.href = window.location.pathname;
-          link.textContent = 'Refresh workspace';
-          change.append(document.createTextNode(' '), link);
-        }
-        lastActive = nextActive;
       }
-    } catch (_error) { /* Keep the current scorecard usable if the network drops. */ }
+    } catch (_err) {
+      showNotification(nextActive, candidateName);
+    } finally {
+      fetchingHtml = false;
+    }
   }
-  window.setInterval(refreshState, 8000);
+
+  // Connect WebSocket for push updates
+  function connectSocket() {
+    if (!window.WebSocket) return;
+    try {
+      socket = new WebSocket(wsUrl);
+      socket.onopen = () => {
+        retryCount = 0;
+      };
+      socket.onmessage = (event) => {
+        let payload;
+        try {
+          payload = JSON.parse(event.data);
+        } catch (_e) {
+          return;
+        }
+        const eventType = payload.type;
+        const data = payload.data || {};
+        if (eventType === 'candidate.changed' || eventType === 'hearing.state') {
+          applyCandidateChange(data.active_candidate_id, data.active_candidate_name);
+        } else if (eventType === 'hearing.closed') {
+          window.location.reload();
+        }
+      };
+      socket.onclose = () => {
+        window.clearTimeout(reconnectTimer);
+        const delay = Math.min(30000, 2000 * Math.pow(1.5, retryCount++));
+        reconnectTimer = window.setTimeout(connectSocket, delay);
+      };
+      socket.onerror = () => {
+        socket.close();
+      };
+    } catch (_err) {}
+  }
+
+  // Fallback safety check if socket is disconnected
+  async function checkStateFallback() {
+    if (socket && socket.readyState === WebSocket.OPEN) return;
+    try {
+      const stateUrl = `${window.location.pathname}?state=1`;
+      const res = await fetch(stateUrl, {
+        headers: { 'Accept': 'application/json' },
+        cache: 'no-store',
+        credentials: 'same-origin',
+      });
+      if (res.status === 429) return;
+      if (!res.ok) return;
+      const data = await res.json();
+      applyCandidateChange(data.active_candidate_id, data.active_candidate_name);
+    } catch (_e) {}
+  }
+
+  connectSocket();
+  const fallbackInterval = window.setInterval(checkStateFallback, 30000);
+  window.addEventListener('pagehide', () => {
+    window.clearInterval(fallbackInterval);
+    window.clearTimeout(reconnectTimer);
+    if (socket) socket.close();
+  });
 })();
 </script>
 {% endblock %}

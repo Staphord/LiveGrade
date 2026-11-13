@@ -1,11 +1,28 @@
-<div id="panel-live-hero" class="panel-live-hero assess-stagger">
+<div id="panel-live-hero" class="panel-live-hero">
   <div class="presenting-hero {% if not active_candidate %}is-idle{% endif %}">
-    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
-      <div>
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+      <div class="d-flex align-items-center gap-2">
         <div class="hero-kicker">
           <i class="bi bi-person-badge me-1" aria-hidden="true"></i>
           {% if active_candidate %}Candidate on the floor{% else %}Chamber Standby{% endif %}
         </div>
+        <span class="live-badge" id="live-connection-badge">
+          <span class="dot"></span>Live
+        </span>
+      </div>
+      <div>
+        <button type="button" class="btn btn-warning btn-sm" id="confirm-panel-close-hearing-btn"
+                data-confirm="Close this hearing for examiner responses and proceed to chair review?"
+                data-confirm-title="Close assessment for review?"
+                data-confirm-label="Close hearing"
+                data-confirm-tone="warning">
+          <i class="bi bi-door-closed me-1" aria-hidden="true"></i>Close &amp; review
+        </button>
+      </div>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+      <div>
         <div class="eyebrow">
           {% if active_candidate %}
             Order #{{ active_candidate.order|default:1 }} of {{ docket|length }}
@@ -30,9 +47,11 @@
         <div class="turn-ring-wrap" title="Phase time remaining">
           <div class="turn-ring {% if phase_seconds_remaining < 120 and not timer_paused %}is-urgent{% endif %}"
                id="panel-phase-ring"
-               style="--turn-pct:{% if phase_seconds_remaining %}{% widthratio phase_seconds_remaining 900 100 %}{% else %}0{% endif %};">
-            <span class="turn-ring-label font-monospace" id="panel-phase-timer-display" data-seconds="{{ phase_seconds_remaining }}">
-              {{ phase_seconds_remaining|default:0|stringformat:"d" }}s
+               style="--turn-pct:{% if phase_seconds_remaining and phase_duration %}{% widthratio phase_seconds_remaining phase_duration 100 %}{% else %}0{% endif %};">
+            <span class="turn-ring-label font-monospace" id="panel-phase-timer-display"
+                  data-seconds="{{ phase_seconds_remaining }}"
+                  data-duration="{{ phase_duration|default:900 }}">
+              {{ phase_timer_display|default:"15:00" }}
             </span>
           </div>
         </div>
@@ -65,11 +84,36 @@
         <span class="phase-chip {% if active_phase == 'decision' %}is-voting{% endif %}" data-panel-live-action="set_phase" data-phase="decision" style="cursor:pointer">
           <i class="bi bi-check2-circle me-1" aria-hidden="true"></i>4. Decision
         </span>
+        <button type="button" class="btn btn-outline-light btn-sm ms-1"
+                data-bs-toggle="modal" data-bs-target="#panel-phase-durations-modal"
+                title="Configure step timers">
+          <i class="bi bi-clock-history me-1" aria-hidden="true"></i>Step Timers
+        </button>
       </div>
 
       <div class="d-flex align-items-center gap-2">
+        {% if active_phase == 'presentation' %}
+          <button type="button" class="btn btn-outline-light btn-sm" data-panel-live-action="set_phase" data-phase="qa" title="Advance to stage 2: Q&amp;A">
+            <i class="bi bi-arrow-right me-1" aria-hidden="true"></i>Advance to Q&amp;A
+          </button>
+        {% elif active_phase == 'qa' %}
+          <button type="button" class="btn btn-outline-light btn-sm" data-panel-live-action="set_phase" data-phase="deliberation" title="Advance to stage 3: Deliberation">
+            <i class="bi bi-arrow-right me-1" aria-hidden="true"></i>Advance to Deliberation
+          </button>
+        {% elif active_phase == 'deliberation' %}
+          <button type="button" class="btn btn-outline-light btn-sm" data-panel-live-action="set_phase" data-phase="decision" title="Advance to stage 4: Decision">
+            <i class="bi bi-arrow-right me-1" aria-hidden="true"></i>Advance to Decision
+          </button>
+        {% endif %}
         {% if active_candidate %}
-          <button type="button" class="btn btn-warning btn-sm" data-panel-live-action="conclude_candidate" data-candidate-id="{{ active_candidate.pk }}">
+          <button type="button" class="btn btn-warning btn-sm"
+                  data-panel-live-action="conclude_candidate"
+                  data-candidate-id="{{ active_candidate.pk }}"
+                  data-confirm="Conclude presenter {{ active_candidate.display_name }} and advance to the next candidate?"
+                  data-confirm-title="Conclude presenter?"
+                  data-confirm-label="Conclude presenter"
+                  data-confirm-tone="warning"
+                  title="Conclude presenter">
             <i class="bi bi-skip-forward-circle me-1" aria-hidden="true"></i>Conclude presenter
           </button>
         {% endif %}

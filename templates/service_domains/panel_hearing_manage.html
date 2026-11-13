@@ -7,23 +7,13 @@
 {% include 'assessments/_partials/import_dropzone_styles.html' %}
 <div class="container-fluid py-4 service-workspace panel-page--wide panel-setup">
   <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-    <a href="{% url 'panel_hearing_list' %}" class="btn btn-link px-0"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i>Panel assessments</a>
-    {% if hearing.status == 'draft' %}<a href="{% url 'combined_assessment_create' %}?panel_hearing={{ hearing.pk }}" class="btn btn-outline-secondary btn-sm">Link a Classroom assessment</a>{% endif %}
+    <a href="{{ back_url }}" class="btn btn-link px-0"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i>{{ back_label }}</a>
   </div>
   <header class="panel-hero mb-4"><div class="panel-hero__copy"><p class="panel-eyebrow">Panel assessment · {{ hearing.get_status_display }}</p><h1 class="page-title">{{ hearing.name }}</h1><p class="page-subtitle mt-2 mb-0">{{ hearing.get_workflow_display }}</p></div>{% if hearing.status == 'open' %}<div class="panel-hero__actions"><span class="panel-state panel-state--live">Live</span><span class="small panel-muted" data-live-update-status aria-live="polite">Updating automatically</span></div>{% endif %}</header>
-  {% if invitation_notice %}<div class="alert alert-warning" role="status">{{ invitation_notice }}</div>{% endif %}
-  {% if action_error %}<div class="alert alert-danger" role="alert">{{ action_error }}</div>{% endif %}
-  {% if workflow_description %}<div class="alert alert-info" role="status">{{ workflow_description }}</div>{% endif %}
+  {% if invitation_notice or action_error %}<div class="mb-3" data-panel-action-feedback>{% if invitation_notice %}{% include 'partials/_inline_message.html' with tone='warning' message=invitation_notice %}{% endif %}{% if action_error %}{% include 'partials/_inline_message.html' with tone='danger' plain=True message=action_error %}{% endif %}</div>{% endif %}
 
-  {% if hearing.status == 'draft' %}
   <section class="panel-step-layout" aria-label="Hearing setup">
-    <ol class="panel-step-nav" aria-label="Setup steps">
-      <li><button type="button" data-panel-step="details"><span class="step-index">1</span>Hearing info</button></li>
-      <li><button type="button" data-panel-step="candidates"><span class="step-index">2</span>Candidates</button></li>
-      {% if requires_examiners %}<li><button type="button" data-panel-step="scoring"><span class="step-index">3</span>Criteria and weights</button></li>{% endif %}
-      {% if requires_examiners %}<li><button type="button" data-panel-step="examiners"><span class="step-index">4</span>Panel examiners</button></li>{% endif %}
-      <li><button type="button" data-panel-step="ready"><span class="step-index">{% if requires_examiners %}5{% else %}3{% endif %}</span>Launch or schedule</button></li>
-    </ol>
+    {% include 'partials/_stepper.html' with steps=stepper_steps %}
     <section class="panel-step panel-step-card service-section" data-panel-panel="details" aria-labelledby="details-heading">
       <div class="card-icon-head mb-3">
         <div class="head-left">
@@ -40,7 +30,7 @@
           <span>Hearing details saved successfully.</span>
         </div>
       {% endif %}
-      <form method="post" novalidate data-panel-form data-panel-details-form>{% csrf_token %}<input type="hidden" name="action" value="update_hearing">
+      <form method="post" novalidate data-panel-form data-panel-details-form data-unsaved-async-save data-unsaved-input-change-only>{% csrf_token %}<input type="hidden" name="action" value="update_hearing"><input type="hidden" name="from" value="{{ from_param }}"><input type="hidden" name="leave_to" value="">
         {% for field in forms.hearing %}
           <div class="panel-field mb-3">
             {% if field.name == 'workflow' %}
@@ -57,11 +47,11 @@
               <div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>
             {% endif %}
             {% for error in field.errors %}
-              <div class="field-error" role="alert" id="{{ field.auto_id }}_inline_message" data-server-error>{{ error }}</div>
+              <div class="field-error" data-server-error>{% include 'partials/_inline_message.html' with message=error tone='danger' plain=True message_id=field.auto_id|add:'_inline_message' %}</div>
             {% endfor %}
           </div>
         {% endfor %}
-        {% for error in forms.hearing.non_field_errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+        {% for error in forms.hearing.non_field_errors %}{% include 'partials/_inline_message.html' with message=error tone='danger' plain=True %}{% endfor %}
         <div class="panel-step-actions d-flex flex-wrap justify-content-between align-items-center gap-2 mt-4">
           <button class="btn btn-outline-primary btn-sm" type="submit"><i class="bi bi-check-circle me-1" aria-hidden="true"></i>Save details</button>
           <button class="btn btn-primary btn-sm" type="submit" name="advance" value="1">Next: Candidates<i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button>
@@ -76,6 +66,7 @@
           <p class="text-muted">Add the people, teams, or proposals the panel will review.</p>
         </div>
       </div>
+      <h3 class="h5">Candidate list</h3>
       {% if candidates %}
         <div class="list-group mb-4">
           {% for candidate in candidates %}
@@ -105,11 +96,11 @@
               </div>
             </div>
           </div>
-          <form method="post" action="{% url 'panel_candidate_import' hearing_id=hearing.pk %}?embedded=1" enctype="multipart/form-data" class="service-flow-form" data-panel-import-form>
+          <form method="post" action="{% url 'panel_candidate_import' hearing_id=hearing.pk %}?embedded=1" enctype="multipart/form-data" class="service-flow-form" data-panel-import-form novalidate>
             {% csrf_token %}
             {% include 'assessments/_partials/import_dropzone.html' with file_field=candidate_import_form.file dropzone_id='panel-candidate-dropzone' filename_id='panel-candidate-filename' file_required=True %}
             {% include 'partials/_inline_message.html' with message_id='panel-candidate-import-warning' tone='warning' message='' messages='' %}
-            {% include 'partials/_inline_message.html' with messages=candidate_import_form.file.errors tone='danger' message_id='panel-candidate-import-errors' %}
+            {% include 'partials/_inline_message.html' with messages=candidate_import_form.file.errors tone='danger' plain=True message_id='panel-candidate-import-errors' %}
             <div class="d-flex flex-column gap-2 mt-2">
               <button class="btn btn-outline-primary btn-sm w-100" type="submit"><i class="bi bi-eye me-1" aria-hidden="true"></i>Preview candidate list</button>
               <div class="d-flex justify-content-between align-items-center mt-1">
@@ -128,7 +119,7 @@
               </div>
               {% if candidate_import_plan.ok %}<span class="badge text-bg-success">Ready to import</span>{% else %}<span class="badge text-bg-danger">Needs attention</span>{% endif %}
             </div>
-            {% if not candidate_import_plan.ok %}<div class="alert alert-danger py-2 small mb-2" role="alert">Please resolve the spreadsheet issues below and upload the corrected file.</div>{% endif %}
+            {% if not candidate_import_plan.ok %}{% include 'partials/_inline_message.html' with tone='danger' plain=True message='Please resolve the spreadsheet issues below and upload the corrected file.' %}{% endif %}
             <div class="table-responsive"><table class="table table-sm table-striped align-middle mb-2"><thead><tr><th>Row</th><th>Candidate</th><th>Reference</th><th>Scheduled</th><th>Status</th></tr></thead><tbody>
               {% for row in candidate_import_plan.rows %}
                 <tr>
@@ -137,7 +128,7 @@
                   <td>{{ row.reference|default:'-' }}</td>
                   <td>{{ row.scheduled_time|time:'H:i'|default:'-' }}</td>
                   <td>
-                    {% for error in row.errors %}<div class="text-danger small">{{ error }}</div>{% empty %}<span class="text-success small">Ready</span>{% endfor %}
+                    {% for error in row.errors %}{% include 'partials/_inline_message.html' with tone='danger' plain=True message=error %}{% empty %}<span class="text-success small">Ready</span>{% endfor %}
                   </td>
                 </tr>
               {% endfor %}
@@ -174,17 +165,25 @@
           <form method="post" novalidate data-panel-form>
             {% csrf_token %}
             <input type="hidden" name="action" value="candidate">
+            <div class="panel-field mb-3">
+              <label class="form-label" for="{{ forms.candidate.display_name.id_for_label }}">{{ forms.candidate.display_name.label }} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span></label>
+              {{ forms.candidate.display_name }}
+              {% for error in forms.candidate.display_name.errors %}
+                <div class="field-error" data-server-error>{% include 'partials/_inline_message.html' with message=error tone='danger' plain=True message_id=forms.candidate.display_name.auto_id|add:'_inline_message' %}</div>
+              {% endfor %}
+            </div>
             {% for field in forms.candidate %}
-              <div class="panel-field mb-3">
-                <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>
-                {{ field }}
-                {% if field.help_text %}<div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}
-                {% for error in field.errors %}
-                  <div class="field-error" role="alert" id="{{ field.auto_id }}_inline_message" data-server-error>{{ error }}</div>
-                {% endfor %}
-              </div>
+              {% if field.name != 'display_name' %}
+                <div class="panel-field mb-3">
+                  <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                  {{ field }}
+                  {% for error in field.errors %}
+                    <div class="field-error" data-server-error>{% include 'partials/_inline_message.html' with message=error tone='danger' plain=True message_id=field.auto_id|add:'_inline_message' %}</div>
+                  {% endfor %}
+                </div>
+              {% endif %}
             {% endfor %}
-            {% for error in forms.candidate.non_field_errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+            {% for error in forms.candidate.non_field_errors %}{% include 'partials/_inline_message.html' with message=error tone='danger' plain=True %}{% endfor %}
             <button class="btn btn-primary btn-sm mt-1" type="submit">Add candidate</button>
           </form>
         </div>
@@ -209,8 +208,9 @@
       </div>
       {% if needs_scoring %}
         <h3 class="h5 mt-3">Scoring panels</h3><p class="text-muted">Most assessments use one panel. Add another only when different examiner groups need separate criteria or score shares.</p>
-        {% if panel_rows %}<div class="list-group mb-3">{% for row in panel_rows %}<div class="list-group-item"><strong>{{ row.panel.name }}</strong><span class="text-muted"> · {{ row.panel.share }}% · minimum {{ row.panel.minimum_examiners }}</span><form method="post" novalidate class="row g-2 mt-2" data-panel-form>{% csrf_token %}<input type="hidden" name="action" value="update_panel"><input type="hidden" name="panel_id" value="{{ row.panel.pk }}">{% for field in row.form %}<div class="col-12 col-md-6 panel-field mb-2"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>{{ field }}{% if field.help_text %}<div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}{% for error in field.errors %}<div class="field-error" role="alert" id="{{ field.auto_id }}_inline_message" data-server-error>{{ error }}</div>{% endfor %}</div>{% endfor %}<div class="col-12"><button class="btn btn-outline-secondary btn-sm" type="submit">Save panel settings</button></div></form></div>{% endfor %}</div>{% endif %}
-        <details class="mb-3"><summary class="fw-semibold">Add another scoring panel</summary><form method="post" novalidate class="service-section mt-2" data-panel-form>{% csrf_token %}<input type="hidden" name="action" value="panel">{% for field in forms.panel %}<div class="panel-field mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>{{ field }}{% if field.help_text %}<div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}{% for error in field.errors %}<div class="field-error" role="alert" id="{{ field.auto_id }}_inline_message" data-server-error>{{ error }}</div>{% endfor %}</div>{% endfor %}{% for error in forms.panel.non_field_errors %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endfor %}<button class="btn btn-outline-primary" type="submit">Add scoring panel</button></form></details>
+        {% if panel_rows %}<div class="list-group mb-3">{% for row in panel_rows %}<div class="list-group-item"><strong>{{ row.panel.name }}</strong><span class="text-muted"> · {{ row.panel.share }}% · minimum {{ row.panel.minimum_examiners }}</span><form method="post" novalidate class="row g-2 mt-2" data-panel-form>{% csrf_token %}<input type="hidden" name="action" value="update_panel"><input type="hidden" name="panel_id" value="{{ row.panel.pk }}">{% for field in row.form %}<div class="col-12 col-md-6 panel-field mb-2"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>{{ field }}{% if field.help_text %}<div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}{% for error in field.errors %}<div class="field-error" data-server-error>{% include 'partials/_inline_message.html' with message=error tone='danger' plain=True message_id=field.auto_id|add:'_inline_message' %}</div>{% endfor %}</div>{% endfor %}<div class="col-12"><button class="btn btn-outline-secondary btn-sm" type="submit">Save panel settings</button></div></form></div>{% endfor %}</div>{% endif %}
+        <details class="mb-3"><summary class="fw-semibold">Add another scoring panel</summary><form method="post" novalidate class="service-section mt-2" data-panel-form>{% csrf_token %}<input type="hidden" name="action" value="panel">{% for field in forms.panel %}<div class="panel-field mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>{{ field }}{% if field.help_text %}<div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}{% for error in field.errors %}<div class="field-error" data-server-error>{% include 'partials/_inline_message.html' with message=error tone='danger' plain=True message_id=field.auto_id|add:'_inline_message' %}</div>{% endfor %}</div>{% endfor %}{% for error in forms.panel.non_field_errors %}{% include 'partials/_inline_message.html' with message=error tone='danger' plain=True %}{% endfor %}<button class="btn btn-outline-primary" type="submit">Add scoring panel</button></form></details>
+        <h3 class="h5 mt-4" id="criteria-heading">Scoring criteria</h3>
         {% if criteria %}
           <ul class="list-group mb-4">
             {% for criterion in criteria %}
@@ -249,11 +249,11 @@
                 </div>
               </div>
             </div>
-            <form method="post" action="{% url 'panel_rubric_import' hearing_id=hearing.pk %}?embedded=1" enctype="multipart/form-data" class="service-flow-form" data-panel-import-form>
+            <form method="post" action="{% url 'panel_rubric_import' hearing_id=hearing.pk %}?embedded=1" enctype="multipart/form-data" class="service-flow-form" data-panel-import-form novalidate>
               {% csrf_token %}
               {% include 'assessments/_partials/import_dropzone.html' with file_field=rubric_import_form.file dropzone_id='panel-rubric-dropzone' filename_id='panel-rubric-filename' file_required=True %}
               {% include 'partials/_inline_message.html' with message_id='panel-rubric-import-warning' tone='warning' message='' messages='' %}
-              {% include 'partials/_inline_message.html' with messages=rubric_import_form.file.errors tone='danger' message_id='panel-rubric-import-errors' %}
+              {% include 'partials/_inline_message.html' with messages=rubric_import_form.file.errors tone='danger' plain=True message_id='panel-rubric-import-errors' %}
               <div class="d-flex flex-column gap-2 mt-2">
                 <button class="btn btn-outline-primary btn-sm w-100" type="submit"><i class="bi bi-eye me-1" aria-hidden="true"></i>Preview criteria</button>
                 <div class="d-flex justify-content-between align-items-center mt-1">
@@ -272,7 +272,7 @@
                 </div>
                 {% if rubric_import_plan.ok %}<span class="badge text-bg-success">Ready to import</span>{% else %}<span class="badge text-bg-danger">Needs attention</span>{% endif %}
               </div>
-              {% if not rubric_import_plan.ok %}<div class="alert alert-danger py-2 small mb-2" role="alert">Please resolve the spreadsheet issues below and upload the corrected file.</div>{% endif %}
+              {% if not rubric_import_plan.ok %}{% include 'partials/_inline_message.html' with tone='danger' plain=True message='Please resolve the spreadsheet issues below and upload the corrected file.' %}{% endif %}
               <div class="table-responsive"><table class="table table-sm table-striped align-middle mb-2"><thead><tr><th>Row</th><th>Criterion</th><th>Description</th><th>Status</th></tr></thead><tbody>
                 {% for row in rubric_import_plan.rows %}
                   <tr>
@@ -280,7 +280,7 @@
                     <td><strong>{{ row.name }}</strong></td>
                     <td>{{ row.description|default:'-' }}</td>
                     <td>
-                      {% for error in row.errors %}<div class="text-danger small">{{ error }}</div>{% empty %}<span class="text-success small">Ready</span>{% endfor %}
+                      {% for error in row.errors %}{% include 'partials/_inline_message.html' with tone='danger' plain=True message=error %}{% empty %}<span class="text-success small">Ready</span>{% endfor %}
                     </td>
                   </tr>
                 {% endfor %}
@@ -320,22 +320,39 @@
               {% for field in forms.criterion %}
                 <div class="panel-field mb-3">
                   {% if field.name == 'panels' %}
-                    <fieldset><legend class="form-label">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</legend>{{ field }}{% if field.help_text %}<div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}{% for error in field.errors %}<div class="field-error" role="alert" id="{{ field.auto_id }}_inline_message" data-server-error>{{ error }}</div>{% endfor %}</fieldset>
+                    {% if panel_rows|length > 1 %}
+                      <details class="panel-optional-settings" {% if field.errors %}open{% endif %}>
+                        <summary>Panel assignment (optional)</summary>
+                        <fieldset class="mt-2">
+                          <legend class="form-label">{{ field.label }}</legend>
+                          {{ field }}
+                          {% if field.help_text %}<div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}
+                          {% for error in field.errors %}<div class="field-error" data-server-error>{% include 'partials/_inline_message.html' with message=error tone='danger' plain=True message_id=field.auto_id|add:'_inline_message' %}</div>{% endfor %}
+                        </fieldset>
+                      </details>
+                    {% endif %}
+                  {% elif field.name == 'level_descriptors' %}
+                    <details class="panel-optional-settings" {% if field.errors %}open{% endif %}>
+                      <summary>Score guidance (optional)</summary>
+                      <div class="mt-2">
+                        <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {{ field }}
+                        {% if field.help_text %}<div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}
+                        {% for error in field.errors %}<div class="field-error" data-server-error>{% include 'partials/_inline_message.html' with message=error tone='danger' plain=True message_id=field.auto_id|add:'_inline_message' %}</div>{% endfor %}
+                      </div>
+                    </details>
                   {% else %}
                     <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>
-                    {% if field.name == 'level_descriptors' %}
-                      <button class="panel-inline-info" type="button" aria-expanded="false" aria-controls="score-info" aria-label="More about score guidance">i</button>
-                      <div id="score-info" class="panel-info-copy">Optional: enter one guide per line, such as “0 | Not shown” and “100 | Clear and complete”.</div>
-                    {% endif %}
                     {{ field }}
                     {% if field.help_text %}<div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}
+                    {% if field.name == 'description' %}<div class="form-text" data-panel-word-count>0 / 50 words</div>{% endif %}
                     {% for error in field.errors %}
-                      <div class="field-error" role="alert" id="{{ field.auto_id }}_inline_message" data-server-error>{{ error }}</div>
+                      <div class="field-error" data-server-error>{% include 'partials/_inline_message.html' with message=error tone='danger' plain=True message_id=field.auto_id|add:'_inline_message' %}</div>
                     {% endfor %}
                   {% endif %}
                 </div>
               {% endfor %}
-              {% for error in forms.criterion.non_field_errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+              {% for error in forms.criterion.non_field_errors %}{% include 'partials/_inline_message.html' with message=error tone='danger' plain=True %}{% endfor %}
               <button class="btn btn-primary btn-sm mt-1" type="submit">Add criterion</button>
             </form>
           </div>
@@ -348,8 +365,8 @@
       {% else %}
         <div class="alert alert-info">This process does not use scoring criteria. You can still set examiner groups and the minimum number of completed reviews or votes.</div>
         <h3 class="h5">Examiner groups</h3>
-        {% if panel_rows %}<div class="list-group mb-3">{% for row in panel_rows %}<div class="list-group-item"><strong>{{ row.panel.name }}</strong> · minimum {{ row.panel.minimum_examiners }} examiner{{ row.panel.minimum_examiners|pluralize }}<form method="post" novalidate class="row g-2 mt-2" data-panel-form>{% csrf_token %}<input type="hidden" name="action" value="update_panel"><input type="hidden" name="panel_id" value="{{ row.panel.pk }}">{% for field in row.form %}{% if field.name != 'share' and field.name != 'aggregation' %}<div class="col-12 col-md-6 panel-field mb-2"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>{{ field }}{% if field.help_text %}<div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}{% for error in field.errors %}<div class="field-error" role="alert" id="{{ field.auto_id }}_inline_message" data-server-error>{{ error }}</div>{% endfor %}</div>{% endif %}{% endfor %}<div class="col-12"><button class="btn btn-outline-secondary btn-sm" type="submit">Save group settings</button></div></form></div>{% endfor %}</div>{% endif %}
-        <details class="mb-3"><summary class="fw-semibold">Add another examiner group</summary><form method="post" novalidate class="service-section mt-2" data-panel-form>{% csrf_token %}<input type="hidden" name="action" value="panel">{% for field in forms.panel %}{% if field.name != 'share' and field.name != 'aggregation' %}<div class="panel-field mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>{{ field }}{% if field.help_text %}<div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}{% for error in field.errors %}<div class="field-error" role="alert" id="{{ field.auto_id }}_inline_message" data-server-error>{{ error }}</div>{% endfor %}</div>{% endif %}{% endfor %}<button class="btn btn-outline-primary" type="submit">Add examiner group</button></form></details>
+        {% if panel_rows %}<div class="list-group mb-3">{% for row in panel_rows %}<div class="list-group-item"><strong>{{ row.panel.name }}</strong> · minimum {{ row.panel.minimum_examiners }} examiner{{ row.panel.minimum_examiners|pluralize }}<form method="post" novalidate class="row g-2 mt-2" data-panel-form>{% csrf_token %}<input type="hidden" name="action" value="update_panel"><input type="hidden" name="panel_id" value="{{ row.panel.pk }}">{% for field in row.form %}{% if field.name != 'share' and field.name != 'aggregation' %}<div class="col-12 col-md-6 panel-field mb-2"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>{{ field }}{% if field.help_text %}<div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}{% for error in field.errors %}<div class="field-error" data-server-error>{% include 'partials/_inline_message.html' with message=error tone='danger' plain=True message_id=field.auto_id|add:'_inline_message' %}</div>{% endfor %}</div>{% endif %}{% endfor %}<div class="col-12"><button class="btn btn-outline-secondary btn-sm" type="submit">Save group settings</button></div></form></div>{% endfor %}</div>{% endif %}
+        <details class="mb-3"><summary class="fw-semibold">Add another examiner group</summary><form method="post" novalidate class="service-section mt-2" data-panel-form>{% csrf_token %}<input type="hidden" name="action" value="panel">{% for field in forms.panel %}{% if field.name != 'share' and field.name != 'aggregation' %}<div class="panel-field mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>{{ field }}{% if field.help_text %}<div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}{% for error in field.errors %}<div class="field-error" data-server-error>{% include 'partials/_inline_message.html' with message=error tone='danger' plain=True message_id=field.auto_id|add:'_inline_message' %}</div>{% endfor %}</div>{% endif %}{% endfor %}<button class="btn btn-outline-primary" type="submit">Add examiner group</button></form></details>
         <div class="panel-step-actions"><button class="btn btn-outline-secondary" type="button" data-panel-next="candidates">Back</button><button class="btn btn-primary ms-auto" type="button" data-panel-next="examiners">Next: examiners</button></div>
       {% endif %}
     </section>
@@ -369,7 +386,7 @@
                 <span><strong>{{ invitation.email }}</strong><small class="d-block text-muted">Expires {{ invitation.expires_at }} · {{ invitation.get_delivery_status_display }}</small></span>
                 <span class="badge {% if invitation.confirmed_at %}text-bg-success{% elif invitation.declined_at %}text-bg-warning{% elif invitation.revoked_at %}text-bg-secondary{% else %}text-bg-info{% endif %}">{% if invitation.confirmed_at %}Accepted{% elif invitation.declined_at %}Declined{% elif invitation.revoked_at %}Revoked{% else %}Pending{% endif %}</span>
               </div>
-              {% if invitation.delivery_error %}<small class="text-danger d-block mt-1">Email delivery needs attention: {{ invitation.delivery_error }}</small>{% endif %}
+              {% if invitation.delivery_error %}{% with delivery_message='Email delivery needs attention: '|add:invitation.delivery_error %}{% include 'partials/_inline_message.html' with tone='danger' plain=True message=delivery_message %}{% endwith %}{% endif %}
               <div class="d-flex flex-wrap gap-2 mt-2">
                 {% if invitation.can_resend %}
                   <form method="post">{% csrf_token %}<input type="hidden" name="action" value="resend"><input type="hidden" name="invitation_id" value="{{ invitation.pk }}"><button class="btn btn-outline-secondary btn-sm" type="submit">Resend email</button></form>
@@ -396,26 +413,26 @@
               </div>
             </div>
           </div>
-          <form method="post" action="{% url 'panel_invitation_import' hearing_id=hearing.pk %}?embedded=1" enctype="multipart/form-data" class="service-flow-form" data-panel-import-form>
+          <form method="post" action="{% url 'panel_invitation_import' hearing_id=hearing.pk %}?embedded=1" enctype="multipart/form-data" class="service-flow-form" data-panel-import-form novalidate>
             {% csrf_token %}
             {% include 'assessments/_partials/import_dropzone.html' with file_field=invitation_import_form.file dropzone_id='panel-invitation-dropzone' filename_id='panel-invitation-filename' file_required=True %}
             {% include 'partials/_inline_message.html' with message_id='panel-invitation-import-warning' tone='warning' message='' messages='' %}
-            {% include 'partials/_inline_message.html' with messages=invitation_import_form.file.errors tone='danger' message_id='panel-invitation-import-errors' %}
+            {% include 'partials/_inline_message.html' with messages=invitation_import_form.file.errors tone='danger' plain=True message_id='panel-invitation-import-errors' %}
             <div class="row g-2 mt-2">
               <div class="col-12 col-sm-6 panel-field mb-2">
                 <label class="form-label" for="{{ invitation_import_form.expires_at.id_for_label }}">{{ invitation_import_form.expires_at.label }}{% if invitation_import_form.expires_at.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>
                 {{ invitation_import_form.expires_at }}
                 {% if invitation_import_form.expires_at.help_text %}<div class="form-text text-muted" id="{{ invitation_import_form.expires_at.auto_id }}_helptext">{{ invitation_import_form.expires_at.help_text }}</div>{% endif %}
-                {% include 'partials/_inline_message.html' with messages=invitation_import_form.expires_at.errors tone='danger' message_id=invitation_import_form.expires_at.auto_id|add:'_inline_message' %}
+                {% include 'partials/_inline_message.html' with messages=invitation_import_form.expires_at.errors tone='danger' plain=True message_id=invitation_import_form.expires_at.auto_id|add:'_inline_message' %}
               </div>
               <div class="col-12 col-sm-6 panel-field mb-2">
                 <label class="form-label" for="{{ invitation_import_form.panel.id_for_label }}">{{ invitation_import_form.panel.label }}{% if invitation_import_form.panel.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>
                 {{ invitation_import_form.panel }}
                 {% if invitation_import_form.panel.help_text %}<div class="form-text text-muted" id="{{ invitation_import_form.panel.auto_id }}_helptext">{{ invitation_import_form.panel.help_text }}</div>{% endif %}
-                {% include 'partials/_inline_message.html' with messages=invitation_import_form.panel.errors tone='danger' message_id=invitation_import_form.panel.auto_id|add:'_inline_message' %}
+                {% include 'partials/_inline_message.html' with messages=invitation_import_form.panel.errors tone='danger' plain=True message_id=invitation_import_form.panel.auto_id|add:'_inline_message' %}
               </div>
             </div>
-            {% for error in invitation_import_form.non_field_errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+            {% for error in invitation_import_form.non_field_errors %}{% include 'partials/_inline_message.html' with message=error tone='danger' plain=True %}{% endfor %}
             <div class="d-flex flex-column gap-2 mt-2">
               <button class="btn btn-outline-primary btn-sm w-100" type="submit"><i class="bi bi-eye me-1" aria-hidden="true"></i>Preview email list</button>
               <div class="d-flex justify-content-between align-items-center mt-1">
@@ -435,13 +452,11 @@
               {% if invitation_import_plan.ok %}<span class="badge text-bg-success">Ready to import</span>{% else %}<span class="badge text-bg-danger">Needs attention</span>{% endif %}
             </div>
             {% if invitation_import_plan.errors %}
-              <div class="alert alert-danger py-2 small mb-2" role="alert">
-                <ul class="mb-0 ps-3">
-                  {% for row, error in invitation_import_plan.errors %}
-                    <li>{% if row %}Row {{ row }}: {% endif %}{{ error }}</li>
-                  {% endfor %}
-                </ul>
-              </div>
+              <ul class="list-unstyled mb-2">
+                {% for row, error in invitation_import_plan.errors %}
+                  <li>{% if row %}<span class="small fw-semibold">Row {{ row }}:</span> {% endif %}{% include 'partials/_inline_message.html' with tone='danger' plain=True message=error %}</li>
+                {% endfor %}
+              </ul>
             {% endif %}
             <div class="table-responsive"><table class="table table-sm table-striped align-middle mb-2"><thead><tr><th>Row</th><th>Email</th><th>Status</th></tr></thead><tbody>
               {% for row in invitation_import_plan.rows %}
@@ -449,7 +464,7 @@
                   <td>{{ row.row }}</td>
                   <td><strong>{{ row.email }}</strong></td>
                   <td>
-                    {% for error in row.errors %}<div class="text-danger small">{{ error }}</div>{% empty %}<span class="text-success small">Ready</span>{% endfor %}
+                    {% for error in row.errors %}{% include 'partials/_inline_message.html' with tone='danger' plain=True message=error %}{% empty %}<span class="text-success small">Ready</span>{% endfor %}
                   </td>
                 </tr>
               {% endfor %}
@@ -492,11 +507,11 @@
                 {{ field }}
                 {% if field.help_text %}<div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}
                 {% for error in field.errors %}
-                  <div class="field-error" role="alert" id="{{ field.auto_id }}_inline_message" data-server-error>{{ error }}</div>
+                  <div class="field-error" data-server-error>{% include 'partials/_inline_message.html' with message=error tone='danger' plain=True message_id=field.auto_id|add:'_inline_message' %}</div>
                 {% endfor %}
               </div>
             {% endfor %}
-            {% for error in forms.invitation.non_field_errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+            {% for error in forms.invitation.non_field_errors %}{% include 'partials/_inline_message.html' with message=error tone='danger' plain=True %}{% endfor %}
             <button class="btn btn-primary btn-sm mt-1" type="submit">Send invitation</button>
           </form>
         </div>
@@ -509,57 +524,91 @@
     </section>{% endif %}
 
     <section class="panel-step panel-step-card service-section" data-panel-panel="ready" aria-labelledby="ready-heading">
-      <h2 id="ready-heading" class="h4">Review and open</h2><p class="text-muted">{% if requires_examiners %}Check the setup before examiners begin.{% else %}Check the details before opening.{% endif %} Opening locks the assessment settings.</p>
+      <h2 id="ready-heading" class="h4">Review and launch</h2><p class="text-muted">{% if requires_examiners %}Check the setup before examiners begin.{% else %}Check the details before opening.{% endif %} Launching locks the assessment settings.</p>
       <ul class="list-group mb-3">{% for step in setup_checklist %}<li class="list-group-item d-flex gap-2">{% if step.complete %}<span class="text-success" aria-label="Complete">✓</span>{% else %}<span class="text-warning" aria-label="Needs attention">•</span>{% endif %}<span>{{ step.label }}</span></li>{% endfor %}</ul>
       {% if needs_scoring %}<div class="service-section mb-3"><h3 class="h6">Scoring panels</h3>{% for row in panel_rows %}<p class="mb-2"><strong>{{ row.panel.name }}</strong> · {{ row.panel.share }}% · minimum {{ row.panel.minimum_examiners }} examiners<br><span class="text-muted">Criteria: {% for criterion in row.panel.criteria.all %}{{ criterion.name }}{% if not forloop.last %}, {% endif %}{% empty %}none assigned{% endfor %}</span></p>{% endfor %}</div>{% endif %}
-      {% for error in forms.hearing.non_field_errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+      {% for error in forms.hearing.non_field_errors %}{% include 'partials/_inline_message.html' with message=error tone='danger' plain=True %}{% endfor %}
       {% if not setup_ready %}<p class="text-muted small" id="open-readiness-help">Complete the setup items marked “Needs attention” before opening.</p>{% endif %}
-      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="open"><div class="panel-step-actions"><button class="btn btn-outline-secondary" type="button" data-panel-next="{% if requires_examiners %}examiners{% else %}candidates{% endif %}">Back</button><button class="btn btn-primary ms-auto" type="submit" {% if not setup_ready %}disabled aria-describedby="open-readiness-help"{% endif %}>{% if requires_examiners %}Open assessment for examiners{% else %}Open assessment{% endif %}</button></div></form>
+      {% if hearing.status == 'draft' %}
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="open"><input type="hidden" name="from" value="{{ from_param }}"><div class="panel-step-actions"><button class="btn btn-outline-secondary" type="button" data-panel-next="{% if requires_examiners %}examiners{% else %}candidates{% endif %}">Back</button><button class="btn btn-primary ms-auto" type="submit" {% if not setup_ready %}disabled aria-describedby="open-readiness-help"{% endif %}>{% if requires_examiners %}Launch assessment for examiners{% else %}Launch assessment{% endif %}</button></div></form>
+      {% elif hearing.status == 'open' %}
+      <div class="alert alert-info d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+        <div>
+          <strong>This assessment is currently live.</strong>
+          <div class="small text-muted">{% if requires_examiners %}Examiners can submit evaluations and room displays are active.{% else %}When the discussion is complete, record an outcome for each candidate.{% endif %}</div>
+        </div>
+        {% if requires_examiners %}
+        <a class="btn btn-primary btn-sm" href="{% url 'panel_hearing_live' hearing_id=hearing.pk %}">
+          <i class="bi bi-broadcast me-1" aria-hidden="true"></i>Go to Live Chamber
+        </a>
+        {% else %}
+        <form method="post" class="d-inline">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="review">
+          <input type="hidden" name="from" value="{{ from_param }}">
+          <button class="btn btn-primary btn-sm" type="submit">Finish and record outcomes</button>
+        </form>
+        {% endif %}
+      </div>
+      <div class="panel-step-actions">
+        <button class="btn btn-outline-secondary" type="button" data-panel-next="{% if requires_examiners %}examiners{% else %}candidates{% endif %}">Back</button>
+        {% if requires_examiners %}
+        <a class="btn btn-primary ms-auto" href="{% url 'panel_hearing_live' hearing_id=hearing.pk %}">Live chamber <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></a>
+        {% else %}
+        <form method="post" class="ms-auto d-inline">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="review">
+          <input type="hidden" name="from" value="{{ from_param }}">
+          <button class="btn btn-primary" type="submit">Finish and record outcomes <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button>
+        </form>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="alert alert-secondary d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+        <div>
+          <strong>Scoring is concluded for this assessment.</strong>
+          <div class="small text-muted">Results are under review or released.</div>
+        </div>
+        <a class="btn btn-primary btn-sm" href="{% url 'panel_results_review' hearing_id=hearing.pk %}">
+          <i class="bi bi-bar-chart-line me-1" aria-hidden="true"></i>Review Results
+        </a>
+      </div>
+      <div class="panel-step-actions"><button class="btn btn-outline-secondary" type="button" data-panel-next="{% if requires_examiners %}examiners{% else %}candidates{% endif %}">Back</button><a class="btn btn-primary ms-auto" href="{% url 'panel_results_review' hearing_id=hearing.pk %}">Results &amp; deliberation <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></a></div>
+      {% endif %}
     </section>
   </section>
-  {% else %}
-    <section class="service-section mb-4" aria-labelledby="live-controls-heading">
-      <div class="panel-section-heading"><div><p class="panel-eyebrow">Organizer controls</p><h2 class="h3" id="live-controls-heading">{% if requires_examiners %}Live assessment{% else %}Record outcomes{% endif %}</h2><p>{% if requires_examiners %}Choose the candidate examiners should work on. Progress and provisional standings update as they respond.{% else %}When the discussion is complete, record an outcome for each candidate.{% endif %}</p></div>{% if hearing.status == 'open' %}<span class="panel-state panel-state--live">Live</span>{% endif %}</div>
-      {% if requires_examiners %}
-      <div class="panel-live-grid">
-        <section class="panel-live-current" aria-labelledby="current-candidate-heading">
-          <p class="panel-eyebrow">Now reviewing</p><h3 class="visually-hidden" id="current-candidate-heading">Current candidate</h3>
-          <div class="panel-live-current__name" data-organizer-active-name>{% if hearing.active_candidate %}{{ hearing.active_candidate.display_name }}{% else %}No candidate selected{% endif %}</div>
-          {% if hearing.active_candidate %}<form method="post" data-confirm="End scoring for {{ hearing.active_candidate.display_name }}? Examiners will no longer be able to submit scores for this candidate until you activate another.">{% csrf_token %}<input type="hidden" name="action" value="end_candidate"><button class="btn btn-outline-secondary" type="submit">End this candidate</button></form>{% else %}<p class="small panel-muted mb-0">Activate a candidate below to begin.</p>{% endif %}
-        </section>
-        <section class="panel-card" aria-labelledby="candidate-progress-heading"><div class="panel-section-heading"><div><h3 class="h5" id="candidate-progress-heading">Candidate progress</h3><p>Counts update automatically every few seconds.</p></div><span class="small panel-muted" data-owner-update-status aria-live="polite">Updating automatically</span></div>
-          <div class="panel-candidate-list" data-organizer-candidates>{% for row in live_activity.candidates %}<article class="panel-candidate {% if row.active %}is-active{% endif %}" data-organizer-candidate="{{ row.id }}"><div class="d-flex flex-wrap justify-content-between align-items-center gap-2"><div class="min-w-0"><strong class="text-break" data-organizer-name>{{ row.name }}</strong><div class="small panel-muted"><span data-organizer-responses>{{ row.responses }}</span> responses{% if row.candidate_required %} · <span data-organizer-completed>{{ row.candidate_progress }}</span> of <span data-organizer-required>{{ row.candidate_required }}</span> required <span data-organizer-unit>{{ row.progress_unit }}</span>{% endif %}</div></div>{% if hearing.status == 'open' %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="activate_candidate"><input type="hidden" name="candidate_id" value="{{ row.id }}"><button class="btn btn-sm {% if row.active %}btn-primary{% else %}btn-outline-primary{% endif %}" type="submit" data-organizer-activate>{% if row.active %}Currently active{% else %}Make active{% endif %}</button></form>{% endif %}</div><div class="panel-progress mt-2" role="progressbar" aria-label="{{ row.name }} response progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{% if row.candidate_required %}{% widthratio row.candidate_progress row.candidate_required 100 %}{% else %}0{% endif %}"><span data-organizer-progress style="width:{% if row.candidate_required %}{% widthratio row.candidate_progress row.candidate_required 100 %}{% else %}0{% endif %}%"></span></div></article>{% empty %}<div class="panel-empty">Add candidates before opening the assessment.</div>{% endfor %}</div>
-        </section>
-      </div>
-      {% if live_activity.scoring %}<section class="panel-card mt-3" aria-labelledby="organizer-standings-heading"><div class="panel-section-heading"><div><p class="panel-eyebrow">Provisional</p><h3 class="h5" id="organizer-standings-heading">Live standings</h3><p>Criteria count equally. Only candidates with minimum score coverage are ranked; final results follow chair review.</p></div></div><div class="panel-rank-list" data-organizer-standings>{% for row in live_activity.candidates %}<article class="panel-rank" data-organizer-rank-row="{{ row.id }}" data-rank="{{ row.rank|default_if_none:'' }}"><span class="panel-rank__number" data-rank-number>{{ row.rank|default_if_none:'-' }}</span><div><strong data-organizer-rank-name>{{ row.name }}</strong><small class="d-block panel-muted" data-rank-response>{{ row.responses }} responses · {% if row.complete %}minimum met{% else %}collecting{% endif %}</small></div><strong class="panel-number" data-rank-score>{% if row.complete %}{{ row.score }}{% else %}-{% endif %}</strong></article>{% endfor %}</div></section>{% endif %}
-      <section class="panel-card mt-3" aria-labelledby="public-display-heading"><div class="panel-card__top"><div><p class="panel-eyebrow">Share with the room</p><h3 class="h5" id="public-display-heading">Public live display</h3><p class="panel-muted mb-2">Anyone with this link can see response totals and, for scoring, provisional standings. Examiner names and individual responses stay private.</p></div><i class="bi bi-display fs-3 text-primary" aria-hidden="true"></i></div>
-        {% if one_time_display_url %}<label class="form-label" for="panel-display-link">Copy this link now</label><div class="input-group"><input id="panel-display-link" class="form-control" value="{{ one_time_display_url }}" readonly aria-describedby="display-copy-status"><button class="btn btn-primary" type="button" data-copy-display>Copy link</button></div><small id="display-copy-status" class="form-text" aria-live="polite">This private link is shown once. Create another to replace it if it is lost.</small>
-        {% elif active_display_link %}<p class="mb-2"><span class="panel-state panel-state--live">Display link active</span></p><p class="small panel-muted">The link is private and is not shown again after you leave this page. Create a replacement if needed.</p><form method="post" data-confirm="Create a new public display link? The current link will stop working.">{% csrf_token %}<input type="hidden" name="action" value="issue_display_link"><button class="btn btn-outline-primary" type="submit">Create replacement link</button></form><form method="post" class="mt-2" data-confirm="Revoke the public display link? Anyone using it will lose access immediately.">{% csrf_token %}<input type="hidden" name="action" value="revoke_display_link"><input type="hidden" name="display_link_id" value="{{ active_display_link.pk }}"><button class="btn btn-outline-danger btn-sm" type="submit">Revoke link</button></form>
-        {% else %}<p class="small panel-muted">The link uses this device’s network address when no public address is configured. Open it on the same network as your audience.</p><form method="post">{% csrf_token %}<input type="hidden" name="action" value="issue_display_link"><button class="btn btn-primary" type="submit">Create public display link</button></form>{% endif %}
-      </section>
-      {% else %}<div class="alert alert-info">This chair-led process does not collect examiner responses. Record the outcomes after the discussion.</div>{% endif %}
-      {% if hearing.status == 'open' %}<form method="post" class="panel-sticky-actions mt-3" data-confirm="Close this assessment for examiner responses? You can then review and approve the results.">{% csrf_token %}<input type="hidden" name="action" value="review"><button class="btn btn-warning" type="submit">{% if requires_examiners %}Close responses and review{% else %}Finish and record outcomes{% endif %}</button></form>{% endif %}
-    </section>
-    {% if hearing.status == 'review' or hearing.status == 'signed_off' or hearing.status == 'released' %}<a class="btn btn-primary" href="{% url 'panel_results_review' hearing_id=hearing.pk %}">Review results</a>{% endif %}
-    {% if conflicts %}<section class="service-section mt-4"><h2 class="h5">Conflict declarations</h2><p>{{ conflicts|length }} examiner conflict declaration{{ conflicts|length|pluralize }} recorded.</p><a class="btn btn-outline-secondary" href="{% url 'panel_recusal_export' hearing_id=hearing.pk %}">Download report</a></section>{% endif %}
+
+  {% if conflicts %}
+  <section class="service-section mt-4">
+    <h2 class="h5">Conflict declarations</h2>
+    <p>{{ conflicts|length }} examiner conflict declaration{{ conflicts|length|pluralize }} recorded.</p>
+    <a class="btn btn-outline-secondary" href="{% url 'panel_recusal_export' hearing_id=hearing.pk %}">Download report</a>
+  </section>
   {% endif %}
-  {% if hearing.status == 'open' and requires_examiners %}<section class="service-section mt-4" aria-labelledby="invitation-management-heading"><h2 id="invitation-management-heading" class="h5">Manage examiner invitations</h2><p class="text-muted">Add an examiner or manage the invitations already sent.</p><form method="post" class="row g-2 align-items-end mb-3">{% csrf_token %}<input type="hidden" name="action" value="invite">{% for field in forms.invitation_live %}<div class="col-12 col-md-4 panel-field mb-0"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>{{ field }}{% for error in field.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}</div>{% endfor %}<div class="col-12 col-md-auto"><button class="btn btn-primary" type="submit">Send invitation</button></div>{% for error in forms.invitation_live.non_field_errors %}<div class="col-12 text-danger small" role="alert">{{ error }}</div>{% endfor %}</form>{% if invitations %}<div class="list-group">{% for invitation in invitations %}<div class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2"><span>{{ invitation.email }} · {{ invitation.get_delivery_status_display }}{% if invitation.declined_at %}<small class="d-block text-warning">Invitation declined</small>{% endif %}{% if invitation.delivery_error %}<small class="d-block text-danger">{{ invitation.delivery_error }}</small>{% endif %}</span><span class="d-flex gap-2">{% if invitation.can_resend %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="resend"><input type="hidden" name="invitation_id" value="{{ invitation.pk }}"><button class="btn btn-outline-secondary btn-sm" type="submit">Resend</button></form>{% endif %}{% if not invitation.revoked_at and not invitation.declined_at %}<form method="post" class="d-flex gap-2" data-confirm="Revoke this invitation? The examiner will lose access immediately.">{% csrf_token %}<input type="hidden" name="action" value="revoke"><input type="hidden" name="invitation_id" value="{{ invitation.pk }}"><input class="form-control form-control-sm" aria-label="Reason for revoking {{ invitation.email }} invitation" name="reason" maxlength="500" placeholder="Reason for revoking" required><button class="btn btn-outline-danger btn-sm" type="submit">Revoke</button></form>{% endif %}</span></div>{% endfor %}</div>{% else %}<p class="mb-0">No invitations have been sent.</p>{% endif %}</section>{% endif %}
-  {% if hearing.status == 'draft' %}
-    {% include 'service_domains/_partials/panel_import_reviews.html' %}
-    {% include 'partials/_unsaved_changes.html' with form_selector='form[data-panel-details-form]' dialog_id='panel-unsaved-dialog' title_id='panel-unsaved-title' dialog_title='Leave setup?' dialog_body='You have unsaved changes in setup details. Save your changes before leaving, or discard them.' save_btn_text='Save details' step_selector='[data-panel-step]' %}
-  {% endif %}
+
+  {% include 'service_domains/_partials/panel_import_reviews.html' %}
+  {% include 'partials/_unsaved_changes.html' with form_selector='form[data-panel-details-form]' dialog_id='panel-unsaved-dialog' title_id='panel-unsaved-title' dialog_title='Leave setup?' dialog_body='You have unsaved changes in setup details. Save your changes before leaving, or discard them.' save_btn_text='Save details' has_leave_to=True step_selector='[data-panel-step], [data-panel-next]' step_return_field='return_step' ignore_selector='.panel-step-layout [data-panel-panel] form' %}
 </div>
+<template id="panel-inline-error-template">{% include 'partials/_inline_message.html' with tone='danger' plain=True message='This field is required.' %}</template>
 {% endblock %}
 
 {% block scripts %}
 <script nonce="{{ csp_nonce }}">
 (function(){
-  const panels=[...document.querySelectorAll('[data-panel-panel]')];
-  const buttons=[...document.querySelectorAll('[data-panel-step]')];
-  if(!panels.length) return;
-  const allowed=panels.map(panel=>panel.dataset.panelPanel);
+  const stepLayout=document.querySelector('.panel-step-layout');
+  if(!stepLayout) return;
+  let panels=[];
+  let buttons=[];
+  let allowed=[];
+  function refreshStepElements(){
+    panels=[...stepLayout.querySelectorAll('[data-panel-panel]')];
+    buttons=[...stepLayout.querySelectorAll('[data-panel-step]')];
+    allowed=panels.map(panel=>panel.dataset.panelPanel);
+  }
+  refreshStepElements();
   let initial=new URL(location.href).searchParams.get('step')||'{{ active_panel_step|escapejs }}';
   if(!allowed.includes(initial)) initial='details';
+  let savedWorkflow=stepLayout.querySelector('[data-panel-details-form] [name="workflow"]')?.value||'';
   {% if candidate_import_plan %}initial='candidates';
   {% elif rubric_import_plan %}initial='scoring';
   {% elif invitation_import_plan %}initial='examiners';
@@ -572,133 +621,369 @@
   function show(step,updateUrl=true){
     if(!allowed.includes(step)) return;
     panels.forEach(p=>p.hidden=p.dataset.panelPanel!==step);
-    buttons.forEach(b=>{
-      if(b.dataset.panelStep===step) b.setAttribute('aria-current','step');
-      else b.removeAttribute('aria-current');
-    });
+    window.DevPerfStepper.setCurrent(stepLayout,step);
     if(updateUrl){
       const url=new URL(location.href);
       url.searchParams.set('step',step);
-      history.pushState({panelStep:step},'',url);
+      history.pushState({...history.state,panelStep:step},'',url);
     }
   }
   window.showPanelStep=show;
 
-  buttons.forEach(b=>b.addEventListener('click',()=>show(b.dataset.panelStep)));
-  document.querySelectorAll('[data-panel-next]').forEach(b=>b.addEventListener('click',()=>show(b.dataset.panelNext)));
+  document.addEventListener('click',event=>{
+    if(event.defaultPrevented) return;
+    const stepButton=event.target.closest('[data-panel-step]');
+    if(stepButton&&stepLayout.contains(stepButton)){
+      show(stepButton.dataset.panelStep);
+      return;
+    }
+    const nextButton=event.target.closest('[data-panel-next]');
+    if(nextButton&&stepLayout.contains(nextButton)){
+      show(nextButton.dataset.panelNext);
+      return;
+    }
+    const infoButton=event.target.closest('.panel-inline-info');
+    if(infoButton&&stepLayout.contains(infoButton)){
+      const copy=document.getElementById(infoButton.getAttribute('aria-controls'));
+      if(!copy) return;
+      const visible=copy.classList.toggle('is-visible');
+      infoButton.setAttribute('aria-expanded',String(visible));
+    }
+  });
   window.addEventListener('popstate',()=>show(new URL(location.href).searchParams.get('step')||'details',false));
 
-  document.querySelectorAll('[data-panel-form]').forEach(form=>form.addEventListener('submit',()=>{
-    let input=form.querySelector('[name="setup_step"]');
-    if(!input){
-      input=document.createElement('input');
-      input.type='hidden';
-      input.name='setup_step';
-      form.appendChild(input);
+  function updateDescriptionField(field){
+    field.style.height='auto';
+    field.style.height=field.scrollHeight+'px';
+    const wordLimit=Number(field.dataset.wordLimit)||50;
+    const text=field.value.trim();
+    const wordCount=text ? text.split(/\s+/).length : 0;
+    const count=field.closest('.panel-field')?.querySelector('[data-panel-word-count]');
+    if(count){
+      count.textContent=wordCount+' / '+wordLimit+' words';
+      count.classList.toggle('text-danger',wordCount>wordLimit);
     }
-    input.value=form.closest('[data-panel-panel]').dataset.panelPanel;
-  }));
-
-  document.querySelectorAll('.panel-inline-info').forEach(b=>b.addEventListener('click',()=>{
-    const copy=document.getElementById(b.getAttribute('aria-controls'));
-    const visible=copy.classList.toggle('is-visible');
-    b.setAttribute('aria-expanded',String(visible));
-  }));
+  }
+  function refreshDescriptionFields(root=document){
+    root.querySelectorAll('[data-panel-autogrow]').forEach(field=>updateDescriptionField(field));
+  }
+  refreshDescriptionFields();
 
   function inlineError(container, field, message) {
     let error = container.querySelector('.field-error');
     if (!error) {
       error = document.createElement('div');
       error.className = 'field-error';
-      error.setAttribute('role', 'alert');
-      error.setAttribute('aria-live', 'assertive');
       container.appendChild(error);
     }
-    error.textContent = message;
+    let inlineMessage = error.querySelector('[data-inline-message]');
+    if (!inlineMessage) {
+      const template = document.getElementById('panel-inline-error-template');
+      if (template && template.content.firstElementChild) {
+        inlineMessage = template.content.firstElementChild.cloneNode(true);
+        error.appendChild(inlineMessage);
+      }
+    }
+    if (inlineMessage) {
+      inlineMessage.id = (field.id || 'control') + '_inline_message';
+      const messageText = inlineMessage.querySelector('[data-inline-message-text]');
+      if (messageText) messageText.textContent = message;
+    }
     field.classList.add('is-invalid');
     field.setAttribute('aria-invalid', 'true');
-    if (!error.id) error.id = (field.id || 'control') + '_inline_message';
-    field.setAttribute('aria-describedby', error.id);
+    if (inlineMessage) field.setAttribute('aria-describedby', inlineMessage.id);
   }
 
   function clearError(container, field) {
     const error = container.querySelector('.field-error');
+    const inlineMessage = error && error.querySelector('[data-inline-message]');
     if (error && !error.dataset.serverError) {
       error.remove();
     }
     field.classList.remove('is-invalid');
     field.removeAttribute('aria-invalid');
     const describedBy = (field.getAttribute('aria-describedby') || '').split(/\s+/).filter(function (id) {
-      return id && (!error || id !== error.id);
+      return id && (!inlineMessage || id !== inlineMessage.id);
     });
     if (describedBy.length) field.setAttribute('aria-describedby', describedBy.join(' '));
     else field.removeAttribute('aria-describedby');
   }
 
-  document.querySelectorAll('form[data-panel-form]').forEach(function(form) {
-    form.addEventListener('submit', function(event) {
-      let hasError = false;
-      let firstInvalid = null;
-      const requiredControls = form.querySelectorAll('input[required], select[required], textarea[required]');
-      requiredControls.forEach(function(control) {
-        const val = control.value ? control.value.trim() : '';
-        const container = control.closest('.panel-field') || control.parentElement;
-        if (!val) {
-          hasError = true;
-          inlineError(container, control, 'This field is required.');
-          if (!firstInvalid) firstInvalid = control;
-        } else {
-          clearError(container, control);
-        }
-      });
-      if (hasError) {
+  function hasControlValue(control){
+    if(control.type==='checkbox'||control.type==='radio') return control.checked;
+    if(control.type==='file') return Boolean(control.files&&control.files.length);
+    return Boolean(control.value&&control.value.trim());
+  }
+
+  document.addEventListener('submit',function(event){
+    const form=event.target;
+    const panel=form instanceof HTMLFormElement&&form.closest('[data-panel-panel]');
+    if(!panel||form.method.toUpperCase()!=='POST') return;
+    let stepField=form.querySelector('[name="setup_step"]');
+    if(!stepField){
+      stepField=document.createElement('input');
+      stepField.type='hidden';
+      stepField.name='setup_step';
+      form.appendChild(stepField);
+    }
+    stepField.value=panel.dataset.panelPanel;
+
+    if(form.matches('[data-panel-import-form]')){
+      const fileInput=form.querySelector('input[type="file"]');
+      const warning=form.querySelector('[data-inline-message]');
+      const warningText=warning&&warning.querySelector('[data-inline-message-text]');
+      if(fileInput&&(!fileInput.files||!fileInput.files.length)){
         event.preventDefault();
         event.stopPropagation();
-        if (firstInvalid) firstInvalid.focus();
-      }
-    });
-
-    form.addEventListener('input', function(event) {
-      const control = event.target;
-      if (control.matches('input, select, textarea')) {
-        const container = control.closest('.panel-field') || control.parentElement;
-        if (control.value && control.value.trim()) {
-          clearError(container, control);
+        if(warning&&warningText){
+          warningText.textContent='Please choose a spreadsheet file (.xlsx) first.';
+          warning.hidden=false;
         }
+        (form.querySelector('[data-import-dropzone]')||fileInput).focus();
+        return;
       }
-    });
+      if(warning) warning.hidden=true;
+    }
 
-    form.addEventListener('change', function(event) {
-      const control = event.target;
-      if (control.matches('select, input[type="file"]')) {
-        const container = control.closest('.panel-field') || control.parentElement;
-        if (control.value && control.value.trim()) {
-          clearError(container, control);
+    if(form.matches('[data-panel-form]')){
+      let firstInvalid=null;
+      form.querySelectorAll('input[required],select[required],textarea[required]').forEach(control=>{
+        if(control.disabled) return;
+        const container=control.closest('.panel-field')||control.parentElement;
+        if(!hasControlValue(control)){
+          inlineError(container,control,'This field is required.');
+          if(!firstInvalid) firstInvalid=control;
+        }else{
+          clearError(container,control);
         }
+      });
+      if(firstInvalid){
+        event.preventDefault();
+        event.stopPropagation();
+        firstInvalid.focus();
       }
+    }
+  },true);
+
+  document.addEventListener('input',event=>{
+    const control=event.target;
+    if(!control.matches('input,select,textarea')||!control.closest('[data-panel-panel]')) return;
+    if(control.matches('[data-panel-autogrow]')) updateDescriptionField(control);
+    if(hasControlValue(control)){
+      const container=control.closest('.panel-field')||control.parentElement;
+      clearError(container,control);
+    }
+  });
+
+  document.addEventListener('change',event=>{
+    const control=event.target;
+    if(!control.matches('select,input[type="file"]')||!control.closest('[data-panel-panel]')) return;
+    if(hasControlValue(control)){
+      const container=control.closest('.panel-field')||control.parentElement;
+      clearError(container,control);
+    }
+  });
+
+  function showServerToasts(sourceDocument){
+    const region=sourceDocument.getElementById('flash-region');
+    if(!region||typeof window.notify!=='function') return;
+    region.querySelectorAll(':scope > .alert').forEach(alert=>{
+      const message=alert.textContent.trim();
+      if(!message) return;
+      const tone=alert.classList.contains('alert-danger')?'danger'
+        :alert.classList.contains('alert-warning')?'warn'
+        :alert.classList.contains('alert-success')?'success':'info';
+      window.notify(message,tone);
     });
+  }
+
+  function syncActionFeedback(sourceDocument){
+    const current=document.querySelector('[data-panel-action-feedback]');
+    const incoming=sourceDocument.querySelector('[data-panel-action-feedback]');
+    if(current&&incoming){
+      current.innerHTML=incoming.innerHTML;
+    }else if(current){
+      current.remove();
+    }else if(incoming){
+      const hero=document.querySelector('.panel-hero');
+      if(hero) hero.insertAdjacentElement('afterend',document.importNode(incoming,true));
+    }
+  }
+
+  function patchPanelContents(existing,incoming,key){
+    let liveDetailsForm=null;
+    if(key==='details'){
+      liveDetailsForm=existing.querySelector('[data-panel-details-form]');
+      const incomingDetailsForm=incoming.querySelector('[data-panel-details-form]');
+      if(liveDetailsForm&&incomingDetailsForm){
+        liveDetailsForm.innerHTML=incomingDetailsForm.innerHTML;
+        incomingDetailsForm.replaceWith(liveDetailsForm);
+      }
+    }
+    existing.className=incoming.className;
+    existing.setAttribute('aria-labelledby',incoming.getAttribute('aria-labelledby')||'');
+    existing.replaceChildren(...[...incoming.childNodes].map(node=>
+      node===liveDetailsForm?node:document.importNode(node,true)));
+  }
+
+  function patchPanelLayout(sourceLayout,refreshStructure,stepsToRefresh){
+    const currentPanels=new Map([...stepLayout.querySelectorAll('[data-panel-panel]')]
+      .map(panel=>[panel.dataset.panelPanel,panel]));
+    if(!refreshStructure){
+      const currentNav=stepLayout.querySelector('.stepper-nav');
+      const incomingNav=sourceLayout.querySelector('.stepper-nav');
+      if(currentNav&&incomingNav) currentNav.innerHTML=incomingNav.innerHTML;
+      stepsToRefresh.forEach(key=>{
+        const existing=currentPanels.get(key);
+        const incoming=sourceLayout.querySelector('[data-panel-panel="'+key+'"]');
+        if(existing&&incoming) patchPanelContents(existing,incoming,key);
+      });
+      refreshStepElements();
+      return;
+    }
+    const currentNav=stepLayout.querySelector('.stepper-nav');
+    const nextChildren=[...sourceLayout.children].map(incoming=>{
+      if(incoming.matches('.stepper-nav')){
+        if(!currentNav) return document.importNode(incoming,true);
+        currentNav.innerHTML=incoming.innerHTML;
+        return currentNav;
+      }
+      if(!incoming.matches('[data-panel-panel]')) return document.importNode(incoming,true);
+      const key=incoming.dataset.panelPanel;
+      const existing=currentPanels.get(key);
+      if(!existing) return document.importNode(incoming,true);
+      patchPanelContents(existing,incoming,key);
+      return existing;
+    });
+    stepLayout.replaceChildren(...nextChildren);
+    refreshStepElements();
+  }
+
+  function focusPanelFeedback(step,errorResponse,focusId,submitLabel){
+    const panel=stepLayout.querySelector(`[data-panel-panel="${step}"]`);
+    if(!panel) return;
+    if(errorResponse){
+      const error=panel.querySelector('.field-error[data-server-error]');
+      const field=error&&error.closest('.panel-field')&&error.closest('.panel-field')
+        .querySelector('input,select,textarea');
+      const feedback=document.querySelector('[data-panel-action-feedback] [role="alert"]');
+      const target=field||feedback;
+      if(target){
+        if(target.matches('input,select,textarea')) target.setAttribute('aria-invalid','true');
+        else target.tabIndex=-1;
+        target.focus({preventScroll:true});
+      }
+      return;
+    }
+    if(focusId){
+      const focused=panel.querySelector('#'+CSS.escape(focusId));
+      if(focused){focused.focus({preventScroll:true});return;}
+    }
+    if(submitLabel){
+      const button=[...panel.querySelectorAll('button[type="submit"],button:not([type])')]
+        .find(item=>item.textContent.trim()===submitLabel);
+      if(button){button.focus({preventScroll:true});return;}
+    }
+    const heading=panel.querySelector('h2,h3,h4');
+    if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true});}
+  }
+
+  document.addEventListener('submit',async event=>{
+    const form=event.target;
+    const panel=form instanceof HTMLFormElement&&form.closest('[data-panel-panel]');
+    if(!panel||form.method.toUpperCase()!=='POST'||event.defaultPrevented) return;
+    event.preventDefault();
+    if(form.dataset.panelSubmitting==='true') return;
+    form.dataset.panelSubmitting='true';
+
+    const sourceStep=panel.dataset.panelPanel;
+    const submitter=event.submitter;
+    const submitLabel=submitter&&submitter.textContent.trim();
+    const focusId=document.activeElement&&document.activeElement.id;
+    const submitButton=submitter||form.querySelector('button[type="submit"],button:not([type])');
+    if(submitButton){
+      submitButton.classList.add('is-busy');
+      submitButton.setAttribute('aria-busy','true');
+    }
+
+    try{
+      const payload=new FormData(form);
+      if(submitter&&submitter.name) payload.append(submitter.name,submitter.value);
+      payload.set('setup_step',sourceStep);
+      const actionUrl=form.getAttribute('action')||location.href;
+      const response=await fetch(actionUrl,{
+        method:'POST',body:payload,credentials:'same-origin',
+        headers:{'X-Requested-With':'XMLHttpRequest','Accept':'text/html'}
+      });
+      const sourceDocument=new DOMParser().parseFromString(await response.text(),'text/html');
+      const incomingLayout=sourceDocument.querySelector('.panel-step-layout');
+      const responseUrl=new URL(response.url,location.href);
+      if(!incomingLayout){
+        if(responseUrl.pathname!==location.pathname){
+          const successFlash=sourceDocument.querySelector('#flash-region .alert-success');
+          if(form.matches('[data-panel-details-form]')&&response.status<400&&successFlash){
+            form.dispatchEvent(new CustomEvent('poll-editor-saved'));
+          }
+          window.location.assign(responseUrl.href);
+          return;
+        }
+        if(typeof window.notify==='function') window.notify('The panel setup could not be updated. Please try again.','danger');
+        return;
+      }
+
+      const incomingSteps=[...incomingLayout.querySelectorAll('[data-panel-panel]')]
+        .map(item=>item.dataset.panelPanel);
+      let activeStep=responseUrl.searchParams.get('step')||sourceStep;
+      if(!incomingSteps.includes(activeStep)) activeStep=incomingSteps.includes(sourceStep)?sourceStep:'details';
+      const incomingDetailsForm=sourceDocument.querySelector('[data-panel-details-form]');
+      const incomingWorkflow=incomingDetailsForm?.querySelector('[name="workflow"]')?.value||'';
+      const detailsSaveSucceeded=sourceStep==='details'&&response.status<400&&incomingDetailsForm
+        &&!incomingDetailsForm.querySelector('[role="alert"],.field-error[data-server-error]')
+        &&!sourceDocument.querySelector('[data-panel-action-feedback] [role="alert"]');
+      const workflowChanged=detailsSaveSucceeded&&incomingWorkflow!==savedWorkflow;
+      const stepsToRefresh=workflowChanged?incomingSteps:[sourceStep,'ready'];
+      showServerToasts(sourceDocument);
+      syncActionFeedback(sourceDocument);
+      patchPanelLayout(incomingLayout,workflowChanged,stepsToRefresh);
+      if(sourceDocument.title) document.title=sourceDocument.title;
+      const currentHero=document.querySelector('.panel-hero');
+      const incomingHero=sourceDocument.querySelector('.panel-hero');
+      if(currentHero&&incomingHero){
+        ['.page-title','.page-subtitle','.panel-eyebrow'].forEach(selector=>{
+          const current=currentHero.querySelector(selector);
+          const incoming=incomingHero.querySelector(selector);
+          if(current&&incoming) current.textContent=incoming.textContent;
+        });
+      }
+      if(detailsSaveSucceeded) savedWorkflow=incomingWorkflow;
+      const nextUrl=responseUrl.pathname+responseUrl.search+responseUrl.hash;
+      history.replaceState({...history.state,panelStep:activeStep},'',nextUrl);
+      show(activeStep,false);
+      refreshDescriptionFields(stepLayout);
+
+      if(detailsSaveSucceeded){
+        const detailsForm=stepLayout.querySelector('[data-panel-details-form]');
+        if(detailsForm) detailsForm.dispatchEvent(new CustomEvent('poll-editor-saved'));
+      }
+      const activePanelResponse=sourceDocument.querySelector('[data-panel-panel="'+activeStep+'"]');
+      const errorResponse=response.status>=400
+        ||Boolean(activePanelResponse&&activePanelResponse.querySelector('.field-error[data-server-error],[role="alert"]'))
+        ||Boolean(sourceDocument.querySelector('[data-panel-action-feedback] [role="alert"]'));
+      focusPanelFeedback(activeStep,errorResponse,focusId,submitLabel);
+      const preview=stepLayout.querySelector('[data-panel-panel="'+activeStep+'"] #candidate-inline-preview, [data-panel-panel="'+activeStep+'"] #rubric-inline-preview, [data-panel-panel="'+activeStep+'"] #invitation-inline-preview');
+      if(preview) preview.scrollIntoView({behavior:'smooth',block:'nearest'});
+    }catch(_error){
+      if(typeof window.notify==='function') window.notify('The panel setup could not be updated. Check your connection and try again.','danger');
+    }finally{
+      delete form.dataset.panelSubmitting;
+      if(submitButton){
+        submitButton.classList.remove('is-busy');
+        submitButton.removeAttribute('aria-busy');
+      }
+    }
   });
 
   show(initial,false);
-
-  // Client-side file selection validation on spreadsheet import forms
-  document.querySelectorAll('[data-panel-import-form]').forEach(function(form){
-    const input=form.querySelector('input[type="file"]');
-    const warning=form.querySelector('[data-inline-message]');
-    const warningText=warning&&warning.querySelector('[data-inline-message-text]');
-    if(!input||!warning||!warningText) return;
-    form.addEventListener('submit',function(event){
-      if(input.files&&input.files.length){
-        warning.hidden=true;
-        return;
-      }
-      event.preventDefault();
-      warningText.textContent='Please choose a spreadsheet file (.xlsx) first.';
-      warning.hidden=false;
-      const dropzone=form.querySelector('[data-import-dropzone]');
-      if(dropzone) dropzone.focus();
-    });
-  });
 
   // Focus and scroll to active inline preview
   {% if candidate_import_plan %}

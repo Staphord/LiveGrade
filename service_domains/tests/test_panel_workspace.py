@@ -1,4 +1,5 @@
 """Panel dashboard and assessment browser UI tests."""
+from datetime import timedelta
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.http import Http404
@@ -13,12 +14,21 @@ from service_domains.models import (
     PanelCandidate,
     PanelCriterion,
     PanelCriterionLevel,
+    PanelDecision,
     PanelHearing,
     PanelInvitation,
     PanelResultSnapshot,
+    PanelScore,
     PanelScoringPanel,
 )
-from service_domains.operations import issue_panel_invitation
+from service_domains.operations import (
+    issue_panel_invitation,
+    open_panel_hearing,
+    set_panel_chamber_active_candidate,
+    adjust_panel_chamber_timer,
+    toggle_panel_chamber_pause,
+    get_panel_live_state_context,
+)
 from service_domains.views import panel_hearing_list
 
 
@@ -108,7 +118,7 @@ class PanelWorkspaceUiTests(TestCase):
 
         # Verify recent hearings and row URLs
         self.assertEqual(len(response.context['recent_hearings']), 5)
-        self.assertContains(response, 'data-panel-row-href="' + reverse('panel_hearing_manage', args=[open_hearing.pk]) + '"')
+        self.assertContains(response, 'data-panel-row-href="' + reverse('panel_hearing_live', args=[open_hearing.pk]) + '"')
         self.assertContains(response, 'data-panel-row-href="' + reverse('panel_hearing_manage', args=[draft_hearing.pk]) + '"')
         self.assertContains(response, 'data-panel-row-href="' + reverse('panel_results_review', args=[review_hearing.pk]) + '"')
         self.assertContains(response, 'data-panel-row-href="' + reverse('panel_results_review', args=[signed_hearing.pk]) + '"')
@@ -456,6 +466,90 @@ class PanelWorkspaceUiTests(TestCase):
         self.assertContains(res_overseer, 'Oversight results')
         self.assertContains(res_overseer, reverse('panel_oversight_list'))
 
+    def test_duplicate_candidate_reference_uses_standard_field_error(self):
+        hearing = self.create_hearing('Duplicate candidate reference')
+        PanelCandidate.objects.create(
+            organization_id=self.org.pk,
+            created_by=self.owner,
+            hearing=hearing,
+            display_name='Existing candidate',
+            reference='C-002',
+            order=1,
+        )
+
+        response = self.client.post(reverse('panel_hearing_manage', args=[hearing.pk]), {
+            'action': 'candidate',
+            'setup_step': 'candidates',
+            'display_name': 'Another candidate',
+            'reference': 'C-002',
+            'scheduled_time': '10:10',
+        })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.context['active_panel_step'], 'candidates')
+        self.assertEqual(PanelCandidate.objects.filter(hearing=hearing).count(), 1)
+        rendered = response.content.decode()
+        self.assertIn('A candidate with this reference already exists.', rendered)
+        self.assertIn('class="inline-message inline-message--plain"', rendered)
+        self.assertIn('role="alert"', rendered)
+        message_start = rendered.index('id="candidate_reference_inline_message"')
+        message_end = rendered.index('</div>', message_start)
+        field_error_markup = rendered[message_start:message_end]
+        self.assertNotIn('inline-message-icon', field_error_markup)
+        self.assertNotIn('alert-danger', field_error_markup)
+        self.assertNotIn('panel_candidate_ref_unique', rendered)
+
+    def test_manual_candidate_form_appends_order_and_shows_optional_fields(self):
+        hearing = self.create_hearing('Automatic candidate order')
+        PanelCandidate.objects.create(
+            organization_id=self.org.pk,
+            created_by=self.owner,
+            hearing=hearing,
+            display_name='First candidate',
+            order=7,
+        )
+        manage_url = reverse('panel_hearing_manage', args=[hearing.pk])
+
+        response = self.client.get(manage_url, {'step': 'candidates'})
+
+        candidate_form = response.context['forms']['candidate']
+        self.assertNotIn('order', candidate_form.fields)
+        self.assertEqual(list(candidate_form.fields), ['display_name', 'reference', 'scheduled_time'])
+        self.assertContains(response, 'Candidate list')
+        self.assertContains(response, 'External reference (optional)')
+        self.assertContains(response, 'Start time (optional)')
+        self.assertNotContains(response, '<summary>Optional details</summary>')
+        self.assertNotContains(response, 'Presentation order')
+
+        saved = self.client.post(manage_url, {
+            'action': 'candidate',
+            'setup_step': 'candidates',
+            'display_name': 'Second candidate',
+        })
+
+        self.assertEqual(saved.status_code, 302)
+        self.assertEqual(hearing.candidates.get(display_name='Second candidate').order, 8)
+
+    def test_criterion_order_is_assigned_automatically(self):
+        hearing = self.create_hearing('Automatic criterion order')
+        PanelCriterion.objects.create(
+            organization_id=self.org.pk,
+            created_by=self.owner,
+            hearing=hearing,
+            name='First criterion',
+            order=4,
+        )
+
+        response = self.client.post(reverse('panel_hearing_manage', args=[hearing.pk]), {
+            'action': 'criterion',
+            'setup_step': 'scoring',
+            'name': 'Second criterion',
+            'description': 'Optional context for examiners.',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(hearing.criteria.get(name='Second criterion').order, 5)
+
     def test_kebab_export_action_visibility_and_ready_step(self):
         draft_ready = self.create_hearing('Draft Ready Hearing', status=PanelHearing.Status.DRAFT)
         PanelCandidate.objects.create(organization_id=self.org.pk, created_by=self.owner, hearing=draft_ready, display_name='Cand')
@@ -479,7 +573,7 @@ class PanelWorkspaceUiTests(TestCase):
 
         # Draft ready hearing has row URL and kebab pointing to ?step=ready
         self.assertContains(response, reverse('panel_hearing_manage', args=[draft_ready.pk]) + '?step=ready')
-        self.assertContains(response, 'Review and open')
+        self.assertContains(response, 'Review and launch')
 
     def test_oversight_access_and_filtering(self):
         # Regular user without oversee permission gets 404
@@ -624,4 +718,401 @@ class PanelWorkspaceUiTests(TestCase):
         self.assertEqual(res_close.status_code, 200)
         hearing.refresh_from_db()
         self.assertEqual(hearing.status, PanelHearing.Status.REVIEW)
+
+    def test_setup_stepper_uses_the_shared_partial_for_create_and_manage(self):
+        created = self.client.get(reverse('panel_hearing_create'))
+        steps = created.context['stepper_steps']
+        self.assertEqual([s['key'] for s in steps],
+                         ['details', 'candidates', 'scoring', 'examiners', 'ready'])
+        self.assertTrue(steps[0]['current'])
+        self.assertTrue(all(s['disabled'] for s in steps[1:]))
+
+        hearing = self.create_hearing('Stepper Hearing')
+        manage = self.client.get(reverse('panel_hearing_manage', args=(hearing.pk,)) + '?step=candidates')
+        steps = {s['key']: s for s in manage.context['stepper_steps']}
+        self.assertTrue(steps['candidates']['current'])
+        self.assertContains(manage, "querySelector('.stepper-nav')")
+        self.assertContains(manage, 'DevPerfStepper.setCurrent(stepLayout,step)')
+
+    def test_hearing_stepper_drops_examiner_steps_for_workflows_without_examiners(self):
+        from service_domains.views import _hearing_steps
+        completion = {'details': True, 'candidates': False, 'ready': False}
+
+        steps = _hearing_steps(completion, False, 'details')
+
+        self.assertEqual([s['key'] for s in steps], ['details', 'candidates', 'ready'])
+        self.assertEqual([s['number'] for s in steps], [1, 2, 3])
+        self.assertTrue(steps[0]['done'])
+
+    def test_open_hearing_setup_stepper_rendered_in_edit_mode_and_back_routing(self):
+        hearing = self.create_hearing('Open Hearing Setup Edit', status=PanelHearing.Status.OPEN)
+        manage_url = reverse('panel_hearing_manage', args=(hearing.pk,))
+        live_url = reverse('panel_hearing_live', args=(hearing.pk,))
+
+        res_live = self.client.get(live_url)
+        self.assertEqual(res_live.status_code, 200)
+        self.assertContains(res_live, f'{manage_url}?from=live')
+        self.assertContains(res_live, 'Edit setup')
+
+        res_manage = self.client.get(f'{manage_url}?from=live')
+        self.assertEqual(res_manage.status_code, 200)
+        self.assertContains(res_manage, 'Hearing info')
+        self.assertContains(res_manage, 'Candidates')
+        self.assertContains(res_manage, 'Back to Live Chamber')
+        self.assertContains(res_manage, f'href="{live_url}"')
+
+        res_update = self.client.post(manage_url, {
+            'action': 'update_hearing',
+            'name': 'Open Hearing Renamed Live',
+            'workflow': hearing.workflow,
+            'from': 'live',
+        })
+        self.assertEqual(res_update.status_code, 302)
+        self.assertIn('from=live', res_update['Location'])
+        hearing.refresh_from_db()
+        self.assertEqual(hearing.name, 'Open Hearing Renamed Live')
+
+    def test_live_chamber_timer_persistence_and_silent_state(self):
+        hearing = self.create_hearing('Timer Live Hearing', status=PanelHearing.Status.OPEN)
+        cand1 = PanelCandidate.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, display_name='Cand 1', order=1)
+        set_panel_chamber_active_candidate(hearing, cand1.pk, organization=self.org.as_claim(), user=self.owner)
+
+        ctx = get_panel_live_state_context(hearing)
+        self.assertEqual(ctx['phase_seconds_remaining'], 900)
+        self.assertFalse(ctx['timer_paused'])
+
+        adjust_panel_chamber_timer(hearing, 60, organization=self.org.as_claim(), user=self.owner)
+        hearing.refresh_from_db()
+        ctx_adjusted = get_panel_live_state_context(hearing)
+        self.assertEqual(ctx_adjusted['phase_seconds_remaining'], 960)
+
+        toggle_panel_chamber_pause(hearing, organization=self.org.as_claim(), user=self.owner)
+        hearing.refresh_from_db()
+        ctx_paused = get_panel_live_state_context(hearing)
+        self.assertTrue(ctx_paused['timer_paused'])
+
+        state_url = reverse('panel_hearing_live_state', args=(hearing.pk,))
+        res = self.client.get(state_url, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data['status'], 'open')
+        self.assertEqual(data['active_phase'], 'presentation')
+        self.assertTrue(data['timer_paused'])
+        self.assertIn('hero_html', data)
+        self.assertNotIn('assess-stagger', data['hero_html'])
+
+    def test_examiners_and_candidates_dedicated_screen(self):
+        hearing = self.create_hearing('Participants Hearing', status=PanelHearing.Status.OPEN)
+        cand1 = PanelCandidate.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, display_name='Candidate Beta', order=1)
+        cand2 = PanelCandidate.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, display_name='Candidate Gamma', order=2)
+        invitation, token = issue_panel_invitation(hearing, 'examiner_beta@example.org',
+            timezone.now() + timedelta(hours=2), organization=self.org.as_claim(), user=self.owner)
+
+        participants_url = reverse('panel_hearing_participants', args=(hearing.pk,))
+        res = self.client.get(participants_url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'Examiners &amp; Candidates')
+        self.assertContains(res, 'Candidate Beta')
+        self.assertContains(res, 'Candidate Gamma')
+        self.assertContains(res, 'examiner_beta@example.org')
+        self.assertContains(res, reverse('panel_hearing_live', args=(hearing.pk,)))
+
+        post_activate = self.client.post(participants_url, {
+            'action': 'activate_candidate',
+            'candidate_id': str(cand2.pk),
+        })
+        self.assertEqual(post_activate.status_code, 302)
+        self.assertEqual(post_activate['Location'], reverse('panel_hearing_live', args=(hearing.pk,)))
+        hearing.refresh_from_db()
+        self.assertEqual(hearing.active_candidate_id, cand2.pk)
+
+    def test_open_hearing_results_and_deliberation_page_accessible_without_404(self):
+        hearing = self.create_hearing('Results Review Open', status=PanelHearing.Status.OPEN)
+        cand = PanelCandidate.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, display_name='Cand Results', order=1)
+        results_url = reverse('panel_results_review', args=(hearing.pk,))
+
+        res = self.client.get(results_url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'Results &amp; Deliberation')
+        self.assertContains(res, 'Provisional results and chamber deliberation')
+        self.assertContains(res, reverse('panel_hearing_live', args=(hearing.pk,)))
+        self.assertNotContains(res, 'Close &amp; review')
+        self.assertNotContains(res, 'Back to Live Chamber')
+
+    def test_open_panel_hearing_initializes_active_candidate_and_timer_state(self):
+        draft = PanelHearing.objects.create(
+            organization_id=self.org.id,
+            created_by=self.owner,
+            name='Draft To Open Hearing',
+            workflow=PanelHearing.Workflow.SCORED
+        )
+        cand1 = PanelCandidate.objects.create(
+            organization_id=self.org.id,
+            created_by=self.owner,
+            hearing=draft,
+            display_name='Candidate First',
+            order=1
+        )
+        cand2 = PanelCandidate.objects.create(
+            organization_id=self.org.id,
+            created_by=self.owner,
+            hearing=draft,
+            display_name='Candidate Second',
+            order=2
+        )
+        crit = PanelCriterion.objects.create(
+            organization_id=self.org.id,
+            created_by=self.owner,
+            hearing=draft,
+            name='Criterion 1'
+        )
+        panel = PanelScoringPanel.objects.create(
+            organization_id=self.org.id,
+            created_by=self.owner,
+            hearing=draft,
+            name='Panel 1',
+            share=Decimal('100.00'),
+            minimum_examiners=1
+        )
+        crit.panels.add(panel)
+        inv = PanelInvitation.objects.create(
+            organization_id=self.org.id,
+            created_by=self.owner,
+            hearing=draft,
+            panel=panel,
+            email='evaluator@example.test',
+            confirmed_at=timezone.now(),
+            expires_at=timezone.now() + timezone.timedelta(days=1)
+        )
+        opened = open_panel_hearing(draft, organization=self.org.as_claim(), user=self.owner)
+        self.assertEqual(opened.status, PanelHearing.Status.OPEN)
+        self.assertIsNone(opened.active_candidate_id)
+        chamber = opened.workflow_snapshot.get('chamber_state', {})
+        self.assertEqual(chamber.get('active_phase'), 'presentation')
+        self.assertEqual(chamber.get('phase_duration_seconds'), 900)
+        self.assertIsNotNone(chamber.get('phase_started_at'))
+
+    def test_panel_live_chamber_phase_and_timer_transitions(self):
+        hearing = self.create_hearing('Phase Transition Test Hearing', status=PanelHearing.Status.OPEN)
+        cand1 = PanelCandidate.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, display_name='Presenter 1', order=1)
+        cand2 = PanelCandidate.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, display_name='Presenter 2', order=2)
+        hearing.active_candidate = cand1
+        hearing.save(update_fields=('active_candidate',))
+
+        action_url = reverse('panel_hearing_live_action', args=(hearing.pk,))
+
+        # Advance to QA
+        res_qa = self.client.post(action_url, {'action': 'set_phase', 'phase': 'qa'}, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res_qa.status_code, 200)
+        data_qa = res_qa.json()
+        self.assertEqual(data_qa['active_phase'], 'qa')
+        self.assertEqual(data_qa['phase_duration_seconds'], 1200)
+        self.assertEqual(data_qa['phase_seconds_remaining'], 1200)
+
+        # Advance to Deliberation
+        res_delib = self.client.post(action_url, {'action': 'set_phase', 'phase': 'deliberation'}, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res_delib.status_code, 200)
+        data_delib = res_delib.json()
+        self.assertEqual(data_delib['active_phase'], 'deliberation')
+        self.assertEqual(data_delib['phase_duration_seconds'], 600)
+        self.assertEqual(data_delib['phase_seconds_remaining'], 600)
+
+        # Advance to Decision
+        res_dec = self.client.post(action_url, {'action': 'set_phase', 'phase': 'decision'}, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res_dec.status_code, 200)
+        data_dec = res_dec.json()
+        self.assertEqual(data_dec['active_phase'], 'decision')
+        self.assertEqual(data_dec['phase_duration_seconds'], 300)
+        self.assertEqual(data_dec['phase_seconds_remaining'], 300)
+
+        # Conclude candidate advances to next presenter
+        res_conclude = self.client.post(action_url, {
+            'action': 'conclude_candidate',
+            'candidate_id': str(cand1.pk),
+        }, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res_conclude.status_code, 200)
+        data_conclude = res_conclude.json()
+        self.assertEqual(data_conclude['active_candidate_id'], cand2.pk)
+        self.assertEqual(data_conclude['active_phase'], 'presentation')
+        self.assertEqual(data_conclude['phase_duration_seconds'], 900)
+
+    def test_panel_live_chamber_set_phase_durations(self):
+        hearing = self.create_hearing('Custom Durations Hearing', status=PanelHearing.Status.OPEN)
+        cand = PanelCandidate.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, display_name='Presenter 1', order=1)
+        hearing.active_candidate = cand
+        hearing.save(update_fields=('active_candidate',))
+        action_url = reverse('panel_hearing_live_action', args=(hearing.pk,))
+
+        res = self.client.post(action_url, {
+            'action': 'set_phase_durations',
+            'presentation_minutes': '10',
+            'qa_minutes': '25',
+            'deliberation_minutes': '12',
+            'decision_minutes': '8',
+        }, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data['phase_durations_mins']['presentation'], 10)
+        self.assertEqual(data['phase_durations_mins']['qa'], 25)
+        self.assertEqual(data['phase_durations_mins']['deliberation'], 12)
+        self.assertEqual(data['phase_durations_mins']['decision'], 8)
+
+        # Transitioning to QA uses the configured 25 minutes (1500s)
+        res_qa = self.client.post(action_url, {'action': 'set_phase', 'phase': 'qa'}, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res_qa.status_code, 200)
+        self.assertEqual(res_qa.json()['phase_duration_seconds'], 1500)
+
+        # Concluding presenter advances to next candidate using saved presentation timer
+        cand2 = PanelCandidate.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, display_name='Presenter 2', order=2)
+        res_conclude = self.client.post(action_url, {
+            'action': 'conclude_candidate',
+            'candidate_id': str(cand.pk),
+        }, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res_conclude.status_code, 200)
+        data_conclude = res_conclude.json()
+        self.assertEqual(data_conclude['active_candidate_id'], cand2.pk)
+        self.assertEqual(data_conclude['active_phase'], 'presentation')
+        self.assertEqual(data_conclude['phase_duration_seconds'], 600)
+        self.assertEqual(data_conclude['phase_seconds_remaining'], 600)
+
+    def test_panel_live_docket_and_examiners_elements(self):
+        hearing = self.create_hearing('Docket Live UI Test', status=PanelHearing.Status.OPEN)
+        cand1 = PanelCandidate.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, display_name='Active Person', order=1)
+        cand2 = PanelCandidate.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, display_name='Queued Person', order=2)
+        hearing.active_candidate = cand1
+        hearing.save(update_fields=('active_candidate',))
+
+        live_url = reverse('panel_hearing_live', args=(hearing.pk,))
+        res = self.client.get(live_url)
+        self.assertEqual(res.status_code, 200)
+        # Call to floor for cand2 has confirmation modal data because cand1 is on floor
+        self.assertContains(res, 'data-confirm="Candidate Active Person is currently on the floor. Switch to Queued Person?"')
+        self.assertContains(res, 'data-confirm-title="Switch presenter on the floor?"')
+        # Conclude presenter button has confirmation modal attributes
+        self.assertContains(res, 'data-confirm="Conclude presenter Active Person and advance to the next candidate?"')
+        self.assertContains(res, 'data-confirm-title="Conclude presenter?"')
+        self.assertContains(res, 'data-confirm-label="Conclude presenter"')
+        # Examiners section has no Nudge button and no Actions column
+        self.assertNotContains(res, 'data-panel-live-action="nudge_examiner"')
+        self.assertNotContains(res, '<th scope="col" class="text-end pe-3">Actions</th>')
+
+    def test_timer_auto_advance_progression_across_all_phases(self):
+        hearing = self.create_hearing('Timer Progression Test', status=PanelHearing.Status.OPEN)
+        cand = PanelCandidate.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, display_name='Auto Cand', order=1)
+        hearing.active_candidate = cand
+        now = timezone.now()
+        # Initialize chamber state with expired presentation phase
+        hearing.workflow_snapshot = {
+            'chamber_state': {
+                'active_phase': 'presentation',
+                'phase_duration_seconds': 900,
+                'phase_seconds_remaining': 0,
+                'phase_started_at': (now - timezone.timedelta(seconds=905)).isoformat(),
+                'elapsed_before_pause': 0,
+                'timer_paused': False,
+            }
+        }
+        hearing.save(update_fields=('active_candidate', 'workflow_snapshot'))
+
+        # Fetch live state to verify transition from presentation to qa
+        state_url = reverse('panel_hearing_live_state', args=(hearing.pk,))
+        res = self.client.get(state_url, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data['active_phase'], 'qa')
+        self.assertEqual(data['phase_duration_seconds'], 1200)
+
+        # Simulate expiration of qa phase
+        hearing.refresh_from_db()
+        snapshot = dict(hearing.workflow_snapshot or {})
+        snapshot['chamber_state']['phase_started_at'] = (timezone.now() - timezone.timedelta(seconds=1205)).isoformat()
+        hearing.workflow_snapshot = snapshot
+        hearing.save(update_fields=('workflow_snapshot',))
+
+        # Fetch live state to verify transition from qa to deliberation
+        res2 = self.client.get(state_url, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res2.status_code, 200)
+        data2 = res2.json()
+        self.assertEqual(data2['active_phase'], 'deliberation')
+        self.assertEqual(data2['phase_duration_seconds'], 600)
+
+        # Simulate expiration of deliberation phase
+        hearing.refresh_from_db()
+        snapshot = dict(hearing.workflow_snapshot or {})
+        snapshot['chamber_state']['phase_started_at'] = (timezone.now() - timezone.timedelta(seconds=605)).isoformat()
+        hearing.workflow_snapshot = snapshot
+        hearing.save(update_fields=('workflow_snapshot',))
+
+        # Fetch live state to verify transition from deliberation to decision
+        res3 = self.client.get(state_url, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res3.status_code, 200)
+        data3 = res3.json()
+        self.assertEqual(data3['active_phase'], 'decision')
+        self.assertEqual(data3['phase_duration_seconds'], 300)
+
+    def test_results_and_deliberation_shows_provisional_scores_and_recorded_decisions(self):
+        hearing = self.create_hearing('Deliberation Tab Test', status=PanelHearing.Status.OPEN)
+        cand = PanelCandidate.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, display_name='Deliberation Candidate', order=1)
+        crit = PanelCriterion.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, name='Subject Knowledge', order=1)
+        panel = PanelScoringPanel.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, name='Panel 1', share=Decimal('100.00'), minimum_examiners=1)
+        crit.panels.add(panel)
+        inv = PanelInvitation.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, panel=panel, email='examiner@test.com',
+            expires_at=timezone.now() + timezone.timedelta(days=7))
+        PanelScore.objects.create(organization_id=self.org.id, created_by=self.owner,
+            candidate=cand, criterion=crit, invitation=inv, score=Decimal('88.50'))
+        PanelDecision.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, candidate=cand, outcome=PanelDecision.Outcome.ACCEPT,
+            rationale='Consensus achieved during deliberation.', revision=1)
+
+        results_url = reverse('panel_results_review', args=(hearing.pk,))
+        res = self.client.get(results_url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'Provisional scores by candidate')
+        self.assertContains(res, 'Deliberation Candidate')
+        self.assertContains(res, '88.50')
+        self.assertContains(res, 'Committee decisions')
+        self.assertContains(res, 'Consensus achieved during deliberation.')
+        self.assertContains(res, 'Accept / pass')
+        self.assertNotContains(res, 'No score summaries yet')
+
+    def test_panel_results_export_available_during_open_session(self):
+        hearing = self.create_hearing('Export Open Hearing', status=PanelHearing.Status.OPEN)
+        cand = PanelCandidate.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, display_name='Export Candidate', reference='REF-EXP', order=1)
+        crit = PanelCriterion.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, name='Delivery', order=1)
+        panel = PanelScoringPanel.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, name='Panel 1', share=Decimal('100.00'), minimum_examiners=1)
+        crit.panels.add(panel)
+        inv = PanelInvitation.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, panel=panel, email='examiner@test.com',
+            expires_at=timezone.now() + timezone.timedelta(days=7))
+        PanelScore.objects.create(organization_id=self.org.id, created_by=self.owner,
+            candidate=cand, criterion=crit, invitation=inv, score=Decimal('91.00'))
+        PanelDecision.objects.create(organization_id=self.org.id, created_by=self.owner,
+            hearing=hearing, candidate=cand, outcome=PanelDecision.Outcome.ACCEPT,
+            rationale='Approved unanimously.', revision=1)
+
+        export_url = reverse('panel_results_export', args=(hearing.pk,))
+        res = self.client.get(export_url)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res['Content-Type'],
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        self.assertIn('panel-hearing-', res['Content-Disposition'])
+
 

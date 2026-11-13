@@ -71,6 +71,14 @@ def panel_live_activity(hearing):
     scoring = hearing.workflow in SCORED_WORKFLOWS
     voting = hearing.workflow in VOTED_WORKFLOWS
     reviewing = hearing.workflow in REVIEW_WORKFLOWS
+
+    # Ensure scoring panel exists for rubric scored hearings
+    if not panels and scoring:
+        from .operations import create_default_panel
+        panels = [create_default_panel(hearing)]
+        criteria = list(PanelCriterion.objects.filter(organization_id=organization)
+            .filter(hearing=hearing).prefetch_related('panels').order_by('order', 'pk'))
+
     entries = []
     required_units = completed_units = 0
     for candidate in candidates:
@@ -169,5 +177,6 @@ def panel_live_activity(hearing):
                      'percent': min(percentage, 100)},
         'responses': sum(item['responses'] for item in entries),
         'candidates': entries,
+        'entries': entries,
         'updated': timezone.now().isoformat(),
     }

@@ -22,7 +22,8 @@ from service_domains.models import (
 )
 from service_domains.operations import (abstain_panel_score, issue_panel_invitation,
                                         open_panel_hearing, bind_panel_invitation_device,
-                                        issue_panel_device_cookie, activate_panel_candidate)
+                                        issue_panel_device_cookie, activate_panel_candidate,
+                                        set_panel_chamber_active_candidate)
 from service_domains.views import (_masked_invitation_email, panel_examiner,
                                    panel_hearing_list, panel_hearing_manage)
 
@@ -64,6 +65,7 @@ class PanelExaminerViewTests(TestCase):
             action=PanelAuditEvent.Action.DEVICE_BOUND).count(), 1)
         self.assertContains(response, 'Research defence')
         self.assertContains(response, 'Candidate A')
+        self.assertNotContains(response, 'panel-examiner-form-error')
         self.assertContains(response, 'Use the evidence.')
         self.assertContains(response, 'I cannot assess this candidate fairly')
         self.assertEqual(response['Referrer-Policy'], 'same-origin')
@@ -500,6 +502,33 @@ class PanelExaminerViewTests(TestCase):
         with self.assertRaises(Http404):
             panel_examiner(request, self.token)
 
+    def test_examiner_sees_active_candidate_when_hearing_opens_or_resumes(self):
+        # Clear active candidate to simulate hearing without explicit floor call
+        self.hearing.active_candidate = None
+        self.hearing.save(update_fields=('active_candidate',))
+
+        # GET request to examiner page should show waiting status until candidate called to floor
+        res = self.request('get', self.url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'Waiting for the organizer to select the next candidate.')
+
+        # Call candidate to floor
+        set_panel_chamber_active_candidate(self.hearing, self.candidate.pk,
+                                           organization=self.org.as_claim(), user=self.owner)
+        self.hearing.refresh_from_db()
+        self.assertEqual(self.hearing.active_candidate_id, self.candidate.pk)
+
+        res2 = self.request('get', self.url)
+        self.assertEqual(res2.status_code, 200)
+        self.assertContains(res2, 'Scoring now')
+
+        # Polling state endpoint also returns candidate as active
+        res_poll = self.request('get', f'{self.url}?state=1')
+        self.assertEqual(res_poll.status_code, 200)
+        poll_data = res_poll.json()
+        self.assertEqual(poll_data['active_candidate_id'], self.candidate.pk)
+        self.assertEqual(poll_data['active_candidate_name'], self.candidate.display_name)
+
 
 class PanelOwnerWorkspaceTests(TestCase):
     def setUp(self):
@@ -610,7 +639,8 @@ class PanelOwnerWorkspaceTests(TestCase):
         self.assertEqual(self.request('get', reverse('panel_invitation_import_sample',
             args=(hearing.pk,))).status_code, 404)
         self.assertContains(response, 'Check the details before opening.')
-        self.assertContains(response, '>Open assessment</button>')
+        self.assertContains(response, 'Review and launch')
+        self.assertContains(response, '>Launch assessment</button>')
         self.assertNotContains(response, 'Open assessment for examiners')
 
         denied_invitation = self.request('post', reverse('panel_hearing_manage',
@@ -624,8 +654,8 @@ class PanelOwnerWorkspaceTests(TestCase):
         opened = self.request('post', reverse('panel_hearing_manage', args=(hearing.pk,)),
             {'action': 'open'}, follow=True)
         self.assertContains(opened, 'Assessment opened for the chair to record outcomes.')
-        self.assertContains(opened, 'When the discussion is complete, record an outcome for each candidate')
-        self.assertContains(opened, 'Finish and record outcomes')
+        self.assertContains(opened, 'Live chamber')
+        self.assertContains(opened, 'Close &amp; review')
         self.assertNotContains(opened, 'Invitation management')
         closed = self.request('post', reverse('panel_hearing_manage', args=(hearing.pk,)),
             {'action': 'review'}, follow=True)
@@ -651,6 +681,13 @@ class PanelOwnerWorkspaceTests(TestCase):
         self.assertContains(initial_setup, 'Name and schedule')
         self.assertContains(initial_setup, 'Add at least one candidate')
         self.assertContains(initial_setup, 'Set panel shares to exactly 100%')
+        self.assertEqual(initial_setup.context['step_completion'], {
+            'details': True, 'candidates': False, 'scoring': False,
+            'examiners': False, 'ready': False,
+        })
+        initial_done = {s['key']: s['done'] for s in initial_setup.context['stepper_steps']}
+        self.assertTrue(initial_done['details'])
+        self.assertFalse(initial_done['candidates'])
 
         refused_open = self.request('post', manage, {'action': 'open'})
         hearing.refresh_from_db()
@@ -721,9 +758,15 @@ class PanelOwnerWorkspaceTests(TestCase):
         ready_to_open = self.request('get', manage)
         self.assertTrue(ready_to_open.context['setup_ready'])
         self.assertTrue(all(step['complete'] for step in ready_to_open.context['setup_checklist']))
+        self.assertTrue(all(ready_to_open.context['step_completion'].values()))
+        self.assertTrue(all(s['done'] for s in ready_to_open.context['stepper_steps']))
         self.assertNotContains(ready_to_open, 'aria-describedby="open-readiness-help"')
+        selected_completed_step = self.request('get', f'{manage}?step=candidates')
+        self.assertEqual(selected_completed_step.context['active_panel_step'], 'candidates')
+        self.assertTrue(selected_completed_step.context['step_completion']['candidates'])
         opened = self.request('post', manage, {'action': 'open'})
         self.assertEqual(opened.status_code, 302)
+        self.assertEqual(opened['Location'], reverse('panel_hearing_live', args=(hearing.pk,)))
         hearing.refresh_from_db()
         self.assertEqual(hearing.status, PanelHearing.Status.OPEN)
         late_candidate = self.request('post', manage, {
@@ -1050,6 +1093,36 @@ class PanelOwnerWorkspaceTests(TestCase):
             self.assertFalse(form.is_valid(), text)
             self.assertIn('level_descriptors', form.errors)
 
+    def test_panel_criterion_description_is_optional_and_limited_to_fifty_words(self):
+        from service_domains.forms import PanelCriterionForm
+        description = ' '.join(f'word{index}' for index in range(50))
+        form = PanelCriterionForm(data={'name': 'Evidence', 'description': description})
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertNotIn('order', form.fields)
+        self.assertEqual(form.fields['description'].widget.attrs['rows'], 1)
+        self.assertFalse(form.fields['weight'].required)
+
+        too_long = PanelCriterionForm(data={
+            'name': 'Evidence',
+            'description': description + ' extra',
+        })
+        self.assertFalse(too_long.is_valid())
+        self.assertIn('50 words or fewer', str(too_long.errors['description']))
+
+    def test_panel_candidate_form_requires_only_a_display_name(self):
+        from service_domains.forms import PanelCandidateForm
+
+        form = PanelCandidateForm(data={'display_name': 'Candidate A'})
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(list(form.fields), ['display_name', 'reference', 'scheduled_time'])
+        self.assertTrue(form.fields['display_name'].required)
+        self.assertFalse(form.fields['reference'].required)
+        self.assertFalse(form.fields['scheduled_time'].required)
+        self.assertEqual(form.fields['reference'].label, 'External reference (optional)')
+        self.assertTrue(all(not field.help_text for field in form.fields.values()))
+
     def test_panel_criterion_edit_form_shows_preserves_and_clears_saved_anchors(self):
         from service_domains.forms import PanelCriterionForm
         hearing = PanelHearing.objects.create(organization_id=self.org.id,
@@ -1118,6 +1191,29 @@ class PanelOwnerWorkspaceTests(TestCase):
         self.assertEqual(res.status_code, 302)
         draft.refresh_from_db()
         self.assertEqual(draft.name, 'Updated Draft Name')
+
+        step_url = self.request('post', draft_url, {
+            'action': 'update_hearing',
+            'name': 'Updated Draft Name',
+            'aggregation': 'mean',
+            'minimum_examiners': '1',
+            'workflow': PanelHearing.Workflow.SCORED,
+            'return_step': 'scoring',
+        })
+        self.assertEqual(step_url.status_code, 302)
+        self.assertEqual(step_url['Location'], f'{draft_url}?step=scoring')
+
+        leave_url = reverse('panel_hearing_table')
+        leaving = self.request('post', draft_url, {
+            'action': 'update_hearing',
+            'name': 'Updated Draft Name',
+            'aggregation': 'mean',
+            'minimum_examiners': '1',
+            'workflow': PanelHearing.Workflow.SCORED,
+            'leave_to': leave_url,
+        })
+        self.assertEqual(leaving.status_code, 302)
+        self.assertEqual(leaving['Location'], leave_url)
 
         draft.status = PanelHearing.Status.OPEN
         draft.save()
@@ -1277,6 +1373,10 @@ class PanelOwnerWorkspaceTests(TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertContains(page, 'id="panel-unsaved-dialog"')
         self.assertContains(page, 'data-panel-details-form')
+        self.assertContains(page, 'data-unsaved-async-save')
+        self.assertContains(page, 'data-unsaved-input-change-only')
+        self.assertContains(page, "form.getAttribute('action')||location.href")
+        self.assertContains(page, 'name="leave_to" value=""')
         self.assertContains(page, '(required)</span>')
         self.assertContains(page, 'data-panel-import-form')
 
@@ -1466,3 +1566,4 @@ class PanelOwnerWorkspaceTests(TestCase):
         match = re.search(r'<div id="panel-candidate-import-warning"[^>]*>(.*?)</div>', content, re.DOTALL)
         self.assertTrue(match)
         self.assertNotIn('Assessment details saved.', match.group(1))
+

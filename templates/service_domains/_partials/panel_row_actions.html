@@ -3,7 +3,7 @@
   <ul class="dropdown-menu dropdown-menu-end">
     {% if hearing.status == 'draft' %}
       {% if hearing.dashboard_next_action == 'Ready to open' %}
-        <li><a class="dropdown-item" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}?step=ready"><i class="bi bi-pencil me-2" aria-hidden="true"></i>Review and open</a></li>
+        <li><a class="dropdown-item" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}?step=ready"><i class="bi bi-pencil me-2" aria-hidden="true"></i>Review and launch</a></li>
       {% else %}
         <li><a class="dropdown-item" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}"><i class="bi bi-pencil me-2" aria-hidden="true"></i>Continue setup</a></li>
       {% endif %}

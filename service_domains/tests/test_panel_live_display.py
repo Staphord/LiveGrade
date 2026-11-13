@@ -252,3 +252,22 @@ class PanelLiveDisplayTests(TestCase):
             hearing=review_only, candidate=cand_r, invitation=inv_r, report='Notes')
         act_r = panel_live_activity(review_only)
         self.assertFalse(act_r['scoring'])
+
+    def test_panel_live_display_accessible_via_token_digest(self):
+        link, token = issue_panel_live_display_link(self.hearing,
+            organization=self.org.as_claim(), user=self.owner)
+        display_url = reverse('panel_live_display', kwargs={'token': link.token_digest})
+        updates_url = reverse('panel_live_display_updates', kwargs={'token': link.token_digest})
+
+        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
+            res_page = self.client.get(display_url)
+            self.assertEqual(res_page.status_code, 200)
+            self.assertContains(res_page, self.hearing.name)
+            self.assertContains(res_page, 'Live standings')
+
+            res_updates = self.client.get(updates_url)
+            self.assertEqual(res_updates.status_code, 200)
+            data = res_updates.json()
+            self.assertEqual(data['hearing'], self.hearing.name)
+            self.assertTrue(data['scoring'])
+

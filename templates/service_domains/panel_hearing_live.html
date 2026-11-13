@@ -1,23 +1,6 @@
 {% extends 'base.html' %}
-{% block title %}{{ hearing.name }} — Live Chamber · LiveGrade{% endblock %}
+{% block title %}{{ hearing.name }} · Live Chamber · LiveGrade{% endblock %}
 {% block page_title %}{{ hearing.name }}{% endblock %}
-
-{% block topbar_actions %}
-<div class="d-flex align-items-center gap-2">
-  <span class="live-badge" id="live-connection-badge">
-    <span class="dot"></span>Live
-  </span>
-  <a href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}" class="btn btn-outline-secondary btn-sm">
-    <i class="bi bi-gear me-1" aria-hidden="true"></i>Hearing setup
-  </a>
-  <button type="button" class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#panel-close-confirm-modal">
-    <i class="bi bi-door-closed me-1" aria-hidden="true"></i>Close &amp; review
-  </button>
-  <a href="{% url 'panel_hearing_table' %}" class="btn btn-outline-secondary btn-sm">
-    <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>All assessments
-  </a>
-</div>
-{% endblock %}
 
 {% block extra_css %}
 <style nonce="{{ csp_nonce }}">
@@ -30,7 +13,7 @@
 .presenting-hero .group-name.is-idle{font-size:var(--fs-title)}
 .presenting-hero .meta-row{display:flex;align-items:center;gap:var(--sp-4);flex-wrap:wrap;opacity:.92;font-size:var(--fs-sm)}
 .presenting-hero .actions{display:flex;gap:var(--sp-2);flex-wrap:wrap}
-.hero-kicker{display:inline-flex;align-items:center;gap:.45rem;padding:.35rem .7rem;border-radius:999px;background:rgba(255,255,255,.16);font-size:var(--fs-micro);font-weight:800;text-transform:uppercase;letter-spacing:.07em;margin-bottom:.7rem}
+.hero-kicker{display:inline-flex;align-items:center;gap:.45rem;padding:.35rem .7rem;border-radius:999px;background:rgba(255,255,255,.16);font-size:var(--fs-micro);font-weight:800;text-transform:uppercase;letter-spacing:.07em}
 .phase-chip{display:inline-flex;align-items:center;padding:.3rem .75rem;border-radius:999px;background:rgba(255,255,255,.16);font-weight:800;transition:background .15s ease}
 .phase-chip.is-voting{background:rgba(255,255,255,.36);box-shadow:0 0 0 2px rgba(255,255,255,.45)}
 .turn-ring-wrap{position:relative;width:68px;height:68px;flex-shrink:0}
@@ -52,6 +35,23 @@
 
 {% block content %}
 <div class="container-fluid py-4" style="max-width: 1400px;">
+  <div class="mb-3">
+    <a href="{% url 'panel_hearing_table' %}" class="btn btn-link px-0 text-decoration-none">
+      <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>All assessments
+    </a>
+  </div>
+
+  {% include 'service_domains/_partials/panel_hearing_tabs.html' with active_tab='live' %}
+
+  <div class="mb-3">
+    <div id="panel-live-inline-error" class="alert alert-danger inline-message" data-inline-message role="alert" aria-live="assertive" hidden style="display: none;">
+      <i class="inline-message-icon bi bi-exclamation-circle-fill" aria-hidden="true"></i>
+      <div class="inline-message-content">
+        <span data-inline-message-text></span>
+      </div>
+    </div>
+  </div>
+
   <!-- Chamber Hero -->
   {% include 'service_domains/_partials/panel_live_hero.html' %}
 
@@ -68,23 +68,57 @@
       {% include 'service_domains/_partials/panel_live_display_control.html' %}
     </div>
   </div>
-</div>
 
-<!-- Modal: Close Hearing Confirmation -->
-<div class="modal fade" id="panel-close-confirm-modal" tabindex="-1" aria-labelledby="panel-close-modal-title" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2 class="modal-title h5" id="panel-close-modal-title">Close assessment for review?</h2>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <p>This will close examiner response submission and move the hearing into <strong>Under Review</strong> status.</p>
-        <p class="text-muted small mb-0">The committee chair can then review final score tables, record outstanding outcomes, and prepare official releases.</p>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Keep chamber open</button>
-        <button type="button" class="btn btn-warning" id="confirm-panel-close-hearing-btn">Close hearing</button>
+  <!-- Step Durations Modal -->
+  <div class="modal fade" id="panel-phase-durations-modal" tabindex="-1" aria-labelledby="durations-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form id="panel-durations-form">
+          {% csrf_token %}
+          <div class="modal-header">
+            <h2 class="modal-title h6 fw-bold mb-0" id="durations-modal-title">
+              <i class="bi bi-clock-history text-primary me-2" aria-hidden="true"></i>Configure Step Timers
+            </h2>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p class="small text-muted mb-3">
+              Set durations for each hearing step. New step transitions will use these durations.
+            </p>
+            <div class="row g-3">
+              <div class="col-6">
+                <label for="id-duration-presentation" class="form-label small fw-semibold">1. Presentation (min)</label>
+                <input type="number" id="id-duration-presentation" name="presentation_minutes" min="1" max="180"
+                       class="form-control form-control-sm font-monospace"
+                       value="{{ phase_durations_mins.presentation|default:15 }}" required>
+              </div>
+              <div class="col-6">
+                <label for="id-duration-qa" class="form-label small fw-semibold">2. Q&amp;A (min)</label>
+                <input type="number" id="id-duration-qa" name="qa_minutes" min="1" max="180"
+                       class="form-control form-control-sm font-monospace"
+                       value="{{ phase_durations_mins.qa|default:20 }}" required>
+              </div>
+              <div class="col-6">
+                <label for="id-duration-deliberation" class="form-label small fw-semibold">3. Deliberation (min)</label>
+                <input type="number" id="id-duration-deliberation" name="deliberation_minutes" min="1" max="180"
+                       class="form-control form-control-sm font-monospace"
+                       value="{{ phase_durations_mins.deliberation|default:10 }}" required>
+              </div>
+              <div class="col-6">
+                <label for="id-duration-decision" class="form-label small fw-semibold">4. Decision (min)</label>
+                <input type="number" id="id-duration-decision" name="decision_minutes" min="1" max="180"
+                       class="form-control form-control-sm font-monospace"
+                       value="{{ phase_durations_mins.decision|default:5 }}" required>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary btn-sm">
+              <i class="bi bi-check-lg me-1" aria-hidden="true"></i>Save Timers
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   </div>
@@ -96,17 +130,40 @@
   const LIVE_ACTION_URL = "{% url 'panel_hearing_live_action' hearing_id=hearing.pk %}";
 
   let refreshing = false;
-  let remainingSeconds = parseInt(document.getElementById('panel-phase-timer-display')?.dataset.seconds || '900', 10);
+  let timerDisplayEl = document.getElementById('panel-phase-timer-display');
+  let remainingSeconds = parseInt(timerDisplayEl?.dataset.seconds || '900', 10);
+  let phaseDurationSeconds = parseInt(timerDisplayEl?.dataset.duration || '900', 10);
   let timerPaused = false;
+  let activePhase = '{{ active_phase|default:"presentation" }}';
 
   function csrfHeaders() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta && meta.content) return { 'X-CSRFToken': meta.content };
     const el = document.querySelector('[name=csrfmiddlewaretoken]');
     return el ? { 'X-CSRFToken': el.value } : {};
+  }
+
+  function showInlineError(message) {
+    const box = document.getElementById('panel-live-inline-error');
+    if (!box) return;
+    const textEl = box.querySelector('[data-inline-message-text]');
+    if (textEl) textEl.textContent = message;
+    box.hidden = false;
+    box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function clearInlineError() {
+    const box = document.getElementById('panel-live-inline-error');
+    if (box) box.hidden = true;
   }
 
   function postAction(data) {
     const formData = new FormData();
     Object.keys(data).forEach(k => formData.append(k, data[k]));
+    const tokenEl = document.querySelector('[name=csrfmiddlewaretoken]');
+    if (tokenEl && !formData.has('csrfmiddlewaretoken')) {
+      formData.append('csrfmiddlewaretoken', tokenEl.value);
+    }
     return fetch(LIVE_ACTION_URL, {
       method: 'POST',
       body: formData,
@@ -119,9 +176,10 @@
         return;
       }
       if (payload.error) {
-        alert(payload.error);
+        showInlineError(payload.error);
         return;
       }
+      clearInlineError();
       patchFragments(payload);
     })
     .catch(() => {});
@@ -135,13 +193,54 @@
       'panel-live-docket': data.docket_html,
       'panel-live-display-control': data.display_html
     };
+
+    if (data.active_phase) activePhase = data.active_phase;
+    if (typeof data.phase_seconds_remaining === 'number') {
+      remainingSeconds = data.phase_seconds_remaining;
+    }
+    if (typeof data.phase_duration_seconds === 'number') {
+      phaseDurationSeconds = data.phase_duration_seconds;
+    }
+    if (typeof data.timer_paused === 'boolean') {
+      timerPaused = data.timer_paused;
+    }
+
     Object.keys(FRAGMENTS).forEach(id => {
       const el = document.getElementById(id);
       const html = FRAGMENTS[id];
-      if (el && html !== undefined) el.outerHTML = html;
+      if (el && html !== undefined) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const newEl = doc.body.firstElementChild;
+        if (newEl) {
+          if (el.innerHTML.trim() !== newEl.innerHTML.trim()) {
+            el.innerHTML = newEl.innerHTML;
+            for (let attr of newEl.attributes) {
+              el.setAttribute(attr.name, attr.value);
+            }
+          }
+        } else {
+          el.outerHTML = html;
+        }
+      }
     });
-    remainingSeconds = data.phase_seconds_remaining || 0;
-    timerPaused = !!data.timer_paused;
+
+    if (data.phase_durations_mins) {
+      const pInput = document.getElementById('id-duration-presentation');
+      const qInput = document.getElementById('id-duration-qa');
+      const dInput = document.getElementById('id-duration-deliberation');
+      const decInput = document.getElementById('id-duration-decision');
+      if (pInput && data.phase_durations_mins.presentation) pInput.value = data.phase_durations_mins.presentation;
+      if (qInput && data.phase_durations_mins.qa) qInput.value = data.phase_durations_mins.qa;
+      if (dInput && data.phase_durations_mins.deliberation) dInput.value = data.phase_durations_mins.deliberation;
+      if (decInput && data.phase_durations_mins.decision) decInput.value = data.phase_durations_mins.decision;
+    }
+
+    if (window.initCustomSelects) {
+      const conv = document.getElementById('panel-live-convergence');
+      if (conv) window.initCustomSelects(conv);
+    }
+
     updateTimerDisplay();
   }
 
@@ -176,33 +275,108 @@
     const display = document.getElementById('panel-phase-timer-display');
     const ring = document.getElementById('panel-phase-ring');
     if (!display || !ring) return;
-    const mins = Math.floor(remainingSeconds / 60);
-    const secs = remainingSeconds % 60;
+    const safeRemaining = Math.max(0, remainingSeconds);
+    const mins = Math.floor(safeRemaining / 60);
+    const secs = safeRemaining % 60;
     display.textContent = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-    const pct = Math.min(100, Math.max(0, Math.round((remainingSeconds / 900) * 100)));
+    const pct = phaseDurationSeconds > 0
+      ? Math.min(100, Math.max(0, Math.round((safeRemaining / phaseDurationSeconds) * 100)))
+      : 0;
     ring.style.setProperty('--turn-pct', pct);
-    if (remainingSeconds < 120 && !timerPaused) {
+    if (safeRemaining < 120 && !timerPaused) {
       ring.classList.add('is-urgent');
     } else {
       ring.classList.remove('is-urgent');
     }
   }
 
-  // Timer interval tick
+  // Step sequence mapping
+  const NEXT_PHASES = {
+    'presentation': 'qa',
+    'qa': 'deliberation',
+    'deliberation': 'decision',
+  };
+
+  function hasActiveCandidateOnFloor() {
+    const heroEl = document.getElementById('panel-live-hero');
+    return Boolean(heroEl && !heroEl.querySelector('.presenting-hero.is-idle'));
+  }
+
+  function getActivePhase() {
+    const chip = document.querySelector('.phase-chip.is-voting');
+    if (chip && chip.dataset.phase) return chip.dataset.phase;
+    return activePhase || 'presentation';
+  }
+
+  let autoAdvancing = false;
+  let lastAutoAdvanceAttempt = 0;
+
+  function triggerAutoAdvance() {
+    if (!hasActiveCandidateOnFloor() || timerPaused || autoAdvancing) return;
+    const currentPhase = getActivePhase();
+    const nextPhase = NEXT_PHASES[currentPhase];
+    if (!nextPhase) return;
+
+    const now = Date.now();
+    if (now - lastAutoAdvanceAttempt < 2000) return;
+    lastAutoAdvanceAttempt = now;
+
+    autoAdvancing = true;
+    postAction({ action: 'set_phase', phase: nextPhase }).finally(() => {
+      autoAdvancing = false;
+    });
+  }
+
   setInterval(() => {
-    if (!timerPaused && remainingSeconds > 0) {
+    if (!hasActiveCandidateOnFloor() || timerPaused) return;
+
+    if (remainingSeconds > 0) {
       remainingSeconds--;
       updateTimerDisplay();
     }
+
+    if (remainingSeconds <= 0) {
+      triggerAutoAdvance();
+    }
   }, 1000);
 
-  // Periodic polling interval
-  setInterval(refreshState, 6000);
+  // WebSocket connection for real-time live chamber updates
+  const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const wsUrl = `${scheme}://${window.location.host}/ws/panel/hearing/{{ hearing.pk }}/live/`;
+  let socket = null;
+  let wsReconnectTimer = null;
+  let wsRetryCount = 0;
+
+  function connectSocket() {
+    if (!window.WebSocket) return;
+    try {
+      socket = new WebSocket(wsUrl);
+      socket.onopen = () => { wsRetryCount = 0; };
+      socket.onmessage = () => { refreshState(); };
+      socket.onclose = () => {
+        window.clearTimeout(wsReconnectTimer);
+        const delay = Math.min(30000, 2000 * Math.pow(1.5, wsRetryCount++));
+        wsReconnectTimer = window.setTimeout(connectSocket, delay);
+      };
+      socket.onerror = () => { socket.close(); };
+    } catch (_err) {}
+  }
+  connectSocket();
+
+  // Safety net fallback check if socket is disconnected
+  setInterval(() => {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      refreshState();
+    }
+  }, 30000);
 
   // Delegated click handler for panel live actions
   document.addEventListener('click', e => {
     const actionBtn = e.target.closest('[data-panel-live-action]');
     if (actionBtn) {
+      if (actionBtn.dataset.confirm && !actionBtn.dataset.confirmed) {
+        return;
+      }
       e.preventDefault();
       const action = actionBtn.dataset.panelLiveAction;
       const data = { action };
@@ -229,15 +403,33 @@
 
     const closeHearingBtn = e.target.closest('#confirm-panel-close-hearing-btn');
     if (closeHearingBtn) {
+      if (closeHearingBtn.dataset.confirm && !closeHearingBtn.dataset.confirmed) {
+        return;
+      }
       e.preventDefault();
       closeHearingBtn.disabled = true;
       postAction({ action: 'close_hearing' });
+      return;
     }
   });
 
-  // Delegated submit handler for decision form
+  // Delegated submit handler for decision form and duration settings form
   document.addEventListener('submit', e => {
     const form = e.target;
+    if (form.matches('#panel-durations-form')) {
+      e.preventDefault();
+      const formData = new FormData(form);
+      const data = { action: 'set_phase_durations' };
+      formData.forEach((v, k) => { data[k] = v; });
+      postAction(data).then(() => {
+        const modalEl = document.getElementById('panel-phase-durations-modal');
+        if (modalEl && window.bootstrap) {
+          const modal = window.bootstrap.Modal.getInstance(modalEl);
+          if (modal) modal.hide();
+        }
+      });
+      return;
+    }
     if (form.matches('[data-panel-decision-form]')) {
       e.preventDefault();
       const formData = new FormData(form);
@@ -246,6 +438,12 @@
       postAction(data);
     }
   });
+
+  // Initialize custom select on convergence decision outcome dropdown
+  if (window.initCustomSelects) {
+    const conv = document.getElementById('panel-live-convergence');
+    if (conv) window.initCustomSelects(conv);
+  }
 
   // Spacebar shortcut to advance phase
   document.addEventListener('keydown', e => {

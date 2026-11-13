@@ -263,7 +263,7 @@
             <select class="form-select" id="group-id" name="group_id" required>
               <option value="">Choose a group</option>
               {% for group in unmapped_groups %}
-                <option value="{{ group.pk }}">{{ group.name }} — {% for membership in group.memberships.all %}{{ membership.student.full_name }}{% if not forloop.last %}, {% endif %}{% empty %}no members{% endfor %}</option>
+                <option value="{{ group.pk }}">{{ group.name }} · {% for membership in group.memberships.all %}{{ membership.student.full_name }}{% if not forloop.last %}, {% endif %}{% empty %}no members{% endfor %}</option>
               {% endfor %}
             </select>
           </div>
@@ -272,7 +272,7 @@
             <select class="form-select" id="candidate-id" name="candidate_id" required>
               <option value="">Choose a candidate</option>
               {% for candidate in unmapped_candidates %}
-                <option value="{{ candidate.pk }}">{{ candidate.display_name }}{% if candidate.reference %} ({{ candidate.reference }}){% endif %}{% if candidate.source_group_id %} — linked Classroom group{% endif %}</option>
+                <option value="{{ candidate.pk }}">{{ candidate.display_name }}{% if candidate.reference %} ({{ candidate.reference }}){% endif %}{% if candidate.source_group_id %} · linked Classroom group{% endif %}</option>
               {% endfor %}
             </select>
           </div>

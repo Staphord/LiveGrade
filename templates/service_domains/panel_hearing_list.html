@@ -73,7 +73,6 @@
 {% endblock %}
 
 {% block topbar_actions %}
-<a href="{% url 'combined_assessment_list' %}" class="btn btn-outline-secondary btn-sm">Combined assessments</a>
 {% if can_oversee_panel %}
 <a href="{% url 'panel_oversight_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-shield-check me-1" aria-hidden="true"></i>Oversight results</a>
 {% endif %}
@@ -87,7 +86,7 @@
       <p>A live summary of your assessments, candidates, and examiner activity.</p>
     </div>
     <div class="hero-actions">
-      <a href="{% url 'panel_hearing_table' %}" class="btn btn-outline-primary">Browse assessments</a>
+      <a href="{% url 'panel_hearing_table' %}" class="btn btn-outline-primary">Panel assessments</a>
       <a href="{% url 'panel_hearing_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create assessment</a>
     </div>
   </header>
@@ -144,7 +143,7 @@
         {% if hearing.status == 'review' or hearing.status == 'signed_off' or hearing.status == 'released' %}
           <a class="btn btn-sm btn-primary" href="{% url 'panel_results_review' hearing_id=hearing.pk %}">{% if hearing.status == 'signed_off' %}Release results{% else %}Review results{% endif %}</a>
         {% elif hearing.status == 'draft' and hearing.dashboard_next_action == 'Ready to open' %}
-          <a class="btn btn-sm btn-primary" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}?step=ready">Review and open</a>
+          <a class="btn btn-sm btn-primary" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}?step=ready">Review and launch</a>
         {% elif hearing.status == 'open' %}
           <a class="btn btn-sm btn-primary" href="{% url 'panel_hearing_live' hearing_id=hearing.pk %}">Open live controls</a>
         {% else %}
@@ -219,7 +218,7 @@
               {% url 'panel_hearing_manage' hearing_id=hearing.pk as row_url %}
             {% endif %}
           {% elif hearing.status == 'open' %}
-            {% url 'panel_hearing_manage' hearing_id=hearing.pk as row_url %}
+            {% url 'panel_hearing_live' hearing_id=hearing.pk as row_url %}
           {% else %}
             {% url 'panel_results_review' hearing_id=hearing.pk as row_url %}
           {% endif %}

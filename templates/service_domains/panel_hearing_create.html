@@ -27,16 +27,8 @@
     </div>
   {% endif %}
 
-  <div class="alert alert-info" role="status">Examiners score each active candidate independently. LiveGrade calculates criterion results using the configured panel rules; the chair reviews, signs off and releases them.</div>
-
   <section class="panel-step-layout" aria-label="Hearing setup">
-    <ol class="panel-step-nav" aria-label="Setup steps">
-      <li><button type="button" aria-current="step"><span class="step-index">1</span>Hearing info</button></li>
-      <li><button type="button" disabled title="Save hearing info to unlock candidates"><span class="step-index">2</span>Candidates</button></li>
-      <li><button type="button" disabled title="Save hearing info to unlock criteria"><span class="step-index">3</span>Criteria and weights</button></li>
-      <li><button type="button" disabled title="Save hearing info to unlock examiners"><span class="step-index">4</span>Panel examiners</button></li>
-      <li><button type="button" disabled title="Save hearing info to unlock launch"><span class="step-index">5</span>Launch or schedule</button></li>
-    </ol>
+    {% include 'partials/_stepper.html' with steps=stepper_steps %}
 
     <section class="panel-step panel-step-card service-section" aria-labelledby="details-heading">
       <div class="card-icon-head mb-3">
