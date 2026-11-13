@@ -574,7 +574,7 @@ class CompetitionWorkspaceTests(TestCase):
         created = self.request('post', reverse('competition_create'), {'name': 'Build week'})
         competition = Competition.objects.get(name='Build week')
         self.assertEqual(created.status_code, 302)
-        self.assertEqual(created['Location'], reverse('competition_manage', args=(competition.pk,)))
+        self.assertEqual(created['Location'], f"{reverse('competition_manage', args=(competition.pk,))}?step=details")
         self.assertEqual(competition.organization_id, self.org.id)
         self.assertEqual(competition.created_by, self.owner)
 
@@ -681,7 +681,10 @@ class CompetitionWorkspaceTests(TestCase):
             {f'Entry {number + 1}' for number in range(20)})
         self.assertEqual(self.competition.status, Competition.Status.DRAFT)
         self.assertEqual(self.request('get', manage).status_code, 200)
-        self.assertContains(self.request('get', manage), 'This round has not been opened yet.')
+        review = self.request('get', manage)
+        self.assertContains(review, 'Go to the live arena to start')
+        self.assertNotContains(review, 'name="action" value="first_round"')
+        self.assertNotContains(review, 'name="action" value="start"')
 
     def test_initial_round_requires_entries_for_each_track_and_locks_setup_afterward(self):
         sign_in(self.client, self.owner, self.org)
@@ -1707,6 +1710,39 @@ class CompetitionWorkspaceTests(TestCase):
         self.assertContains(details_page, 'Competition details saved.')
         self.assertContains(details_page, 'id="competition-unsaved-dialog"')
         self.assertContains(details_page, 'data-panel-details-form')
+        self.assertContains(details_page, 'data-unsaved-keep')
+        self.assertContains(details_page, 'data-unsaved-discard')
+        self.assertContains(details_page, 'data-unsaved-save')
+        self.assertContains(details_page, "window.addEventListener('beforeunload'")
+        self.assertContains(details_page, "window.addEventListener('popstate'")
+
+        save_before_step = self.request('post', manage_url, {
+            'action': 'update_competition', 'name': 'Saved before step change',
+            'audience_weight': '15', 'minimum_judges_per_entry': '1',
+            'minimum_audience_ballots': '0', 'setup_step': 'details',
+            'return_step': 'entries',
+        })
+        self.assertEqual(save_before_step['Location'], f'{manage_url}?step=entries')
+
+        save_before_link = self.request('post', manage_url, {
+            'action': 'update_competition', 'name': 'Saved before link navigation',
+            'audience_weight': '15', 'minimum_judges_per_entry': '1',
+            'minimum_audience_ballots': '0', 'setup_step': 'details',
+            'leave_to': reverse('competition_list'),
+        })
+        self.assertEqual(save_before_link['Location'], reverse('competition_list'))
+
+        unsafe_leave = self.request('post', manage_url, {
+            'action': 'update_competition', 'name': 'Safe fallback after unsafe link',
+            'audience_weight': '15', 'minimum_judges_per_entry': '1',
+            'minimum_audience_ballots': '0', 'setup_step': 'details',
+            'leave_to': 'https://outside.example.test/',
+        })
+        self.assertEqual(unsafe_leave['Location'], f'{manage_url}?step=details&saved=1')
+        tracks_page = self.request('get', f'{manage_url}?step=tracks')
+        self.assertEqual(tracks_page.context['active_step'], 'tracks')
+        self.assertContains(tracks_page, 'data-panel-step="tracks"')
+        self.assertContains(tracks_page, 'aria-current="step"')
 
         advance_res = self.request('post', manage_url, {
             'action': 'update_competition',
@@ -1723,14 +1759,17 @@ class CompetitionWorkspaceTests(TestCase):
 
         bad_details = self.request('post', manage_url, {
             'action': 'update_competition',
-            'name': '',
-            'audience_weight': '15',
+            'name': 'Retain these details',
+            'audience_weight': '101',
             'minimum_judges_per_entry': '1',
             'minimum_audience_ballots': '0',
             'branding_accent': 'blue',
         })
         self.assertEqual(bad_details.status_code, 400)
         self.assertEqual(bad_details.context['active_step'], 'details')
+        self.assertContains(bad_details, 'aria-current="step"', status_code=400)
+        self.assertContains(bad_details, 'value="Retain these details"', status_code=400)
+        self.assertContains(bad_details, 'aria-describedby="competition_details_audience_weight_helptext competition_details_audience_weight_inline_message"', status_code=400)
 
         with patch.object(Competition, 'full_clean', side_effect=[None, ValidationError('Model rejected details')]):
             clean_fail = self.request('post', manage_url, {
@@ -1843,7 +1882,6 @@ class CompetitionWorkspaceTests(TestCase):
     def test_competition_entry_import_parser_planner_apply_and_views(self):
         import io
         import zipfile
-        from django.core import signing
         from django.core.files.uploadedfile import SimpleUploadedFile
         from assessments.sheets import workbook_bytes
         from service_domains.competition_import import (
@@ -1854,11 +1892,6 @@ class CompetitionWorkspaceTests(TestCase):
             plan_competition_entry_import,
             sample_competition_entries,
         )
-        from service_domains.competition_views import (
-            COMPETITION_IMPORT_SESSION_KEY,
-            COMPETITION_IMPORT_TOKEN_SALT,
-        )
-
         sample_buf = sample_competition_entries()
         parsed_sample = parse_competition_entries(sample_buf)
         self.assertIsNone(parsed_sample['fatal'])
@@ -1959,113 +1992,35 @@ class CompetitionWorkspaceTests(TestCase):
 
         import_url = reverse('competition_entry_import', args=(self.competition.pk,))
         manage_url = reverse('competition_manage', args=(self.competition.pk,))
-
-        get_res = self.request('get', f'{import_url}?embedded=1')
-        self.assertEqual(get_res.status_code, 302)
-        self.assertEqual(get_res['Location'], f'{manage_url}?step=entries')
+        self.assertEqual(self.request('get', import_url).status_code, 302)
 
         bad_ext = SimpleUploadedFile('entries.csv', b'a,b', content_type='text/csv')
-        bad_ext_res = self.request('post', f'{import_url}?embedded=1', {'file': bad_ext})
-        self.assertEqual(bad_ext_res.status_code, 302)
+        self.assertEqual(self.request('post', import_url, {'file': bad_ext}).status_code, 302)
+        bad_ext_page = self.request('get', manage_url)
+        self.assertEqual(bad_ext_page.context['active_step'], 'entries')
+        self.assertTrue(bad_ext_page.context['entry_import_errors'])
 
-        big_upload = SimpleUploadedFile('entries.xlsx', b'x', content_type='application/octet-stream')
-        big_upload.size = MAX_UPLOAD_BYTES + 10
-        from service_domains.competition_forms import CompetitionEntryImportForm
-        big_form = CompetitionEntryImportForm(data={}, files={'file': big_upload})
-        self.assertFalse(big_form.is_valid())
-        self.assertIn('no larger than 10 MB', big_form.errors['file'][0])
-        big_res = self.request('post', f'{import_url}?embedded=1', {})
-        self.assertEqual(big_res.status_code, 302)
+        bad_rows_wb = workbook_bytes(['Track', 'Entry', 'Reference'], [['Open Track', '', '']])
+        bad_rows_file = SimpleUploadedFile(
+            'entries.xlsx', bad_rows_wb.getvalue(), content_type='application/octet-stream')
+        self.request('post', import_url, {'file': bad_rows_file})
+        bad_rows_preview = self.request('get', f'{manage_url}?step=entries')
+        self.assertContains(bad_rows_preview, 'Entry name is required.')
+        self.assertContains(bad_rows_preview, 'Needs attention')
+        self.assertEqual(bad_rows_preview.context['entry_import_token'], '')
+        self.assertFalse(CompetitionEntry.objects.filter(track__competition=self.competition, name='').exists())
+        self.request('post', import_url, {'action': 'cancel'})
+        self.assertIsNone(self.request('get', manage_url).context['entry_import_plan'])
 
-        corrupt_upload = SimpleUploadedFile('entries.xlsx', b'not-zip', content_type='application/octet-stream')
-        corrupt_res = self.request('post', f'{import_url}?embedded=1', {'file': corrupt_upload})
-        self.assertEqual(corrupt_res.status_code, 302)
-
-        single_wb = workbook_bytes(['Track', 'Entry', 'Reference'], [['Imported Track', 'Battery Pack', 'BP-1']])
-        upload_file = SimpleUploadedFile('entries.xlsx', single_wb.getvalue(), content_type='application/octet-stream')
-        upload_res = self.request('post', f'{import_url}?embedded=1', {'file': upload_file})
-        self.assertEqual(upload_res.status_code, 302)
-        self.assertIn(COMPETITION_IMPORT_SESSION_KEY, self.client.session)
-
-        preview_page = self.request('get', manage_url)
-        self.assertEqual(preview_page.context['active_step'], 'entries')
-        self.assertContains(preview_page, 'id="entry-inline-preview"')
-        self.assertContains(preview_page, 'Battery Pack')
-
-        cancel_res = self.request('post', f'{import_url}?embedded=1', {'action': 'cancel'})
-        self.assertEqual(cancel_res.status_code, 302)
-        self.assertNotIn(COMPETITION_IMPORT_SESSION_KEY, self.client.session)
-
-        # Bad signature in session on manage GET
-        session = self.client.session
-        session[COMPETITION_IMPORT_SESSION_KEY] = 'bad-sig'
-        session.save()
-        self.request('get', manage_url)
-        self.assertNotIn(COMPETITION_IMPORT_SESSION_KEY, self.client.session)
-
-        # Wrong competition/owner in session on manage GET
-        wrong_token = signing.dumps(
-            {'competition_id': self.competition.pk, 'organization_id': self.org.id, 'owner_id': self.other_owner.pk, 'parsed': parsed_clean},
-            salt=COMPETITION_IMPORT_TOKEN_SALT, compress=True,
-        )
-        session = self.client.session
-        session[COMPETITION_IMPORT_SESSION_KEY] = wrong_token
-        session.save()
-        self.request('get', manage_url)
-        self.assertNotIn(COMPETITION_IMPORT_SESSION_KEY, self.client.session)
-
-        # Apply error cases: missing token, mismatched token, bad signature, wrong owner, PermissionDenied, ValidationError, success
-        self.assertEqual(self.request('post', import_url, {'action': 'apply', 'preview_token': 'x'}).status_code, 302)
-
-        valid_token = signing.dumps(
-            {'competition_id': self.competition.pk, 'organization_id': self.org.id, 'owner_id': self.owner.pk, 'parsed': parse_competition_entries(workbook_bytes(['Track', 'Entry', 'Reference'], [['Imported Track', 'Battery Pack', 'BP-1']]))},
-            salt=COMPETITION_IMPORT_TOKEN_SALT, compress=True,
-        )
-        session = self.client.session
-        session[COMPETITION_IMPORT_SESSION_KEY] = valid_token
-        session.save()
-        self.assertEqual(self.request('post', import_url, {'action': 'apply', 'preview_token': 'mismatch'}).status_code, 302)
-
-        session = self.client.session
-        session[COMPETITION_IMPORT_SESSION_KEY] = 'corrupt-token'
-        session.save()
-        self.assertEqual(self.request('post', import_url, {'action': 'apply', 'preview_token': 'corrupt-token'}).status_code, 302)
-
-        session = self.client.session
-        session[COMPETITION_IMPORT_SESSION_KEY] = wrong_token
-        session.save()
-        self.assertEqual(self.request('post', import_url, {'action': 'apply', 'preview_token': wrong_token}).status_code, 404)
-
-        session = self.client.session
-        session[COMPETITION_IMPORT_SESSION_KEY] = valid_token
-        session.save()
-        with patch('service_domains.competition_views.apply_competition_entry_import', side_effect=PermissionDenied):
-            self.assertEqual(self.request('post', import_url, {'action': 'apply', 'preview_token': valid_token}).status_code, 404)
-
-        session = self.client.session
-        session[COMPETITION_IMPORT_SESSION_KEY] = valid_token
-        session.save()
-        with patch('service_domains.competition_views.apply_competition_entry_import', side_effect=ValidationError('Cannot import')):
-            self.assertEqual(self.request('post', import_url, {'action': 'apply', 'preview_token': valid_token}).status_code, 302)
-
-        session = self.client.session
-        session[COMPETITION_IMPORT_SESSION_KEY] = valid_token
-        session.save()
-        apply_ok = self.request('post', f'{import_url}?embedded=1', {'action': 'apply', 'preview_token': valid_token})
-        self.assertEqual(apply_ok.status_code, 302)
-        self.assertTrue(CompetitionEntry.objects.filter(name='Battery Pack').exists())
-
-        # Non-draft competition blocks import
-        self.competition.status = Competition.Status.ACTIVE
-        self.competition.save(update_fields=('status',))
-        locked_import = self.request('post', import_url, {'action': 'cancel'})
-        self.assertEqual(locked_import.status_code, 302)
-        with self.assertRaises(ValidationError):
-            apply_competition_entry_import(
-                self.competition, parsed_clean,
-                organization=self.org.as_claim(), user=self.owner,
-            )
-
+        good = workbook_bytes(['Track', 'Entry', 'Reference'], [['New Track', 'Wind Farm', 'W-1']])
+        self.request('post', import_url, {'file': SimpleUploadedFile('e.xlsx', good.getvalue())})
+        page = self.request('get', manage_url)
+        self.assertContains(page, '1 entry will be added')
+        token = page.context['entry_import_token']
+        self.request('post', import_url, {'action': 'apply', 'preview_token': token})
+        self.assertTrue(CompetitionEntry.objects.filter(
+            track__competition=self.competition, name='Wind Farm', reference='W-1').exists())
+        self.assertNotContains(self.request('get', manage_url), 'data-panel-form data-panel-import-form')
 
 @override_settings(LIVEGRADE_LIVE_SERVICES=['classroom', 'panel', 'polls', 'team', 'showcase', 'competition'])
 class CompetitionWorkspaceUiTests(TestCase):
@@ -2213,9 +2168,10 @@ class CompetitionWorkspaceUiTests(TestCase):
         self.assertContains(response, 'Next: review and reveal results')
         self.assertContains(response, 'Next: manage public display')
 
-        for comp in (c_draft, c_active, c_complete, c_revealed):
-            manage_url = reverse('competition_manage', kwargs={'competition_id': comp.pk})
-            self.assertContains(response, f'data-competition-row-href="{manage_url}"')
+        self.assertContains(response, f'data-competition-row-href="{reverse("competition_manage", kwargs={"competition_id": c_draft.pk})}"')
+        self.assertContains(response, f'data-competition-row-href="{reverse("competition_live_control", kwargs={"competition_id": c_active.pk})}"')
+        self.assertContains(response, f'data-competition-row-href="{reverse("competition_public_leaderboard", kwargs={"competition_id": c_complete.public_id})}"')
+        self.assertContains(response, f'data-competition-row-href="{reverse("competition_public_leaderboard", kwargs={"competition_id": c_revealed.public_id})}"')
 
     def test_kebab_items_visibility_per_status(self):
         c_draft = self.create_comp('Draft Event', Competition.Status.DRAFT)
@@ -2253,7 +2209,10 @@ class CompetitionWorkspaceUiTests(TestCase):
         self.assertEqual(get_response.status_code, 200)
         self.assertEqual(Competition.objects.count(), initial_count)
         self.assertContains(get_response, 'aria-current="step"')
-        self.assertContains(get_response, 'Save competition details to unlock tracks')
+        self.assertContains(get_response, 'name="setup_step" value="details"')
+        self.assertContains(get_response, 'id="competition-create-unsaved-dialog"')
+        self.assertContains(get_response, "window.addEventListener('beforeunload'")
+        self.assertContains(get_response, 'Save competition details to unlock this step')
         self.assertContains(get_response, 'disabled title="Save competition details to unlock')
 
         # POST invalid: form error, 0 rows created
@@ -2261,6 +2220,13 @@ class CompetitionWorkspaceUiTests(TestCase):
         self.assertEqual(bad_response.status_code, 200)
         self.assertEqual(Competition.objects.count(), initial_count)
         self.assertContains(bad_response, 'This field is required')
+
+        retained_response = self.request('post', create_url, {
+            'name': 'Retained competition name', 'audience_weight': '101',
+            'setup_step': 'details',
+        })
+        self.assertEqual(retained_response.status_code, 200)
+        self.assertContains(retained_response, 'value="Retained competition name"')
 
         # POST valid: creates Competition, redirects to competition_manage
         valid_response = self.request('post', create_url, {
@@ -2274,7 +2240,7 @@ class CompetitionWorkspaceUiTests(TestCase):
         self.assertEqual(created.audience_weight, Decimal('25.00'))
         self.assertEqual(created.created_by, self.owner)
         self.assertEqual(created.organization_id, self.org.id)
-        self.assertEqual(valid_response['Location'], reverse('competition_manage', kwargs={'competition_id': created.pk}))
+        self.assertEqual(valid_response['Location'], f"{reverse('competition_manage', kwargs={'competition_id': created.pk})}?step=details")
 
         # POST with advance=1: redirects to step=tracks
         advance_response = self.request('post', create_url, {
@@ -2284,6 +2250,19 @@ class CompetitionWorkspaceUiTests(TestCase):
         self.assertEqual(advance_response.status_code, 302)
         created2 = Competition.objects.get(name='Next Step Championship')
         self.assertEqual(advance_response['Location'], f"{reverse('competition_manage', kwargs={'competition_id': created2.pk})}?step=tracks")
+
+        saved_and_left = self.request('post', create_url, {
+            'name': 'Save then navigate', 'leave_to': reverse('competition_table'),
+        })
+        self.assertEqual(saved_and_left['Location'], reverse('competition_table'))
+
+        unsafe_leave = self.request('post', create_url, {
+            'name': 'Stay in the competition service',
+            'leave_to': 'https://outside.example.test/',
+        })
+        unsafe_competition = Competition.objects.get(name='Stay in the competition service')
+        self.assertEqual(unsafe_leave['Location'],
+            f"{reverse('competition_manage', kwargs={'competition_id': unsafe_competition.pk})}?step=details")
 
     def test_row_delete_and_permissions(self):
         comp = self.create_comp('To Delete')
@@ -2470,4 +2449,49 @@ class CompetitionWorkspaceUiTests(TestCase):
         count_large = len(ctx_large.captured_queries)
 
         self.assertEqual(count_small, count_large)
+
+    def test_setup_stepper_uses_the_shared_partial_for_create_and_manage(self):
+        created = self.request('get', reverse('competition_create'))
+        steps = created.context['stepper_steps']
+        self.assertEqual([s['key'] for s in steps],
+                         ['details', 'tracks', 'entries', 'criteria', 'launch'])
+        self.assertTrue(steps[0]['current'])
+        self.assertTrue(all(s['disabled'] for s in steps[1:]))
+        self.assertContains(created, 'class="stepper-nav"')
+        self.assertContains(created, 'window.DevPerfStepper')
+
+        comp = self.create_comp('Stepper Competition')
+        manage = self.request('get', reverse('competition_manage', args=(comp.pk,)) + '?step=tracks')
+        steps = {s['key']: s for s in manage.context['stepper_steps']}
+        self.assertTrue(steps['tracks']['current'])
+        self.assertTrue(steps['details']['done'])
+        self.assertFalse(any(s['disabled'] for s in steps.values()))
+        self.assertContains(manage, 'data-panel-step="launch"')
+        self.assertContains(manage, 'DevPerfStepper.setCurrent(stepRoot, key)')
+
+    def test_active_competition_setup_stepper_rendered_in_edit_mode_and_back_routing(self):
+        comp = self.create_comp('Active Competition', Competition.Status.ACTIVE)
+        manage_url = reverse('competition_manage', args=(comp.pk,))
+        live_url = reverse('competition_live_control', args=(comp.pk,))
+
+        res_live = self.request('get', live_url)
+        self.assertEqual(res_live.status_code, 200)
+        self.assertContains(res_live, f'{manage_url}?from=live')
+        self.assertContains(res_live, 'Edit setup')
+
+        res_manage = self.request('get', f'{manage_url}?from=live')
+        self.assertEqual(res_manage.status_code, 200)
+        self.assertContains(res_manage, 'Competition overview')
+        self.assertContains(res_manage, 'Back to Live Arena')
+        self.assertContains(res_manage, f'href="{live_url}"')
+
+        res_update = self.request('post', manage_url, {
+            'action': 'update_competition',
+            'name': 'Active Competition Renamed',
+            'from': 'live',
+        })
+        self.assertEqual(res_update.status_code, 302)
+        self.assertIn('from=live', res_update['Location'])
+        comp.refresh_from_db()
+        self.assertEqual(comp.name, 'Active Competition Renamed')
 

@@ -17,62 +17,8 @@
     <span class="tc-status is-success">Draft</span>
   </header>
 
-  {% if messages %}
-    <div aria-live="polite">
-      {% for message in messages %}
-        <div class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'warning' %}alert-warning{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %}" role="status">{{ message }}</div>
-      {% endfor %}
-    </div>
-  {% endif %}
-
   <div class="panel-step-layout mt-3">
-    <ol class="panel-step-nav" aria-label="Setup steps">
-      <li>
-        <button type="button" class="panel-step-btn is-active" aria-current="step">
-          <span class="panel-step-num">1</span>
-          <span>
-            <span class="panel-step-title">Competition overview</span>
-            <span class="panel-step-meta">In progress</span>
-          </span>
-        </button>
-      </li>
-      <li>
-        <button type="button" class="panel-step-btn" disabled title="Save competition details to unlock tracks">
-          <span class="panel-step-num">2</span>
-          <span>
-            <span class="panel-step-title">Tracks and categories</span>
-            <span class="panel-step-meta">Locked</span>
-          </span>
-        </button>
-      </li>
-      <li>
-        <button type="button" class="panel-step-btn" disabled title="Save competition details to unlock entries">
-          <span class="panel-step-num">3</span>
-          <span>
-            <span class="panel-step-title">Entries</span>
-            <span class="panel-step-meta">Locked</span>
-          </span>
-        </button>
-      </li>
-      <li>
-        <button type="button" class="panel-step-btn" disabled title="Save competition details to unlock criteria">
-          <span class="panel-step-num">4</span>
-          <span>
-            <span class="panel-step-title">Scoring criteria and judges</span>
-            <span class="panel-step-meta">Locked</span>
-          </span>
-        </button>
-      </li>
-      <li>
-        <button type="button" class="panel-step-btn" disabled title="Save competition details to unlock launch">
-          <span class="panel-step-num">5</span>
-          <span>
-            <span class="panel-step-title">Launch round</span>
-            <span class="panel-step-meta">Locked</span>
-          </span>
-        </button>
-      </li>
-    </ol>
+    {% include 'partials/_stepper.html' with steps=stepper_steps %}
 
     <div>
       <section class="tc-panel mb-3" id="competition-details-section" aria-labelledby="competition-details-heading">
@@ -84,7 +30,9 @@
           <span class="tc-status is-success">Draft</span>
         </header>
 
-        <form method="post" class="service-flow-form" novalidate>{% csrf_token %}
+        <form method="post" class="service-flow-form" data-panel-details-form data-dirty-initial="{{ form.is_bound|yesno:'true,false' }}" novalidate>{% csrf_token %}
+          <input type="hidden" name="setup_step" value="details">
+          <input type="hidden" name="leave_to" value="">
           {% include 'partials/_form_fields.html' with form=form %}
           <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3 pt-3 border-top">
             <button class="btn btn-outline-primary" type="submit">Save details</button>
@@ -95,4 +43,5 @@
     </div>
   </div>
 </div>
+{% include 'partials/_unsaved_changes.html' with form_selector='form[data-panel-details-form]' dialog_id='competition-create-unsaved-dialog' title_id='competition-create-unsaved-title' dialog_title='Leave competition setup?' dialog_body='You have unsaved competition details. Save before leaving, or discard your changes.' save_btn_text='Save details' has_leave_to=True %}
 {% endblock %}

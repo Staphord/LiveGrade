@@ -10,15 +10,20 @@
       {% if competition.effective_audience_weight > 0 %}<p>Rank every entry. Your audience score is combined with judge scores using the shares set for this event.</p>
       {% else %}<p>Rank the entries in your preference order. This audience result is separate from judge scores.</p>{% endif %}
       <p class="small text-muted">Your ballot is anonymous. This browser can submit once for this round and track.</p>
+      {% if error %}<div class="mb-3">{% include 'partials/_inline_message.html' with tone='danger' message=error %}</div>{% endif %}
       {% if submitted %}
         <div class="tc-result-state" role="status"><span aria-hidden="true">✓</span><div><strong>Vote received</strong>Your ranked ballot has been recorded.</div></div>
       {% elif already_submitted %}
         <div class="alert alert-info" role="status"><strong>Vote already recorded.</strong> This browser has already voted in this round and track.</div>
+      {% elif voting_locked %}
+        <div class="alert alert-warning py-4 text-center my-3" role="status">
+          <h2 class="h5 fw-bold mb-1">Audience Voting Paused</h2>
+          <p class="mb-0 text-muted">{{ voting_locked_message|default:"Voting is currently paused by the organizer. Please stay tuned." }}</p>
+        </div>
       {% else %}
-        {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
         <form method="post" novalidate>
           {% csrf_token %}
-          {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+          {% if form.non_field_errors %}<div class="mb-3">{% include 'partials/_inline_message.html' with tone='danger' messages=form.non_field_errors %}</div>{% endif %}
           <ol class="tc-ballot-list">
           {% for field in form %}<li class="tc-ballot-entry"><div><h2>{{ field.label|slice:'6:' }}</h2>{% if field.help_text %}<p class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</p>{% endif %}</div>
             <div class="tc-rank-input">

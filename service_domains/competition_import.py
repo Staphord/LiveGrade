@@ -226,3 +226,21 @@ def apply_competition_entry_import(competition, parsed, *, organization, user):
         next_orders[track_key] += 1
     return created
 
+
+
+ENTRY_COLUMNS = ['Track', 'Entry', 'Reference']
+
+
+def plan_entries(competition, parsed):
+    """The entry plan in the shared import card's shape."""
+    plan = plan_competition_entry_import(competition, parsed)
+    rows = [{'row': row['row'], 'errors': row['errors'],
+             'cells': [row['track'] or '-', row['name'] or '-', row['reference'] or '-']}
+            for row in plan['rows']]
+    tracks = len(plan['tracks_to_create'])
+    count = plan['entries_to_create']
+    return {
+        'columns': ENTRY_COLUMNS, 'rows': rows, 'errors': plan['errors'], 'ok': plan['ok'],
+        'summary': (f'{count} entr{"y" if count == 1 else "ies"} will be added'
+                    + (f', with {tracks} new track{"" if tracks == 1 else "s"}.' if tracks else '.')),
+    }

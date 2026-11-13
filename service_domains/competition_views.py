@@ -1,12 +1,12 @@
 """Owner-scoped Competition organizer setup; results remain behind policy gates."""
 
+from decimal import Decimal
 from functools import wraps
-import hmac
 import re
+from urllib.parse import quote
 
 from django.conf import settings
 from django.contrib import messages
-from django.core import signing
 from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.mail import send_mail
@@ -17,19 +17,20 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.cache import patch_vary_headers
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods, require_POST, require_safe
 
 from accounts.access import lecturer_required
 from assessments.pagination import PAGE_SIZE, PAGE_SIZES, paginate
+from assessments.qr import qr_png
 
-from .competition_forms import (CompetitionEntryForm, CompetitionEntryImportApplyForm,
-    CompetitionEntryImportForm, CompetitionFirstRoundForm,
+from .competition_forms import (CompetitionEntryForm, CompetitionFirstRoundForm,
     CompetitionAdvanceRoundForm, CompetitionAudienceJoinForm, CompetitionFinalTieForm, CompetitionForm,
     CompetitionCriterionForm, CompetitionJudgeInvitationForm,
     CompetitionTrackForm, competition_head_judge_requirements)
 from .competition_import import (apply_competition_entry_import, parse_competition_entries,
-    plan_competition_entry_import, sample_competition_entries)
+    plan_entries, sample_competition_entries)
 from .models import (Competition, CompetitionAudienceBallot, CompetitionCriterion, CompetitionEntry, CompetitionJudgeInvitation,
     CompetitionJudgeScore, CompetitionRound, CompetitionRoundEntry, CompetitionTrack)
 from .operations import (create_initial_competition_round,
@@ -46,12 +47,21 @@ from .operations import (competition_final_tie_requirements,
 from .models import CompetitionLeaderboardTieDecision
 from .throttling import allow_public_event_request
 from .onboarding import service_onboarding
+from . import embedded_import
+from .competition_criteria_import import (
+    apply_criteria, parse_criteria, plan_criteria, sample_workbook as criteria_sample_workbook)
+from .forms import SpreadsheetImportForm
+from portal.stepper import steps_from_setup, unsaved_steps
+
+_COMPETITION_CREATE_STEPS = unsaved_steps([
+    ('details', 'Competition overview'), ('tracks', 'Tracks and categories'),
+    ('entries', 'Entries'), ('criteria', 'Scoring criteria'),
+    ('launch', 'Review'),
+], hint='Save competition details to unlock this step')
 
 
 COMPETITION_LEADERBOARD_CACHE_SECONDS = 300
-COMPETITION_IMPORT_SESSION_KEY = 'competition_entry_import_preview'
-COMPETITION_IMPORT_TOKEN_SALT = 'service_domains.competition.entry_import'
-COMPETITION_IMPORT_TOKEN_MAX_AGE = 1800
+COMPETITION_SETUP_STEPS = ('details', 'tracks', 'entries', 'criteria', 'launch')
 
 
 def _competition_owner(view):
@@ -223,18 +233,21 @@ def competition_create(request):
                 competition.full_clean()
             except ValidationError as exc:
                 form.add_error(None, '; '.join(exc.messages))
-                messages.error(request, '; '.join(exc.messages))
-                return render(request, 'service_domains/competition_create.html', {'form': form})
+                return render(request, 'service_domains/competition_create.html', {'form': form, 'stepper_steps': _COMPETITION_CREATE_STEPS})
             competition.save(force_insert=True)
             messages.success(request, f'"{competition.name}" created.')
+            leave_to = request.POST.get('leave_to', '')
+            if leave_to and url_has_allowed_host_and_scheme(
+                    leave_to, allowed_hosts={request.get_host()},
+                    require_https=request.is_secure()):
+                return redirect(leave_to)
             if request.POST.get('advance') == '1':
                 return redirect(f"{reverse('competition_manage', kwargs={'competition_id': competition.pk})}?step=tracks")
-            return redirect('competition_manage', competition_id=competition.pk)
-        messages.error(request, 'Please correct the highlighted fields and try again.')
-        return render(request, 'service_domains/competition_create.html', {'form': form})
+            return redirect(f"{reverse('competition_manage', kwargs={'competition_id': competition.pk})}?step=details")
+        return render(request, 'service_domains/competition_create.html', {'form': form, 'stepper_steps': _COMPETITION_CREATE_STEPS})
 
     form = CompetitionForm(auto_id='competition_details_%s')
-    return render(request, 'service_domains/competition_create.html', {'form': form})
+    return render(request, 'service_domains/competition_create.html', {'form': form, 'stepper_steps': _COMPETITION_CREATE_STEPS})
 
 
 @require_POST
@@ -297,22 +310,31 @@ def competition_bulk_delete(request):
     return _competition_bulk_delete_redirect(request)
 
 
-def _load_competition_import_preview(request, competition):
-    token = request.session.get(COMPETITION_IMPORT_SESSION_KEY)
-    if not token:
-        return None, None
-    try:
-        payload = signing.loads(
-            token, salt=COMPETITION_IMPORT_TOKEN_SALT, max_age=COMPETITION_IMPORT_TOKEN_MAX_AGE)
-    except signing.BadSignature:
-        request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
-        return None, None
-    if (payload.get('competition_id') != competition.pk
-            or payload.get('organization_id') != competition.organization_id
-            or payload.get('owner_id') != request.user.pk):
-        request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
-        return None, None
-    return token, plan_competition_entry_import(competition, payload['parsed'])
+@require_POST
+@never_cache
+@_competition_owner
+def competition_criteria_import(request, competition_id):
+    """Preview, apply or cancel a criteria spreadsheet; returns to the criteria step."""
+    competition = _owned_competition(request, competition_id)
+    manage_url = reverse('competition_manage', args=(competition.pk,))
+    return embedded_import.handle_post(
+        request, kind='competition-criteria', owner=competition, form_class=SpreadsheetImportForm,
+        parse=parse_criteria, plan=plan_criteria, apply=apply_criteria,
+        success='Judging criteria imported.',
+        back=lambda: redirect(f'{manage_url}?step=criteria'))
+
+
+@require_safe
+@never_cache
+@_competition_owner
+def competition_criteria_import_sample(request, competition_id):
+    competition = _owned_competition(request, competition_id)
+    track_names = list(competition.tracks.order_by('pk').values_list('name', flat=True))
+    response = HttpResponse(criteria_sample_workbook(track_names).getvalue(), content_type=(
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'))
+    response['Content-Disposition'] = 'attachment; filename="competition-criteria-sample.xlsx"'
+    response['Cache-Control'] = 'private, no-store'
+    return response
 
 
 @require_http_methods(['GET', 'POST'])
@@ -321,8 +343,18 @@ def _load_competition_import_preview(request, competition):
 def competition_manage(request, competition_id):
     competition = _owned_competition(request, competition_id)
     manage_url = reverse('competition_manage', kwargs={'competition_id': competition.pk})
+    from_param = request.GET.get('from') or request.POST.get('from', '')
+    if from_param == 'leaderboard' or competition.status in (Competition.Status.COMPLETE, Competition.Status.REVEALED):
+        back_url = reverse('competition_public_leaderboard', kwargs={'competition_id': competition.public_id})
+        back_label = 'Back to Leaderboard'
+    elif from_param == 'live' or competition.status == Competition.Status.ACTIVE:
+        back_url = reverse('competition_live_control', kwargs={'competition_id': competition.pk})
+        back_label = 'Back to Live Arena'
+    else:
+        back_url = reverse('competition_list')
+        back_label = 'Competitions'
+    from_query = f'&from={quote(from_param)}' if from_param else ''
     details_form = CompetitionForm(instance=competition, auto_id='competition_details_%s')
-    entry_import_form = CompetitionEntryImportForm(auto_id='entry_import_%s')
     track_form = CompetitionTrackForm(auto_id='track_%s')
     first_round_form = CompetitionFirstRoundForm(auto_id='first_round_%s')
     criterion_form = CompetitionCriterionForm(organization=request.organization,
@@ -352,7 +384,7 @@ def competition_manage(request, competition_id):
         if (competition.status not in (Competition.Status.DRAFT, Competition.Status.ACTIVE,
                                        Competition.Status.COMPLETE, Competition.Status.REVEALED)
                 or (competition.status == Competition.Status.ACTIVE
-                    and action not in ('invite_judge', 'tally_judges', 'revoke_judge',
+                    and action not in ('update_competition', 'invite_judge', 'tally_judges', 'revoke_judge',
                                        'advance_round', 'complete', 'tally_audience',
                                        'finalize_weighted_scores'))
                 or (competition.status == Competition.Status.COMPLETE
@@ -548,7 +580,7 @@ def competition_manage(request, competition_id):
                         else:
                             judge_notice = ('Email delivery failed. Copy this private link now; '
                                 'it will not be shown again.')
-        elif has_rounds and action in ('update_competition', 'track', 'remove_track',
+        elif has_rounds and action in ('track', 'remove_track',
                                        'entry', 'remove_entry', 'criterion', 'delete_criterion'):
             action_error = 'Track, entry and scoring-criterion setup is locked after the initial round is created.'
         elif action == 'update_competition':
@@ -562,10 +594,23 @@ def competition_manage(request, competition_id):
                     details_form.add_error(None, '; '.join(exc.messages))
                 else:
                     updated.save()
-                    messages.success(request, 'Competition details saved.')
                     if request.POST.get('advance') == '1':
-                        return redirect(f'{manage_url}?step=tracks')
-                    return redirect(f'{manage_url}?step=details&saved=1')
+                        messages.success(request, 'Competition details saved.')
+                        return redirect(f'{manage_url}?step=tracks{from_query}')
+                    return_step = request.POST.get('return_step', '')
+                    if return_step in COMPETITION_SETUP_STEPS:
+                        messages.success(request, 'Competition details saved.')
+                        return redirect(f'{manage_url}?step={return_step}{from_query}')
+                    leave_to = request.POST.get('leave_to', '')
+                    if leave_to and url_has_allowed_host_and_scheme(
+                            leave_to, allowed_hosts={request.get_host()},
+                            require_https=request.is_secure()):
+                        messages.success(request, 'Competition details saved.')
+                        return redirect(leave_to)
+                    current_step = request.POST.get('setup_step', 'details')
+                    if current_step not in COMPETITION_SETUP_STEPS:
+                        current_step = 'details'
+                    return redirect(f'{manage_url}?step={current_step}&saved=1{from_query}')
         elif action == 'criterion':
             criterion = CompetitionCriterion(organization_id=competition.organization_id,
                 created_by=request.user)
@@ -689,7 +734,9 @@ def competition_manage(request, competition_id):
         else:
             action_error = 'Choose a valid Competition setup action.'
 
-    entry_import_token, entry_import_plan = _load_competition_import_preview(request, competition)
+    entry_import_plan, entry_import_token = embedded_import.load_preview(
+        request, 'competition-entry', competition, plan_entries)
+    entry_import_errors = embedded_import.take_errors(request, 'competition-entry', competition)
     rounds = CompetitionRound.objects.for_organization(request.organization).owned_by(request.user)
     rounds = rounds.filter(competition=competition).order_by('order', 'pk')
     latest_round = rounds.last()
@@ -700,6 +747,7 @@ def competition_manage(request, competition_id):
             .owned_by(request.user).filter(track=track).order_by('order', 'pk'))
         track.organizer_criteria = list(CompetitionCriterion.objects.for_organization(request.organization)
             .owned_by(request.user).filter(track=track).order_by('order', 'pk'))
+        track.criteria_weight_total = sum((c.weight for c in track.organizer_criteria), Decimal('0'))
         track.judge_invitation_rows = (CompetitionJudgeInvitation.objects.for_organization(
             request.organization).owned_by(request.user).filter(
                 competition=competition, round=latest_round, track=track)
@@ -770,18 +818,28 @@ def competition_manage(request, competition_id):
     judges_ready = competition.judge_weight == 0 or bool(latest_round and all(
         track.judge_invitation_rows for track in tracks))
     setup_steps = [
-        {'key': 'details', 'label': 'Competition overview', 'href': '#competition-overview', 'complete': True},
-        {'key': 'tracks', 'label': 'Tracks and categories', 'href': '#tracks-section', 'complete': tracks_ready},
-        {'key': 'entries', 'label': 'Entries', 'href': '#entries-section', 'complete': entries_ready},
-        {'key': 'criteria', 'label': 'Scoring criteria and judges', 'href': '#criteria-section',
-         'complete': criteria_ready and judges_ready},
-        {'key': 'launch', 'label': 'Launch round', 'href': '#first-round-section',
+        {'key': 'details', 'label': 'Competition overview', 'complete': True},
+        {'key': 'tracks', 'label': 'Tracks and categories', 'complete': tracks_ready},
+        {'key': 'entries', 'label': 'Entries', 'complete': entries_ready},
+        {'key': 'criteria',
+         'label': 'Scoring criteria' if competition.status == Competition.Status.DRAFT
+         else 'Criteria and judges',
+         'complete': criteria_ready and (judges_ready or competition.status == Competition.Status.DRAFT)},
+        {'key': 'launch', 'label': 'Review',
          'complete': competition.status != Competition.Status.DRAFT},
     ]
+    criteria_plan, criteria_token = embedded_import.load_preview(
+        request, 'competition-criteria', competition, plan_criteria)
+    criteria_import_errors = embedded_import.take_errors(request, 'competition-criteria', competition)
     valid_steps = {step['key'] for step in setup_steps}
-    requested_step = request.POST.get('setup_step') or request.GET.get('step')
+    requested_step = (request.POST.get('setup_step') or request.GET.get('step')
+                      or ('entries' if entry_import_errors else None))
     if requested_step in valid_steps:
         active_step = requested_step
+    elif entry_import_plan is not None:
+        active_step = 'entries'
+    elif criteria_plan is not None or criteria_import_errors:
+        active_step = 'criteria'
     elif request.method == 'POST':
         action = request.POST.get('action')
         if action == 'update_competition':
@@ -794,15 +852,25 @@ def competition_manage(request, competition_id):
             active_step = 'criteria'
         else:
             active_step = 'launch'
-    elif entry_import_plan is not None:
-        active_step = 'entries'
     else:
         active_step = 'details'
+    if request.method == 'POST' and action in ('track', 'entry', 'criterion', 'first_round', 'update_competition'):
+        posted_form = {'track': track_form, 'entry': entry_form, 'criterion': criterion_form,
+                       'first_round': first_round_form, 'update_competition': details_form}.get(action)
+        if posted_form is not None and posted_form.errors:
+            active_step = {'track': 'tracks', 'entry': 'entries', 'criterion': 'criteria',
+                           'first_round': 'launch', 'update_competition': 'details'}[action]
     response = render(request, 'service_domains/competition_manage.html', {
         'competition': competition, 'details_form': details_form,
+        'back_url': back_url, 'back_label': back_label, 'from_param': from_param,
         'tracks': tracks, 'track_form': track_form,
-        'entry_form': entry_form, 'entry_import_form': entry_import_form,
+        'entry_form': entry_form,
+        'entry_import_form': SpreadsheetImportForm(auto_id='entry_import_%s'),
         'entry_import_plan': entry_import_plan, 'entry_import_token': entry_import_token,
+        'entry_import_errors': entry_import_errors,
+        'criteria_import_form': SpreadsheetImportForm(auto_id='criteria_import_%s'),
+        'criteria_import_plan': criteria_plan, 'criteria_import_token': criteria_token,
+        'criteria_import_errors': criteria_import_errors,
         'first_round_form': first_round_form,
         'criterion_form': criterion_form,
         'rounds': rounds, 'latest_round': latest_round, 'action_error': action_error,
@@ -821,6 +889,7 @@ def competition_manage(request, competition_id):
         'track_count': len(tracks), 'entry_count': entry_count,
         'criterion_count': criterion_count, 'round_count': round_count,
         'setup_steps': setup_steps,
+        'stepper_steps': steps_from_setup(setup_steps, active_step),
         'active_step': active_step,
         'setup_ready': all(step['complete'] for step in setup_steps[:-1]),
     }, status=400 if action_error or details_form.errors or track_form.errors or entry_form.errors
@@ -835,82 +904,15 @@ def competition_manage(request, competition_id):
 @never_cache
 @_competition_owner
 def competition_entry_import(request, competition_id):
+    """Preview, apply or cancel an entries spreadsheet; returns to the Entries step."""
     competition = _owned_competition(request, competition_id)
-    manage_url = reverse('competition_manage', kwargs={'competition_id': competition.pk})
-    embedded = request.GET.get('embedded') == '1' or bool(request.POST.get('setup_step'))
-    target_manage_url = f'{manage_url}?step=entries' if embedded else manage_url
-    if competition.status != Competition.Status.DRAFT or competition.rounds.exists():
-        messages.error(request,
-            'Entries can only be imported while the competition is a draft before rounds are created.')
-        return redirect(target_manage_url)
-
-    if request.method == 'POST' and request.POST.get('action') == 'cancel':
-        request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
-        messages.info(request, 'Entry import preview cleared.')
-        return redirect(target_manage_url)
-
-    if request.method == 'POST' and request.POST.get('action') == 'apply':
-        apply_form = CompetitionEntryImportApplyForm(request.POST)
-        session_token = request.session.get(COMPETITION_IMPORT_SESSION_KEY)
-        if not apply_form.is_valid() or not session_token:
-            request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
-            messages.error(request, 'The import preview expired. Upload the spreadsheet again.')
-            return redirect(target_manage_url)
-        submitted = apply_form.cleaned_data['preview_token']
-        if not hmac.compare_digest(submitted, session_token):
-            request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
-            messages.error(request, 'The import preview is no longer current. Upload the spreadsheet again.')
-            return redirect(target_manage_url)
-        try:
-            payload = signing.loads(
-                session_token, salt=COMPETITION_IMPORT_TOKEN_SALT,
-                max_age=COMPETITION_IMPORT_TOKEN_MAX_AGE)
-        except signing.BadSignature:
-            request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
-            messages.error(request, 'The import preview expired. Upload the spreadsheet again.')
-            return redirect(target_manage_url)
-        if (payload.get('competition_id') != competition.pk
-                or payload.get('organization_id') != competition.organization_id
-                or payload.get('owner_id') != request.user.pk):
-            request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
-            raise Http404
-        try:
-            created = apply_competition_entry_import(
-                competition, payload['parsed'],
-                organization=request.organization, user=request.user)
-        except PermissionDenied:
-            request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
-            raise Http404
-        except ValidationError as exc:
-            request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
-            messages.error(request, '; '.join(exc.messages))
-            return redirect(target_manage_url)
-        request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
-        count = len(created)
-        messages.success(request, f'Imported {count} entr{"y" if count == 1 else "ies"}.')
-        return redirect(target_manage_url)
-
-    if request.method == 'POST':
-        form = CompetitionEntryImportForm(request.POST, request.FILES, auto_id='entry_import_%s')
-        if form.is_valid():
-            parsed = parse_competition_entries(form.cleaned_data['file'])
-            if parsed.get('fatal'):
-                request.session.pop(COMPETITION_IMPORT_SESSION_KEY, None)
-                messages.error(request, parsed['fatal'])
-                return redirect(target_manage_url)
-            token = signing.dumps({
-                'competition_id': competition.pk,
-                'organization_id': competition.organization_id,
-                'owner_id': request.user.pk,
-                'parsed': parsed,
-            }, salt=COMPETITION_IMPORT_TOKEN_SALT, compress=True)
-            request.session[COMPETITION_IMPORT_SESSION_KEY] = token
-            return redirect(target_manage_url)
-        error_msg = '; '.join(err for errs in form.errors.values() for err in errs)
-        messages.error(request, error_msg or 'Choose an Excel .xlsx file.')
-        return redirect(target_manage_url)
-
-    return redirect(target_manage_url)
+    manage_url = reverse('competition_manage', args=(competition.pk,))
+    if request.method == 'GET':
+        return redirect(f'{manage_url}?step=entries')
+    return embedded_import.handle_post(
+        request, kind='competition-entry', owner=competition, form_class=SpreadsheetImportForm,
+        parse=parse_competition_entries, plan=plan_entries, apply=apply_competition_entry_import,
+        success='Entries imported.', back=lambda: redirect(f'{manage_url}?step=entries'))
 
 
 @require_safe
@@ -1103,20 +1105,86 @@ def competition_results_export(request, competition_id):
     return response
 
 
+def _competition_readiness(request, competition):
+    """Checklist rows for a draft competition, and whether it can start."""
+    tracks = list(CompetitionTrack.objects.for_organization(request.organization)
+        .owned_by(request.user).filter(competition=competition).order_by('pk'))
+    entry_counts = {track.pk: CompetitionEntry.objects.filter(track=track).count() for track in tracks}
+    criteria_totals = {track.pk: sum((item.weight for item in CompetitionCriterion.objects.filter(
+        track=track)), Decimal('0')) for track in tracks}
+    tracks_ok = bool(tracks)
+    entries_ok = tracks_ok and all(entry_counts[track.pk] > 0 for track in tracks)
+    criteria_ok = all(total in (Decimal('0'), Decimal('100')) for total in criteria_totals.values())
+    readiness = [
+        {'label': 'Tracks', 'step': 'tracks', 'ok': tracks_ok,
+         'detail': f'{len(tracks)} track{"s" if len(tracks) != 1 else ""}' if tracks else 'Add at least one track'},
+        {'label': 'Entries', 'step': 'entries', 'ok': entries_ok,
+         'detail': (f'{sum(entry_counts.values())} entries' if entries_ok
+                    else 'Every track needs at least one entry')},
+        {'label': 'Judging criteria', 'step': 'criteria', 'ok': criteria_ok,
+         'detail': ('Ready (tracks without criteria use one overall score)' if criteria_ok
+                    else 'Each track\'s criteria must total exactly 100%')},
+    ]
+    return readiness, tracks_ok and entries_ok and criteria_ok
+
+
 @require_safe
 @never_cache
 @_competition_owner
 def competition_live_control(request, competition_id):
     """Render the arena stage pitch runner and live round command console."""
     competition = _owned_competition(request, competition_id)
-    if competition.status == Competition.Status.DRAFT:
-        return redirect('competition_manage', competition_id=competition.pk)
-    if competition.status in (Competition.Status.COMPLETE, Competition.Status.REVEALED):
-        return redirect('competition_manage', competition_id=competition.pk)
-    context = get_competition_live_state_context(competition)
+    if competition.status == Competition.Status.ACTIVE:
+        context = get_competition_live_state_context(competition)
+        context['competition_status'] = 'active'
+    elif competition.status == Competition.Status.DRAFT:
+        readiness, can_start = _competition_readiness(request, competition)
+        context = {'competition': competition, 'competition_status': 'draft',
+                   'readiness': readiness, 'can_start': can_start}
+    else:
+        context = {'competition': competition, 'competition_status': 'closed'}
     response = render(request, 'service_domains/competition_live_control.html', context)
     response['Cache-Control'] = 'private, no-store'
     response['Referrer-Policy'] = 'same-origin'
+    return response
+
+
+@require_safe
+@never_cache
+@_competition_owner
+def competition_projector(request, competition_id):
+    """Render the full-screen arena presentation display supporting stage pitch, QR voting, standings, and winner modes."""
+    competition = _owned_competition(request, competition_id)
+    if competition.status == Competition.Status.DRAFT:
+        return redirect('competition_manage', competition_id=competition.pk)
+    context = get_competition_live_state_context(competition)
+    response = render(request, 'service_domains/competition_projector.html', context)
+    response['Cache-Control'] = 'private, no-store'
+    response['Referrer-Policy'] = 'same-origin'
+    return response
+
+
+@require_safe
+@never_cache
+@_competition_owner
+def competition_projector_qr(request, competition_id):
+    """Generate dynamic PNG QR code for audience ballot voting or join page."""
+    competition = _owned_competition(request, competition_id)
+    context = get_competition_live_state_context(competition)
+    active_round = context.get('active_round')
+    active_track = context.get('active_track')
+    if active_round and active_track:
+        target_url = request.build_absolute_uri(
+            reverse('competition_audience_vote', kwargs={
+                'competition_id': competition.public_id,
+                'round_id': active_round.pk,
+                'track_id': active_track.pk,
+            })
+        )
+    else:
+        target_url = request.build_absolute_uri(reverse('competition_audience_join'))
+    response = HttpResponse(qr_png(target_url), content_type='image/png')
+    response['Cache-Control'] = 'private, no-store'
     return response
 
 
@@ -1161,11 +1229,22 @@ def competition_live_state(request, competition_id):
 def competition_live_action(request, competition_id):
     """Execute atomic live arena stage, timer, judge nudge, and round advancement actions."""
     competition = _owned_competition(request, competition_id)
-    if competition.status != Competition.Status.ACTIVE:
-        return JsonResponse({'error': 'Competition is not active.'}, status=400)
     action = request.POST.get('action')
+    starting = (action == 'start_competition' and competition.status == Competition.Status.DRAFT)
+    if competition.status != Competition.Status.ACTIVE and not starting:
+        return JsonResponse({'error': 'Competition is not active.'}, status=400)
+    is_ajax = (request.headers.get('x-requested-with') == 'XMLHttpRequest' or
+               request.META.get('HTTP_X_REQUESTED_WITH') == 'XMLHttpRequest')
     try:
-        if action == 'set_active_entry':
+        if action == 'start_competition':
+            if not CompetitionRound.objects.filter(competition=competition).exists():
+                create_initial_competition_round(competition, 'Round 1',
+                    organization=request.organization, user=request.user)
+            start_competition(competition, organization=request.organization, user=request.user)
+            messages.success(request, 'The competition has started. Scoring is open.')
+            return JsonResponse({'status': 'active',
+                'redirect': reverse('competition_live_control', args=(competition.pk,))})
+        elif action == 'set_active_entry':
             entry_id = request.POST.get('entry_id')
             set_competition_stage_entry(competition, entry_id, organization=request.organization, user=request.user)
         elif action == 'adjust_pitch_timer':
@@ -1199,22 +1278,34 @@ def competition_live_action(request, competition_id):
                     reason=reason,
                     decided_by=request.user,
                 )
+            messages.success(request, 'Boundary tie resolved.')
+            if not is_ajax:
+                return redirect('competition_live_control', competition_id=competition.pk)
         elif action == 'advance_round':
             active_round = CompetitionRound.objects.filter(competition=competition, organization_id=competition.organization_id).order_by('-order').first()
             next_round_name = request.POST.get('next_round_name') or f'Round {active_round.order + 1}'
             create_next_competition_round(competition, active_round, next_round_name, organization=request.organization, user=request.user)
             messages.success(request, f'Advanced to {next_round_name}. Qualified entrants are ready on the stage docket.')
+            if not is_ajax:
+                return redirect('competition_live_control', competition_id=competition.pk)
         elif action == 'conclude_competition':
             complete_competition(competition, organization=request.organization, user=request.user)
             messages.success(request, 'Competition completed. Final leaderboard is ready for review.')
+            if not is_ajax:
+                return redirect('competition_manage', competition_id=competition.pk)
             return JsonResponse({'status': 'complete', 'redirect': reverse('competition_manage', args=(competition.pk,))})
         elif action == 'set_projector_mode':
             mode = request.POST.get('mode', 'stage')
             set_competition_projector_mode(competition, mode, organization=request.organization, user=request.user)
         else:
+            if not is_ajax:
+                return redirect('competition_live_control', competition_id=competition.pk)
             return JsonResponse({'error': f'Unknown action: {action}'}, status=400)
     except (ValidationError, PermissionDenied) as exc:
         msg = '; '.join(getattr(exc, 'messages', [])) or str(exc)
+        if not is_ajax:
+            messages.error(request, msg)
+            return redirect('competition_live_control', competition_id=competition.pk)
         return JsonResponse({'error': msg}, status=400)
 
     context = get_competition_live_state_context(competition)

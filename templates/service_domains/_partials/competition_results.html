@@ -40,7 +40,13 @@
         </thead>
         <tbody>
           {% for competition in competitions %}
-          {% url 'competition_manage' competition_id=competition.pk as comp_row_url %}
+          {% if competition.status == 'active' %}
+            {% url 'competition_live_control' competition_id=competition.pk as comp_row_url %}
+          {% elif competition.status == 'complete' or competition.status == 'revealed' %}
+            {% url 'competition_public_leaderboard' competition_id=competition.public_id as comp_row_url %}
+          {% else %}
+            {% url 'competition_manage' competition_id=competition.pk as comp_row_url %}
+          {% endif %}
           <tr class="competition-row-clickable" data-competition-row-href="{{ comp_row_url }}">
             <td class="competition-select-column">
               <input class="form-check-input" type="checkbox" name="competition_ids" value="{{ competition.pk }}" form="competition-bulk-delete" data-competition-select aria-label="Select {{ competition.name }}">

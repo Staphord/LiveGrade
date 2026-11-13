@@ -62,10 +62,10 @@
             </td>
             <td><span class="badge text-bg-light border">{{ row.track.name }}</span></td>
             <td style="text-align: right;">
-              {% if row.judge_score is not None %}{{ row.judge_score }}{% else %}<span class="text-muted">—</span>{% endif %}
+              {% if row.judge_score is not None %}{{ row.judge_score }}{% else %}<span class="text-muted">-</span>{% endif %}
             </td>
             <td style="text-align: right;">
-              {% if row.audience_score is not None %}{{ row.audience_score }}{% else %}<span class="text-muted">—</span>{% endif %}
+              {% if row.audience_score is not None %}{{ row.audience_score }}{% else %}<span class="text-muted">-</span>{% endif %}
             </td>
             <td style="text-align: right;" class="fw-bold">
               {% if row.score is not None %}
@@ -73,7 +73,7 @@
               {% elif row.judge_score is not None %}
               {{ row.judge_score }}
               {% else %}
-              <span class="text-muted">—</span>
+              <span class="text-muted">-</span>
               {% endif %}
             </td>
             <td style="text-align: center;">

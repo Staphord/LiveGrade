@@ -220,9 +220,16 @@
         </thead>
         <tbody>
           {% for comp in recent_competitions %}
-          <tr class="competition-row-clickable" data-competition-row-href="{% url 'competition_manage' competition_id=comp.pk %}">
+          {% if comp.status == 'active' %}
+            {% url 'competition_live_control' competition_id=comp.pk as comp_row_url %}
+          {% elif comp.status == 'complete' or comp.status == 'revealed' %}
+            {% url 'competition_public_leaderboard' competition_id=comp.public_id as comp_row_url %}
+          {% else %}
+            {% url 'competition_manage' competition_id=comp.pk as comp_row_url %}
+          {% endif %}
+          <tr class="competition-row-clickable" data-competition-row-href="{{ comp_row_url }}">
             <td>
-              <a class="competition-recent-name" href="{% url 'competition_manage' competition_id=comp.pk %}">{{ comp.name }}</a>
+              <a class="competition-recent-name" href="{{ comp_row_url }}">{{ comp.name }}</a>
               <span class="competition-recent-secondary">
                 {% if comp.status == 'draft' %}Next: finish setup
                 {% elif comp.status == 'active' %}Next: manage live event

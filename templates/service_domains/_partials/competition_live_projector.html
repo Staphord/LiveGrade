@@ -4,7 +4,7 @@
       <i class="bi bi-projector text-primary" aria-hidden="true"></i>
       <h3 class="h6 mb-0 fw-bold">Public Projector Display Mode</h3>
     </div>
-    <a href="{% url 'competition_public_leaderboard' competition_id=competition.public_id %}" target="_blank" rel="noopener" class="btn btn-outline-primary btn-sm">
+    <a href="{% url 'competition_projector' competition_id=competition.pk %}" target="_blank" rel="noopener" class="btn btn-outline-primary btn-sm">
       <i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i>Open Arena Screen
     </a>
   </div>

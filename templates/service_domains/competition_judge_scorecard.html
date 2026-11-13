@@ -17,7 +17,7 @@
   {% elif submitted %}
     <div class="tc-result-state" role="status"><span aria-hidden="true">✓</span><div><strong>Scorecard submitted</strong>Your scores were received. This receipt remains available if you reopen the link before it expires.</div></div>
   {% else %}
-    {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+    {% if error %}<div class="mb-3">{% include 'partials/_inline_message.html' with tone='danger' message=error %}</div>{% endif %}
     <section id="competition-submission-state" class="alert alert-info" hidden>
       <p id="competition-submission-status" role="status" aria-live="polite"></p>
       <button id="competition-retry-submission" class="btn btn-primary" type="button" hidden>Retry scorecard submission</button>

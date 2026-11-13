@@ -1,0 +1,438 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% block title %}{{ competition.name }} · Arena Projector Screen · LiveGrade{% endblock %}
+{% block service_name %}Competition Arena Display{% endblock %}
+
+{% block extra_css %}
+<style nonce="{{ csp_nonce }}">
+:root {
+  --proj-bg: #0b1120;
+  --proj-surface: #1e293b;
+  --proj-border: #334155;
+  --proj-text: #f8fafc;
+  --proj-muted: #94a3b8;
+  --proj-accent: #3b82f6;
+  --proj-gold: #f59e0b;
+  --proj-silver: #94a3b8;
+  --proj-bronze: #d97706;
+}
+body {
+  background: var(--proj-bg) !important;
+  color: var(--proj-text) !important;
+  min-height: 100vh;
+}
+.proj-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: clamp(1rem, 3vw, 2.5rem) 1.5rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 90vh;
+}
+.proj-card {
+  background: var(--proj-surface);
+  border: 1px solid var(--proj-border);
+  border-radius: 1.5rem;
+  padding: clamp(1.5rem, 4vw, 3rem);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+.proj-qr-img {
+  width: min(65vw, 280px);
+  height: min(65vw, 280px);
+  border-radius: 1rem;
+  background: #ffffff;
+  padding: 0.75rem;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+  margin: 1.25rem auto;
+  display: block;
+}
+.proj-timer-clock {
+  font-size: clamp(4.5rem, 14vw, 9rem);
+  font-weight: 800;
+  font-family: monospace;
+  color: var(--proj-accent);
+  line-height: 1;
+}
+.proj-timer-clock.is-urgent {
+  color: #ef4444 !important;
+  animation: proj-pulse 1s ease-in-out infinite;
+}
+@keyframes proj-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.02); opacity: 0.85; }
+}
+.proj-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1.25rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--proj-border);
+  font-size: 1rem;
+  font-weight: 600;
+}
+.proj-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+.proj-live-badge .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: proj-pulse 1.4s ease-in-out infinite;
+}
+.proj-join-code {
+  font-family: monospace;
+  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  color: #38bdf8;
+  text-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
+}
+.proj-table {
+  color: var(--proj-text);
+  border-color: var(--proj-border);
+}
+.proj-table th {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--proj-muted);
+  font-weight: 600;
+  border-bottom: 2px solid var(--proj-border);
+}
+.proj-table td {
+  background: transparent;
+  color: var(--proj-text);
+  border-bottom: 1px solid var(--proj-border);
+}
+.proj-podium-card {
+  border-radius: 1.25rem;
+  padding: 2rem 1.5rem;
+  border: 1px solid var(--proj-border);
+  background: rgba(255, 255, 255, 0.03);
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+.proj-podium-card.is-first {
+  border-color: var(--proj-gold);
+  background: radial-gradient(circle at top, rgba(245, 158, 11, 0.12) 0%, rgba(30, 41, 59, 0.8) 100%);
+  transform: translateY(-8px);
+}
+.proj-podium-card.is-second {
+  border-color: var(--proj-silver);
+  background: radial-gradient(circle at top, rgba(148, 163, 184, 0.1) 0%, rgba(30, 41, 59, 0.8) 100%);
+}
+.proj-podium-card.is-third {
+  border-color: var(--proj-bronze);
+  background: radial-gradient(circle at top, rgba(217, 119, 6, 0.1) 0%, rgba(30, 41, 59, 0.8) 100%);
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<main class="proj-container" id="projector-viewport">
+  <!-- Arena Stage Topbar -->
+  <header class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4 pb-3 border-bottom" style="border-color: var(--proj-border) !important;">
+    <div>
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span class="proj-live-badge"><span class="dot"></span>Live Stage</span>
+        <span class="badge text-bg-secondary">{{ active_round.name|default:"Stage Session" }}</span>
+        {% if active_track %}
+        <span class="badge text-bg-dark border" style="border-color: var(--proj-border) !important;">{{ active_track.name }}</span>
+        {% endif %}
+      </div>
+      <h1 class="h3 fw-bold mb-0 text-white">{{ competition.name }}</h1>
+    </div>
+
+    <div class="d-flex align-items-center gap-2">
+      <div class="proj-stat-pill">
+        <i class="bi bi-display text-info" aria-hidden="true"></i>
+        <span class="text-uppercase small fw-bold" id="proj-mode-label">
+          {% if projector_mode == 'stage' %}Stage Pitch
+          {% elif projector_mode == 'voting' %}Audience Voting
+          {% elif projector_mode == 'standings' %}Live Standings
+          {% elif projector_mode == 'winner' %}Winner Reveal
+          {% else %}Stage Pitch{% endif %}
+        </span>
+      </div>
+      <a href="{% url 'competition_live_control' competition.pk %}" class="btn btn-outline-secondary btn-sm text-light border-secondary">
+        <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>Facilitator Console
+      </a>
+    </div>
+  </header>
+
+  {% if projector_mode == 'stage' or not projector_mode %}
+    <!-- Mode 1: Stage Pitch Presenter Spotlight -->
+    <div class="proj-card flex-grow-1 d-flex flex-column justify-content-center">
+      <span class="text-uppercase small fw-bold text-info" style="letter-spacing: 0.12em;">Presenting on Stage</span>
+      <h2 class="display-3 fw-bold my-2 text-white" id="proj-entrant-name">
+        {% if active_entry %}{{ active_entry.name }}{% else %}Stage Pitch Session{% endif %}
+      </h2>
+      {% if active_entry.reference %}
+      <p class="fs-4 text-muted mb-3" id="proj-entrant-ref">Entrant Ref: {{ active_entry.reference }}</p>
+      {% endif %}
+
+      <div class="my-4">
+        <div class="proj-timer-clock{% if pitch_seconds_remaining <= 30 %} is-urgent{% endif %}" id="proj-timer-clock">
+          {{ pitch_seconds_remaining|default:0 }}s
+        </div>
+        <div class="mt-2">
+          <span class="badge {% if timer_paused %}text-bg-warning{% else %}text-bg-success{% endif %} fs-6 px-3 py-2" id="proj-timer-badge">
+            {% if timer_paused %}Pitch Timer Paused{% else %}Live Pitch in Progress{% endif %}
+          </span>
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-center gap-3 flex-wrap mt-3">
+        {% if active_track %}
+        <div class="proj-stat-pill">
+          <i class="bi bi-tag text-info" aria-hidden="true"></i>
+          <span>Track: {{ active_track.name }}</span>
+        </div>
+        {% endif %}
+        <div class="proj-stat-pill">
+          <i class="bi bi-people text-success" aria-hidden="true"></i>
+          <span id="proj-ballots-pill">{{ ballots_count }} Audience Ballots</span>
+        </div>
+      </div>
+    </div>
+
+  {% elif projector_mode == 'voting' %}
+    <!-- Mode 2: Audience Voting QR & Join Code -->
+    <div class="proj-card flex-grow-1 d-flex flex-column justify-content-center">
+      <span class="text-uppercase small fw-bold text-success" style="letter-spacing: 0.12em;">Audience Ranked Ballot</span>
+      <h2 class="display-4 fw-bold my-2 text-white">Cast Your Ballot</h2>
+      <p class="fs-4 text-muted mb-4">Scan the code or visit the link to rank all entrants in this round</p>
+
+      <div class="row g-4 align-items-center justify-content-center my-2">
+        <div class="col-12 col-md-5">
+          <img src="{% url 'competition_projector_qr' competition.pk %}" alt="QR code to vote" class="proj-qr-img">
+          <p class="text-muted small mt-2">Point your smartphone camera to open ballot</p>
+        </div>
+        <div class="col-12 col-md-5 text-center text-md-start ps-md-4">
+          <span class="small text-muted text-uppercase d-block mb-1">Enter Code at Website</span>
+          <p class="fs-5 text-light mb-2"><code>{{ request.scheme }}://{{ request.get_host }}{% url 'competition_audience_join' %}</code></p>
+          <div class="proj-join-code my-3" id="proj-join-code">{{ join_code|default:"JOIN" }}</div>
+          <div class="d-flex align-items-center gap-3 mt-3">
+            <div class="proj-stat-pill">
+              <i class="bi bi-check2-circle text-success" aria-hidden="true"></i>
+              <span id="proj-voting-ballots">{{ ballots_count }} Ballots Received</span>
+            </div>
+            <span class="badge {% if audience_voting_open %}text-bg-success{% else %}text-bg-warning{% endif %} py-2 px-3">
+              {% if audience_voting_open %}Voting Open{% else %}Ballots Locked{% endif %}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  {% elif projector_mode == 'standings' %}
+    <!-- Mode 3: Live Round Standings Leaderboard -->
+    <div class="proj-card flex-grow-1 text-start">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 pb-2 border-bottom" style="border-color: var(--proj-border) !important;">
+        <div>
+          <span class="text-uppercase small fw-bold text-info" style="letter-spacing: 0.1em;">Round Leaderboard</span>
+          <h2 class="h3 fw-bold mb-0 text-white">{{ active_round.name|default:"Live Standings" }}</h2>
+        </div>
+        <div class="proj-stat-pill">
+          <i class="bi bi-trophy text-warning" aria-hidden="true"></i>
+          <span>Cutoff: Top {{ cutoff_rank|default:3 }} Advance</span>
+        </div>
+      </div>
+
+      {% if standings %}
+      <div class="table-responsive">
+        <table class="table proj-table align-middle mb-0 fs-5">
+          <thead>
+            <tr>
+              <th scope="col" style="width: 70px;">Rank</th>
+              <th scope="col">Entrant</th>
+              <th scope="col">Track</th>
+              <th scope="col" style="text-align: right;">Judge Mean</th>
+              <th scope="col" style="text-align: right;">Audience</th>
+              <th scope="col" style="text-align: right;">Total Score</th>
+              <th scope="col" style="text-align: center; width: 140px;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in standings %}
+            <tr style="{% if row.is_active %}background: rgba(59, 130, 246, 0.15);{% endif %}">
+              <td>
+                <span class="badge {% if row.rank <= cutoff_rank %}text-bg-success{% else %}text-bg-secondary{% endif %} rounded-pill fs-6 px-3">
+                  #{{ row.rank }}
+                </span>
+              </td>
+              <td>
+                <span class="fw-bold text-white">{{ row.entry.name }}</span>
+                {% if row.entry.reference %}<span class="text-muted small ms-2">({{ row.entry.reference }})</span>{% endif %}
+              </td>
+              <td><span class="badge text-bg-dark border border-secondary">{{ row.track.name }}</span></td>
+              <td style="text-align: right;">{{ row.judge_score|default:"-" }}</td>
+              <td style="text-align: right;">{{ row.audience_score|default:"-" }}</td>
+              <td style="text-align: right;" class="fw-bold text-white fs-4">
+                {{ row.score|default:row.judge_score|default:"-" }}
+              </td>
+              <td style="text-align: center;">
+                {% if row.rank <= cutoff_rank %}
+                <span class="badge text-bg-success px-3 py-2">Qualifies</span>
+                {% else %}
+                <span class="badge text-bg-secondary px-3 py-2 text-muted">Eliminated</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% if row.rank == cutoff_rank and not forloop.last %}
+            <tr style="background: rgba(245, 158, 11, 0.12);">
+              <td colspan="7" class="text-center py-2 small fw-bold text-warning" style="letter-spacing: 0.08em;">
+                ↑ TOP {{ cutoff_rank }} QUALIFY FOR ADVANCEMENT · CUTOFF THRESHOLD ↓
+              </td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="text-center py-5 text-muted fs-5">
+        No scored entrants recorded in the active round yet.
+      </div>
+      {% endif %}
+    </div>
+
+  {% elif projector_mode == 'winner' %}
+    <!-- Mode 4: Winner Spotlight and Ceremony Podium -->
+    <div class="proj-card flex-grow-1 d-flex flex-column justify-content-center">
+      <span class="text-uppercase small fw-bold text-warning" style="letter-spacing: 0.15em;">Final Awards Presentation</span>
+      <h2 class="display-3 fw-bold my-2 text-white">Tournament Champions</h2>
+      <p class="fs-4 text-muted mb-4">{{ competition.name }} · {{ active_round.name }}</p>
+
+      {% if standings %}
+      <div class="row g-4 justify-content-center align-items-end my-3">
+        <!-- 2nd Place Runner-Up -->
+        {% if standings|length >= 2 %}
+        {% with second=standings.1 %}
+        <div class="col-12 col-md-4 order-2 order-md-1">
+          <div class="proj-podium-card is-second">
+            <span class="badge text-bg-secondary fs-6 px-3 py-2 rounded-pill mb-2">2nd Place · Runner-Up</span>
+            <div class="display-6 fw-bold text-white my-2">{{ second.entry.name }}</div>
+            <p class="text-muted mb-2">{{ second.track.name }}</p>
+            <div class="fs-3 fw-bold text-light">Score: {{ second.score|default:second.judge_score|default:"-" }}</div>
+          </div>
+        </div>
+        {% endwith %}
+        {% endif %}
+
+        <!-- 1st Place Champion -->
+        {% with first=standings.0 %}
+        <div class="col-12 col-md-4 order-1 order-md-2">
+          <div class="proj-podium-card is-first py-4">
+            <i class="bi bi-trophy-fill display-4 text-warning mb-2 d-block" aria-hidden="true"></i>
+            <span class="badge text-bg-warning fs-5 px-4 py-2 rounded-pill mb-2 fw-bold text-dark">1st Place Champion</span>
+            <div class="display-5 fw-bold text-white my-2">{{ first.entry.name }}</div>
+            <p class="text-warning-subtle fs-5 mb-2">{{ first.track.name }}</p>
+            <div class="display-6 fw-bold text-warning">Score: {{ first.score|default:first.judge_score|default:"-" }}</div>
+          </div>
+        </div>
+        {% endwith %}
+
+        <!-- 3rd Place -->
+        {% if standings|length >= 3 %}
+        {% with third=standings.2 %}
+        <div class="col-12 col-md-4 order-3 order-md-3">
+          <div class="proj-podium-card is-third">
+            <span class="badge text-bg-dark border border-warning fs-6 px-3 py-2 rounded-pill mb-2" style="color: var(--proj-bronze) !important;">3rd Place</span>
+            <div class="display-6 fw-bold text-white my-2">{{ third.entry.name }}</div>
+            <p class="text-muted mb-2">{{ third.track.name }}</p>
+            <div class="fs-3 fw-bold text-light">Score: {{ third.score|default:third.judge_score|default:"-" }}</div>
+          </div>
+        </div>
+        {% endwith %}
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="text-center py-5 text-muted fs-5">
+        Final scores are being tabulated. Standby for the awards reveal.
+      </div>
+      {% endif %}
+    </div>
+  {% endif %}
+</main>
+
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const stateUrl = "{% url 'competition_live_state' competition_id=competition.pk %}";
+  const initialMode = "{{ projector_mode|default:'stage' }}";
+  let seconds = parseInt("{{ pitch_seconds_remaining|default:0 }}", 10);
+  let paused = "{{ timer_paused|yesno:'true,false' }}" === "true";
+  const timerEl = document.getElementById('proj-timer-clock');
+
+  // 1-second countdown tick for stage mode
+  setInterval(() => {
+    if (!paused && seconds > 0) {
+      seconds--;
+      if (timerEl) {
+        timerEl.textContent = `${seconds}s`;
+        if (seconds <= 30) {
+          timerEl.classList.add('is-urgent');
+        } else {
+          timerEl.classList.remove('is-urgent');
+        }
+      }
+    }
+  }, 1000);
+
+  // Poll live state telemetry every 2.5s
+  async function poll() {
+    try {
+      const res = await fetch(stateUrl, {
+        headers: { "X-Requested-With": "XMLHttpRequest" }
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.ok) return;
+
+      // If projector mode switched, reload screen to render the active mode view
+      if (data.projector_mode && data.projector_mode !== initialMode) {
+        window.location.reload();
+        return;
+      }
+
+      // Sync timer values
+      if (typeof data.pitch_seconds_remaining === 'number') {
+        seconds = data.pitch_seconds_remaining;
+        paused = Boolean(data.timer_paused);
+        if (timerEl) {
+          timerEl.textContent = `${seconds}s`;
+          if (seconds <= 30) timerEl.classList.add('is-urgent');
+          else timerEl.classList.remove('is-urgent');
+        }
+        const badge = document.getElementById('proj-timer-badge');
+        if (badge) {
+          badge.textContent = paused ? 'Pitch Timer Paused' : 'Live Pitch in Progress';
+          badge.className = `badge ${paused ? 'text-bg-warning' : 'text-bg-success'} fs-6 px-3 py-2`;
+        }
+      }
+
+      // Update ballot counters
+      const ballotsEl = document.getElementById('proj-ballots-pill');
+      if (ballotsEl) ballotsEl.textContent = `${data.ballots_count || 0} Audience Ballots`;
+      const votingBallots = document.getElementById('proj-voting-ballots');
+      if (votingBallots) votingBallots.textContent = `${data.ballots_count || 0} Ballots Received`;
+    } catch (e) {
+      // Ignore network hiccup
+    }
+  }
+
+  setInterval(poll, 2500);
+})();
+</script>
+{% endblock %}

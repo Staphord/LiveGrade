@@ -1,9 +1,10 @@
 """Organizer forms for Competition draft setup."""
 
+from datetime import timedelta
 from decimal import Decimal
-from pathlib import Path
 
 from django import forms
+from django.utils import timezone
 
 from .models import Competition, CompetitionCriterion, CompetitionEntry, CompetitionTrack
 from .form_mixins import StyledFormMixin, apply_form_field_styles
@@ -56,9 +57,35 @@ class CompetitionCriterionForm(StyledFormMixin, forms.ModelForm):
 
     def __init__(self, *args, organization, user, competition, **kwargs):
         super().__init__(*args, **kwargs)
+        self.organization = organization
+        self.user = user
+        self.competition = competition
+        org_id = getattr(organization, 'id', getattr(organization, 'pk', None)) or (
+            organization.get('id') if isinstance(organization, dict) else organization
+        )
+        if self.instance and not getattr(self.instance, 'organization_id', None):
+            self.instance.organization_id = org_id
+        if self.instance and not getattr(self.instance, 'created_by_id', None) and user:
+            self.instance.created_by = user
         self.fields['track'].queryset = (CompetitionTrack.objects.for_organization(organization)
             .owned_by(user).filter(competition=competition).order_by('pk'))
         self.fields['weight'].help_text = 'Percent of this track’s judge score; criteria must total 100%.'
+        self.fields['order'].required = False
+        self.fields['order'].help_text = 'Position order (optional; defaults to next available).'
+
+    def clean(self):
+        cleaned = super().clean()
+        track = cleaned.get('track')
+        order = cleaned.get('order')
+        if order is None and track:
+            org_id = track.organization_id or self.competition.organization_id
+            existing_count = CompetitionCriterion.objects.filter(
+                track=track, organization_id=org_id
+            ).count()
+            cleaned['order'] = existing_count + 1
+            if self.instance:
+                self.instance.order = existing_count + 1
+        return cleaned
 
 
 class CompetitionEntryForm(StyledFormMixin, forms.ModelForm):
@@ -68,8 +95,34 @@ class CompetitionEntryForm(StyledFormMixin, forms.ModelForm):
 
     def __init__(self, *args, competition, organization, user, **kwargs):
         super().__init__(*args, **kwargs)
+        self.competition = competition
+        self.organization = organization
+        self.user = user
+        org_id = getattr(organization, 'id', getattr(organization, 'pk', None)) or (
+            organization.get('id') if isinstance(organization, dict) else organization
+        )
+        if self.instance and not getattr(self.instance, 'organization_id', None):
+            self.instance.organization_id = org_id
+        if self.instance and not getattr(self.instance, 'created_by_id', None) and user:
+            self.instance.created_by = user
         self.fields['track'].queryset = (CompetitionTrack.objects.for_organization(organization)
             .owned_by(user).filter(competition=competition))
+        self.fields['order'].required = False
+        self.fields['order'].help_text = 'Position order (optional; defaults to next available).'
+
+    def clean(self):
+        cleaned = super().clean()
+        track = cleaned.get('track')
+        order = cleaned.get('order')
+        if order is None and track:
+            org_id = track.organization_id or self.competition.organization_id
+            existing_count = CompetitionEntry.objects.filter(
+                track=track, organization_id=org_id
+            ).count()
+            cleaned['order'] = existing_count + 1
+            if self.instance:
+                self.instance.order = existing_count + 1
+        return cleaned
 
 
 class CompetitionFirstRoundForm(StyledFormMixin, forms.Form):
@@ -95,12 +148,22 @@ class CompetitionJudgeInvitationForm(StyledFormMixin, forms.Form):
     track = forms.ModelChoiceField(queryset=CompetitionTrack.objects.none(), label='Track')
     email = forms.EmailField(max_length=254, label='Judge email address')
     expires_at = forms.DateTimeField(
-        widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}), label='Invitation expiry')
+        widget=forms.DateTimeInput(attrs={'type': 'datetime-local'}), label='Invitation expiry',
+        required=False,
+    )
 
     def __init__(self, *args, organization, user, competition, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['track'].queryset = (CompetitionTrack.objects.for_organization(organization)
             .owned_by(user).filter(competition=competition).order_by('pk'))
+        if not self.initial.get('expires_at'):
+            self.initial['expires_at'] = (timezone.now() + timedelta(days=2)).strftime('%Y-%m-%dT%H:%M')
+
+    def clean_expires_at(self):
+        value = self.cleaned_data.get('expires_at')
+        if not value:
+            return timezone.now() + timedelta(days=2)
+        return value
 
 
 class CompetitionJudgeScorecardForm(StyledFormMixin, forms.Form):
@@ -309,19 +372,3 @@ class CompetitionFinalTieForm(StyledFormMixin, forms.Form):
                 'reason_field': self[f'{prefix}_reason'],
             })
         return display
-
-
-class CompetitionEntryImportForm(StyledFormMixin, forms.Form):
-    file = forms.FileField(label='Entry spreadsheet (.xlsx)')
-
-    def clean_file(self):
-        uploaded = self.cleaned_data['file']
-        if Path(uploaded.name).suffix.lower() != '.xlsx':
-            raise forms.ValidationError('Choose an Excel .xlsx file.')
-        if uploaded.size > 10 * 1024 * 1024:
-            raise forms.ValidationError('The spreadsheet must be no larger than 10 MB.')
-        return uploaded
-
-
-class CompetitionEntryImportApplyForm(StyledFormMixin, forms.Form):
-    preview_token = forms.CharField(widget=forms.HiddenInput)
