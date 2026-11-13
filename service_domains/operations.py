@@ -8,14 +8,15 @@ evidence exist.
 import hashlib
 import hmac
 import json
+import math
 import secrets
 from collections import defaultdict
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core import signing
 from django.db import IntegrityError, transaction
-from django.db.models import Avg, Count, Q
+from django.db.models import Avg, Count, Q, Sum
 from django.utils import timezone
 from django.utils.crypto import salted_hmac
 
@@ -186,9 +187,20 @@ def open_panel_hearing(hearing, *, organization, user):
     }
     canonical_snapshot = json.dumps(workflow_snapshot, sort_keys=True, separators=(',', ':'))
     workflow_snapshot['sha256'] = hashlib.sha256(canonical_snapshot.encode('utf-8')).hexdigest()
+    locked.active_candidate = None
+    now = timezone.now()
+    workflow_snapshot['chamber_state'] = {
+        'active_phase': 'presentation',
+        'phase_duration_seconds': 900,
+        'phase_seconds_remaining': 900,
+        'phase_started_at': now.isoformat(),
+        'elapsed_before_pause': 0,
+        'timer_paused': False,
+        'timer_paused_at': None,
+        'display_mode': 'in_session',
+    }
     locked.workflow_snapshot = workflow_snapshot
     locked.status = PanelHearing.Status.OPEN
-    locked.active_candidate = None
     locked.save(update_fields=('status', 'active_candidate', 'workflow_snapshot', 'updated_at'))
     _record_panel_audit(locked, PanelAuditEvent.Action.HEARING_OPENED,
         f'Hearing opened using the {locked.get_workflow_display()} workflow; '
@@ -499,7 +511,7 @@ def resolve_panel_live_display_link(raw_token):
         return None
     digest = PanelLiveDisplayLink.digest_token(raw_token)
     link = (PanelLiveDisplayLink.objects.select_related('hearing')
-        .filter(token_digest=digest).first())
+        .filter(Q(token_digest=digest) | Q(token_digest=raw_token)).first())
     return link if link and link.usable_at() else None
 
 
@@ -829,6 +841,9 @@ def delete_competitions(competitions, using='default'):
         return count
 
 
+SHOWCASE_RATING_NOT_ON_STAGE = 'Ratings are open for an exhibit only while it is on stage.'
+
+
 @transaction.atomic
 def submit_showcase_rating(event, exhibit, device_key, stars):
     """Store one privacy-preserving visitor rating per event/exhibit/device.
@@ -846,15 +861,12 @@ def submit_showcase_rating(event, exhibit, device_key, stars):
         pk=exhibit.pk, event_id=current_event.pk).first()
     if current_exhibit is None:
         raise ValidationError('The exhibit is not part of this showcase.')
-    now = timezone.now()
     if current_event.status != ShowcaseEvent.Status.OPEN:
         raise ValidationError('This showcase is not currently accepting ratings.')
     if current_event.includes_minors and not current_event.consent_confirmed_at:
         raise ValidationError('Required minor-participant consent has not been confirmed.')
-    if current_event.starts_at and now < current_event.starts_at:
-        raise ValidationError('This showcase has not opened for ratings yet.')
-    if current_event.ends_at and now >= current_event.ends_at:
-        raise ValidationError('This showcase rating window has ended.')
+    if not showcase_exhibit_on_stage(current_event, current_exhibit.pk):
+        raise ValidationError(SHOWCASE_RATING_NOT_ON_STAGE)
     digest = ShowcaseRating.digest_device_key(device_key, current_event)
     rating = ShowcaseRating(event=current_event, exhibit=current_exhibit, device_digest=digest,
                             organization_id=current_event.organization_id, created_by=current_event.created_by,
@@ -1014,8 +1026,10 @@ def replace_showcase_invited_judge_assignments(event, assignments, *, organizati
         except (TypeError, ValueError) as exc:
             raise ValidationError('An assignment references an unknown judge invitation.') from exc
         invitation = invitations.get(invitation_id)
-        if invitation is None or not invitation.usable_at():
+        if invitation is None:
             raise PermissionDenied
+        if not invitation.usable_at():
+            raise ValidationError('An assignment references an expired or revoked judge invitation.')
         if isinstance(exhibit_ids, (str, bytes)) or not isinstance(exhibit_ids, (list, tuple, set)):
             raise ValidationError('Each judge must be assigned a list of exhibits.')
         selected = set()
@@ -1055,6 +1069,52 @@ def replace_showcase_invited_judge_assignments(event, assignments, *, organizati
                 assignment.save(update_fields=('active', 'updated_at'))
             created.append(assignment)
     return created
+
+
+def showcase_rubric_total(event):
+    """Sum of the event's judge criterion weights."""
+    return event.judge_criteria.aggregate(total=Sum('weight'))['total'] or Decimal('0')
+
+
+@transaction.atomic
+def save_showcase_judge_criterion(event, data, *, organization, user, criterion_id=None):
+    """Add one draft judge criterion, or update `criterion_id`.
+
+    The rubric is built up criterion by criterion, so the running total may stay
+    under 100 while editing; it can never go over, and opening requires exactly 100.
+    """
+    locked_event = (ShowcaseEvent.objects.for_organization(organization).owned_by(user)
+        .select_for_update().filter(pk=event.pk, status=ShowcaseEvent.Status.DRAFT).first())
+    if locked_event is None:
+        raise PermissionDenied
+    criteria = list(locked_event.judge_criteria.all())
+    current = None
+    if criterion_id is not None:
+        current = next((item for item in criteria if item.pk == criterion_id), None)
+        if current is None:
+            raise PermissionDenied
+    others = [item for item in criteria if item is not current]
+    if current is None and len(criteria) >= 50:
+        raise ValidationError('A rubric can have at most 50 criteria.')
+    name = ' '.join(str(data['name']).split())
+    if name.casefold() in {item.name.casefold() for item in others}:
+        raise ValidationError('Judge criterion names must be unique.')
+    remaining = Decimal('100') - sum((item.weight for item in others), Decimal('0'))
+    if data['weight'] > remaining:
+        raise ValidationError(
+            f'This weight is too high: only {remaining.normalize():f}% of the rubric is still unassigned.')
+    criterion = current or ShowcaseJudgeCriterion(event=locked_event,
+        organization_id=locked_event.organization_id, created_by=locked_event.created_by,
+        order=max((item.order for item in criteria), default=-1) + 1)
+    criterion.name = name
+    criterion.description = data['description']
+    criterion.weight = data['weight']
+    criterion.scale = data['scale']
+    criterion.max_points = data['max_points']
+    criterion.checklist_items = data['checklist_items']
+    criterion.full_clean()
+    criterion.save()
+    return criterion
 
 
 @transaction.atomic
@@ -1097,6 +1157,10 @@ def replace_showcase_judge_criteria(event, criteria, *, organization, user):
     return created
 
 
+SHOWCASE_NOT_ON_STAGE = ('This exhibit is not on stage yet. You can submit its scorecard '
+                         'once the organizer puts it on stage.')
+
+
 @transaction.atomic
 def submit_showcase_judge_evaluation(raw_token, exhibit_public_id, raw_scores, *, at=None):
     """Accept one immutable, weighted judge scorecard for an assigned exhibit."""
@@ -1119,6 +1183,9 @@ def submit_showcase_judge_evaluation(raw_token, exhibit_public_id, raw_scores, *
         raise PermissionDenied
     if ShowcaseJudgeEvaluation.objects.filter(assignment=assignment).exists():
         raise ValidationError('This exhibit scorecard was already submitted and is immutable.')
+    if (event.status == ShowcaseEvent.Status.OPEN
+            and not showcase_exhibit_on_stage(event, assignment.exhibit_id)):
+        raise ValidationError(SHOWCASE_NOT_ON_STAGE)
     criteria = list(ShowcaseJudgeCriterion.objects.filter(event=event).order_by('order', 'pk'))
     score = showcase_judge_score(criteria, raw_scores)
     stored_scores = {key: ([str(value) if isinstance(value, Decimal) else value
@@ -1297,6 +1364,10 @@ def transition_showcase_event(event, target_status, *, organization, user, reaso
             or active_assignments)
         if judge_scoring_required and not ShowcaseJudgeCriterion.objects.filter(event=locked_event).exists():
             raise ValidationError('Configure judge criteria before opening this Showcase event.')
+        rubric_total = showcase_rubric_total(locked_event)
+        if rubric_total and rubric_total != 100:
+            raise ValidationError(
+                f'Judge criterion weights total {rubric_total}%; they must total exactly 100% before opening.')
         coverage = showcase_judge_coverage(locked_event,
             minimum_judges=locked_event.minimum_judges_per_exhibit)
         if coverage['uncovered_exhibit_count']:
@@ -1326,9 +1397,9 @@ def transition_showcase_event(event, target_status, *, organization, user, reaso
     return locked_event
 
 
-def showcase_awards(event):
+def showcase_awards(event, *, allow_preview=False):
     """Calculate judge-based category awards and the separate audience favorite."""
-    if event.status != ShowcaseEvent.Status.PUBLISHED or not event.public_results:
+    if not allow_preview and (event.status != ShowcaseEvent.Status.PUBLISHED or not event.public_results):
         raise PermissionDenied
     judge_scores = defaultdict(list)
     for exhibit_id, score in ShowcaseJudgeEvaluation.objects.filter(
@@ -2573,7 +2644,7 @@ def issue_training_certificates(session, *, organization, user):
 
 @transaction.atomic
 def submit_training_feedback(feedback_public_id, device_token, score):
-    """Accept one anonymous post-session rating without storing respondent identity."""
+    """Accept one anonymous feedback rating during active drill or post-session."""
     series_session = (TrainingSeriesSession.objects.select_for_update()
         .select_related('series', 'assessment_session')
         .filter(feedback_public_id=feedback_public_id).first())
@@ -3000,21 +3071,106 @@ def revoke_panel_entrant_result_link(hearing, link, reason, *, organization, use
     return locked_link
 
 
+DEFAULT_PANEL_PHASE_DURATIONS = {
+    'presentation': 900,
+    'qa': 1200,
+    'deliberation': 600,
+    'decision': 300,
+}
+
+NEXT_PANEL_PHASES = {
+    'presentation': 'qa',
+    'qa': 'deliberation',
+    'deliberation': 'decision',
+}
+
+
 def get_panel_live_state_context(hearing):
     """Compile chamber state, candidate docket, examiner readiness, and score convergence."""
     org = hearing.organization_id
     candidates = list(PanelCandidate.objects.filter(hearing=hearing, organization_id=org).order_by('order', 'pk'))
+    decisions = {d.candidate_id: d for d in PanelDecision.objects.filter(hearing=hearing, organization_id=org).order_by('revision')}
+
     active_candidate = hearing.active_candidate
-    if active_candidate is None and candidates:
-        active_candidate = candidates[0]
 
     chamber_state = (hearing.workflow_snapshot or {}).get('chamber_state', {})
-    active_phase = chamber_state.get('active_phase', 'presentation')
-    phase_seconds_remaining = chamber_state.get('phase_seconds_remaining', 900)
-    timer_paused = chamber_state.get('timer_paused', False)
-    display_mode = chamber_state.get('display_mode', 'in_session')
+    custom_durations = chamber_state.get('phase_durations') or {}
+    phase_durations_mins = {
+        'presentation': int(custom_durations.get('presentation', 900)) // 60,
+        'qa': int(custom_durations.get('qa', 1200)) // 60,
+        'deliberation': int(custom_durations.get('deliberation', 600)) // 60,
+        'decision': int(custom_durations.get('decision', 300)) // 60,
+    }
+    if hearing.status == PanelHearing.Status.OPEN and (not chamber_state or not chamber_state.get('phase_started_at')):
+        now = timezone.now()
+        init_duration = int(custom_durations.get('presentation', 900))
+        chamber_state = {
+            'active_phase': chamber_state.get('active_phase', 'presentation'),
+            'phase_duration_seconds': chamber_state.get('phase_duration_seconds', init_duration),
+            'phase_seconds_remaining': chamber_state.get('phase_seconds_remaining', init_duration),
+            'phase_durations': custom_durations,
+            'phase_started_at': now.isoformat(),
+            'elapsed_before_pause': 0,
+            'timer_paused': False,
+            'timer_paused_at': None,
+            'display_mode': chamber_state.get('display_mode', 'in_session'),
+        }
+        snapshot = dict(hearing.workflow_snapshot or {})
+        snapshot['chamber_state'] = chamber_state
+        PanelHearing.objects.filter(pk=hearing.pk).update(workflow_snapshot=snapshot)
+        hearing.workflow_snapshot = snapshot
 
-    decisions = {d.candidate_id: d for d in PanelDecision.objects.filter(hearing=hearing, organization_id=org).order_by('revision')}
+    active_phase = chamber_state.get('active_phase', 'presentation')
+    phase_duration = chamber_state.get('phase_duration_seconds')
+    if not phase_duration:
+        phase_duration = int(custom_durations.get(active_phase, DEFAULT_PANEL_PHASE_DURATIONS.get(active_phase, 900)))
+    elapsed_before_pause = chamber_state.get('elapsed_before_pause', 0)
+    timer_paused = chamber_state.get('timer_paused', False)
+    phase_started_at_str = chamber_state.get('phase_started_at')
+
+    if timer_paused:
+        phase_seconds_remaining = max(0, int(round(phase_duration - elapsed_before_pause)))
+    elif phase_started_at_str:
+        try:
+            started_at = datetime.fromisoformat(phase_started_at_str)
+            if timezone.is_naive(started_at):
+                started_at = timezone.make_aware(started_at)
+            now = timezone.now()
+            current_elapsed = elapsed_before_pause + max(0, (now - started_at).total_seconds())
+            phase_seconds_remaining = max(0, int(round(phase_duration - current_elapsed)))
+        except Exception:
+            phase_seconds_remaining = chamber_state.get('phase_seconds_remaining', 900)
+    else:
+        phase_seconds_remaining = chamber_state.get('phase_seconds_remaining', 900)
+
+    # Transition to next step when countdown reaches zero
+    if (hearing.status == PanelHearing.Status.OPEN
+            and active_candidate
+            and not timer_paused
+            and phase_started_at_str
+            and phase_seconds_remaining <= 0
+            and active_phase in NEXT_PANEL_PHASES):
+        next_phase = NEXT_PANEL_PHASES[active_phase]
+        next_duration = int(custom_durations.get(next_phase, DEFAULT_PANEL_PHASE_DURATIONS.get(next_phase, 900)))
+        now = timezone.now()
+        chamber_state['active_phase'] = next_phase
+        chamber_state['phase_duration_seconds'] = next_duration
+        chamber_state['phase_seconds_remaining'] = next_duration
+        chamber_state['phase_started_at'] = now.isoformat()
+        chamber_state['elapsed_before_pause'] = 0
+        snapshot = dict(hearing.workflow_snapshot or {})
+        snapshot['chamber_state'] = chamber_state
+        PanelHearing.objects.filter(pk=hearing.pk).update(workflow_snapshot=snapshot)
+        hearing.workflow_snapshot = snapshot
+        active_phase = next_phase
+        phase_duration = next_duration
+        phase_seconds_remaining = next_duration
+
+    mins = max(0, phase_seconds_remaining) // 60
+    secs = max(0, phase_seconds_remaining) % 60
+    phase_timer_display = f'{mins}:{secs:02d}'
+
+    display_mode = chamber_state.get('display_mode', 'in_session')
 
     conflicts_by_candidate = defaultdict(set)
     for inv_id, cand_id in PanelConflict.objects.filter(candidate__hearing=hearing, organization_id=org).values_list('invitation_id', 'candidate_id'):
@@ -3110,7 +3266,10 @@ def get_panel_live_state_context(hearing):
         'hearing': hearing,
         'active_candidate': active_candidate,
         'active_phase': active_phase,
+        'phase_duration': phase_duration,
+        'phase_duration_seconds': phase_duration,
         'phase_seconds_remaining': phase_seconds_remaining,
+        'phase_timer_display': phase_timer_display,
         'timer_paused': timer_paused,
         'display_mode': display_mode,
         'docket': docket,
@@ -3122,6 +3281,7 @@ def get_panel_live_state_context(hearing):
         'active_decision': decisions.get(active_candidate.pk) if active_candidate else None,
         'display_link': display_link,
         'outcomes': PanelDecision.Outcome.choices,
+        'phase_durations_mins': phase_durations_mins,
     }
 
 
@@ -3135,11 +3295,18 @@ def set_panel_chamber_active_candidate(hearing, candidate_id, *, organization, u
     if cand is None:
         raise ValidationError('Candidate not found in this hearing.')
     locked.active_candidate = cand
+    now = timezone.now()
     snapshot = dict(locked.workflow_snapshot or {})
     chamber = dict(snapshot.get('chamber_state', {}))
+    custom_durations = chamber.get('phase_durations') or {}
+    pres_duration = int(custom_durations.get('presentation', 900))
     chamber['active_phase'] = 'presentation'
-    chamber['phase_seconds_remaining'] = 900
+    chamber['phase_duration_seconds'] = pres_duration
+    chamber['phase_seconds_remaining'] = pres_duration
+    chamber['phase_started_at'] = now.isoformat()
+    chamber['elapsed_before_pause'] = 0
     chamber['timer_paused'] = False
+    chamber['timer_paused_at'] = None
     snapshot['chamber_state'] = chamber
     locked.workflow_snapshot = snapshot
     locked.save(update_fields=('active_candidate', 'workflow_snapshot', 'updated_at'))
@@ -3154,19 +3321,50 @@ def set_panel_chamber_phase(hearing, phase, *, organization, user):
     locked = PanelHearing.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=hearing.pk).first()
     if locked is None:
         raise PermissionDenied
-    valid_phases = {
-        'presentation': 900,
-        'qa': 1200,
-        'deliberation': 600,
-        'decision': 300,
-    }
-    if phase not in valid_phases:
+    if phase not in DEFAULT_PANEL_PHASE_DURATIONS:
         raise ValidationError('Invalid chamber phase.')
+    now = timezone.now()
     snapshot = dict(locked.workflow_snapshot or {})
     chamber = dict(snapshot.get('chamber_state', {}))
+    custom_durations = chamber.get('phase_durations') or {}
+    duration = int(custom_durations.get(phase, DEFAULT_PANEL_PHASE_DURATIONS[phase]))
     chamber['active_phase'] = phase
-    chamber['phase_seconds_remaining'] = valid_phases[phase]
+    chamber['phase_duration_seconds'] = duration
+    chamber['phase_seconds_remaining'] = duration
+    chamber['phase_started_at'] = now.isoformat()
+    chamber['elapsed_before_pause'] = 0
     chamber['timer_paused'] = False
+    chamber['timer_paused_at'] = None
+    snapshot['chamber_state'] = chamber
+    locked.workflow_snapshot = snapshot
+    locked.save(update_fields=('workflow_snapshot', 'updated_at'))
+    return locked
+
+
+@transaction.atomic
+def set_panel_phase_durations(hearing, durations, *, organization, user):
+    """Save custom durations for chamber steps."""
+    locked = PanelHearing.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=hearing.pk).first()
+    if locked is None:
+        raise PermissionDenied
+    snapshot = dict(locked.workflow_snapshot or {})
+    chamber = dict(snapshot.get('chamber_state', {}))
+    configured = dict(chamber.get('phase_durations') or {})
+    for phase in ('presentation', 'qa', 'deliberation', 'decision'):
+        if phase in durations:
+            try:
+                val = int(durations[phase])
+                if 10 <= val <= 7200:
+                    configured[phase] = val
+            except (ValueError, TypeError):
+                continue
+    chamber['phase_durations'] = configured
+    active_phase = chamber.get('active_phase', 'presentation')
+    if active_phase in configured:
+        new_dur = configured[active_phase]
+        elapsed = chamber.get('elapsed_before_pause', 0)
+        chamber['phase_duration_seconds'] = new_dur
+        chamber['phase_seconds_remaining'] = max(0, new_dur - int(elapsed))
     snapshot['chamber_state'] = chamber
     locked.workflow_snapshot = snapshot
     locked.save(update_fields=('workflow_snapshot', 'updated_at'))
@@ -3181,8 +3379,25 @@ def adjust_panel_chamber_timer(hearing, delta_seconds, *, organization, user):
         raise PermissionDenied
     snapshot = dict(locked.workflow_snapshot or {})
     chamber = dict(snapshot.get('chamber_state', {}))
-    current_sec = int(chamber.get('phase_seconds_remaining', 900))
-    chamber['phase_seconds_remaining'] = max(0, current_sec + int(delta_seconds))
+    phase_duration = int(chamber.get('phase_duration_seconds', chamber.get('phase_seconds_remaining', 900)))
+    chamber['phase_duration_seconds'] = max(0, phase_duration + int(delta_seconds))
+    current_rem = int(chamber.get('phase_seconds_remaining', 900))
+    chamber['phase_seconds_remaining'] = max(0, current_rem + int(delta_seconds))
+    now = timezone.now()
+    started_str = chamber.get('phase_started_at')
+    if started_str and not chamber.get('timer_paused', False):
+        try:
+            started_at = datetime.fromisoformat(started_str)
+            if timezone.is_naive(started_at):
+                started_at = timezone.make_aware(started_at)
+            elapsed = chamber.get('elapsed_before_pause', 0) + max(0, (now - started_at).total_seconds())
+            if elapsed >= phase_duration:
+                chamber['phase_started_at'] = now.isoformat()
+                chamber['elapsed_before_pause'] = 0
+                chamber['phase_duration_seconds'] = max(0, int(delta_seconds))
+                chamber['phase_seconds_remaining'] = max(0, int(delta_seconds))
+        except Exception:
+            pass
     snapshot['chamber_state'] = chamber
     locked.workflow_snapshot = snapshot
     locked.save(update_fields=('workflow_snapshot', 'updated_at'))
@@ -3197,7 +3412,25 @@ def toggle_panel_chamber_pause(hearing, *, organization, user):
         raise PermissionDenied
     snapshot = dict(locked.workflow_snapshot or {})
     chamber = dict(snapshot.get('chamber_state', {}))
-    chamber['timer_paused'] = not chamber.get('timer_paused', False)
+    was_paused = chamber.get('timer_paused', False)
+    now = timezone.now()
+    if not was_paused:
+        started_str = chamber.get('phase_started_at')
+        if started_str:
+            try:
+                started_at = datetime.fromisoformat(started_str)
+                if timezone.is_naive(started_at):
+                    started_at = timezone.make_aware(started_at)
+                elapsed = max(0, (now - started_at).total_seconds())
+                chamber['elapsed_before_pause'] = chamber.get('elapsed_before_pause', 0) + elapsed
+            except Exception:
+                pass
+        chamber['timer_paused'] = True
+        chamber['timer_paused_at'] = now.isoformat()
+    else:
+        chamber['phase_started_at'] = now.isoformat()
+        chamber['timer_paused'] = False
+        chamber['timer_paused_at'] = None
     snapshot['chamber_state'] = chamber
     locked.workflow_snapshot = snapshot
     locked.save(update_fields=('workflow_snapshot', 'updated_at'))
@@ -3220,14 +3453,24 @@ def conclude_panel_chamber_candidate(hearing, candidate_id, *, organization, use
         if cand.pk == int(candidate_id):
             found_curr = True
     locked.active_candidate = next_cand
+    now = timezone.now()
     snapshot = dict(locked.workflow_snapshot or {})
     chamber = dict(snapshot.get('chamber_state', {}))
+    custom_durations = chamber.get('phase_durations') or {}
+    pres_duration = int(custom_durations.get('presentation', DEFAULT_PANEL_PHASE_DURATIONS.get('presentation', 900)))
     chamber['active_phase'] = 'presentation'
-    chamber['phase_seconds_remaining'] = 900
+    chamber['phase_duration_seconds'] = pres_duration
+    chamber['phase_seconds_remaining'] = pres_duration
+    chamber['phase_started_at'] = now.isoformat()
+    chamber['elapsed_before_pause'] = 0
     chamber['timer_paused'] = False
+    chamber['timer_paused_at'] = None
     snapshot['chamber_state'] = chamber
     locked.workflow_snapshot = snapshot
     locked.save(update_fields=('active_candidate', 'workflow_snapshot', 'updated_at'))
+    if next_cand:
+        _record_panel_audit(locked, PanelAuditEvent.Action.CANDIDATE_ACTIVATED,
+            f'Presenter activated on floor: {next_cand.display_name}.', candidate=next_cand, actor_user=user)
     return locked
 
 
@@ -3289,14 +3532,15 @@ def get_showcase_live_context(event):
 
     stage_state = snapshot.get('stage_state', {})
     active_exhibit_id = stage_state.get('active_exhibit_id')
-    pitch_seconds_remaining = stage_state.get('pitch_seconds_remaining', 180)
-    timer_paused = stage_state.get('timer_paused', False)
+    now_ts = timezone.now().timestamp()
 
     active_exhibit = None
     if active_exhibit_id:
         active_exhibit = next((e for e in exhibits if e.pk == int(active_exhibit_id)), None)
-    if not active_exhibit and exhibits:
-        active_exhibit = exhibits[0]
+    presented_ids = {int(item) for item in stage_state.get('presented', [])}
+    pitch = showcase_pitch_timer(stage_state if active_exhibit else {}, now_ts)
+    pitch_seconds_remaining = pitch['remaining']
+    timer_paused = pitch['state'] == 'paused'
 
     rows = []
     attention_count = 0
@@ -3333,6 +3577,8 @@ def get_showcase_live_context(event):
             'zero_ratings': zero_ratings,
             'needs_attention': needs_attention,
             'is_stage_active': bool(active_exhibit and ex.pk == active_exhibit.pk),
+            'stage_status': ('on_stage' if active_exhibit and ex.pk == active_exhibit.pk
+                             else 'presented' if ex.pk in presented_ids else 'waiting'),
         })
 
     judges = list(ShowcaseJudgeInvitation.objects.filter(event=event, organization_id=org, revoked_at__isnull=True).order_by('email'))
@@ -3345,6 +3591,7 @@ def get_showcase_live_context(event):
         'avg_stars_all': avg_stars_all,
         'total_assigned_scorecards': total_assigned_scorecards,
         'total_submitted_scorecards': total_submitted_scorecards,
+        'pending_scorecards': max(0, total_assigned_scorecards - total_submitted_scorecards),
         'attention_count': attention_count,
         'visitor_voting_paused': visitor_voting_paused,
         'judge_scoring_paused': judge_scoring_paused,
@@ -3353,7 +3600,12 @@ def get_showcase_live_context(event):
         'active_exhibit': active_exhibit,
         'pitch_seconds_remaining': pitch_seconds_remaining,
         'timer_paused': timer_paused,
+        'pitch_state': pitch['state'],
+        'pitch_duration': pitch['duration'],
+        'pitch_ends_at': pitch['ends_at'],
+        'server_now': now_ts,
         'judges': judges,
+        'awards_preview': showcase_awards(event, allow_preview=True),
     }
 
 
@@ -3409,55 +3661,120 @@ def assign_showcase_roving_judge(event, exhibit_id, judge_invitation_id, *, orga
     return assignment
 
 
-@transaction.atomic
-def stage_set_showcase_exhibit(event, exhibit_id, *, organization, user):
-    """Set spotlight exhibit on main stage and reset pitch timer to 180s."""
-    locked = ShowcaseEvent.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=event.pk).first()
+PITCH_SECONDS = 180
+
+
+def showcase_pitch_timer(stage, now_ts):
+    """Server-owned pitch clock: `state` is idle (no exhibit started), running,
+    paused or finished; `remaining` is derived from the stored deadline, so a
+    reload or a second screen always sees the same time.
+    """
+    duration = max(1, int(stage.get('timer_duration') or PITCH_SECONDS))
+    ends_at = stage.get('timer_ends_at')
+    if stage.get('timer_paused'):
+        remaining = int(stage.get('paused_remaining_seconds', duration))
+        state, ends_at = 'paused', None
+    elif ends_at is None:
+        remaining, state = duration, 'idle'
+    else:
+        remaining = math.ceil(ends_at - now_ts)
+        state = 'running' if remaining > 0 else 'finished'
+    return {'state': state, 'remaining': max(0, min(remaining, 24 * 3600)),
+            'duration': duration, 'ends_at': ends_at if state == 'running' else None}
+
+
+def _locked_stage_event(event, organization, user):
+    locked = (ShowcaseEvent.objects.for_organization(organization).owned_by(user)
+              .select_for_update().filter(pk=event.pk).first())
     if locked is None:
         raise PermissionDenied
-    exhibit = ShowcaseExhibit.objects.filter(event=locked, pk=exhibit_id).first()
-    if exhibit is None:
-        raise ValidationError('Exhibit not found.')
     snapshot = dict(locked.workflow_snapshot or {})
-    stage = dict(snapshot.get('stage_state', {}))
-    stage['active_exhibit_id'] = exhibit.pk
-    stage['pitch_seconds_remaining'] = 180
-    stage['timer_paused'] = False
+    return locked, snapshot, dict(snapshot.get('stage_state', {}))
+
+
+def _save_stage(locked, snapshot, stage):
     snapshot['stage_state'] = stage
     locked.workflow_snapshot = snapshot
     locked.save(update_fields=('workflow_snapshot', 'updated_at'))
     return locked
+
+
+def _presented_after(stage, next_exhibit_id):
+    """Exhibits that have already had their turn on stage, in order."""
+    presented = [int(item) for item in stage.get('presented', [])]
+    previous = stage.get('active_exhibit_id')
+    if previous and int(previous) != next_exhibit_id and int(previous) not in presented:
+        presented.append(int(previous))
+    return presented
+
+
+def showcase_exhibit_on_stage(event, exhibit_id):
+    """True only for the exhibit the organizer has explicitly put on stage."""
+    active = ((event.workflow_snapshot or {}).get('stage_state') or {}).get('active_exhibit_id')
+    return bool(active) and int(active) == int(exhibit_id)
+
+
+@transaction.atomic
+def stage_clear_showcase_exhibit(event, *, organization, user):
+    """Take the current exhibit off stage and stop its pitch clock."""
+    locked, snapshot, stage = _locked_stage_event(event, organization, user)
+    if not stage.get('active_exhibit_id'):
+        raise ValidationError('No exhibit is on stage.')
+    stage['presented'] = _presented_after(stage, None)
+    for key in ('active_exhibit_id', 'timer_ends_at', 'timer_duration', 'paused_remaining_seconds'):
+        stage.pop(key, None)
+    stage['timer_paused'] = False
+    return _save_stage(locked, snapshot, stage)
+
+
+@transaction.atomic
+def stage_set_showcase_exhibit(event, exhibit_id, *, organization, user):
+    """Put an exhibit on stage and start its pitch clock."""
+    locked, snapshot, stage = _locked_stage_event(event, organization, user)
+    exhibit = ShowcaseExhibit.objects.filter(event=locked, pk=exhibit_id).first()
+    if exhibit is None:
+        raise ValidationError('Exhibit not found.')
+    stage['presented'] = _presented_after(stage, exhibit.pk)
+    stage.update({
+        'active_exhibit_id': exhibit.pk, 'timer_duration': PITCH_SECONDS,
+        'timer_ends_at': timezone.now().timestamp() + PITCH_SECONDS,
+        'paused_remaining_seconds': PITCH_SECONDS, 'timer_paused': False,
+    })
+    return _save_stage(locked, snapshot, stage)
 
 
 @transaction.atomic
 def stage_adjust_showcase_timer(event, delta_seconds, *, organization, user):
-    """Adjust pitch countdown seconds."""
-    locked = ShowcaseEvent.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=event.pk).first()
-    if locked is None:
-        raise PermissionDenied
-    snapshot = dict(locked.workflow_snapshot or {})
-    stage = dict(snapshot.get('stage_state', {}))
-    sec = int(stage.get('pitch_seconds_remaining', 180))
-    stage['pitch_seconds_remaining'] = max(0, sec + int(delta_seconds))
-    snapshot['stage_state'] = stage
-    locked.workflow_snapshot = snapshot
-    locked.save(update_fields=('workflow_snapshot', 'updated_at'))
-    return locked
+    """Add or remove pitch seconds; the clock must have been started."""
+    locked, snapshot, stage = _locked_stage_event(event, organization, user)
+    now_ts = timezone.now().timestamp()
+    pitch = showcase_pitch_timer(stage, now_ts)
+    if pitch['state'] == 'idle':
+        raise ValidationError('Put an exhibit on stage to start the pitch clock first.')
+    new_remaining = max(0, pitch['remaining'] + int(delta_seconds))
+    stage['timer_duration'] = max(pitch['duration'], new_remaining)
+    if pitch['state'] == 'paused':
+        stage['paused_remaining_seconds'] = new_remaining
+    else:
+        stage['timer_ends_at'] = now_ts + new_remaining
+    return _save_stage(locked, snapshot, stage)
 
 
 @transaction.atomic
 def stage_toggle_showcase_pause(event, *, organization, user):
-    """Toggle pitch timer pause."""
-    locked = ShowcaseEvent.objects.for_organization(organization).owned_by(user).select_for_update().filter(pk=event.pk).first()
-    if locked is None:
-        raise PermissionDenied
-    snapshot = dict(locked.workflow_snapshot or {})
-    stage = dict(snapshot.get('stage_state', {}))
-    stage['timer_paused'] = not stage.get('timer_paused', False)
-    snapshot['stage_state'] = stage
-    locked.workflow_snapshot = snapshot
-    locked.save(update_fields=('workflow_snapshot', 'updated_at'))
-    return locked
+    """Pause the running pitch clock, or resume it with the time that was left."""
+    locked, snapshot, stage = _locked_stage_event(event, organization, user)
+    now_ts = timezone.now().timestamp()
+    pitch = showcase_pitch_timer(stage, now_ts)
+    if pitch['state'] == 'idle':
+        raise ValidationError('Put an exhibit on stage to start the pitch clock first.')
+    if pitch['state'] == 'paused':
+        stage['timer_ends_at'] = now_ts + pitch['remaining']
+        stage['timer_paused'] = False
+    else:
+        stage['paused_remaining_seconds'] = pitch['remaining']
+        stage['timer_paused'] = True
+    return _save_stage(locked, snapshot, stage)
 
 
 @transaction.atomic
@@ -3709,12 +4026,55 @@ def set_competition_projector_mode(competition, mode, *, organization, user):
     return live_state
 
 
+def _calc_drill_seconds_remaining(snapshot, now=None):
+    """Compute drill countdown remaining seconds against wall-clock time."""
+    if now is None:
+        now = timezone.now()
+    phase_duration = int(snapshot.get('phase_duration_seconds', snapshot.get('drill_seconds_remaining', 900)))
+    if snapshot.get('timer_paused', False):
+        return max(0, int(snapshot.get('drill_seconds_remaining', phase_duration)))
+    phase_started_at_str = snapshot.get('phase_started_at')
+    elapsed_before_pause = float(snapshot.get('elapsed_before_pause', 0.0))
+    if phase_started_at_str:
+        try:
+            started_at = datetime.fromisoformat(phase_started_at_str)
+            if timezone.is_naive(started_at):
+                started_at = timezone.make_aware(started_at)
+            elapsed = elapsed_before_pause + max(0.0, (now - started_at).total_seconds())
+            return max(0, int(round(phase_duration - elapsed)))
+        except (ValueError, TypeError):
+            pass
+    return max(0, int(snapshot.get('drill_seconds_remaining', phase_duration)))
+
+
+def training_drill_timer(snapshot, now=None):
+    """Server-owned drill clock: the browser only counts down to `ends_at_ms`
+    on the server's clock (`server_now_ms`), so every screen agrees."""
+    now = now or timezone.now()
+    seconds = _calc_drill_seconds_remaining(snapshot, now)
+    paused = bool(snapshot.get('timer_paused', False))
+    duration = max(1, int(snapshot.get('phase_duration_seconds', 900)))
+    server_now_ms = int(now.timestamp() * 1000)
+    return {
+        'seconds': seconds,
+        'paused': paused,
+        'duration': max(duration, seconds),
+        'expired': seconds == 0 and not paused,
+        'display': f'{seconds // 60}:{seconds % 60:02d}',
+        'percent': min(100, round(seconds * 100 / max(duration, seconds, 1))),
+        'urgent': 0 < seconds <= 60,
+        'ends_at_ms': None if paused else server_now_ms + seconds * 1000,
+        'server_now_ms': server_now_ms,
+    }
+
+
 def get_training_session_live_state(series, session):
     """Compile workshop telemetry, drill phase pipeline, competencies, and pod trackers."""
     org_id = series.organization_id
     snapshot = dict(session.workflow_snapshot or {})
     drill_phase = snapshot.get('drill_phase', 'briefing')
-    drill_seconds_remaining = int(snapshot.get('drill_seconds_remaining', 900))
+    now = timezone.now()
+    drill_seconds_remaining = _calc_drill_seconds_remaining(snapshot, now)
     timer_paused = bool(snapshot.get('timer_paused', False))
     visited_pods = set(snapshot.get('visited_pods', []))
     notes = dict(snapshot.get('notes', {}))
@@ -3785,6 +4145,7 @@ def get_training_session_live_state(series, session):
         'assessment_session': session.assessment_session,
         'drill_phase': drill_phase,
         'drill_seconds_remaining': drill_seconds_remaining,
+        'drill_timer': training_drill_timer(snapshot, now),
         'timer_paused': timer_paused,
         'visited_pods': list(visited_pods),
         'notes': notes,
@@ -3810,13 +4171,19 @@ def set_training_drill_phase(session, phase, *, organization, user):
         raise ValidationError('Phase must be briefing, simulation, or debrief.')
     snapshot = dict(locked.workflow_snapshot or {})
     snapshot['drill_phase'] = phase
+    now = timezone.now()
     if phase == 'simulation':
-        snapshot['drill_seconds_remaining'] = 900
+        phase_duration = 900
     elif phase == 'debrief':
-        snapshot['drill_seconds_remaining'] = 600
+        phase_duration = 600
     else:
-        snapshot['drill_seconds_remaining'] = 300
+        phase_duration = 300
+    snapshot['phase_duration_seconds'] = phase_duration
+    snapshot['drill_seconds_remaining'] = phase_duration
+    snapshot['phase_started_at'] = now.isoformat()
+    snapshot['elapsed_before_pause'] = 0.0
     snapshot['timer_paused'] = False
+    snapshot['timer_paused_at'] = None
     locked.workflow_snapshot = snapshot
     locked.save(update_fields=('workflow_snapshot', 'updated_at'))
     return locked
@@ -3829,8 +4196,13 @@ def adjust_training_drill_timer(session, delta_seconds, *, organization, user):
     if locked is None:
         raise PermissionDenied
     snapshot = dict(locked.workflow_snapshot or {})
-    sec = int(snapshot.get('drill_seconds_remaining', 900))
-    snapshot['drill_seconds_remaining'] = max(0, sec + int(delta_seconds))
+    now = timezone.now()
+    sec = _calc_drill_seconds_remaining(snapshot, now)
+    new_sec = max(0, sec + int(delta_seconds))
+    snapshot['phase_duration_seconds'] = new_sec
+    snapshot['drill_seconds_remaining'] = new_sec
+    snapshot['phase_started_at'] = now.isoformat()
+    snapshot['elapsed_before_pause'] = 0.0
     locked.workflow_snapshot = snapshot
     locked.save(update_fields=('workflow_snapshot', 'updated_at'))
     return locked
@@ -3843,7 +4215,22 @@ def toggle_training_drill_pause(session, *, organization, user):
     if locked is None:
         raise PermissionDenied
     snapshot = dict(locked.workflow_snapshot or {})
-    snapshot['timer_paused'] = not snapshot.get('timer_paused', False)
+    now = timezone.now()
+    is_paused = bool(snapshot.get('timer_paused', False))
+    if is_paused:
+        # Resume timer
+        snapshot['timer_paused'] = False
+        snapshot['timer_paused_at'] = None
+        snapshot['phase_started_at'] = now.isoformat()
+    else:
+        # Pause timer
+        sec = _calc_drill_seconds_remaining(snapshot, now)
+        snapshot['timer_paused'] = True
+        snapshot['timer_paused_at'] = now.isoformat()
+        snapshot['phase_duration_seconds'] = sec
+        snapshot['drill_seconds_remaining'] = sec
+        snapshot['elapsed_before_pause'] = 0.0
+        snapshot['phase_started_at'] = now.isoformat()
     locked.workflow_snapshot = snapshot
     locked.save(update_fields=('workflow_snapshot', 'updated_at'))
     return locked

@@ -2,12 +2,15 @@ import csv
 import hashlib
 import hmac
 import io
+import json
 import logging
 import re
 import secrets
+from collections import Counter, defaultdict
 from datetime import time
 from decimal import Decimal
 from email.utils import formataddr, parseaddr
+from urllib.parse import quote
 from openpyxl import Workbook
 
 from django.core.exceptions import ValidationError
@@ -27,9 +30,11 @@ from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods, require_safe, require_POST
 from django.utils import timezone
+from django.utils.safestring import mark_safe
 from django.utils.cache import patch_vary_headers
 
 from accounts.access import can_oversee, lecturer_required
@@ -39,7 +44,7 @@ from assessments.qr import public_url
 from assessments.session_templates import starters_for
 from .forms import ShowcaseRatingForm
 from .models import (
-    SHOWCASE_DEVICE_TOKEN_MAX_AGE, ShowcaseCertificate, ShowcaseEvent,
+    SHOWCASE_DEVICE_TOKEN_MAX_AGE, ShowcaseCategory, ShowcaseCertificate, ShowcaseEvent,
     ShowcaseConsentAudit, ShowcaseEventAudit, ShowcaseExhibit, ShowcaseRating, TrainingFeedback,
     TrainingSeriesSession, TrainingSessionCompetency,
     ShowcaseJudgeInvitation, ShowcaseJudgeExhibitAssignment, ShowcaseJudgeCriterion,
@@ -57,8 +62,9 @@ from .models import (CombinedPresentationAssessment,
                      PanelDecision, PanelVote, PanelWrittenReview)
 from .forms import (
     ShowcaseEventForm, ShowcaseEventTransitionForm, ShowcaseImportApplyForm,
+    ShowcaseRubricImportForm, SpreadsheetImportForm,
     ShowcaseImportForm, ShowcaseMinorConsentForm,
-    ShowcaseJudgeInvitationForm, ShowcaseJudgeCriterionFormSet, ShowcaseJudgeScorecardForm,
+    ShowcaseJudgeInvitationForm, ShowcaseJudgeCriterionForm, ShowcaseJudgeScorecardForm,
     ShowcaseJudgeConflictForm,
     CompetitionAudienceBallotForm,
 )
@@ -76,17 +82,22 @@ from .operations import (confirm_showcase_minor_consent,
                          submit_showcase_rating, transition_showcase_event,
                          issue_showcase_judge_invitation,
                          replace_showcase_invited_judge_assignments,
-                         replace_showcase_judge_criteria,
+                         save_showcase_judge_criterion, showcase_rubric_total,
                          resolve_showcase_judge_invitation,
                          submit_showcase_judge_evaluation, showcase_judge_progress,
                          revoke_showcase_judge_invitation, declare_showcase_judge_conflict,
                          get_showcase_live_context, toggle_showcase_floor_visitor_voting,
                          toggle_showcase_floor_judge_scoring, assign_showcase_roving_judge,
                          stage_set_showcase_exhibit, stage_adjust_showcase_timer,
-                         stage_toggle_showcase_pause, set_showcase_projector_mode)
+                         stage_toggle_showcase_pause, set_showcase_projector_mode,
+                         stage_clear_showcase_exhibit, showcase_exhibit_on_stage,
+                         SHOWCASE_NOT_ON_STAGE)
 from .operations import showcase_awards
-from .throttling import (allow_panel_examiner_request, allow_unknown_bearer_request,
+from .throttling import (allow_panel_examiner_request, allow_panel_examiner_state_request,
+                         allow_unknown_bearer_request,
                          allow_showcase_judge_request, allow_public_event_request)
+from .realtime import (broadcast_panel_hearing_event, broadcast_showcase_event,
+                       broadcast_training_session_event)
 from .operations import (abstain_panel_score, declare_panel_conflict, resolve_panel_invitation,
                          bind_panel_invitation_device, issue_panel_device_cookie,
                          valid_panel_device_cookie,
@@ -106,7 +117,7 @@ from .operations import (abstain_panel_score, declare_panel_conflict, resolve_pa
                          get_panel_live_state_context, set_panel_chamber_active_candidate,
                          set_panel_chamber_phase, adjust_panel_chamber_timer,
                          toggle_panel_chamber_pause, conclude_panel_chamber_candidate,
-                         toggle_panel_chamber_display_mode)
+                         toggle_panel_chamber_display_mode, set_panel_phase_durations)
 from .operations import (create_next_training_session, record_training_competency_result,
                          training_series_competency_trends,
                          training_series_feedback_summary, submit_training_feedback,
@@ -134,9 +145,18 @@ from .team_forms import (CreateTrainingSessionForm, TrainingCompetencyForm,
 from .models import (TrainingCompetency, TrainingCompetencyResult, TrainingParticipant,
                      TrainingSeries, TrainingSeriesSession, TrainingCertificate)
 from .showcase_import import parse_exhibits, plan_import, apply_import, sample_workbook
+from . import embedded_import
+from .training_competency_import import (
+    apply_competencies, parse_competencies, plan_competencies,
+    sample_workbook as training_competency_sample)
+from .showcase_rubric_import import (
+    apply_rubric_import, parse_rubric as parse_showcase_rubric,
+    plan_rubric as plan_showcase_rubric, sample_workbook as showcase_rubric_sample,
+)
 from .showcase_monitor import showcase_live_activity
 from .onboarding import service_onboarding
 from assessments.qr import qr_png
+from portal.stepper import build_steps, steps_from_setup, unsaved_steps
 from .training_roster_import import (apply_training_roster_import,
     parse_training_roster, plan_training_roster_import, sample_training_roster)
 from .team_series import (
@@ -163,6 +183,10 @@ PANEL_CANDIDATE_IMPORT_SESSION_KEY = 'panel_candidate_import_preview'
 PANEL_RUBRIC_IMPORT_SESSION_KEY = 'panel_rubric_import_preview'
 PANEL_INVITATION_IMPORT_SESSION_KEY = 'panel_invitation_import_preview'
 SHOWCASE_IMPORT_SESSION_KEY = 'showcase_exhibit_import_preview'
+SHOWCASE_IMPORT_ERRORS_SESSION_KEY = 'showcase_exhibit_import_errors'
+SHOWCASE_RUBRIC_IMPORT_TOKEN_SALT = 'livegrade.showcase.rubric.import.preview.v1'
+SHOWCASE_RUBRIC_IMPORT_SESSION_KEY = 'showcase_rubric_import_preview'
+SHOWCASE_RUBRIC_IMPORT_ERRORS_SESSION_KEY = 'showcase_rubric_import_errors'
 TEAM_FEEDBACK_COOKIE_PREFIX = 'livegrade_team_feedback_'
 COMPETITION_AUDIENCE_COOKIE_PREFIX = 'livegrade_competition_audience_'
 PANEL_EXAMINER_COOKIE_PREFIX = 'livegrade_panel_examiner_'
@@ -456,7 +480,8 @@ def panel_hearing_create(request):
             except ValidationError as exc:
                 form.add_error(None, '; '.join(exc.messages))
                 messages.error(request, '; '.join(exc.messages))
-                return render(request, 'service_domains/panel_hearing_create.html', {'form': form})
+                return render(request, 'service_domains/panel_hearing_create.html',
+                      {'form': form, 'stepper_steps': _HEARING_CREATE_STEPS})
             with transaction.atomic():
                 hearing.save(force_insert=True)
                 panel = PanelScoringPanel(
@@ -477,10 +502,12 @@ def panel_hearing_create(request):
                 return redirect(f"{reverse('panel_hearing_manage', args=[hearing.pk])}?step=candidates")
             return redirect('panel_hearing_manage', hearing_id=hearing.pk)
         messages.error(request, 'Please correct the highlighted fields and try again.')
-        return render(request, 'service_domains/panel_hearing_create.html', {'form': form})
+        return render(request, 'service_domains/panel_hearing_create.html',
+                      {'form': form, 'stepper_steps': _HEARING_CREATE_STEPS})
 
     form = PanelHearingForm(auto_id='hearing_%s', initial={'workflow': PanelHearing.Workflow.SCORED})
-    return render(request, 'service_domains/panel_hearing_create.html', {'form': form})
+    return render(request, 'service_domains/panel_hearing_create.html',
+                      {'form': form, 'stepper_steps': _HEARING_CREATE_STEPS})
 
 
 @require_POST
@@ -571,6 +598,20 @@ def panel_hearing_manage(request, hearing_id):
         response['Referrer-Policy'] = 'same-origin'
         return response
     requires_examiners = hearing.workflow != PanelHearing.Workflow.OUTCOME
+    from_param = request.GET.get('from') or request.POST.get('from', '')
+    if from_param == 'results':
+        back_url = reverse('panel_results_review', args=(hearing.pk,))
+        back_label = 'Back to Results & Deliberation'
+    elif from_param == 'participants':
+        back_url = reverse('panel_hearing_participants', args=(hearing.pk,))
+        back_label = 'Back to Examiners & Candidates'
+    elif from_param == 'live' or hearing.status == PanelHearing.Status.OPEN:
+        back_url = reverse('panel_hearing_live', args=(hearing.pk,))
+        back_label = 'Back to Live Chamber'
+    else:
+        back_url = reverse('panel_hearing_list')
+        back_label = 'Panel assessments'
+    from_query = f'&from={quote(from_param)}' if from_param else ''
     forms = {
         'candidate': PanelCandidateForm(auto_id='candidate_%s'),
         'criterion': PanelCriterionForm(auto_id='criterion_%s'),
@@ -596,8 +637,8 @@ def panel_hearing_manage(request, hearing_id):
                         .owned_by(request.user).select_for_update().filter(pk=hearing.pk).first())
                     if locked is None:
                         raise Http404
-                    if locked.status != PanelHearing.Status.DRAFT:
-                        action_error = 'Hearing details can only change while the hearing is a draft.'
+                    if locked.status in (PanelHearing.Status.SIGNED_OFF, PanelHearing.Status.RELEASED):
+                        action_error = 'Hearing details cannot change once results are released.'
                     else:
                         item = form.save(commit=False)
                         item.organization_id = locked.organization_id
@@ -610,8 +651,20 @@ def panel_hearing_manage(request, hearing_id):
                             item.save()
                             if request.POST.get('advance') == '1':
                                 messages.success(request, 'Assessment details saved.')
-                                return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=candidates")
-                            return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=details&saved=1")
+                                return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=candidates{from_query}")
+                            return_step = request.POST.get('return_step')
+                            valid_return_steps = {'details', 'candidates', 'ready'}
+                            if item.workflow != PanelHearing.Workflow.OUTCOME:
+                                valid_return_steps.update({'scoring', 'examiners'})
+                            if return_step in valid_return_steps:
+                                messages.success(request, 'Assessment details saved.')
+                                return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step={return_step}{from_query}")
+                            leave_to = request.POST.get('leave_to', '')
+                            if leave_to and url_has_allowed_host_and_scheme(
+                                    leave_to, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+                                messages.success(request, 'Assessment details saved.')
+                                return redirect(leave_to)
+                            return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=details&saved=1{from_query}")
         elif action == 'remove_candidate':
             with transaction.atomic():
                 locked_hearing = (PanelHearing.objects.for_organization(request.organization)
@@ -625,7 +678,7 @@ def panel_hearing_manage(request, hearing_id):
                     if cand:
                         cand.delete()
                         messages.success(request, 'Candidate removed.')
-                        return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=candidates")
+                        return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=candidates{from_query}")
         elif action == 'remove_criterion':
             with transaction.atomic():
                 locked_hearing = (PanelHearing.objects.for_organization(request.organization)
@@ -639,7 +692,7 @@ def panel_hearing_manage(request, hearing_id):
                     if crit:
                         crit.delete()
                         messages.success(request, 'Criterion removed.')
-                        return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=scoring")
+                        return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=scoring{from_query}")
         elif action in ('activate_candidate', 'end_candidate'):
             try:
                 if action == 'activate_candidate':
@@ -692,49 +745,77 @@ def panel_hearing_manage(request, hearing_id):
                         item.hearing = locked_hearing
                         item.organization_id = locked_hearing.organization_id
                         item.created_by = request.user
+                        if action == 'candidate':
+                            last_order = locked_hearing.candidates.order_by(
+                                '-order', '-pk').values_list('order', flat=True).first()
+                            item.order = 1 if last_order is None else last_order + 1
+                        elif action == 'criterion':
+                            last_order = locked_hearing.criteria.order_by(
+                                '-order', '-pk').values_list('order', flat=True).first()
+                            item.order = 0 if last_order is None else last_order + 1
                         if action in ('panel', 'update_panel'):
                             item.configuration_managed = True
-                        try:
-                            item.full_clean()
-                        except ValidationError as exc:
-                            form.add_error(None, '; '.join(exc.messages))
+                        candidate_reference_error = (
+                            'A candidate with this reference already exists. '
+                            'Enter a unique reference or leave it blank.')
+                        duplicate_candidate_reference = (
+                            action == 'candidate' and item.reference
+                            and locked_hearing.candidates.filter(reference=item.reference).exists())
+                        if duplicate_candidate_reference:
+                            form.add_error('reference', candidate_reference_error)
                         else:
-                            item.save(force_insert=action != 'update_panel')
-                            if action == 'criterion':
-                                selected_panels = form.cleaned_data['panels']
-                                if not selected_panels:
-                                    selected_panels = locked_hearing.panels.all()
-                                for panel in selected_panels:
-                                    item.panels.add(panel)
-                                PanelCriterionLevel.objects.bulk_create([
-                                    PanelCriterionLevel(criterion=item, score=row['score'],
-                                        description=row['description'],
+                            try:
+                                item.full_clean()
+                            except ValidationError as exc:
+                                form.add_error(None, '; '.join(exc.messages))
+                            else:
+                                try:
+                                    # Use a savepoint so a concurrent duplicate-reference insert can
+                                    # be reported on the field without breaking the outer transaction.
+                                    with transaction.atomic():
+                                        item.save(force_insert=action != 'update_panel')
+                                except IntegrityError:
+                                    if (action != 'candidate' or not item.reference
+                                            or not locked_hearing.candidates.filter(
+                                                reference=item.reference).exists()):
+                                        raise
+                                    form.add_error('reference', candidate_reference_error)
+                                else:
+                                    if action == 'criterion':
+                                        selected_panels = form.cleaned_data['panels']
+                                        if not selected_panels:
+                                            selected_panels = locked_hearing.panels.all()
+                                        for panel in selected_panels:
+                                            item.panels.add(panel)
+                                        PanelCriterionLevel.objects.bulk_create([
+                                            PanelCriterionLevel(criterion=item, score=row['score'],
+                                                description=row['description'],
+                                                organization_id=locked_hearing.organization_id,
+                                                created_by=request.user)
+                                            for row in form._level_descriptors])
+                                    audit = PanelAuditEvent(hearing=locked_hearing,
+                                        action=({'candidate': PanelAuditEvent.Action.CANDIDATE_ADDED,
+                                                 'criterion': PanelAuditEvent.Action.CRITERION_ADDED,
+                                                 'panel': PanelAuditEvent.Action.PANEL_ADDED,
+                                                 'update_panel': PanelAuditEvent.Action.PANEL_UPDATED}[action]),
+                                        reason=({'candidate': 'Candidate added to draft hearing.',
+                                                 'criterion': 'Scoring criterion added to draft hearing.',
+                                                 'panel': 'Scoring panel added to draft hearing.',
+                                                 'update_panel': 'Scoring panel configuration updated in draft hearing.'}[action]),
+                                        actor_user=request.user,
+                                        candidate=item if action == 'candidate' else None,
                                         organization_id=locked_hearing.organization_id,
                                         created_by=request.user)
-                                    for row in form._level_descriptors])
-                            audit = PanelAuditEvent(hearing=locked_hearing,
-                                action=({'candidate': PanelAuditEvent.Action.CANDIDATE_ADDED,
-                                         'criterion': PanelAuditEvent.Action.CRITERION_ADDED,
-                                         'panel': PanelAuditEvent.Action.PANEL_ADDED,
-                                         'update_panel': PanelAuditEvent.Action.PANEL_UPDATED}[action]),
-                                reason=({'candidate': 'Candidate added to draft hearing.',
-                                         'criterion': 'Scoring criterion added to draft hearing.',
-                                         'panel': 'Scoring panel added to draft hearing.',
-                                         'update_panel': 'Scoring panel configuration updated in draft hearing.'}[action]),
-                                actor_user=request.user,
-                                candidate=item if action == 'candidate' else None,
-                                organization_id=locked_hearing.organization_id,
-                                created_by=request.user)
-                            audit.full_clean()
-                            audit.save(force_insert=True)
-                            messages.success(request, {
-                                'candidate': 'Presenter or entry added.',
-                                'criterion': 'Scoring criterion added.',
-                                'panel': 'Examiner group added.',
-                                'update_panel': 'Examiner group settings saved.',
-                            }[action])
-                            step_target = 'candidates' if action == 'candidate' else 'scoring'
-                            return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step={step_target}")
+                                    audit.full_clean()
+                                    audit.save(force_insert=True)
+                                    messages.success(request, {
+                                        'candidate': 'Presenter or entry added.',
+                                        'criterion': 'Scoring criterion added.',
+                                        'panel': 'Examiner group added.',
+                                        'update_panel': 'Examiner group settings saved.',
+                                    }[action])
+                                    step_target = 'candidates' if action == 'candidate' else 'scoring'
+                                    return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step={step_target}{from_query}")
         elif action == 'open':
             try:
                 open_panel_hearing(hearing, organization=request.organization, user=request.user)
@@ -745,7 +826,7 @@ def panel_hearing_manage(request, hearing_id):
                     'Assessment opened for the chair to record outcomes.'
                     if not requires_examiners
                     else 'Assessment opened for examiners.')
-                return redirect('panel_hearing_manage', hearing_id=hearing.pk)
+                return redirect('panel_hearing_live', hearing_id=hearing.pk)
         elif action == 'review':
             try:
                 compile_panel_results(hearing, organization=request.organization, user=request.user)
@@ -866,17 +947,20 @@ def panel_hearing_manage(request, hearing_id):
         for panel in hearing.panels.order_by('name', 'pk')]
     needs_scoring = hearing.workflow in (PanelHearing.Workflow.SCORED,
                                           PanelHearing.Workflow.HYBRID)
+    details_complete = bool(hearing.name and hearing.workflow)
+    candidates_complete = candidates.exists()
     examiner_panels = [row['panel'] for row in panel_rows
         if not needs_scoring or row['panel'].share > 0]
     panel_total = sum((row['panel'].share for row in panel_rows), Decimal('0'))
     setup_checklist = [
-        {'label': 'Choose a workflow', 'complete': bool(hearing.workflow),
+        {'label': 'Choose a workflow', 'complete': details_complete,
          'anchor': 'id_workflow'},
-        {'label': 'Add at least one candidate', 'complete': candidates.exists(),
+        {'label': 'Add at least one candidate', 'complete': candidates_complete,
          'anchor': 'candidates-heading'},
     ]
+    scoring_checks = []
     if needs_scoring:
-        setup_checklist.extend([
+        scoring_checks = [
             {'label': 'Add at least one scoring criterion',
              'complete': criteria.exists(), 'anchor': 'criteria-heading'},
             {'label': 'Set panel shares to exactly 100%',
@@ -891,17 +975,27 @@ def panel_hearing_manage(request, hearing_id):
                                  row['panel'].criteria.filter(pk=criterion.pk).exists()
                                  for row in panel_rows) for criterion in criteria),
              'anchor': 'panels-heading'},
-        ])
+        ]
+        setup_checklist.extend(scoring_checks)
+    examiner_check = None
     if requires_examiners:
-        setup_checklist.append({
+        examiner_check = {
          'label': 'Have enough examiners accept their invitations',
          'complete': bool(examiner_panels) and all(
              hearing.invitations.filter(panel=panel, confirmed_at__isnull=False,
                  accepted_at__isnull=True, declined_at__isnull=True,
                  revoked_at__isnull=True, expires_at__gt=now).count()
              >= panel.minimum_examiners for panel in examiner_panels),
-         'anchor': 'invitations-heading'})
+         'anchor': 'invitations-heading'}
+        setup_checklist.append(examiner_check)
     setup_ready = all(step['complete'] for step in setup_checklist)
+    step_completion = {
+        'details': details_complete,
+        'candidates': candidates_complete,
+        'scoring': all(check['complete'] for check in scoring_checks),
+        'examiners': examiner_check['complete'] if examiner_check else True,
+        'ready': setup_ready,
+    }
     workflow_descriptions = {
         PanelHearing.Workflow.SCORED:
             'Examiners score each active candidate independently. LiveGrade calculates criterion results using the configured panel rules; the chair reviews, signs off and releases them.',
@@ -983,12 +1077,15 @@ def panel_hearing_manage(request, hearing_id):
     response = render(request, 'service_domains/panel_hearing_manage.html', {
         'hearing': hearing, 'candidates': candidates, 'criteria': criteria,
         'active_panel_step': active_panel_step,
+        'back_url': back_url, 'back_label': back_label, 'from_param': from_param,
         'workflow_description': workflow_descriptions.get(hearing.workflow, ''),
         'needs_scoring': needs_scoring,
         'requires_examiners': requires_examiners,
         'invitations': invitations, 'conflicts': conflicts, 'forms': forms,
         'panel_rows': panel_rows,
         'setup_checklist': setup_checklist,
+        'step_completion': step_completion,
+        'stepper_steps': _hearing_steps(step_completion, requires_examiners, active_panel_step),
         'setup_ready': setup_ready,
         'invitation_notice': invitation_notice, 'action_error': action_error,
         'candidate_import_form': candidate_import_form,
@@ -1414,7 +1511,7 @@ def panel_results_export(request, hearing_id):
     """Download an owner-only, examiner-anonymous aggregate results workbook."""
     hearing = (PanelHearing.objects.for_organization(request.organization)
         .owned_by(request.user).filter(pk=hearing_id).first())
-    if hearing is None or hearing.status in (PanelHearing.Status.DRAFT, PanelHearing.Status.OPEN):
+    if hearing is None or hearing.status == PanelHearing.Status.DRAFT:
         raise Http404
     snapshots = list(PanelResultSnapshot.objects.for_organization(request.organization)
         .owned_by(request.user).filter(hearing=hearing)
@@ -1434,15 +1531,49 @@ def panel_results_export(request, hearing_id):
         value = str(value or '')
         return "'" + value if value.startswith(('=', '+', '-', '@')) else value
 
-    for snapshot in snapshots:
-        adjustment = latest.get(snapshot.pk)
-        sheet.append([safe_text(hearing.name), hearing.hearing_date, safe_text(hearing.venue),
-            safe_text(snapshot.candidate.display_name), safe_text(snapshot.candidate.reference),
-            safe_text(snapshot.criterion.name), float(snapshot.score),
-            float(adjustment.adjusted_score if adjustment else snapshot.score),
-            snapshot.rater_count, not snapshot.below_minimum, snapshot.aggregation,
-            float(snapshot.trim_fraction) if snapshot.trim_fraction is not None else None,
-            safe_text(snapshot.panel_methodology), float(snapshot.criterion.weight)])
+    if snapshots:
+        for snapshot in snapshots:
+            adjustment = latest.get(snapshot.pk)
+            sheet.append([safe_text(hearing.name), hearing.hearing_date, safe_text(hearing.venue),
+                safe_text(snapshot.candidate.display_name), safe_text(snapshot.candidate.reference),
+                safe_text(snapshot.criterion.name), float(snapshot.score),
+                float(adjustment.adjusted_score if adjustment else snapshot.score),
+                snapshot.rater_count, not snapshot.below_minimum, snapshot.aggregation,
+                float(snapshot.trim_fraction) if snapshot.trim_fraction is not None else None,
+                safe_text(snapshot.panel_methodology), float(snapshot.criterion.weight)])
+    else:
+        # Populate provisional aggregate scores per candidate and criterion
+        conflicts_by_candidate = defaultdict(set)
+        for inv_id, cand_id in (PanelConflict.objects.filter(candidate__hearing=hearing,
+                organization_id=request.organization['id']).values_list('invitation_id', 'candidate_id')):
+            conflicts_by_candidate[cand_id].add(inv_id)
+
+        scores_map = defaultdict(list)
+        for s in (PanelScore.objects.filter(candidate__hearing=hearing,
+                organization_id=request.organization['id']).select_related('invitation')):
+            if s.invitation_id not in conflicts_by_candidate[s.candidate_id]:
+                scores_map[(s.candidate_id, s.criterion_id)].append(float(s.score))
+
+        for candidate in hearing.candidates.order_by('order', 'pk'):
+            for criterion in hearing.criteria.order_by('order', 'pk'):
+                c_scores = scores_map.get((candidate.pk, criterion.pk), [])
+                avg_score = round(sum(c_scores) / len(c_scores), 2) if c_scores else None
+                sheet.append([
+                    safe_text(hearing.name),
+                    hearing.hearing_date,
+                    safe_text(hearing.venue),
+                    safe_text(candidate.display_name),
+                    safe_text(candidate.reference),
+                    safe_text(criterion.name),
+                    avg_score,
+                    avg_score,
+                    len(c_scores),
+                    len(c_scores) >= hearing.minimum_examiners,
+                    hearing.get_aggregation_display(),
+                    float(hearing.trim_fraction) if hearing.trim_fraction is not None else None,
+                    'Provisional live aggregation',
+                    float(criterion.weight)
+                ])
     decisions = (PanelDecision.objects.for_organization(request.organization)
         .owned_by(request.user).filter(hearing=hearing).select_related('candidate', 'decided_by')
         .order_by('candidate__order', 'candidate_id', '-revision'))
@@ -1556,9 +1687,12 @@ def panel_hearing_live_state(request, hearing_id):
         'status': hearing.status,
         'active_candidate_id': active_cand.pk if active_cand else None,
         'active_phase': context['active_phase'],
+        'phase_duration_seconds': context.get('phase_duration_seconds', 900),
         'phase_seconds_remaining': context['phase_seconds_remaining'],
+        'phase_timer_display': context.get('phase_timer_display', '15:00'),
         'timer_paused': context['timer_paused'],
         'display_mode': context['display_mode'],
+        'phase_durations_mins': context.get('phase_durations_mins', {}),
         'hero_html': render_to_string('service_domains/_partials/panel_live_hero.html', context, request=request),
         'examiners_html': render_to_string('service_domains/_partials/panel_live_examiners.html', context, request=request),
         'convergence_html': render_to_string('service_domains/_partials/panel_live_convergence.html', context, request=request),
@@ -1612,8 +1746,19 @@ def panel_hearing_live_action(request, hearing_id):
         elif action == 'set_display_mode':
             mode = request.POST.get('mode')
             toggle_panel_chamber_display_mode(hearing, mode, organization=request.organization, user=request.user)
+        elif action == 'set_phase_durations':
+            durations = {}
+            for phase in ('presentation', 'qa', 'deliberation', 'decision'):
+                mins_val = request.POST.get(f'{phase}_minutes')
+                if mins_val:
+                    try:
+                        durations[phase] = int(mins_val) * 60
+                    except (ValueError, TypeError):
+                        pass
+            set_panel_phase_durations(hearing, durations, organization=request.organization, user=request.user)
         elif action == 'close_hearing':
             compile_panel_results(hearing, organization=request.organization, user=request.user)
+            broadcast_panel_hearing_event(hearing, 'hearing.closed', {})
             messages.success(request, 'Hearing closed. Review and sign off results.')
             return JsonResponse({'status': 'closed', 'redirect': reverse('panel_results_review', args=(hearing.pk,))})
         else:
@@ -1625,13 +1770,30 @@ def panel_hearing_live_action(request, hearing_id):
     hearing.refresh_from_db()
     context = get_panel_live_state_context(hearing)
     active_cand = context['active_candidate']
-    return JsonResponse({
-        'status': hearing.status,
+    broadcast_panel_hearing_event(hearing, f'panel.{action}', {
+        'action': action,
         'active_candidate_id': active_cand.pk if active_cand else None,
+        'active_candidate_name': active_cand.display_name if active_cand else '',
         'active_phase': context['active_phase'],
         'phase_seconds_remaining': context['phase_seconds_remaining'],
         'timer_paused': context['timer_paused'],
         'display_mode': context['display_mode'],
+    })
+    if action in ('set_candidate', 'conclude_candidate'):
+        broadcast_panel_hearing_event(hearing, 'candidate.changed', {
+            'active_candidate_id': active_cand.pk if active_cand else None,
+            'active_candidate_name': active_cand.display_name if active_cand else '',
+        })
+    return JsonResponse({
+        'status': hearing.status,
+        'active_candidate_id': active_cand.pk if active_cand else None,
+        'active_phase': context['active_phase'],
+        'phase_duration_seconds': context.get('phase_duration_seconds', 900),
+        'phase_seconds_remaining': context['phase_seconds_remaining'],
+        'phase_timer_display': context.get('phase_timer_display', '15:00'),
+        'timer_paused': context['timer_paused'],
+        'display_mode': context['display_mode'],
+        'phase_durations_mins': context.get('phase_durations_mins', {}),
         'hero_html': render_to_string('service_domains/_partials/panel_live_hero.html', context, request=request),
         'examiners_html': render_to_string('service_domains/_partials/panel_live_examiners.html', context, request=request),
         'convergence_html': render_to_string('service_domains/_partials/panel_live_convergence.html', context, request=request),
@@ -1660,10 +1822,162 @@ def panel_hearing_live_display_toggle(request, hearing_id):
 @require_http_methods(['GET', 'POST'])
 @never_cache
 @_panel_owner
+def panel_hearing_participants(request, hearing_id):
+    hearing = (PanelHearing.objects.for_organization(request.organization)
+               .owned_by(request.user).filter(pk=hearing_id).first())
+    if hearing is None:
+        raise Http404
+    requires_examiners = hearing.workflow != PanelHearing.Workflow.OUTCOME
+    action_error = ''
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'activate_candidate':
+            candidate_id = request.POST.get('candidate_id')
+            if candidate_id:
+                try:
+                    set_panel_chamber_active_candidate(hearing, candidate_id,
+                        organization=request.organization, user=request.user)
+                    messages.success(request, 'Presenter activated on the chamber floor.')
+                    return redirect('panel_hearing_live', hearing_id=hearing.pk)
+                except (ValidationError, PermissionDenied) as exc:
+                    action_error = '; '.join(getattr(exc, 'messages', [])) or str(exc)
+        elif action == 'invite' and requires_examiners:
+            form = PanelInvitationForm(request.POST,
+                panels=hearing.panels.order_by('name', 'pk'))
+            if form.is_valid():
+                try:
+                    invitation = queue_panel_invitation(hearing,
+                        form.cleaned_data['email'], form.cleaned_data['expires_at'],
+                        organization=request.organization, user=request.user,
+                        panel=form.cleaned_data['panel'])
+                except (PermissionDenied, ValidationError) as exc:
+                    action_error = ('; '.join(getattr(exc, 'messages', [])) or
+                                    'This hearing cannot accept an invitation.')
+                else:
+                    invitation_origin = public_url(request, '/').rstrip('/')
+                    def enqueue_invitation():
+                        try:
+                            send_panel_invitation_email.delay(invitation.pk, invitation_origin)
+                        except Exception:
+                            mark_panel_invitation_enqueue_failed(invitation.pk)
+                    transaction.on_commit(enqueue_invitation)
+                    messages.success(request, 'Examiner invitation queued for delivery.')
+                    return redirect('panel_hearing_participants', hearing_id=hearing.pk)
+            else:
+                action_error = 'Please enter a valid email address.'
+        elif action == 'resend' and requires_examiners:
+            invitation = PanelInvitation.objects.filter(hearing=hearing,
+                pk=request.POST.get('invitation_id')).first()
+            if invitation is None:
+                raise Http404
+            try:
+                invitation = request_panel_invitation_resend(hearing, invitation,
+                    organization=request.organization, user=request.user)
+            except (PermissionDenied, ValidationError) as exc:
+                action_error = ('; '.join(getattr(exc, 'messages', [])) or
+                                'This invitation cannot be resent.')
+            else:
+                invitation_origin = public_url(request, '/').rstrip('/')
+                def enqueue_resend():
+                    try:
+                        send_panel_invitation_email.delay(invitation.pk, invitation_origin)
+                    except Exception:
+                        mark_panel_invitation_enqueue_failed(invitation.pk)
+                transaction.on_commit(enqueue_resend)
+                messages.success(request, 'Invitation resend queued for delivery.')
+                return redirect('panel_hearing_participants', hearing_id=hearing.pk)
+        elif action == 'revoke' and requires_examiners:
+            invitation = PanelInvitation.objects.filter(hearing=hearing,
+                pk=request.POST.get('invitation_id')).first()
+            if invitation is None:
+                raise Http404
+            try:
+                revoke_panel_invitation(hearing, invitation, request.POST.get('reason', ''),
+                    organization=request.organization, user=request.user)
+            except (PermissionDenied, ValidationError) as exc:
+                action_error = ('; '.join(getattr(exc, 'messages', [])) or
+                                'This invitation cannot be revoked.')
+            else:
+                messages.success(request, 'Examiner invitation revoked.')
+                return redirect('panel_hearing_participants', hearing_id=hearing.pk)
+
+    org = hearing.organization_id
+    candidates_qs = list(PanelCandidate.objects.filter(hearing=hearing, organization_id=org).order_by('order', 'pk'))
+    criteria = list(PanelCriterion.objects.filter(hearing=hearing, organization_id=org).order_by('order', 'pk'))
+    total_criteria = len(criteria)
+    active_cand = hearing.active_candidate
+    if active_cand is None and candidates_qs:
+        active_cand = candidates_qs[0]
+
+    decisions = {d.candidate_id: d for d in PanelDecision.objects.filter(hearing=hearing, organization_id=org).order_by('revision')}
+
+    conflicts_by_candidate = defaultdict(set)
+    conflicts_list = list(PanelConflict.objects.filter(candidate__hearing=hearing, organization_id=org).select_related('candidate', 'invitation'))
+    for conf in conflicts_list:
+        conflicts_by_candidate[conf.candidate_id].add(conf.invitation_id)
+
+    candidate_scores_count = defaultdict(int)
+    for row in (PanelScore.objects.filter(candidate__hearing=hearing, organization_id=org)
+            .values('candidate_id').annotate(count=Count('pk'))):
+        candidate_scores_count[row['candidate_id']] = row['count']
+
+    candidate_rows = []
+    for cand in candidates_qs:
+        is_active = bool(active_cand and cand.pk == active_cand.pk)
+        has_decision = cand.pk in decisions
+        candidate_rows.append({
+            'candidate': cand,
+            'is_active': is_active,
+            'has_decision': has_decision,
+            'decision': decisions.get(cand.pk),
+            'scores_count': candidate_scores_count.get(cand.pk, 0),
+        })
+
+    invitations_qs = list(PanelInvitation.objects.filter(hearing=hearing, organization_id=org, revoked_at__isnull=True).select_related('panel').order_by('pk'))
+    examiner_rows = []
+    for inv in invitations_qs:
+        scored_count = 0
+        if active_cand:
+            scored_count = PanelScore.objects.filter(candidate=active_cand, invitation=inv).count()
+        total_evaluations = PanelScore.objects.filter(invitation=inv).count()
+        examiner_rows.append({
+            'invitation': inv,
+            'panel_name': inv.panel.name if inv.panel else 'Default panel',
+            'is_conflicted': bool(active_cand and inv.pk in conflicts_by_candidate.get(active_cand.pk, set())),
+            'active_candidate_scored': scored_count,
+            'total_criteria': total_criteria,
+            'total_evaluations': total_evaluations,
+            'is_bound': bool(inv.device_digest),
+        })
+
+    invitation_form = PanelInvitationForm(panels=hearing.panels.order_by('name', 'pk')) if requires_examiners else None
+
+    context = {
+        'hearing': hearing,
+        'candidates': candidate_rows,
+        'examiners': examiner_rows,
+        'conflicts': conflicts_list,
+        'requires_examiners': requires_examiners,
+        'active_candidate': active_cand,
+        'invitation_form': invitation_form,
+        'action_error': action_error,
+        'active_tab': 'participants',
+    }
+    response = render(request, 'service_domains/panel_hearing_participants.html', context)
+    response['Cache-Control'] = 'private, no-store'
+    response['X-Content-Type-Options'] = 'nosniff'
+    response['Referrer-Policy'] = 'same-origin'
+    return response
+
+
+@require_http_methods(['GET', 'POST'])
+@never_cache
+@_panel_owner
 def panel_results_review(request, hearing_id):
     hearing = (PanelHearing.objects.for_organization(request.organization)
                .owned_by(request.user).filter(pk=hearing_id).first())
-    if hearing is None or hearing.status == PanelHearing.Status.DRAFT or hearing.status == PanelHearing.Status.OPEN:
+    if hearing is None or hearing.status == PanelHearing.Status.DRAFT:
         raise Http404
     action_error = ''
     adjustment_errors = {}
@@ -1823,14 +2137,25 @@ def panel_results_review(request, hearing_id):
     entrant_links = list(PanelEntrantResultLink.objects.for_organization(request.organization)
         .owned_by(request.user).filter(hearing=hearing).select_related('candidate')
         .order_by('issued_at', 'pk'))
+    provisional_entries = []
+    if hearing.status == PanelHearing.Status.OPEN and not result_rows:
+        activity = panel_live_activity(hearing)
+        provisional_entries = activity.get('candidates') or activity.get('entries', [])
+
+    criteria_count = len(snapshots) if snapshots else hearing.criteria.count()
+
     response = render(request, 'service_domains/panel_results_review.html', {
         'hearing': hearing, 'result_rows': result_rows, 'action_error': action_error,
+        'provisional_entries': provisional_entries,
+        'criteria_count': criteria_count,
+        'active_tab': 'results',
         'moderation_comments': moderation_comments,
         'entrant_candidates': entrant_candidates, 'entrant_links': entrant_links,
         'decision_rows': decision_rows,
         'show_decisions': hearing.workflow in (PanelHearing.Workflow.OUTCOME,
             PanelHearing.Workflow.VOTE, PanelHearing.Workflow.HYBRID,
-            PanelHearing.Workflow.REVIEW, PanelHearing.Workflow.REVIEW_VOTE),
+            PanelHearing.Workflow.REVIEW, PanelHearing.Workflow.REVIEW_VOTE,
+            PanelHearing.Workflow.SCORED),
         'show_votes': hearing.workflow in (PanelHearing.Workflow.VOTE,
             PanelHearing.Workflow.HYBRID, PanelHearing.Workflow.REVIEW_VOTE),
         'uses_rubric_scoring': hearing.workflow in (
@@ -2066,7 +2391,11 @@ def panel_examiner(request, token):
                 record_panel_invitation_attempt(known_invitation,
                     _panel_attempt_action(request), outcome, reason)
         raise Http404
-    allowed = allow_panel_examiner_request(invitation)
+    is_state_request = request.method == 'GET' and request.GET.get('state') == '1'
+    if is_state_request:
+        allowed = allow_panel_examiner_state_request(invitation)
+    else:
+        allowed = allow_panel_examiner_request(invitation)
     if allowed is None:
         if request.method == 'POST':
             record_panel_invitation_attempt(invitation, _panel_attempt_action(request),
@@ -2094,11 +2423,12 @@ def panel_examiner(request, token):
                 or not hmac.compare_digest(hashlib.sha256(device_cookie.encode('utf-8')).hexdigest(),
                                            invitation.device_digest)):
             return HttpResponse('Confirm this invitation in the browser that accepted it.', status=403)
+        hearing = invitation.hearing
         return JsonResponse({
-            'status': invitation.hearing.status,
-            'active_candidate_id': invitation.hearing.active_candidate_id,
-            'active_candidate_name': (invitation.hearing.active_candidate.display_name
-                if invitation.hearing.active_candidate_id else ''),
+            'status': hearing.status,
+            'active_candidate_id': hearing.active_candidate_id,
+            'active_candidate_name': (hearing.active_candidate.display_name
+                if hearing.active_candidate_id else ''),
         }, headers={'Cache-Control': 'private, no-store', 'Referrer-Policy': 'same-origin'})
     if request.method == 'POST' and request.POST.get('action') == 'decline':
         try:
@@ -2236,6 +2566,10 @@ def panel_examiner(request, token):
                 'abstain': 'Abstention recorded.',
                 'score': 'Score submitted.',
             }.get(action, 'Your response was recorded.'))
+            broadcast_panel_hearing_event(invitation.hearing, f'{action}.submitted', {
+                'examiner_id': invitation.pk,
+                'action': action,
+            })
             return redirect('panel_examiner', token=token)
 
     conflicts = set(PanelConflict.objects.filter(invitation=invitation)
@@ -2272,7 +2606,7 @@ def panel_examiner(request, token):
             if row['candidate'].pk == submitted_review_candidate_id else PanelWrittenReviewForm())
         row['review_form'].fields['revision_reason'].required = bool(row['written_review'])
     response = render(request, 'service_domains/panel_examiner.html', {
-        'hearing': hearing, 'invitation': invitation, 'candidate_rows': candidate_rows,
+        'hearing': hearing, 'invitation': invitation, 'token': token, 'candidate_rows': candidate_rows,
         'form_error': form_error,
     }, status=400 if form_error else 200)
     response['Referrer-Policy'] = 'same-origin'
@@ -2386,8 +2720,13 @@ def training_series_trends(request, series_id):
             organization=request.organization, user=request.user)
     except PermissionDenied:
         raise Http404
+    from_session = None
+    if request.GET.get('session', '').isdigit():
+        from_session = (TrainingSeriesSession.objects.for_organization(request.organization)
+                        .owned_by(request.user).select_related('assessment_session')
+                        .filter(pk=int(request.GET['session']), series=series).first())
     return render(request, 'service_domains/team_series_trends.html', {
-        'series': series, 'trends': trend_data['learners'],
+        'from_session': from_session, 'series': series, 'trends': trend_data['learners'],
         'team_trends': trend_data['teams'],
         'session_count': series.series_sessions.count(),
         'feedback_summaries': training_series_feedback_summary(
@@ -2451,13 +2790,16 @@ def training_anonymous_feedback(request, feedback_public_id):
         'series', 'assessment_session').filter(feedback_public_id=feedback_public_id).first())
     if (series_link is None or not series_link.series.active
             or series_link.series.feedback_minimum_responses is None
-            or series_link.assessment_session.status != AssessmentSession.Status.CLOSED):
+            or series_link.assessment_session.status not in (
+                AssessmentSession.Status.LIVE, AssessmentSession.Status.CLOSED
+            )):
         raise Http404
 
     cookie_name = f'{TEAM_FEEDBACK_COOKIE_PREFIX}{series_link.feedback_public_id.hex}'
     token = request.COOKIES.get(cookie_name, '')
     token_valid = False
     device_digest = ''
+    is_live = (series_link.assessment_session.status == AssessmentSession.Status.LIVE)
     if token:
         try:
             device_digest = TrainingFeedback.digest_device_token(token, series_link)
@@ -2471,7 +2813,9 @@ def training_anonymous_feedback(request, feedback_public_id):
     error = ''
     submitted = False
     if request.method == 'POST':
-        if not token_valid:
+        if is_live:
+            error = 'Feedback is accepted after the demo session closes.'
+        elif not token_valid:
             error = 'The anonymous response token expired. Reload this page and submit again.'
         elif already_submitted:
             error = 'This browser has already submitted feedback for this demo.'
@@ -2487,6 +2831,7 @@ def training_anonymous_feedback(request, feedback_public_id):
     response = render(request, 'service_domains/team_feedback.html', {
         'series_link': series_link, 'form': form, 'error': error,
         'submitted': submitted, 'already_submitted': already_submitted,
+        'is_live': is_live,
     }, status=400 if error or (request.method == 'POST' and not submitted and not form.is_valid()) else 200)
     response['Cache-Control'] = 'private, no-store'
     response['Referrer-Policy'] = 'same-origin'
@@ -2513,9 +2858,19 @@ def competition_audience_vote(request, competition_id, round_id, track_id):
     track = CompetitionTrack.objects.filter(pk=track_id, competition=competition).first()
     latest_round_id = (CompetitionRound.objects.filter(competition=competition)
         .order_by('-order').values_list('pk', flat=True).first())
-    if (round_obj is None or track is None or round_obj.pk != latest_round_id
-            or round_obj.audience_locked_at is not None):
+    if (round_obj is None or track is None or round_obj.pk != latest_round_id):
         raise Http404
+
+    voting_locked = bool(round_obj.audience_locked_at is not None)
+    if not voting_locked:
+        try:
+            from .operations import get_or_create_competition_live_state
+            live_state = get_or_create_competition_live_state(competition)
+            if not live_state.audience_voting_open:
+                voting_locked = True
+        except Exception:
+            pass
+
     entries = list(CompetitionRoundEntry.objects.filter(round=round_obj, track=track)
         .select_related('entry').order_by('entry__order', 'entry_id'))
     if not entries:
@@ -2545,7 +2900,9 @@ def competition_audience_vote(request, competition_id, round_id, track_id):
     error = ''
     submitted = False
     if request.method == 'POST':
-        if not token_valid:
+        if voting_locked:
+            error = 'Audience voting is currently paused or closed for this round.'
+        elif not token_valid:
             error = 'The audience ballot token expired. Reload this page and submit again.'
         elif already_submitted:
             error = 'This browser has already voted in this round and track.'
@@ -2563,6 +2920,10 @@ def competition_audience_vote(request, competition_id, round_id, track_id):
         'competition': competition, 'round': round_obj, 'track': track,
         'form': form, 'error': error, 'submitted': submitted,
         'already_submitted': already_submitted,
+        'voting_locked': voting_locked,
+        'voting_locked_message': ('Audience voting for this round has ended.'
+                                  if round_obj.audience_locked_at
+                                  else 'Audience voting is currently paused by the organizer. Please stay tuned.'),
     }, status=400 if error or (
         request.method == 'POST' and not submitted and not already_submitted and not form.is_valid()) else 200)
     response['Cache-Control'] = 'private, no-store'
@@ -2610,6 +2971,24 @@ def training_series_table(request):
     return render(request, 'service_domains/team_series_table.html', context)
 
 
+_HEARING_CREATE_STEPS = unsaved_steps([
+    ('details', 'Hearing info'), ('candidates', 'Candidates'),
+    ('scoring', 'Criteria and weights'), ('examiners', 'Panel examiners'),
+    ('ready', 'Launch or schedule'),
+], hint='Save the hearing info to unlock this step')
+
+
+def _hearing_steps(step_completion, requires_examiners, active):
+    """Stepper steps for the hearing workspace; scoring and examiners only
+    apply to workflows that need examiners."""
+    labels = [('details', 'Hearing info'), ('candidates', 'Candidates')]
+    if requires_examiners:
+        labels += [('scoring', 'Criteria and weights'), ('examiners', 'Panel examiners')]
+    labels.append(('ready', 'Review and launch'))
+    return build_steps([{'key': key, 'label': label, 'done': step_completion[key]}
+                        for key, label in labels], active)
+
+
 def _new_training_series_context(request, details_form):
     series = TrainingSeries(organization_id=organization_id(request.organization),
         created_by=request.user)
@@ -2634,8 +3013,12 @@ def _new_training_series_context(request, details_form):
             {'key': 'roster', 'label': 'Roster', 'href': '#team-roster', 'complete': False},
             {'key': 'competencies', 'label': 'Competencies', 'href': '#competency-criteria', 'complete': False},
             {'key': 'demos', 'label': 'Session evaluation', 'href': '#series-demos', 'complete': False},
-            {'key': 'certification', 'label': 'Certification', 'href': '#feedback-privacy', 'complete': False},
+            {'key': 'review', 'label': 'Review', 'href': '#series-review', 'complete': False},
         ],
+        'stepper_steps': unsaved_steps([
+            ('details', 'Series setup'), ('roster', 'Roster'), ('competencies', 'Competencies'),
+            ('demos', 'Session evaluation'), ('review', 'Review'),
+        ], hint='Save the series setup to unlock this step'),
         'active_step': 'details',
         'team_starters': starters_for('team'),
         'is_new_series': True,
@@ -2763,6 +3146,31 @@ def training_series_bulk_delete(request):
 def training_series_manage(request, series_id):
     series = _owned_training_series(request, series_id)
     manage_url = reverse('training_series_manage', kwargs={'series_id': series.pk})
+    from_param = request.GET.get('from') or request.POST.get('from', '')
+    session_id_param = request.GET.get('session_id') or request.POST.get('session_id', '')
+    if not session_id_param.isdigit():
+        session_id_param = ''
+    active_session_link = series.series_sessions.exclude(assessment_session__status=AssessmentSession.Status.CLOSED).order_by('-sequence').first()
+    target_session_id = session_id_param or (active_session_link.pk if active_session_link else None)
+    if (from_param == 'live' or active_session_link) and target_session_id:
+        back_url = reverse('training_session_live', kwargs={'series_id': series.pk, 'session_id': target_session_id})
+        back_label = 'Back to Live Workshop'
+    elif from_param == 'trends':
+        back_url = reverse('training_series_trends', kwargs={'series_id': series.pk})
+        back_label = 'Back to Competency Trends'
+    else:
+        back_url = reverse('training_series_table')
+        back_label = 'Training series'
+    workspace_link = None
+    if from_param == 'live' and str(target_session_id).isdigit():
+        workspace_link = series.series_sessions.select_related('assessment_session').filter(
+            pk=int(target_session_id)).first()
+    from_query_parts = []
+    if from_param:
+        from_query_parts.append(f'from={quote(from_param)}')
+    if target_session_id:
+        from_query_parts.append(f'session_id={target_session_id}')
+    from_query = ('&' + '&'.join(from_query_parts)) if from_query_parts else ''
     participant_form = competency_form = launch_form = privacy_form = None
     roster_import_form = TrainingRosterImportForm()
     roster_import_pending = False
@@ -2793,8 +3201,8 @@ def training_series_manage(request, series_id):
                 details_form.save()
                 messages.success(request, 'Series details saved.')
                 if request.POST.get('advance') == '1':
-                    return redirect(f'{manage_url}?step=roster')
-                return redirect(f'{manage_url}?step=details&saved=1')
+                    return redirect(f'{manage_url}?step=roster{from_query}')
+                return redirect(f'{manage_url}?step=details&saved=1{from_query}')
         elif action == 'feedback_privacy':
             privacy_form = TrainingFeedbackPrivacyForm(request.POST)
             if privacy_form.is_valid():
@@ -2893,38 +3301,47 @@ def training_series_manage(request, series_id):
         request.user).filter(series=series)
     sessions = (series.series_sessions.select_related('assessment_session')
                 .order_by('sequence'))
+    competency_plan, competency_token = embedded_import.load_preview(
+        request, 'training-competency', series, plan_competencies)
+    competency_import_errors = embedded_import.take_errors(request, 'training-competency', series)
     setup_steps = [
         {'key': 'details', 'label': 'Series setup', 'href': '#series-details', 'complete': True},
         {'key': 'roster', 'label': 'Roster', 'href': '#team-roster', 'complete': participants.exists()},
         {'key': 'competencies', 'label': 'Competencies', 'href': '#competency-criteria', 'complete': competencies.exists()},
         {'key': 'demos', 'label': 'Session evaluation', 'href': '#series-demos', 'complete': sessions.exists()},
-        {'key': 'certification', 'label': 'Certification', 'href': '#feedback-privacy',
-         'complete': sessions.filter(assessment_session__status=AssessmentSession.Status.CLOSED).exists()},
+        {'key': 'review', 'label': 'Review', 'href': '#series-review',
+         'complete': sessions.exclude(
+             assessment_session__status=AssessmentSession.Status.DRAFT).exists()},
     ]
     valid_steps = {step['key'] for step in setup_steps}
     requested_step = request.POST.get('setup_step') or request.GET.get('step')
     if requested_step in valid_steps:
         active_step = requested_step
     elif request.method == 'POST':
-        action = request.POST.get('action')
-        if action == 'series_details':
-            active_step = 'details'
-        elif action in ('participant', 'remove_participant'):
-            active_step = 'roster'
-        elif action in ('competency', 'remove_competency'):
-            active_step = 'competencies'
-        elif action == 'create_session':
-            active_step = 'demos'
-        else:
-            active_step = 'certification'
+        active_step = {
+            'series_details': 'details', 'participant': 'roster', 'remove_participant': 'roster',
+            'competency': 'competencies', 'remove_competency': 'competencies',
+            'create_session': 'demos', 'feedback_privacy': 'demos',
+        }.get(request.POST.get('action'), 'details')
     elif roster_import_plan is not None:
         active_step = 'roster'
+    elif competency_plan is not None or competency_import_errors:
+        active_step = 'competencies'
     else:
         active_step = 'details'
     has_team_templates = (SessionTemplate.objects.for_organization(request.organization)
         .for_service('team').owned_by(request.user).exists())
+    live_link = next((link for link in reversed(list(sessions))
+        if link.assessment_session.status != AssessmentSession.Status.CLOSED), None)
     return render(request, 'service_domains/team_series_manage.html', {
         'series': series, 'participants': participants, 'competencies': competencies,
+        'live_link': live_link,
+        'competency_import_form': SpreadsheetImportForm(auto_id='competency_import_%s'),
+        'competency_import_plan': competency_plan,
+        'competency_import_token': competency_token,
+        'competency_import_errors': competency_import_errors,
+        'back_url': back_url, 'back_label': back_label, 'from_param': from_param,
+        'target_session_id': target_session_id, 'workspace_link': workspace_link,
         'sessions': sessions, 'participant_form': participant_form,
         'competency_form': competency_form, 'launch_form': launch_form,
         'privacy_form': privacy_form, 'has_team_templates': has_team_templates,
@@ -2932,6 +3349,7 @@ def training_series_manage(request, series_id):
         'roster_import_pending': roster_import_pending,
         'roster_import_plan': roster_import_plan,
         'setup_steps': setup_steps,
+        'stepper_steps': steps_from_setup(setup_steps, active_step),
         'active_step': active_step,
         'team_starters': starters_for('team'),
     })
@@ -2939,6 +3357,32 @@ def training_series_manage(request, series_id):
 
 def _team_roster_import_cache_key(token):
     return f'livegrade:team:roster-import:{token}'
+
+
+@require_POST
+@never_cache
+@_team_owner
+def training_competency_import(request, series_id):
+    """Preview, apply or cancel a competency spreadsheet; returns to the Competencies step."""
+    series = _owned_training_series(request, series_id)
+    manage_url = reverse('training_series_manage', args=(series.pk,))
+    return embedded_import.handle_post(
+        request, kind='training-competency', owner=series, form_class=SpreadsheetImportForm,
+        parse=parse_competencies, plan=plan_competencies, apply=apply_competencies,
+        success='Competencies imported.',
+        back=lambda: redirect(f'{manage_url}?step=competencies'))
+
+
+@require_safe
+@never_cache
+@_team_owner
+def training_competency_import_sample(request, series_id):
+    _owned_training_series(request, series_id)
+    response = HttpResponse(training_competency_sample().getvalue(), content_type=(
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'))
+    response['Content-Disposition'] = 'attachment; filename="competencies-sample.xlsx"'
+    response['Cache-Control'] = 'private, no-store'
+    return response
 
 
 @require_http_methods(['GET', 'POST'])
@@ -3149,7 +3593,7 @@ def training_session_competencies(request, pk):
                              auto_id=f'comp_{criterion.pk}_student_{student.pk}_%s')),
             })
     response = render(request, 'service_domains/team_competencies.html', {
-        'session': session, 'series_link': series_link, 'rows': rows,
+        'session': session, 'series_link': series_link, 'series': series_link.series, 'rows': rows,
         'criteria': criteria, 'certificate_error': certificate_error,
         'learner_report_url': learner_report_url, 'learners': students,
     }, status=400 if form is not None and not form.is_valid() else 200)
@@ -3425,9 +3869,10 @@ def showcase_event_create(request):
             event.save(force_insert=True)
             messages.success(request,
                 'Event details saved. Continue setup by adding exhibits, judging details, and consent checks before opening it.')
-            return redirect('showcase_event_manage', event_id=event.pk)
+            return redirect(f"{reverse('showcase_event_manage', args=(event.pk,))}?step=exhibits")
     return render(request, 'service_domains/showcase_event_create.html', {
         'form': form,
+        'stepper_steps': _SHOWCASE_CREATE_STEPS,
     }, status=400 if request.method == 'POST' and form.errors else 200)
 
 
@@ -3452,11 +3897,149 @@ def _load_showcase_import_preview(request, event):
     return plan, (raw_token if plan['ok'] else '')
 
 
+def _store_showcase_import_errors(request, event, form):
+    """Keep actionable import errors for the next, step-preserving workspace GET."""
+    errors = [str(error) for field_errors in form.errors.values() for error in field_errors]
+    if not errors:
+        errors = ['The exhibit spreadsheet could not be processed. Review it and try again.']
+    request.session[SHOWCASE_IMPORT_ERRORS_SESSION_KEY] = {
+        'event': event.pk,
+        'organization': request.organization['id'],
+        'user': request.user.pk,
+        'errors': errors,
+    }
+
+
+def _take_showcase_import_errors(request, event):
+    """Consume one-time import feedback only in the matching owner workspace."""
+    payload = request.session.pop(SHOWCASE_IMPORT_ERRORS_SESSION_KEY, None)
+    if not isinstance(payload, dict):
+        return []
+    if (payload.get('event') != event.pk
+            or payload.get('organization') != request.organization['id']
+            or payload.get('user') != request.user.pk):
+        return []
+    errors = payload.get('errors')
+    return [item for item in errors if isinstance(item, str)] if isinstance(errors, list) else []
+
+
+def _showcase_manage_step_redirect(event, step=None, from_param=None):
+    """Return to an event's active setup step after a setup action."""
+    manage_url = reverse('showcase_event_manage', kwargs={'event_id': event.pk})
+    valid_steps = {'details', 'exhibits', 'criteria', 'judges-consent', 'open'}
+    params = []
+    if step in valid_steps:
+        params.append(f'step={step}')
+    if from_param:
+        params.append(f'from={from_param}')
+    if params:
+        manage_url = f'{manage_url}?{"&".join(params)}'
+    return redirect(manage_url)
+
+
+_SHOWCASE_CREATE_STEPS = unsaved_steps([
+    ('basics', 'Event details', 'Create a private draft'),
+    ('exhibits', 'Add exhibits', 'Import your exhibit list'),
+    ('criteria', 'Set judging criteria', 'Build the scorecard rubric'),
+    ('judges', 'Invite and assign judges', 'Choose which exhibits each judge reviews'),
+    ('consent', 'Check consent', 'Only when participants are minors'),
+    ('open', 'Review and open', 'Start the event when ready'),
+], hint='Save the event details to unlock this step')
+
+
+def _criterion_initial(criterion):
+    return {'name': criterion.name, 'description': criterion.description,
+            'weight': criterion.weight, 'scale': criterion.scale,
+            'max_points': criterion.max_points,
+            'checklist_items_text': '\n'.join(criterion.checklist_items)}
+
+
+def _showcase_readiness(event):
+    """Setup checklist and readiness for a draft event's live console."""
+    exhibit_count = event.exhibits.count()
+    judge_coverage = showcase_judge_coverage(
+        event, minimum_judges=event.minimum_judges_per_exhibit)
+    active_judge_assignments = ShowcaseJudgeExhibitAssignment.objects.filter(
+        event=event, active=True, invitation__revoked_at__isnull=True,
+        invitation__expires_at__gt=timezone.now()).exclude(
+            conflict_declaration__isnull=False).exists()
+    setup_steps, event_ready = _showcase_setup_state(
+        event, exhibit_count, judge_coverage,
+        event.minimum_judges_per_exhibit > 0 or active_judge_assignments)
+    return {'setup_steps': setup_steps, 'event_ready': event_ready,
+            'exhibit_count': exhibit_count}
+
+
+def _pitch_timer_payload(context):
+    """Server-owned pitch clock fields shared by every live JSON response."""
+    return {key: context[key] for key in (
+        'pitch_seconds_remaining', 'timer_paused', 'pitch_state', 'pitch_duration',
+        'pitch_ends_at', 'server_now')}
+
+
+def _showcase_setup_state(event, exhibit_count, judge_coverage, scoring_required):
+    rubric_total = showcase_rubric_total(event)
+    rubric_complete = rubric_total == 100
+    criteria_complete = rubric_complete or (not scoring_required and rubric_total == 0)
+    coverage_complete = judge_coverage['uncovered_exhibit_count'] == 0
+    consent_complete = not event.includes_minors or event.consent_confirmed_at is not None
+    setup_steps = [
+        {'key': 'details', 'label': 'Event details', 'description': 'Name, dates, and event settings',
+         'complete': True},
+        {'key': 'exhibits', 'label': 'Exhibits', 'description': 'Add at least one exhibit',
+         'complete': exhibit_count > 0},
+        {'key': 'criteria', 'label': 'Rubric',
+         'description': (f'Weights total {rubric_total}%; they must reach 100%'
+                         if 0 < rubric_total < 100 else
+                         'Build the rubric judges will use' if scoring_required
+                         else 'Judging is turned off for this event'),
+         'complete': rubric_complete, 'optional': not scoring_required},
+        {'key': 'judges-consent', 'label': 'Judge assignments and consent',
+         'description': ('Confirm participant consent' if not consent_complete else
+                         'Complete judge coverage and consent checks'),
+         'complete': exhibit_count > 0 and coverage_complete and consent_complete,
+         'optional': event.minimum_judges_per_exhibit == 0 and not event.includes_minors},
+        {'key': 'open', 'label': 'Open Showcase',
+         'description': 'Start accepting visitor ratings',
+         'complete': event.status != ShowcaseEvent.Status.DRAFT},
+    ]
+    event_ready = bool(exhibit_count and criteria_complete and coverage_complete and consent_complete)
+    return setup_steps, event_ready
+
+
+def _showcase_event_can_be_deleted(event):
+    return (event.status == ShowcaseEvent.Status.DRAFT
+        and not ShowcaseEventAudit.objects.filter(event=event).exists()
+        and not ShowcaseConsentAudit.objects.filter(event=event).exists()
+        and not ShowcaseCertificate.objects.filter(event=event).exists()
+        and not ShowcaseRating.objects.filter(event=event).exists()
+        and not ShowcaseJudgeEvaluation.objects.filter(assignment__event=event).exists()
+        and not ShowcaseJudgeConflict.objects.filter(assignment__event=event).exists())
+
+
 @require_http_methods(['GET', 'POST'])
 @never_cache
 @_showcase_owner
 def showcase_event_manage(request, event_id):
     event = _owned_showcase_event(request, event_id)
+    from_param = request.GET.get('from') or request.POST.get('from') or ''
+    referer = request.META.get('HTTP_REFERER', '')
+    if from_param == 'live' or (not from_param and 'live-control' in referer):
+        back_url = reverse('showcase_live_control', kwargs={'event_id': event.pk})
+        back_label = 'Back to live control'
+    elif from_param == 'table' or (not from_param and 'table' in referer):
+        back_url = reverse('showcase_event_table')
+        back_label = 'All events'
+    elif from_param == 'monitor' or (not from_param and 'monitor' in referer):
+        back_url = reverse('showcase_live_monitor', kwargs={'event_id': event.pk})
+        back_label = 'Back to live monitor'
+    elif event.status in (ShowcaseEvent.Status.OPEN, ShowcaseEvent.Status.CLOSED):
+        back_url = reverse('showcase_live_control', kwargs={'event_id': event.pk})
+        back_label = 'Back to live control'
+    else:
+        back_url = reverse('showcase_event_list')
+        back_label = 'All showcases'
+
     if request.method == 'POST' and request.POST.get('action') == 'delete_event':
         with transaction.atomic():
             event = (ShowcaseEvent.objects.for_organization(request.organization)
@@ -3483,7 +4066,31 @@ def showcase_event_manage(request, event_id):
                 event.delete()
                 messages.success(request, f'“{event_name}” was deleted.')
                 return redirect('showcase_event_list')
-        return redirect('showcase_event_manage', event_id=event.pk)
+        return _showcase_manage_step_redirect(event,
+            request.POST.get('setup_step') or 'details', from_param=from_param)
+    if request.method == 'POST' and request.POST.get('action') == 'add_exhibit':
+        if event.status != ShowcaseEvent.Status.DRAFT:
+            raise Http404
+        exhibit_name = request.POST.get('name', '').strip()
+        category_name = request.POST.get('category', '').strip()
+        description = request.POST.get('description', '').strip()
+        if not exhibit_name:
+            messages.error(request, 'Enter an exhibit name.')
+        else:
+            category = None
+            if category_name:
+                category, _ = ShowcaseCategory.objects.get_or_create(
+                    event=event, name=category_name,
+                    defaults={'organization_id': event.organization_id, 'created_by': request.user}
+                )
+            order = event.exhibits.count() + 1
+            ShowcaseExhibit.objects.create(
+                event=event, name=exhibit_name, category=category,
+                description=description, order=order,
+                organization_id=event.organization_id, created_by=request.user
+            )
+            messages.success(request, f'Exhibit “{exhibit_name}” added.')
+        return _showcase_manage_step_redirect(event, 'exhibits', from_param=from_param)
     if request.method == 'POST' and request.POST.get('action') == 'remove_exhibit':
         if event.status != ShowcaseEvent.Status.DRAFT:
             raise Http404
@@ -3492,7 +4099,8 @@ def showcase_event_manage(request, event_id):
             raise Http404
         exhibit.delete()
         messages.success(request, 'Exhibit removed.')
-        return redirect(f"{reverse('showcase_event_manage', kwargs={'event_id': event.pk})}?step=exhibits")
+        return _showcase_manage_step_redirect(event,
+            request.POST.get('setup_step') or 'exhibits', from_param=from_param)
     if request.method == 'POST' and request.POST.get('action') == 'remove_criterion':
         if event.status != ShowcaseEvent.Status.DRAFT:
             raise Http404
@@ -3501,10 +4109,12 @@ def showcase_event_manage(request, event_id):
             raise Http404
         criterion.delete()
         messages.success(request, 'Judging criterion removed.')
-        return redirect(f"{reverse('showcase_event_manage', kwargs={'event_id': event.pk})}?step=criteria")
+        return _showcase_manage_step_redirect(event,
+            request.POST.get('setup_step') or 'criteria', from_param=from_param)
     event_form = None
     invite_form = None
-    criteria_formset = None
+    criterion_form = None
+    editing_criterion = None
     consent_form = None
     manual_judge_url = ''
     judge_invitation_notice = ''
@@ -3522,9 +4132,11 @@ def showcase_event_manage(request, event_id):
                     or 'Consent confirmation could not be recorded.')
             else:
                 messages.success(request, 'Minor participant consent confirmed.')
-                return redirect('showcase_event_manage', event_id=event.pk)
+                return _showcase_manage_step_redirect(event,
+                    request.POST.get('setup_step') or 'judges-consent', from_param=from_param)
     elif request.method == 'POST' and request.POST.get('action') == 'edit':
-        if event.status != ShowcaseEvent.Status.DRAFT:
+        if event.status not in (ShowcaseEvent.Status.DRAFT, ShowcaseEvent.Status.OPEN,
+                ShowcaseEvent.Status.CLOSED):
             raise Http404
         event_form = ShowcaseEventForm(request.POST, instance=event)
         if event_form.is_valid():
@@ -3534,29 +4146,44 @@ def showcase_event_manage(request, event_id):
             updated.save(update_fields=('name', 'starts_at', 'ends_at',
                 'includes_minors', 'minimum_judges_per_exhibit', 'branding',
                 'consent_confirmed_at', 'updated_at'))
-            messages.success(request, 'Event details updated.')
             if request.POST.get('advance') == '1':
-                return redirect(f"{reverse('showcase_event_manage', kwargs={'event_id': event.pk})}?step=exhibits")
-            return redirect(f"{reverse('showcase_event_manage', kwargs={'event_id': event.pk})}?step=details&saved=1")
-    elif request.method == 'POST' and request.POST.get('action') == 'judge_criteria':
-        criteria_formset = ShowcaseJudgeCriterionFormSet(request.POST, prefix='criteria')
+                messages.success(request, 'Event details updated.')
+                return _showcase_manage_step_redirect(event, 'exhibits', from_param=from_param)
+            return_step = request.POST.get('return_step')
+            if return_step in {'exhibits', 'criteria', 'judges-consent', 'open'}:
+                messages.success(request, 'Event details updated.')
+                return _showcase_manage_step_redirect(event, return_step, from_param=from_param)
+            leave_to = request.POST.get('leave_to', '')
+            if leave_to and url_has_allowed_host_and_scheme(
+                    leave_to, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+                messages.success(request, 'Event details updated.')
+                return redirect(leave_to)
+            redirect_url = f"{reverse('showcase_event_manage', kwargs={'event_id': event.pk})}?step=details&saved=1"
+            if from_param:
+                redirect_url += f"&from={from_param}"
+            return redirect(redirect_url)
+    elif request.method == 'POST' and request.POST.get('action') == 'save_criterion':
         if event.status != ShowcaseEvent.Status.DRAFT:
-            criteria_formset.is_valid()
-            criteria_formset._non_form_errors = criteria_formset.error_class(
-                ['Judge criteria are locked after the event opens.'])
-        elif criteria_formset.is_valid():
-            criterion_data = [form.criterion_data() for form in criteria_formset.forms
-                if form.cleaned_data and not form.cleaned_data.get('DELETE')]
+            raise Http404
+        criterion_form = ShowcaseJudgeCriterionForm(request.POST, auto_id='criterion_%s')
+        criterion_id = request.POST.get('criterion_id', '')
+        editing_criterion = (event.judge_criteria.filter(pk=criterion_id).first()
+                             if criterion_id.isdigit() else None)
+        if criterion_id and editing_criterion is None:
+            raise Http404
+        if criterion_form.is_valid():
             try:
-                replace_showcase_judge_criteria(event, criterion_data,
+                save_showcase_judge_criterion(event, criterion_form.criterion_data(),
+                    criterion_id=editing_criterion.pk if editing_criterion else None,
                     organization=request.organization, user=request.user)
-            except (PermissionDenied, ValidationError) as exc:
-                if isinstance(exc, PermissionDenied):
-                    raise Http404
-                criteria_formset._non_form_errors = criteria_formset.error_class(exc.messages)
+            except PermissionDenied:
+                raise Http404
+            except ValidationError as exc:
+                criterion_form.add_error(None, '; '.join(exc.messages))
             else:
-                messages.success(request, 'Judge rubric saved.')
-                return redirect('showcase_event_manage', event_id=event.pk)
+                messages.success(request, 'Judging criterion {}.'.format(
+                    'updated' if editing_criterion else 'added'))
+                return _showcase_manage_step_redirect(event, 'criteria', from_param=from_param)
     elif request.method == 'POST' and request.POST.get('action') == 'invite_judge':
         invite_form = ShowcaseJudgeInvitationForm(request.POST, event=event)
         if event.status not in (ShowcaseEvent.Status.DRAFT, ShowcaseEvent.Status.OPEN,
@@ -3568,9 +4195,17 @@ def showcase_event_manage(request, event_id):
                     invitation, raw_token = issue_showcase_judge_invitation(event,
                         invite_form.cleaned_data['email'], invite_form.cleaned_data['expires_at'],
                         organization=request.organization, user=request.user)
+                    now = timezone.now()
+                    ShowcaseJudgeExhibitAssignment.objects.filter(
+                        event=event, active=True
+                    ).filter(
+                        Q(invitation__revoked_at__isnull=False) | Q(invitation__expires_at__lte=now)
+                    ).update(active=False)
                     assignments = {}
                     for row in ShowcaseJudgeExhibitAssignment.objects.filter(
-                            event=event, active=True).order_by('invitation_id', 'exhibit_id'):
+                            event=event, active=True,
+                            invitation__revoked_at__isnull=True,
+                            invitation__expires_at__gt=now).order_by('invitation_id', 'exhibit_id'):
                         assignments.setdefault(row.invitation_id, []).append(row.exhibit_id)
                     assignments[invitation.pk] = [exhibit.pk
                         for exhibit in invite_form.cleaned_data['exhibits']]
@@ -3608,7 +4243,8 @@ def showcase_event_manage(request, event_id):
                     sent = 0
                 if sent:
                     messages.success(request, 'Judge invitation emailed. The private link is not shown again.')
-                    return redirect('showcase_event_manage', event_id=event.pk)
+                    return _showcase_manage_step_redirect(event,
+                        request.POST.get('setup_step') or 'judges-consent', from_param=from_param)
                 judge_invitation_notice = 'Email delivery failed. Copy this private link now; it will not be shown again.'
                 manual_judge_url = judge_url
     elif request.method == 'POST' and request.POST.get('action') == 'revoke_judge':
@@ -3621,8 +4257,9 @@ def showcase_event_manage(request, event_id):
             messages.error(request, '; '.join(exc.messages))
         else:
             messages.success(request, 'Judge invitation revoked.')
-        return redirect('showcase_event_manage', event_id=event.pk)
-    elif event.status == ShowcaseEvent.Status.DRAFT:
+        return _showcase_manage_step_redirect(event,
+            request.POST.get('setup_step') or 'judges-consent', from_param=from_param)
+    if event_form is None:
         event_form = ShowcaseEventForm(instance=event)
 
     exhibits = event.exhibits.select_related('category').all()
@@ -3631,55 +4268,25 @@ def showcase_event_manage(request, event_id):
         event=event, active=True, invitation__revoked_at__isnull=True,
         invitation__expires_at__gt=timezone.now()).exclude(
             conflict_declaration__isnull=False).exists()
-    criteria_count = event.judge_criteria.count()
     judge_coverage = showcase_judge_coverage(
         event, minimum_judges=event.minimum_judges_per_exhibit)
     scoring_required = event.minimum_judges_per_exhibit > 0 or active_judge_assignments
-    criteria_complete = not scoring_required or criteria_count > 0
-    coverage_complete = judge_coverage['uncovered_exhibit_count'] == 0
-    consent_complete = not event.includes_minors or event.consent_confirmed_at is not None
-    event_ready = bool(exhibit_count and criteria_complete and coverage_complete and consent_complete)
-    setup_steps = [
-        {'key': 'details', 'label': 'Event details', 'description': 'Name, dates, and event settings',
-         'href': '#overview', 'complete': True},
-        {'key': 'exhibits', 'label': 'Exhibits', 'description': 'Add at least one exhibit',
-         'href': '#exhibits-heading', 'complete': exhibit_count > 0},
-        {'key': 'criteria', 'label': 'Rubric',
-         'description': 'Build the rubric judges will use' if scoring_required else 'Judging is turned off for this event', 'href': '#judge-criteria-heading',
-         'complete': criteria_complete, 'optional': not scoring_required},
-        {'key': 'judges-consent', 'label': 'Judge assignments and consent',
-         'description': ('Confirm participant consent' if not consent_complete else
-                         'Complete judge coverage and consent checks'),
-         'href': '#minor-consent-heading' if not consent_complete else '#judge-coverage-heading',
-         'complete': coverage_complete and consent_complete,
-         'optional': event.minimum_judges_per_exhibit == 0 and not event.includes_minors},
-        {'key': 'open', 'label': 'Open Showcase',
-         'description': 'Start accepting visitor ratings', 'href': '#lifecycle-heading',
-         'complete': event.status != ShowcaseEvent.Status.DRAFT},
-    ]
-    next_setup_step = next((step for step in setup_steps if not step['complete']), None)
-    for step in setup_steps:
-        step['current'] = bool(next_setup_step and step['key'] == next_setup_step['key'])
-    setup_completed_count = sum(step['complete'] for step in setup_steps)
-    event_can_be_deleted = (event.status == ShowcaseEvent.Status.DRAFT
-        and not ShowcaseEventAudit.objects.filter(event=event).exists()
-        and not ShowcaseConsentAudit.objects.filter(event=event).exists()
-        and not ShowcaseCertificate.objects.filter(event=event).exists()
-        and not ShowcaseRating.objects.filter(event=event).exists()
-        and not ShowcaseJudgeEvaluation.objects.filter(assignment__event=event).exists()
-        and not ShowcaseJudgeConflict.objects.filter(assignment__event=event).exists())
+    setup_steps, event_ready = _showcase_setup_state(
+        event, exhibit_count, judge_coverage, scoring_required)
+    event_can_be_deleted = _showcase_event_can_be_deleted(event)
     transition_choices = _showcase_transition_choices(event)
     if event.status in (ShowcaseEvent.Status.DRAFT, ShowcaseEvent.Status.OPEN,
             ShowcaseEvent.Status.CLOSED) and invite_form is None:
         invite_form = ShowcaseJudgeInvitationForm(event=event)
-    if event.status == ShowcaseEvent.Status.DRAFT and criteria_formset is None:
-        initial_criteria = [{
-            'name': item.name, 'description': item.description, 'weight': item.weight,
-            'scale': item.scale, 'max_points': item.max_points,
-            'checklist_items_text': '\n'.join(item.checklist_items),
-        } for item in event.judge_criteria.all()]
-        criteria_formset = ShowcaseJudgeCriterionFormSet(
-            prefix='criteria', initial=initial_criteria)
+    criteria = list(event.judge_criteria.all())
+    if criterion_form is None:
+        edit_id = request.GET.get('edit_criterion', '')
+        editing_criterion = next(
+            (item for item in criteria if edit_id.isdigit() and item.pk == int(edit_id)), None
+        ) if event.status == ShowcaseEvent.Status.DRAFT else None
+        criterion_form = ShowcaseJudgeCriterionForm(auto_id='criterion_%s', initial=(
+            _criterion_initial(editing_criterion) if editing_criterion else None))
+    criteria_total = sum((item.weight for item in criteria), Decimal('0'))
     judge_invitations = list(ShowcaseJudgeInvitation.objects.for_organization(
         request.organization).owned_by(request.user).filter(event=event)
         .order_by('-created_at', 'pk'))
@@ -3707,6 +4314,9 @@ def showcase_event_manage(request, event_id):
             and event.consent_confirmed_at is None and consent_form is None):
         consent_form = ShowcaseMinorConsentForm(auto_id='consent_%s')
     exhibit_import_plan, exhibit_import_token = _load_showcase_import_preview(request, event)
+    exhibit_import_errors = _take_showcase_import_errors(request, event)
+    rubric_import_plan, rubric_import_token = _load_showcase_rubric_preview(request, event)
+    rubric_import_errors = _take_showcase_rubric_import_errors(request, event)
     valid_steps = {step['key'] for step in setup_steps}
     requested_step = request.POST.get('setup_step') or request.GET.get('step')
     if requested_step in valid_steps:
@@ -3715,19 +4325,29 @@ def showcase_event_manage(request, event_id):
         action = request.POST.get('action')
         active_step = {
             'edit': 'details',
-            'judge_criteria': 'criteria',
+            'save_criterion': 'criteria',
             'invite_judge': 'judges-consent',
             'revoke_judge': 'judges-consent',
             'confirm_consent': 'judges-consent',
         }.get(action, 'details')
     elif exhibit_import_plan is not None:
         active_step = 'exhibits'
+    elif (rubric_import_plan is not None or rubric_import_errors
+            or request.GET.get('edit_criterion')):
+        active_step = 'criteria'
     else:
         active_step = 'details'
     response = render(request, 'service_domains/showcase_event_manage.html', {
         'event': event, 'exhibits': exhibits, 'event_form': event_form,
+        'back_url': back_url,
+        'back_label': back_label,
+        'from_param': from_param,
         'invite_form': invite_form,
-        'criteria_formset': criteria_formset,
+        'criteria': criteria,
+        'criteria_total': criteria_total,
+        'criteria_remaining': Decimal('100') - criteria_total,
+        'criterion_form': criterion_form,
+        'editing_criterion': editing_criterion,
         'judge_invitations': judge_invitations,
         'judge_invitation_notice': judge_invitation_notice,
         'manual_judge_url': manual_judge_url,
@@ -3738,12 +4358,16 @@ def showcase_event_manage(request, event_id):
             request.organization).owned_by(request.user).filter(event=event),
         'judge_coverage': judge_coverage,
         'setup_steps': setup_steps,
-        'setup_completed_count': setup_completed_count,
-        'next_setup_step': next_setup_step,
+        'stepper_steps': steps_from_setup(setup_steps, active_step),
         'active_step': active_step,
         'exhibit_import_form': ShowcaseImportForm(),
+        'exhibit_import_errors': exhibit_import_errors,
         'exhibit_import_plan': exhibit_import_plan,
         'exhibit_import_token': exhibit_import_token,
+        'rubric_import_form': ShowcaseRubricImportForm(),
+        'rubric_import_errors': rubric_import_errors,
+        'rubric_import_plan': rubric_import_plan,
+        'rubric_import_token': rubric_import_token,
         'event_ready': event_ready,
         'event_can_be_deleted': event_can_be_deleted,
         'transition_choices': transition_choices,
@@ -3751,8 +4375,8 @@ def showcase_event_manage(request, event_id):
             auto_id='transition_%s'),
     }, status=400 if ((consent_form is not None and consent_form.errors)
         or (invite_form is not None and invite_form.errors)
-        or (criteria_formset is not None and criteria_formset.is_bound
-            and (criteria_formset.errors or criteria_formset.non_form_errors()))) else 200)
+        or (criterion_form is not None and criterion_form.is_bound
+            and criterion_form.errors)) else 200)
     if manual_judge_url:
         response['Cache-Control'] = 'private, no-store'
         response['Referrer-Policy'] = 'same-origin'
@@ -3763,17 +4387,12 @@ def showcase_event_manage(request, event_id):
 @never_cache
 @_showcase_owner
 def showcase_live_monitor(request, event_id):
-    """Render the organizer's live activity view for an open/just-closed event."""
+    """Redirect to the live command console."""
     event = _owned_showcase_event(request, event_id)
     if event.status not in (ShowcaseEvent.Status.OPEN, ShowcaseEvent.Status.CLOSED):
         raise Http404
-    response = render(request, 'service_domains/showcase_live_monitor.html', {
-        'event': event,
-        'activity_url': reverse('showcase_live_activity', args=(event.pk,)),
-        'activity': showcase_live_activity(event),
-    })
+    response = redirect('showcase_live_control', event_id=event.pk)
     response['Cache-Control'] = 'private, no-store'
-    response['Referrer-Policy'] = 'same-origin'
     return response
 
 
@@ -3783,9 +4402,12 @@ def showcase_live_monitor(request, event_id):
 def showcase_live_control(request, event_id):
     """Render the organizer's live command console for an open/closed showcase event."""
     event = _owned_showcase_event(request, event_id)
-    if event.status not in (ShowcaseEvent.Status.OPEN, ShowcaseEvent.Status.CLOSED):
+    if event.status not in (ShowcaseEvent.Status.DRAFT, ShowcaseEvent.Status.OPEN,
+                            ShowcaseEvent.Status.CLOSED):
         raise Http404
     context = get_showcase_live_context(event)
+    if event.status == ShowcaseEvent.Status.DRAFT:
+        context.update(_showcase_readiness(event))
     response = render(request, 'service_domains/showcase_live_control.html', context)
     response['Cache-Control'] = 'private, no-store'
     response['Referrer-Policy'] = 'same-origin'
@@ -3811,8 +4433,7 @@ def showcase_live_state(request, event_id):
         'total_assigned_scorecards': context['total_assigned_scorecards'],
         'total_submitted_scorecards': context['total_submitted_scorecards'],
         'attention_count': context['attention_count'],
-        'pitch_seconds_remaining': context['pitch_seconds_remaining'],
-        'timer_paused': context['timer_paused'],
+        **_pitch_timer_payload(context),
         'hero_html': render_to_string('service_domains/_partials/showcase_live_hero.html', context, request=request),
         'stage_html': render_to_string('service_domains/_partials/showcase_live_stage.html', context, request=request),
         'table_html': render_to_string('service_domains/_partials/showcase_live_table.html', context, request=request),
@@ -3826,9 +4447,10 @@ def showcase_live_state(request, event_id):
 def showcase_live_action(request, event_id):
     """Execute atomic live floor and stage management actions."""
     event = _owned_showcase_event(request, event_id)
-    if event.status not in (ShowcaseEvent.Status.OPEN, ShowcaseEvent.Status.CLOSED):
-        return JsonResponse({'error': 'Event is not active.'}, status=400)
     action = request.POST.get('action')
+    opening = (action == 'open_event' and event.status == ShowcaseEvent.Status.DRAFT)
+    if not opening and event.status not in (ShowcaseEvent.Status.OPEN, ShowcaseEvent.Status.CLOSED):
+        return JsonResponse({'error': 'Event is not active.'}, status=400)
     try:
         if action == 'toggle_visitor_voting':
             toggle_showcase_floor_visitor_voting(event, organization=request.organization, user=request.user)
@@ -3846,24 +4468,28 @@ def showcase_live_action(request, event_id):
             stage_adjust_showcase_timer(event, delta, organization=request.organization, user=request.user)
         elif action == 'stage_toggle_pause':
             stage_toggle_showcase_pause(event, organization=request.organization, user=request.user)
+        elif action == 'stage_clear':
+            stage_clear_showcase_exhibit(event, organization=request.organization, user=request.user)
         elif action == 'set_projector_mode':
             mode = request.POST.get('mode')
             set_showcase_projector_mode(event, mode, organization=request.organization, user=request.user)
+        elif action == 'open_event':
+            transition_showcase_event(
+                event, ShowcaseEvent.Status.OPEN,
+                organization=request.organization, user=request.user,
+                reason='Organizer opened the showcase from the live console.')
+            broadcast_showcase_event(event, 'showcase.opened', {})
+            messages.success(request, 'The showcase is open. Visitors can now rate exhibits.')
+            return JsonResponse({'status': 'open', 'redirect': reverse('showcase_live_control', args=(event.pk,))})
         elif action == 'close_ratings':
-            with transaction.atomic():
-                locked = ShowcaseEvent.objects.for_organization(request.organization).owned_by(request.user).select_for_update().filter(pk=event.pk).first()
-                locked.status = ShowcaseEvent.Status.CLOSED
-                locked.save(update_fields=('status', 'updated_at'))
-                ShowcaseEventAudit.objects.create(
-                    organization_id=locked.organization_id,
-                    created_by=request.user,
-                    event=locked,
-                    action=ShowcaseEventAudit.Action.STATUS_TRANSITION,
-                    reason='Organizer closed public visitor rating window from live command console.',
-                    actor_user=request.user
-                )
+            transition_showcase_event(
+                event, ShowcaseEvent.Status.CLOSED,
+                organization=request.organization, user=request.user,
+                reason='Organizer closed public visitor rating window from live command console.'
+            )
+            broadcast_showcase_event(event, 'showcase.closed', {})
             messages.success(request, 'Visitor rating window closed. Finalize judge scorecards and review results.')
-            return JsonResponse({'status': 'closed', 'redirect': reverse('showcase_event_manage', args=(event.pk,))})
+            return JsonResponse({'status': 'closed', 'redirect': reverse('showcase_event_results', args=(event.pk,))})
         else:
             return JsonResponse({'error': f'Unknown action: {action}'}, status=400)
     except (ValidationError, PermissionDenied) as exc:
@@ -3872,6 +4498,7 @@ def showcase_live_action(request, event_id):
 
     event.refresh_from_db()
     context = get_showcase_live_context(event)
+    broadcast_showcase_event(event, f'showcase.{action}', {'action': action})
     return JsonResponse({
         'ok': True,
         'status': event.status,
@@ -3882,8 +4509,7 @@ def showcase_live_action(request, event_id):
         'total_assigned_scorecards': context['total_assigned_scorecards'],
         'total_submitted_scorecards': context['total_submitted_scorecards'],
         'attention_count': context['attention_count'],
-        'pitch_seconds_remaining': context['pitch_seconds_remaining'],
-        'timer_paused': context['timer_paused'],
+        **_pitch_timer_payload(context),
         'hero_html': render_to_string('service_domains/_partials/showcase_live_hero.html', context, request=request),
         'stage_html': render_to_string('service_domains/_partials/showcase_live_stage.html', context, request=request),
         'table_html': render_to_string('service_domains/_partials/showcase_live_table.html', context, request=request),
@@ -3902,6 +4528,134 @@ def showcase_live_activity_view(request, event_id):
     response = JsonResponse(showcase_live_activity(event))
     response['Cache-Control'] = 'private, no-store'
     response['Referrer-Policy'] = 'same-origin'
+    return response
+
+
+@require_http_methods(['GET', 'POST'])
+@never_cache
+@_showcase_owner
+def showcase_event_results(request, event_id):
+    """Render the organizer's dedicated Results and Awards review screen."""
+    event = _owned_showcase_event(request, event_id)
+    if event.status == ShowcaseEvent.Status.DRAFT:
+        raise Http404
+
+    if request.method == 'POST' and request.POST.get('action') == 'publish_results':
+        try:
+            transition_showcase_event(
+                event, ShowcaseEvent.Status.PUBLISHED,
+                organization=request.organization, user=request.user,
+                reason='Organizer published official showcase results.'
+            )
+            broadcast_showcase_event(event, 'showcase.published', {})
+            messages.success(request, 'Results and awards published successfully.')
+            return redirect('showcase_event_results', event_id=event.pk)
+        except ValidationError as exc:
+            messages.error(request, '; '.join(getattr(exc, 'messages', [str(exc)])))
+
+    if request.method == 'POST' and request.POST.get('action') == 'revoke_results':
+        try:
+            transition_showcase_event(
+                event, ShowcaseEvent.Status.CLOSED,
+                organization=request.organization, user=request.user,
+                reason='Organizer returned showcase results to review.')
+            broadcast_showcase_event(event, 'showcase.closed', {})
+            messages.success(request, 'Results returned to review.')
+            return redirect('showcase_event_results', event_id=event.pk)
+        except ValidationError as exc:
+            messages.error(request, '; '.join(getattr(exc, 'messages', [str(exc)])))
+
+    awards = showcase_awards(event, allow_preview=True)
+    certificates = {
+        (row.exhibit_id, row.award_type): row
+        for row in ShowcaseCertificate.objects.filter(event=event)
+    }
+    categories = []
+    for award in awards['categories']:
+        winner = award['winner']
+        certificate = (certificates.get((winner.pk, ShowcaseCertificate.AwardType.CATEGORY))
+                       if winner else None)
+        categories.append({
+            'category': award['category'],
+            'winner': winner.name if winner else None,
+            'certificate_url': (reverse('showcase_certificate_verify',
+                args=(certificate.public_id,)) if certificate else None),
+            'tied': [exhibit.name for exhibit in award['tied']],
+            'tied_details': [
+                {'exhibit': item['exhibit'].name, 'mean': str(item['mean']),
+                 'judge_count': item['judge_count']}
+                for item in award['tied_details']
+            ],
+            'mean': str(award['mean']) if award['mean'] is not None else None,
+            'judge_count': award['judge_count'],
+        })
+    favorite = awards['audience_favorite']
+    favorite_certificate = (certificates.get((favorite.pk, ShowcaseCertificate.AwardType.AUDIENCE))
+                            if favorite else None)
+    results = {
+        'categories': categories,
+        'audience_favorite': favorite.name if favorite else None,
+        'audience_favorite_certificate_url': (reverse('showcase_certificate_verify',
+            args=(favorite_certificate.public_id,)) if favorite_certificate else None),
+        'audience_favorite_tied': [exhibit.name for exhibit in awards['audience_favorite_tied']],
+        'audience_favorite_tied_details': [
+            {'exhibit': item['exhibit'].name, 'mean': str(item['mean']),
+             'rating_count': item['rating_count']}
+            for item in awards['audience_favorite_tied_details']
+        ],
+        'audience_favorite_mean': (
+            str(awards['audience_favorite_mean'])
+            if awards['audience_favorite_mean'] is not None else None),
+        'audience_favorite_rating_count': awards['audience_favorite_rating_count'],
+    }
+    live = get_showcase_live_context(event)
+    winners = {name for name in [item['winner'] for item in categories] + [results['audience_favorite']] if name}
+    ranked = sorted(live['rows'], key=lambda row: (
+        -(row['judge_mean'] if row['judge_mean'] is not None else -1),
+        -(row['audience_mean'] if row['audience_mean'] is not None else -1),
+        row['exhibit'].order, row['exhibit'].pk))
+    standings = [{'rank': position, 'row': row, 'is_winner': row['exhibit'].name in winners}
+                 for position, row in enumerate(ranked, start=1)]
+    decided = sum(1 for item in categories if item['winner']) + (1 if results['audience_favorite'] else 0)
+    context = {
+        'event': event,
+        'results': results,
+        'standings': standings,
+        'exhibit_count': len(live['rows']),
+        'total_ratings': live['total_ratings'],
+        'avg_stars_all': live['avg_stars_all'],
+        'submitted_scorecards': live['total_submitted_scorecards'],
+        'assigned_scorecards': live['total_assigned_scorecards'],
+        'scorecard_percent': (round(100 * live['total_submitted_scorecards'] / live['total_assigned_scorecards'])
+                              if live['total_assigned_scorecards'] else 0),
+        'awards_decided': decided,
+        'awards_total': len(categories) + 1,
+        'public_results_url': reverse('showcase_public_results', args=(event.public_id,)),
+        'is_published': event.status == ShowcaseEvent.Status.PUBLISHED and event.public_results,
+    }
+    template = ('service_domains/_partials/showcase_results_body.html'
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+                else 'service_domains/showcase_event_results.html')
+    response = render(request, template, context)
+    response['Cache-Control'] = 'private, no-store'
+    return response
+
+
+@require_http_methods(['GET'])
+@never_cache
+def showcase_projector_screen(request, public_id):
+    """Fullscreen venue presentation display supporting QR, ticker, stage pitch, and awards modes."""
+    event = ShowcaseEvent.objects.filter(public_id=public_id).first()
+    if event is None:
+        raise Http404
+
+    context = get_showcase_live_context(event)
+    context['venue_qr_url'] = reverse('showcase_visit_qr', args=(event.public_id,))
+    context['stage_qr_url'] = (reverse('showcase_exhibit_qr', args=(context['active_exhibit'].public_id,))
+                               if context.get('active_exhibit') else '')
+
+    response = render(request, 'service_domains/showcase_projector.html', context)
+    response['Cache-Control'] = 'private, no-store'
     return response
 
 
@@ -3976,15 +4730,21 @@ def showcase_judge_workspace(request, token):
                     except ValidationError as exc:
                         conflict_form.add_error(None, '; '.join(exc.messages))
                     else:
+                        broadcast_showcase_event(invitation.event, 'showcase.conflict', {})
                         return redirect('showcase_judge_workspace', token=token)
         elif bound_assignment.pk in evaluations:
             error = 'This exhibit scorecard was already submitted and is immutable.'
         elif bound_assignment.pk in conflicts:
             error = 'This exhibit is marked as a conflict and cannot be scored.'
+        elif (invitation.event.workflow_snapshot or {}).get('floor_state', {}).get('judge_scoring_paused', False):
+            error = 'Judge scoring is temporarily locked by the organizer.'
         elif invitation.event.status not in (ShowcaseEvent.Status.OPEN, ShowcaseEvent.Status.CLOSED):
             error = 'Scoring becomes available when the Showcase event opens.'
         elif not criteria:
             error = 'The organizer has not configured judge criteria for this event.'
+        elif (invitation.event.status == ShowcaseEvent.Status.OPEN
+                and not showcase_exhibit_on_stage(invitation.event, bound_assignment.exhibit_id)):
+            error = SHOWCASE_NOT_ON_STAGE
         else:
             form = ShowcaseJudgeScorecardForm(request.POST, criteria=criteria,
                 prefix=f'exhibit_{bound_assignment.pk}')
@@ -3997,6 +4757,7 @@ def showcase_judge_workspace(request, token):
                 except ValidationError as exc:
                     form.add_error(None, '; '.join(exc.messages))
                 else:
+                    broadcast_showcase_event(invitation.event, 'showcase.scorecard', {})
                     return redirect('showcase_judge_workspace', token=token)
 
     cards = []
@@ -4014,9 +4775,11 @@ def showcase_judge_workspace(request, token):
             declaration_form = (conflict_form if assignment == bound_assignment
                 and conflict_form is not None else ShowcaseJudgeConflictForm(
                     auto_id=f'conflict_{assignment.pk}_%s'))
+        on_stage = showcase_exhibit_on_stage(invitation.event, assignment.exhibit_id)
         cards.append({'assignment': assignment, 'evaluation': evaluation,
             'form': score_form, 'conflict': conflicts.get(assignment.pk),
-            'conflict_form': declaration_form})
+            'conflict_form': declaration_form, 'on_stage': on_stage,
+            'stage_locked': invitation.event.status == ShowcaseEvent.Status.OPEN and not on_stage})
     response = render(request, 'service_domains/showcase_judge_workspace.html', {
         'invitation': invitation, 'cards': cards, 'criteria': criteria,
         'error': error, 'form': form,
@@ -4035,10 +4798,38 @@ def showcase_judge_workspace(request, token):
     return response
 
 
+@require_http_methods(['GET'])
+@never_cache
+def showcase_judge_state(request, token):
+    """Which of this judge's exhibits are on stage right now (no scores, no identities)."""
+    if getattr(request, 'service', None) != 'showcase':
+        raise Http404
+    invitation = resolve_showcase_judge_invitation(token)
+    if invitation is None:
+        raise Http404
+    allowed = allow_showcase_judge_request(invitation)
+    if allowed is None:
+        return JsonResponse({'error': 'unavailable'}, status=503)
+    if not allowed:
+        return JsonResponse({'error': 'rate limited'}, status=429,
+                            headers={'Retry-After': str(settings.PANEL_EXAMINER_RATE_WINDOW)})
+    event = invitation.event
+    stage = (event.workflow_snapshot or {}).get('stage_state') or {}
+    on_stage = [str(exhibit_id) for exhibit_id in ShowcaseJudgeExhibitAssignment.objects.filter(
+        event=event, invitation=invitation, active=True,
+        exhibit_id=stage.get('active_exhibit_id') or 0).values_list('exhibit__public_id', flat=True)]
+    response = JsonResponse({'status': event.status, 'on_stage': on_stage,
+        'scoring_paused': bool((event.workflow_snapshot or {}).get('floor_state', {}).get(
+            'judge_scoring_paused', False))})
+    response['Cache-Control'] = 'private, no-store'
+    return response
+
+
 @require_http_methods(['POST'])
 @never_cache
 @_showcase_owner
 def showcase_event_transition(request, event_id):
+    """Move an event to its next lifecycle state (open, close, publish or revoke)."""
     event = _owned_showcase_event(request, event_id)
     form = ShowcaseEventTransitionForm(request.POST,
         choices=_showcase_transition_choices(event), auto_id='transition_%s')
@@ -4050,56 +4841,126 @@ def showcase_event_transition(request, event_id):
         except ValidationError as exc:
             form.add_error(None, '; '.join(exc.messages))
         else:
-            return redirect('showcase_event_manage', event_id=event.pk)
-    judge_invitations = list(ShowcaseJudgeInvitation.objects.for_organization(
-        request.organization).owned_by(request.user).filter(event=event)
-        .order_by('-created_at', 'pk'))
-    invitation_ids = [item.pk for item in judge_invitations]
-    assignments_by_invitation = {item_id: [] for item_id in invitation_ids}
-    for assignment in (ShowcaseJudgeExhibitAssignment.objects.filter(
-            event=event, invitation_id__in=invitation_ids, active=True)
-            .select_related('exhibit').order_by('exhibit__order', 'pk')):
-        assignments_by_invitation[assignment.invitation_id].append(assignment)
-    submitted_by_invitation = dict(ShowcaseJudgeEvaluation.objects.filter(
-        assignment__invitation_id__in=invitation_ids, assignment__active=True)
-        .values('assignment__invitation_id').annotate(submitted_count=Count('pk'))
-        .values_list('assignment__invitation_id', 'submitted_count'))
-    for invitation in judge_invitations:
-        invitation.assigned_exhibits = assignments_by_invitation[invitation.pk]
-        invitation.submitted_count = submitted_by_invitation.get(invitation.pk, 0)
-    response = render(request, 'service_domains/showcase_event_manage.html', {
-        'event': event,
-        'event_form': (ShowcaseEventForm(instance=event)
-                       if event.status == ShowcaseEvent.Status.DRAFT else None),
-        'exhibits': event.exhibits.select_related('category').all(),
-        'invite_form': (ShowcaseJudgeInvitationForm(event=event)
-            if event.status in (ShowcaseEvent.Status.DRAFT, ShowcaseEvent.Status.OPEN,
-                                ShowcaseEvent.Status.CLOSED) else None),
-        'criteria_formset': (ShowcaseJudgeCriterionFormSet(prefix='criteria', initial=[{
-            'name': item.name, 'description': item.description, 'weight': item.weight,
-            'scale': item.scale, 'max_points': item.max_points,
-            'checklist_items_text': '\n'.join(item.checklist_items),
-        } for item in event.judge_criteria.all()])
-            if event.status == ShowcaseEvent.Status.DRAFT else None),
-        'judge_invitations': judge_invitations,
-        'judge_progress': showcase_judge_progress(event,
-            organization=request.organization, user=request.user),
-        'judge_coverage': showcase_judge_coverage(
-            event, minimum_judges=event.minimum_judges_per_exhibit),
-        'transition_form': form,
-        'transition_choices': _showcase_transition_choices(event),
-        'active_step': 'open',
-        'exhibit_import_form': ShowcaseImportForm(),
-        'consent_form': (ShowcaseMinorConsentForm(auto_id='consent_%s')
-            if event.status == ShowcaseEvent.Status.DRAFT and event.includes_minors
-            and event.consent_confirmed_at is None else None),
-        'consent_audit_events': ShowcaseConsentAudit.objects.for_organization(
-            request.organization).owned_by(request.user).filter(event=event),
-        'judge_conflicts': (ShowcaseJudgeConflict.objects.for_organization(
-            request.organization).owned_by(request.user).filter(assignment__event=event)
-            .select_related('assignment__invitation', 'assignment__exhibit')
-            .order_by('declared_at', 'pk')),
-    }, status=400)
+            event.refresh_from_db()
+            broadcast_showcase_event(event, f'showcase.{event.status}', {})
+            if event.status in (ShowcaseEvent.Status.OPEN, ShowcaseEvent.Status.CLOSED):
+                return redirect('showcase_live_control', event_id=event.pk)
+            return redirect('showcase_event_results', event_id=event.pk)
+    messages.error(request, ' '.join(
+        str(error) for errors in form.errors.values() for error in errors))
+    if event.status in (ShowcaseEvent.Status.DRAFT, ShowcaseEvent.Status.OPEN,
+                        ShowcaseEvent.Status.CLOSED):
+        return redirect('showcase_live_control', event_id=event.pk)
+    return redirect('showcase_event_results', event_id=event.pk)
+
+
+def _showcase_import_payload(request, event, **extra):
+    return {'event': event.pk, 'organization': request.organization['id'],
+            'user': request.user.pk, **extra}
+
+
+def _owned_rubric_payload(request, event, payload):
+    """True when a signed or stored rubric payload belongs to this owner and event."""
+    return (isinstance(payload, dict) and payload.get('event') == event.pk
+            and payload.get('organization') == request.organization['id']
+            and payload.get('user') == request.user.pk)
+
+
+def _load_showcase_rubric_preview(request, event):
+    """Load an active signed rubric import preview from the session if valid."""
+    raw_token = request.session.get(SHOWCASE_RUBRIC_IMPORT_SESSION_KEY, '')
+    if not raw_token or event.status != ShowcaseEvent.Status.DRAFT or len(raw_token) > 150_000:
+        return None, ''
+    try:
+        preview = signing.loads(raw_token, salt=SHOWCASE_RUBRIC_IMPORT_TOKEN_SALT,
+                                max_age=SHOWCASE_IMPORT_TOKEN_MAX_AGE)
+    except (signing.BadSignature, signing.SignatureExpired, TypeError, ValueError):
+        request.session.pop(SHOWCASE_RUBRIC_IMPORT_SESSION_KEY, None)
+        return None, ''
+    if not _owned_rubric_payload(request, event, preview) or not isinstance(preview.get('parsed'), dict):
+        request.session.pop(SHOWCASE_RUBRIC_IMPORT_SESSION_KEY, None)
+        return None, ''
+    plan = plan_showcase_rubric(event, preview['parsed'])
+    return plan, (raw_token if plan['ok'] else '')
+
+
+def _take_showcase_rubric_import_errors(request, event):
+    """Consume one-time rubric import feedback for the matching owner workspace."""
+    payload = request.session.pop(SHOWCASE_RUBRIC_IMPORT_ERRORS_SESSION_KEY, None)
+    if not _owned_rubric_payload(request, event, payload):
+        return []
+    errors = payload.get('errors')
+    return [item for item in errors if isinstance(item, str)] if isinstance(errors, list) else []
+
+
+def _store_showcase_rubric_import_errors(request, event, errors):
+    request.session[SHOWCASE_RUBRIC_IMPORT_ERRORS_SESSION_KEY] = _showcase_import_payload(
+        request, event, errors=errors or ['The rubric spreadsheet could not be processed. Try again.'])
+
+
+@require_POST
+@never_cache
+@_showcase_owner
+def showcase_rubric_import(request, event_id):
+    """Preview, apply or cancel a rubric spreadsheet; always returns to the Rubric step."""
+    event = _owned_showcase_event(request, event_id)
+    from_param = 'live' if request.POST.get('from') == 'live' else None
+
+    def back():
+        return _showcase_manage_step_redirect(event, 'criteria', from_param=from_param)
+
+    action = request.POST.get('action')
+    request.session.pop(SHOWCASE_RUBRIC_IMPORT_ERRORS_SESSION_KEY, None)
+    if action == 'cancel':
+        request.session.pop(SHOWCASE_RUBRIC_IMPORT_SESSION_KEY, None)
+        return back()
+    if action == 'apply':
+        form = ShowcaseImportApplyForm(request.POST)
+        errors = [str(error) for field_errors in form.errors.values() for error in field_errors]
+        preview = None
+        if form.is_valid() and len(form.cleaned_data['preview_token']) <= 150_000:
+            try:
+                preview = signing.loads(form.cleaned_data['preview_token'],
+                    salt=SHOWCASE_RUBRIC_IMPORT_TOKEN_SALT, max_age=SHOWCASE_IMPORT_TOKEN_MAX_AGE)
+            except (signing.BadSignature, signing.SignatureExpired, TypeError, ValueError):
+                errors = ['This preview expired or is invalid. Upload the spreadsheet again.']
+        if preview is not None:
+            if not _owned_rubric_payload(request, event, preview) or not isinstance(preview.get('parsed'), dict):
+                raise Http404
+            try:
+                apply_rubric_import(event, preview['parsed'],
+                    organization=request.organization, user=request.user)
+            except PermissionDenied:
+                raise Http404
+            except ValidationError as exc:
+                errors = exc.messages
+            else:
+                request.session.pop(SHOWCASE_RUBRIC_IMPORT_SESSION_KEY, None)
+                messages.success(request, 'Judge rubric imported.')
+                return back()
+        _store_showcase_rubric_import_errors(request, event, errors)
+        return back()
+    request.session.pop(SHOWCASE_RUBRIC_IMPORT_SESSION_KEY, None)
+    form = ShowcaseRubricImportForm(request.POST, request.FILES)
+    if not form.is_valid():
+        _store_showcase_rubric_import_errors(request, event,
+            [str(error) for field_errors in form.errors.values() for error in field_errors])
+        return back()
+    parsed = parse_showcase_rubric(form.cleaned_data['file'])
+    request.session[SHOWCASE_RUBRIC_IMPORT_SESSION_KEY] = signing.dumps(
+        _showcase_import_payload(request, event, parsed=parsed),
+        salt=SHOWCASE_RUBRIC_IMPORT_TOKEN_SALT, compress=True)
+    return back()
+
+
+@require_safe
+@never_cache
+@_showcase_owner
+def showcase_rubric_import_sample(request, event_id):
+    _owned_showcase_event(request, event_id)
+    response = HttpResponse(showcase_rubric_sample().getvalue(), content_type=(
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'))
+    response['Content-Disposition'] = 'attachment; filename="showcase-rubric-sample.xlsx"'
     response['Cache-Control'] = 'private, no-store'
     return response
 
@@ -4112,9 +4973,18 @@ def showcase_exhibit_import(request, event_id):
     embedded = request.GET.get('embedded') == '1'
     if request.method == 'POST' and request.POST.get('action') == 'cancel':
         request.session.pop(SHOWCASE_IMPORT_SESSION_KEY, None)
-        return redirect('showcase_event_manage', event_id=event.pk)
+        request.session.pop(SHOWCASE_IMPORT_ERRORS_SESSION_KEY, None)
+        if embedded:
+            return _showcase_manage_step_redirect(event,
+                request.POST.get('setup_step') or 'exhibits')
+        return _showcase_manage_step_redirect(event, request.POST.get('setup_step'))
+    if request.method == 'POST':
+        request.session.pop(SHOWCASE_IMPORT_ERRORS_SESSION_KEY, None)
+        if request.POST.get('action') == 'preview':
+            request.session.pop(SHOWCASE_IMPORT_SESSION_KEY, None)
     plan = None
     parsed = None
+    preview_token = ''
     status = 200
     if request.method == 'POST' and request.POST.get('action') == 'apply':
         form = ShowcaseImportApplyForm(request.POST)
@@ -4135,8 +5005,11 @@ def showcase_exhibit_import(request, event_id):
                         or preview.get('user') != request.user.pk
                         or not isinstance(preview.get('parsed'), dict)):
                     raise Http404
+                parsed = preview['parsed']
+                plan = plan_import(event, parsed)
+                preview_token = token if plan['ok'] else ''
                 try:
-                    apply_import(event, preview['parsed'],
+                    apply_import(event, parsed,
                         organization=request.organization, user=request.user)
                 except PermissionDenied:
                     raise Http404
@@ -4146,19 +5019,24 @@ def showcase_exhibit_import(request, event_id):
                 else:
                     request.session.pop(SHOWCASE_IMPORT_SESSION_KEY, None)
                     messages.success(request, 'Exhibits imported.')
-                    return redirect('showcase_event_manage', event_id=event.pk)
+                    if embedded:
+                        return _showcase_manage_step_redirect(event,
+                            request.POST.get('setup_step') or 'exhibits')
+                    return _showcase_manage_step_redirect(event, request.POST.get('setup_step'))
         else:
             status = 400
+        apply_errors = [str(error) for field_errors in form.errors.values() for error in field_errors]
         if embedded:
-            messages.error(request, 'The exhibits could not be imported. Review the errors and try again.')
-            return redirect('showcase_event_manage', event_id=event.pk)
+            _store_showcase_import_errors(request, event, form)
+            return _showcase_manage_step_redirect(event,
+                request.POST.get('setup_step') or 'exhibits')
         return render(request, 'service_domains/showcase_import.html', {
-            'event': event, 'form': form, 'plan': plan, 'parsed': parsed,
+            'event': event, 'form': ShowcaseImportForm(), 'plan': plan, 'parsed': parsed,
+            'preview_token': preview_token, 'apply_errors': apply_errors,
             'apply_attempt': True,
         }, status=status)
 
     form = ShowcaseImportForm(request.POST or None, request.FILES or None)
-    preview_token = ''
     if request.method == 'POST' and form.is_valid():
         parsed = parse_exhibits(form.cleaned_data['file'])
         plan = plan_import(event, parsed)
@@ -4172,17 +5050,17 @@ def showcase_exhibit_import(request, event_id):
             if embedded:
                 request.session[SHOWCASE_IMPORT_SESSION_KEY] = preview_token
                 request.session.modified = True
-                return redirect('showcase_event_manage', event_id=event.pk)
+                return _showcase_manage_step_redirect(event,
+                    request.POST.get('setup_step') or 'exhibits')
     elif request.method == 'POST':
         status = 400
         if embedded:
-            for errors in form.errors.values():
-                for error in errors:
-                    messages.error(request, error)
-            return redirect('showcase_event_manage', event_id=event.pk)
+            _store_showcase_import_errors(request, event, form)
+            return _showcase_manage_step_redirect(event,
+                request.POST.get('setup_step') or 'exhibits')
     return render(request, 'service_domains/showcase_import.html', {
         'event': event, 'form': form, 'plan': plan, 'parsed': parsed,
-        'preview_token': preview_token,
+        'preview_token': preview_token, 'apply_errors': [],
     }, status=status)
 
 
@@ -4223,13 +5101,45 @@ def showcase_event_labels(request, event_id):
     return response
 
 
-def _rating_window_open(event, at):
-    return (
-        event.status == ShowcaseEvent.Status.OPEN
-        and (not event.includes_minors or bool(event.consent_confirmed_at))
-        and (event.starts_at is None or at >= event.starts_at)
-        and (event.ends_at is None or at < event.ends_at)
-    )
+def _device_rating_digest(request, event):
+    """Digest of this browser's rating token for the event, or None without a valid one."""
+    token = request.COOKIES.get(_cookie_name(event), '')
+    return ShowcaseRating.digest_device_key(token, event) if _valid_device_token(token, event) else None
+
+
+def _rated_exhibit_ids(request, event):
+    """Exhibits this device has already rated (never shown to anyone else)."""
+    digest = _device_rating_digest(request, event)
+    if digest is None:
+        return set()
+    return set(ShowcaseRating.objects.filter(event=event, device_digest=digest)
+               .values_list('exhibit_id', flat=True))
+
+
+def _staged_exhibit(event):
+    """The exhibit the organizer has put on stage, if any."""
+    exhibit_id = ((event.workflow_snapshot or {}).get('stage_state') or {}).get('active_exhibit_id')
+    return (event.exhibits.select_related('category').filter(pk=exhibit_id).first()
+            if exhibit_id else None)
+
+
+def _rating_unavailable_message(event, exhibit=None):
+    """Why visitors cannot rate right now, or '' when they can.
+
+    Ratings follow what is live: the event must be open and, when a specific
+    exhibit is asked about, that exhibit must be the one on stage. The event's
+    planned dates play no part.
+    """
+    if event.status == ShowcaseEvent.Status.DRAFT:
+        return 'This showcase has not opened for ratings yet. Please check back soon.'
+    if event.status != ShowcaseEvent.Status.OPEN:
+        return 'Ratings for this showcase are closed. Thank you for taking part.'
+    if event.includes_minors and not event.consent_confirmed_at:
+        return 'Ratings are not open yet. The organizer is finishing setup.'
+    if exhibit is not None and not showcase_exhibit_on_stage(event, exhibit.pk):
+        return (f'{exhibit.name} is not on stage right now. You can rate an exhibit while it is '
+                'presenting.')
+    return ''
 
 
 def _cookie_name(event):
@@ -4246,7 +5156,8 @@ def _valid_device_token(token, event):
     return True
 
 
-def _render_rating(request, exhibit, form, *, status=200, submitted=False, message=''):
+def _render_rating(request, exhibit, form, *, status=200, submitted=False, message='', unavailable='',
+                   on_stage=None, already_rated=False):
     return render(request, 'service_domains/showcase_rate.html', {
         'event': exhibit.event,
         'exhibit': exhibit,
@@ -4254,7 +5165,33 @@ def _render_rating(request, exhibit, form, *, status=200, submitted=False, messa
         'form': form,
         'submitted': submitted,
         'message': message,
+        'unavailable': unavailable,
+        'on_stage': on_stage,
+        'already_rated': already_rated,
     }, status=status)
+
+
+@require_safe
+@never_cache
+def showcase_rating_state(request, exhibit_id):
+    """Can this device rate this exhibit right now? Answers only for the asking device."""
+    exhibit = (ShowcaseExhibit.objects.select_related('event')
+               .filter(public_id=exhibit_id).first())
+    if exhibit is None:
+        raise Http404
+    event = exhibit.event
+    if exhibit.pk in _rated_exhibit_ids(request, event):
+        state = {'can_rate': False, 'reason': 'rated',
+                 'message': 'You have already rated this exhibit. Thank you.'}
+    elif (event.workflow_snapshot or {}).get('floor_state', {}).get('visitor_voting_paused', False):
+        state = {'can_rate': False, 'reason': 'paused',
+                 'message': 'Visitor ratings are temporarily paused by the organizer.'}
+    else:
+        message = _rating_unavailable_message(event, exhibit)
+        state = {'can_rate': not message, 'reason': 'unavailable' if message else '', 'message': message}
+    response = JsonResponse(state)
+    response['Cache-Control'] = 'private, no-store'
+    return response
 
 
 @require_http_methods(['GET', 'POST'])
@@ -4266,8 +5203,20 @@ def rate_showcase_exhibit(request, exhibit_id):
     if exhibit is None:
         raise Http404
     event = exhibit.event
-    if not _rating_window_open(event, timezone.now()):
-        raise Http404
+    snapshot = event.workflow_snapshot or {}
+    if snapshot.get('floor_state', {}).get('visitor_voting_paused', False):
+        response = _render_rating(request, exhibit, ShowcaseRatingForm(),
+            message='Visitor ratings are temporarily paused by the organizer. Please check back shortly.')
+        response['Cache-Control'] = 'private, no-store'
+        return response
+    unavailable = _rating_unavailable_message(event, exhibit)
+    if unavailable:
+        response = _render_rating(request, exhibit, ShowcaseRatingForm(), unavailable=unavailable,
+                                  status=200 if request.method == 'GET' else 403,
+                                  on_stage=_staged_exhibit(event),
+                                  already_rated=exhibit.pk in _rated_exhibit_ids(request, event))
+        response['Cache-Control'] = 'private, no-store'
+        return response
     allowed = allow_public_event_request(request, service='showcase-rating',
         event_id=event.public_id, limit=settings.SHOWCASE_PUBLIC_RATE_LIMIT,
         window=settings.SHOWCASE_PUBLIC_RATE_WINDOW)
@@ -4286,7 +5235,8 @@ def rate_showcase_exhibit(request, exhibit_id):
     if request.method == 'GET':
         if not token_valid:
             issued_token = ShowcaseRating.issue_device_token(event)
-        response = _render_rating(request, exhibit, ShowcaseRatingForm())
+        response = _render_rating(request, exhibit, ShowcaseRatingForm(),
+                                  already_rated=exhibit.pk in _rated_exhibit_ids(request, event))
         if issued_token:
             response.set_cookie(cookie_name, issued_token, max_age=SHOWCASE_DEVICE_TOKEN_MAX_AGE,
                 httponly=True, secure=request.is_secure(), samesite='Lax', path=DEVICE_COOKIE_PATH)
@@ -4316,6 +5266,7 @@ def rate_showcase_exhibit(request, exhibit_id):
         response = _render_rating(request, exhibit, form, status=400)
         response['Cache-Control'] = 'private, no-store'
         return response
+    broadcast_showcase_event(event, 'showcase.rating', {})
     response = _render_rating(request, exhibit, form, submitted=True)
     response['Cache-Control'] = 'private, no-store'
     return response
@@ -4348,6 +5299,44 @@ def showcase_exhibit_qr(request, exhibit_id):
         raise Http404
     target = request.build_absolute_uri(reverse(
         'showcase_rate_exhibit', args=(exhibit.public_id,)))
+    response = HttpResponse(qr_png(target), content_type='image/png')
+    response['Cache-Control'] = 'private, no-store'
+    return response
+
+
+@require_safe
+@never_cache
+def showcase_visit(request, public_id):
+    """Visitor landing page behind the event QR: pick a booth, then rate it."""
+    event = ShowcaseEvent.objects.filter(public_id=public_id).first()
+    if event is None:
+        raise Http404
+    unavailable = _rating_unavailable_message(event)
+    staged = None
+    if not unavailable:
+        staged = _staged_exhibit(event)
+        if (event.workflow_snapshot or {}).get('floor_state', {}).get('visitor_voting_paused', False):
+            unavailable = 'Visitor ratings are temporarily paused by the organizer. Please check back shortly.'
+    groups = {}
+    if event.status != ShowcaseEvent.Status.DRAFT:
+        for exhibit in event.exhibits.select_related('category').order_by(
+                'category__order', 'category__name', 'order', 'pk'):
+            groups.setdefault(exhibit.category.name if exhibit.category_id else 'Exhibits', []).append(exhibit)
+    rated_ids = _rated_exhibit_ids(request, event)
+    response = render(request, 'service_domains/showcase_visit.html', {
+        'event': event, 'groups': groups, 'unavailable': unavailable, 'staged': staged,
+        'rated_ids': rated_ids, 'staged_rated': bool(staged and staged.pk in rated_ids),
+    })
+    response['Cache-Control'] = 'private, no-store'
+    return response
+
+
+@require_safe
+@never_cache
+def showcase_visit_qr(request, public_id):
+    if not ShowcaseEvent.objects.filter(public_id=public_id).exists():
+        raise Http404
+    target = request.build_absolute_uri(reverse('showcase_visit', args=(public_id,)))
     response = HttpResponse(qr_png(target), content_type='image/png')
     response['Cache-Control'] = 'private, no-store'
     return response
@@ -4463,6 +5452,21 @@ def training_session_live(request, series_id, session_id):
     """Render the workshop live command and observation console for facilitators."""
     series, session = _owned_training_series_session(request, series_id, session_id)
     context = get_training_session_live_state(series, session)
+    feedback_url = request.build_absolute_uri(
+        reverse('training_anonymous_feedback', kwargs={'feedback_public_id': session.feedback_public_id})
+    )
+    qr_img_url = reverse('training_session_feedback_qr', kwargs={
+        'series_id': series.pk, 'session_id': session.pk
+    }) + '?format=png'
+    context['feedback_url'] = feedback_url
+    context['qr_img_url'] = qr_img_url
+    assessment_session = session.assessment_session
+    context['session_status'] = assessment_session.status
+    context['drill_timer_json'] = mark_safe(json.dumps(context['drill_timer']))
+    context['can_go_live'] = (assessment_session.status == AssessmentSession.Status.DRAFT
+                              and assessment_session.can_go_live())
+    context['participant_count'] = TrainingParticipant.objects.filter(
+        series=series, organization_id=series.organization_id).count()
     response = render(request, 'service_domains/training_session_live.html', context)
     response['Cache-Control'] = 'private, no-store'
     response['Referrer-Policy'] = 'same-origin'
@@ -4472,23 +5476,56 @@ def training_session_live(request, series_id, session_id):
 @require_http_methods(['GET'])
 @never_cache
 @_team_owner
+def training_session_projector(request, series_id, session_id):
+    """Render public-safe auditorium/screen projection for workshop drills."""
+    series, session = _owned_training_series_session(request, series_id, session_id)
+    context = get_training_session_live_state(series, session)
+    feedback_url = request.build_absolute_uri(
+        reverse('training_anonymous_feedback', kwargs={'feedback_public_id': session.feedback_public_id})
+    )
+    qr_img_url = reverse('training_session_feedback_qr', kwargs={
+        'series_id': series.pk, 'session_id': session.pk
+    }) + '?format=png'
+    context['feedback_url'] = feedback_url
+    context['qr_img_url'] = qr_img_url
+    context['drill_timer_json'] = mark_safe(json.dumps(context['drill_timer']))
+    response = render(request, 'service_domains/training_session_projector.html', context)
+    response['Cache-Control'] = 'private, no-store'
+    response['Referrer-Policy'] = 'same-origin'
+    return response
+
+
+def _training_live_json(request, series, session):
+    """The one live-state payload: server clock, counters and the console fragments."""
+    context = get_training_session_live_state(series, session)
+    context['feedback_url'] = request.build_absolute_uri(
+        reverse('training_anonymous_feedback', kwargs={'feedback_public_id': session.feedback_public_id}))
+    context['qr_img_url'] = reverse('training_session_feedback_qr', kwargs={
+        'series_id': series.pk, 'session_id': session.pk}) + '?format=png'
+    context['session_status'] = session.assessment_session.status
+    fragments = {
+        'hero_html': 'training_live_hero', 'competencies_html': 'training_live_competencies',
+        'pods_html': 'training_live_pods',
+    }
+    return JsonResponse({
+        'ok': True,
+        'session_status': context['session_status'],
+        'active_drill_phase': context['drill_phase'],
+        'drill_timer': context['drill_timer'],
+        'drill_seconds_remaining': context['drill_seconds_remaining'],
+        'timer_paused': context['timer_paused'],
+        **{key: render_to_string(f'service_domains/_partials/{name}.html', context, request=request)
+           for key, name in fragments.items()},
+    })
+
+
+@require_http_methods(['GET'])
+@never_cache
+@_team_owner
 def training_session_live_state(request, series_id, session_id):
     """Real-time JSON state endpoint returning drill timer, feedback meter, and HTML fragments."""
     series, session = _owned_training_series_session(request, series_id, session_id)
-    context = get_training_session_live_state(series, session)
-    return JsonResponse({
-        'ok': True,
-        'session_status': session.assessment_session.status,
-        'active_drill_phase': context['drill_phase'],
-        'drill_seconds_remaining': context['drill_seconds_remaining'],
-        'timer_paused': context['timer_paused'],
-        'feedback_count': context['feedback_count'],
-        'feedback_score_mean': context['feedback_score_mean'],
-        'hero_html': render_to_string('service_domains/_partials/training_live_hero.html', context, request=request),
-        'competencies_html': render_to_string('service_domains/_partials/training_live_competencies.html', context, request=request),
-        'feedback_html': render_to_string('service_domains/_partials/training_live_feedback.html', context, request=request),
-        'pods_html': render_to_string('service_domains/_partials/training_live_pods.html', context, request=request),
-    })
+    return _training_live_json(request, series, session)
 
 
 @require_POST
@@ -4499,6 +5536,8 @@ def training_session_live_action(request, series_id, session_id):
     series, session = _owned_training_series_session(request, series_id, session_id)
     action = request.POST.get('action')
     try:
+        if action != 'start_session' and session.assessment_session.status != AssessmentSession.Status.LIVE:
+            raise ValidationError('This session is not live.')
         if action == 'set_drill_phase':
             phase = request.POST.get('phase')
             set_training_drill_phase(session, phase, organization=request.organization, user=request.user)
@@ -4528,47 +5567,54 @@ def training_session_live_action(request, series_id, session_id):
             note = request.POST.get('note', '').strip()
             if key:
                 save_training_observation_note(session, key, note, organization=request.organization, user=request.user)
+        elif action == 'start_session':
+            assessment_session = session.assessment_session
+            if assessment_session.status != AssessmentSession.Status.DRAFT:
+                raise ValidationError('This session has already started.')
+            if not assessment_session.can_go_live():
+                raise ValidationError('Add rubric categories that total 100% and at least one group before starting.')
+            assessment_session.status = AssessmentSession.Status.LIVE
+            assessment_session.save(update_fields=('status',))
+            messages.success(request, 'The session is live.')
+            broadcast_training_session_event(session.pk, 'training.start_session')
+            redirect_url = reverse('training_session_live', args=(series.pk, session.pk))
+            if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                return JsonResponse({'status': 'live', 'redirect': redirect_url})
+            return redirect(redirect_url)
         elif action == 'conclude_session':
             with transaction.atomic():
                 assessment_session = session.assessment_session
                 assessment_session.status = 'closed'
-                assessment_session.save(update_fields=('status', 'updated_at'))
+                assessment_session.save(update_fields=('status',))
             messages.success(request, 'Workshop session concluded and results preserved.')
-            return JsonResponse({'status': 'closed', 'redirect': reverse('training_series_manage', args=(series.pk,))})
+            broadcast_training_session_event(session.pk, 'training.conclude_session')
+            redirect_url = reverse('training_session_competencies', args=(assessment_session.pk,))
+            if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                return JsonResponse({'status': 'closed', 'redirect': redirect_url})
+            return redirect(redirect_url)
         else:
             return JsonResponse({'error': f'Unknown action: {action}'}, status=400)
     except (ValidationError, PermissionDenied) as exc:
         msg = '; '.join(getattr(exc, 'messages', [])) or str(exc)
+        if request.headers.get('x-requested-with') != 'XMLHttpRequest':
+            messages.error(request, msg)
+            return redirect('training_session_live', series_id=series.pk, session_id=session.pk)
         return JsonResponse({'error': msg}, status=400)
 
     session.refresh_from_db()
-    context = get_training_session_live_state(series, session)
-    return JsonResponse({
-        'ok': True,
-        'session_status': session.assessment_session.status,
-        'active_drill_phase': context['drill_phase'],
-        'drill_seconds_remaining': context['drill_seconds_remaining'],
-        'timer_paused': context['timer_paused'],
-        'feedback_count': context['feedback_count'],
-        'feedback_score_mean': context['feedback_score_mean'],
-        'hero_html': render_to_string('service_domains/_partials/training_live_hero.html', context, request=request),
-        'competencies_html': render_to_string('service_domains/_partials/training_live_competencies.html', context, request=request),
-        'feedback_html': render_to_string('service_domains/_partials/training_live_feedback.html', context, request=request),
-        'pods_html': render_to_string('service_domains/_partials/training_live_pods.html', context, request=request),
-    })
+    broadcast_training_session_event(session.pk, f'training.{action}')
+    return _training_live_json(request, series, session)
 
 
 @require_http_methods(['GET'])
 @never_cache
 @_team_owner
 def training_session_feedback_qr(request, series_id, session_id):
-    """Render attendee QR presentation modal or image."""
+    """The attendee feedback link as a PNG QR code."""
     series, session = _owned_training_series_session(request, series_id, session_id)
     feedback_url = request.build_absolute_uri(
         reverse('training_anonymous_feedback', kwargs={'feedback_public_id': session.feedback_public_id})
     )
-    return render(request, 'service_domains/_partials/training_live_feedback_modal.html', {
-        'series': series,
-        'session': session,
-        'feedback_url': feedback_url,
-    })
+    response = HttpResponse(qr_png(feedback_url), content_type='image/png')
+    response['Cache-Control'] = 'private, no-store'
+    return response

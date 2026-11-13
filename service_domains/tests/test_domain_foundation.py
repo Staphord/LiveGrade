@@ -31,6 +31,7 @@ from service_domains.operations import (
 from service_domains.rules import aggregate_anonymous_feedback, advance_entries, aggregate_scores, ranked_choice_result, training_trend
 from service_domains.onboarding import service_onboarding
 
+from service_domains.tests.stage_helpers import put_on_stage
 
 class ServiceDomainFixture(TestCase):
     def setUp(self):
@@ -704,6 +705,7 @@ class ShowcaseOperationTests(ServiceDomainFixture):
         self.category.save()
         self.exhibit = self.base(ShowcaseExhibit, event=self.event, category=self.category, name='Solar')
         self.exhibit.save()
+        put_on_stage(self.event, self.exhibit)
 
     def test_rating_accepts_once_with_digest_and_rejects_duplicate(self):
         key = ShowcaseRating.issue_device_token(self.event)
@@ -738,15 +740,21 @@ class ShowcaseOperationTests(ServiceDomainFixture):
         with self.assertRaisesMessage(ValidationError, 'consent'):
             submit_showcase_rating(self.event, self.exhibit, key, 5)
         self.event.consent_confirmed_at = timezone.now()
-        self.event.starts_at = timezone.now() + timedelta(minutes=1)
-        self.event.save(update_fields=('consent_confirmed_at', 'starts_at'))
-        with self.assertRaisesMessage(ValidationError, 'not opened'):
-            submit_showcase_rating(self.event, self.exhibit, key, 5)
-        self.event.starts_at = None
-        self.event.ends_at = timezone.now() - timedelta(seconds=1)
+        self.event.save(update_fields=('consent_confirmed_at',))
+        # Planned dates are informational: a live, staged exhibit can always be rated.
+        self.event.starts_at = timezone.now() + timedelta(days=1)
+        self.event.ends_at = timezone.now() - timedelta(days=1)
         self.event.save(update_fields=('starts_at', 'ends_at'))
-        with self.assertRaisesMessage(ValidationError, 'window has ended'):
-            submit_showcase_rating(self.event, self.exhibit, key, 5)
+        self.assertTrue(submit_showcase_rating(self.event, self.exhibit, key, 5))
+
+    def test_rating_requires_the_exhibit_to_be_on_stage(self):
+        other = self.base(ShowcaseExhibit, event=self.event, category=self.category, name='Wind')
+        other.save()
+        key = ShowcaseRating.issue_device_token(self.event)
+        with self.assertRaisesMessage(ValidationError, 'only while it is on stage'):
+            submit_showcase_rating(self.event, other, key, 5)
+        put_on_stage(self.event, other)
+        self.assertTrue(submit_showcase_rating(self.event, other, key, 5))
 
     def test_rating_database_conflict_is_reported_as_duplicate(self):
         with patch.object(ShowcaseRating, 'save', side_effect=IntegrityError('unique race')):
@@ -764,6 +772,7 @@ class ShowcaseOperationTests(ServiceDomainFixture):
         other.save()
         for stars in (5, 4, 5):
             submit_showcase_rating(self.event, self.exhibit, ShowcaseRating.issue_device_token(self.event), stars)
+        put_on_stage(self.event, other)
         submit_showcase_rating(self.event, other, ShowcaseRating.issue_device_token(self.event), 5)
         submit_showcase_rating(self.event, other, ShowcaseRating.issue_device_token(self.event), 4)
         self.event.status = ShowcaseEvent.Status.PUBLISHED
@@ -793,6 +802,7 @@ class ShowcaseOperationTests(ServiceDomainFixture):
         second = self.base(ShowcaseExhibit, event=self.event, category=self.category, name='Second')
         second.save()
         submit_showcase_rating(self.event, self.exhibit, ShowcaseRating.issue_device_token(self.event), 4)
+        put_on_stage(self.event, second)
         submit_showcase_rating(self.event, second, ShowcaseRating.issue_device_token(self.event), 4)
         self.event.status = ShowcaseEvent.Status.PUBLISHED
         self.event.public_results = True
