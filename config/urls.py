@@ -15,6 +15,7 @@ urlpatterns = [
     path('assessments/<path:legacy_path>', legacy_assessments_redirect, name='legacy_assessments_path'),
     path('assess/', include('assessments.student_urls')),
     path('panel/', include('service_domains.panel_urls')),
+    path('coassessment/', include('service_domains.coassessment_urls')),
     # Event-scoped Showcase participant links do not require owner sign-in.
     path('showcase/', include('service_domains.urls')),
     path('competition/', include('service_domains.competition_urls')),

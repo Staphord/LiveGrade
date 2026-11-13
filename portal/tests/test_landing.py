@@ -63,6 +63,15 @@ class LandingTests(TestCase):
         self.assertNotContains(response, 'Sign up for Showcase')
         self.assertContains(response, 'href="/panel/"')
 
+    def test_coassessment_landing_promotion_is_removed_but_service_card_remains(self):
+        with override_settings(LIVEGRADE_LIVE_SERVICES=[service.slug for service in SERVICES]):
+            response = self.client.get('/')
+
+        self.assertContains(response, 'Open Co-Assessment')
+        self.assertNotContains(response, 'combined-workflow-heading')
+        self.assertNotContains(response, 'Need both peer and panel grading?')
+        self.assertNotContains(response, 'Run a synchronized co-assessment with shared rubrics')
+
 
 @override_settings(LIVEGRADE_LIVE_SERVICES=['classroom'])
 class ClassroomShellTests(TestCase):
@@ -73,7 +82,7 @@ class ClassroomShellTests(TestCase):
         sign_in(self.client, self.user, self.org, self.other)
 
     def test_shell_names_only_its_service_and_keeps_the_switcher_in_that_service(self):
-        response = self.client.get(reverse('assessment_session_list'))
+        response = self.client.get(reverse('assessment_dashboard'))
         self.assertContains(response, 'Classroom dashboard')
         self.assertContains(response, 'action="/classroom/switch-organization/"')
         for slug in ('panel', 'showcase', 'team', 'competition'):

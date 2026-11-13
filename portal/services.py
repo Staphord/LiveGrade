@@ -72,6 +72,11 @@ SERVICES = (
             'Teachers, facilitators and event organisers',
             _words('poll', 'respondents', 'responses', 'questions', 'organiser'),
             dashboard='standalone_poll_list'),
+    Service('coassessment', 'Co-Assessment',
+            'Grade presentations with shared rubrics, synchronized peer and panel scoring, and chair moderation.',
+            'Course lecturers, defense coordinators, and panel chairs',
+            _words('session', 'participants', 'groups', 'rubric', 'chair'),
+            dashboard='coassessment_dashboard'),
 )
 
 _BY_SLUG = {service.slug: service for service in SERVICES}

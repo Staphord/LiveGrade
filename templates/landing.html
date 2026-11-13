@@ -284,6 +284,8 @@ body{background:var(--surface);color:var(--text);font-size:1rem;overflow-x:hidde
           <p>Manage judge-scored rounds and audience ballots, resolve ties, and reveal the final leaderboard when the event is ready.</p>
         {% elif card.service.slug == 'polls' %}
           <p>Create anonymous polls, share a link or QR code, and display the live results as people vote.</p>
+        {% elif card.service.slug == 'coassessment' %}
+          <p>Grade presentations with shared rubrics, synchronized peer and panel scoring, and chair moderation.</p>
         {% else %}
           <p>{{ card.service.promise }}</p>
         {% endif %}
@@ -294,12 +296,6 @@ body{background:var(--surface);color:var(--text);font-size:1rem;overflow-x:hidde
       </article>
       {% endfor %}
     </div>
-    {% if 'classroom' in released_service_slugs and 'panel' in released_service_slugs %}
-    <aside class="lp-combined" aria-labelledby="combined-workflow-heading">
-      <div><h3 id="combined-workflow-heading">Need both peer and Panel grading?</h3><p>Link a Classroom session and a Panel hearing for the same presentation entries. Keep the results separate or use the configured weighted mark and moderation rules.</p></div>
-      <a class="btn btn-primary" href="{% url 'combined_assessment_create' %}">Set up combined grading <i class="bi bi-arrow-right ms-1"></i></a>
-    </aside>
-    {% endif %}
   </div>
 </section>
 

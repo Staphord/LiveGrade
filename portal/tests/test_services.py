@@ -12,8 +12,8 @@ VOCABULARY_KEYS = {'session', 'participants', 'entries', 'criteria', 'owner'}
 
 class RegistryTests(SimpleTestCase):
 
-    def test_there_are_six_services_in_a_fixed_order(self):
-        self.assertEqual(SLUGS, ('classroom', 'panel', 'showcase', 'team', 'competition', 'polls'))
+    def test_there_are_seven_services_in_a_fixed_order(self):
+        self.assertEqual(SLUGS, ('classroom', 'panel', 'showcase', 'team', 'competition', 'polls', 'coassessment'))
         self.assertEqual([s.slug for s in SERVICES], list(SLUGS))
 
     def test_every_service_is_fully_described(self):
@@ -95,6 +95,7 @@ class DashboardTests(SimpleTestCase):
             'team': reverse('training_series_list'),
             'competition': reverse('competition_list'),
             'polls': reverse('standalone_poll_list'),
+            'coassessment': reverse('coassessment_dashboard'),
         })
 
 
