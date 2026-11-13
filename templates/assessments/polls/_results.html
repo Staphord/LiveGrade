@@ -9,7 +9,7 @@
           <h3 class="h6 mb-1" id="poll-question-{{ item.question.pk }}">{{ forloop.counter }}. {{ item.question.prompt }}</h3>
           <p class="poll-result-question-count mb-0">{{ item.responded }} response{{ item.responded|pluralize }}</p>
         </div>
-        <span class="poll-answer-type">{% if item.question.allow_multiple %}Multiple choice{% else %}Single choice{% endif %}</span>
+        <span class="poll-answer-type">{% if item.question.allow_multiple %}Checkbox{% else %}Multiple choice{% endif %}</span>
       </div>
       {% if item.confirmed_option %}<div class="poll-decision-result"><i class="bi bi-check-circle-fill" aria-hidden="true"></i><div><strong>Decision: {{ item.confirmed_option.label }}</strong>{% if item.decision_note %}<p class="mb-0">{{ item.decision_note|linebreaksbr }}</p>{% endif %}</div></div>{% endif %}
       {% if item.responded %}

@@ -39,7 +39,7 @@ class PollQuestionCellTests(SimpleTestCase):
     def test_unbalanced_quotes_in_options_do_not_crash(self):
         parsed = poll_import.parse_questions(upload(
             ['Question', 'Question Type', 'Answer Options'],
-            [['Where?', 'Single choice', '"unterminated, Hall']]))
+            [['Where?', 'Multiple choice', '"unterminated, Hall']]))
         self.assertIn('questions', parsed)
 
 
