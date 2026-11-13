@@ -26,6 +26,7 @@ from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpResponse, JsonResponse, QueryDict
 from django.contrib import messages
+from .safe_redirects import safe_redirect, user_message
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -521,7 +522,7 @@ def panel_hearing_delete(request, hearing_id):
     try:
         delete_panel_hearings([hearing])
     except ValidationError as exc:
-        messages.error(request, '; '.join(exc.messages) if hasattr(exc, 'messages') else str(exc))
+        messages.error(request, user_message(exc))
     else:
         messages.success(request, f'"{name}" deleted.')
     return redirect('panel_hearing_table')
@@ -552,7 +553,7 @@ def panel_hearing_bulk_delete(request):
         try:
             delete_panel_hearings(selected)
         except ValidationError as exc:
-            messages.error(request, '; '.join(exc.messages) if hasattr(exc, 'messages') else str(exc))
+            messages.error(request, user_message(exc))
             return _panel_bulk_delete_redirect(request)
         count = len(selected)
 
@@ -649,20 +650,20 @@ def panel_hearing_manage(request, hearing_id):
                             item.save()
                             if request.POST.get('advance') == '1':
                                 messages.success(request, 'Assessment details saved.')
-                                return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=candidates{from_query}")
+                                return safe_redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=candidates{from_query}")
                             return_step = request.POST.get('return_step')
                             valid_return_steps = {'details', 'candidates', 'ready'}
                             if item.workflow != PanelHearing.Workflow.OUTCOME:
                                 valid_return_steps.update({'scoring', 'examiners'})
                             if return_step in valid_return_steps:
                                 messages.success(request, 'Assessment details saved.')
-                                return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step={return_step}{from_query}")
+                                return safe_redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step={return_step}{from_query}")
                             leave_to = request.POST.get('leave_to', '')
                             if leave_to and url_has_allowed_host_and_scheme(
                                     leave_to, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
                                 messages.success(request, 'Assessment details saved.')
                                 return redirect(leave_to)
-                            return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=details&saved=1{from_query}")
+                            return safe_redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=details&saved=1{from_query}")
         elif action == 'remove_candidate':
             with transaction.atomic():
                 locked_hearing = (PanelHearing.objects.for_organization(request.organization)
@@ -676,7 +677,7 @@ def panel_hearing_manage(request, hearing_id):
                     if cand:
                         cand.delete()
                         messages.success(request, 'Candidate removed.')
-                        return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=candidates{from_query}")
+                        return safe_redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=candidates{from_query}")
         elif action == 'remove_criterion':
             with transaction.atomic():
                 locked_hearing = (PanelHearing.objects.for_organization(request.organization)
@@ -690,7 +691,7 @@ def panel_hearing_manage(request, hearing_id):
                     if crit:
                         crit.delete()
                         messages.success(request, 'Criterion removed.')
-                        return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=scoring{from_query}")
+                        return safe_redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step=scoring{from_query}")
         elif action in ('activate_candidate', 'end_candidate'):
             try:
                 if action == 'activate_candidate':
@@ -813,7 +814,7 @@ def panel_hearing_manage(request, hearing_id):
                                         'update_panel': 'Examiner group settings saved.',
                                     }[action])
                                     step_target = 'candidates' if action == 'candidate' else 'scoring'
-                                    return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step={step_target}{from_query}")
+                                    return safe_redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}?step={step_target}{from_query}")
         elif action == 'open':
             try:
                 open_panel_hearing(hearing, organization=request.organization, user=request.user)
@@ -861,7 +862,7 @@ def panel_hearing_manage(request, hearing_id):
             else:
                 messages.success(request, 'The public live display link was revoked.')
                 step_target = '?step=ready' if hearing.status == PanelHearing.Status.DRAFT else ''
-                return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}{step_target}")
+                return safe_redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}{step_target}")
         elif action == 'invite':
             if not requires_examiners:
                 action_error = 'This chair-recorded process does not use examiner invitations.'
@@ -891,7 +892,7 @@ def panel_hearing_manage(request, hearing_id):
                     transaction.on_commit(enqueue_invitation)
                     messages.success(request, 'Examiner invitation queued for delivery.')
                     step_target = '?step=examiners' if hearing.status == PanelHearing.Status.DRAFT else ''
-                    return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}{step_target}")
+                    return safe_redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}{step_target}")
         elif action == 'resend':
             invitation = PanelInvitation.objects.filter(hearing=hearing,
                 pk=request.POST.get('invitation_id')).first()
@@ -913,7 +914,7 @@ def panel_hearing_manage(request, hearing_id):
                 transaction.on_commit(enqueue_resend)
                 messages.success(request, 'Invitation resend queued for delivery.')
                 step_target = '?step=examiners' if hearing.status == PanelHearing.Status.DRAFT else ''
-                return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}{step_target}")
+                return safe_redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}{step_target}")
         elif action == 'revoke':
             invitation = PanelInvitation.objects.filter(hearing=hearing,
                 pk=request.POST.get('invitation_id')).first()
@@ -928,7 +929,7 @@ def panel_hearing_manage(request, hearing_id):
             else:
                 messages.success(request, 'Invitation revoked.')
                 step_target = '?step=examiners' if hearing.status == PanelHearing.Status.DRAFT else ''
-                return redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}{step_target}")
+                return safe_redirect(f"{reverse('panel_hearing_manage', args=(hearing.pk,))}{step_target}")
         else:
             return HttpResponse('Invalid Panel organizer action.', status=400)
 
@@ -1763,7 +1764,7 @@ def panel_hearing_live_action(request, hearing_id):
         else:
             return JsonResponse({'error': f'Unknown action: {action}'}, status=400)
     except (ValidationError, PermissionDenied) as exc:
-        msg = '; '.join(getattr(exc, 'messages', [])) or str(exc)
+        msg = user_message(exc)
         return JsonResponse({'error': msg}, status=400)
 
     hearing.refresh_from_db()
@@ -1840,7 +1841,7 @@ def panel_hearing_participants(request, hearing_id):
                     messages.success(request, 'Presenter activated on the chamber floor.')
                     return redirect('panel_hearing_live', hearing_id=hearing.pk)
                 except (ValidationError, PermissionDenied) as exc:
-                    action_error = '; '.join(getattr(exc, 'messages', [])) or str(exc)
+                    action_error = user_message(exc)
         elif action == 'invite' and requires_examiners:
             form = PanelInvitationForm(request.POST,
                 panels=hearing.panels.order_by('name', 'pk'))
@@ -3210,7 +3211,7 @@ def training_series_manage(request, series_id):
                 series.save(update_fields=('feedback_minimum_responses', 'updated_at'))
                 messages.success(request, 'Feedback privacy setting saved.')
                 if request.POST.get('setup_step'):
-                    return redirect(f"{manage_url}?step={request.POST['setup_step']}")
+                    return safe_redirect(f"{manage_url}?step={request.POST['setup_step']}")
                 return redirect('training_series_manage', series_id=series.pk)
         elif action == 'participant':
             participant_form = TrainingParticipantForm(request.POST, auto_id='participant_%s')
@@ -3227,7 +3228,7 @@ def training_series_manage(request, series_id):
                     participant.save(force_insert=True)
                     messages.success(request, 'Team member added.')
                     if request.POST.get('setup_step'):
-                        return redirect(f"{manage_url}?step={request.POST['setup_step']}")
+                        return safe_redirect(f"{manage_url}?step={request.POST['setup_step']}")
                     return redirect('training_series_manage', series_id=series.pk)
         elif action == 'remove_participant':
             participant = get_object_or_404(
@@ -3251,7 +3252,7 @@ def training_series_manage(request, series_id):
                     competency.save(force_insert=True)
                     messages.success(request, 'Competency criterion added.')
                     if request.POST.get('setup_step'):
-                        return redirect(f"{manage_url}?step={request.POST['setup_step']}")
+                        return safe_redirect(f"{manage_url}?step={request.POST['setup_step']}")
                     return redirect('training_series_manage', series_id=series.pk)
         elif action == 'remove_competency':
             competency = get_object_or_404(
@@ -3934,7 +3935,7 @@ def _showcase_manage_step_redirect(event, step=None, from_param=None):
         params.append(f'from={from_param}')
     if params:
         manage_url = f'{manage_url}?{"&".join(params)}'
-    return redirect(manage_url)
+    return safe_redirect(manage_url)
 
 
 _SHOWCASE_CREATE_STEPS = unsaved_steps([
@@ -4493,7 +4494,7 @@ def showcase_live_action(request, event_id):
         else:
             return JsonResponse({'error': f'Unknown action: {action}'}, status=400)
     except (ValidationError, PermissionDenied) as exc:
-        msg = '; '.join(getattr(exc, 'messages', [])) or str(exc)
+        msg = user_message(exc)
         return JsonResponse({'error': msg}, status=400)
 
     event.refresh_from_db()
@@ -4551,7 +4552,7 @@ def showcase_event_results(request, event_id):
             messages.success(request, 'Results and awards published successfully.')
             return redirect('showcase_event_results', event_id=event.pk)
         except ValidationError as exc:
-            messages.error(request, '; '.join(getattr(exc, 'messages', [str(exc)])))
+            messages.error(request, user_message(exc))
 
     if request.method == 'POST' and request.POST.get('action') == 'revoke_results':
         try:
@@ -4563,7 +4564,7 @@ def showcase_event_results(request, event_id):
             messages.success(request, 'Results returned to review.')
             return redirect('showcase_event_results', event_id=event.pk)
         except ValidationError as exc:
-            messages.error(request, '; '.join(getattr(exc, 'messages', [str(exc)])))
+            messages.error(request, user_message(exc))
 
     awards = showcase_awards(event, allow_preview=True)
     certificates = {
@@ -5593,7 +5594,7 @@ def training_session_live_action(request, series_id, session_id):
         else:
             return JsonResponse({'error': f'Unknown action: {action}'}, status=400)
     except (ValidationError, PermissionDenied) as exc:
-        msg = '; '.join(getattr(exc, 'messages', [])) or str(exc)
+        msg = user_message(exc)
         if request.headers.get('x-requested-with') != 'XMLHttpRequest':
             messages.error(request, msg)
             return redirect('training_session_live', series_id=series.pk, session_id=session.pk)

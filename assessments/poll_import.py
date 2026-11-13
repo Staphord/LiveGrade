@@ -15,15 +15,15 @@ HEADERS = {
 }
 
 TYPE_ALIASES = {
-    'single choice': False, 'single': False, 'one answer': False,
-    'multiple choice': True, 'multiple': True, 'select all': True,
+    'multiple choice': False, 'single choice': False, 'single': False, 'one answer': False,
+    'checkbox': True, 'checkboxes': True, 'multiple': True, 'select all': True,
 }
 
 SAMPLE_HEADERS = ['Question', 'Question Type', 'Answer Options']
 SAMPLE_ROWS = [
-    ['When should we hold the presentation?', 'Single choice',
+    ['When should we hold the presentation?', 'Multiple choice',
      'Monday morning, Wednesday afternoon, Friday morning'],
-    ['Which topics should we include?', 'Multiple choice',
+    ['Which topics should we include?', 'Checkbox',
      'Project progress, Challenges and solutions, Next steps'],
 ]
 
@@ -72,7 +72,7 @@ def parse_questions(uploaded_file):
             result['errors'].append((number, 'Keep each question within 250 characters.'))
             continue
         if type_label not in TYPE_ALIASES:
-            result['errors'].append((number, 'Use Single choice or Multiple choice for the question type.'))
+            result['errors'].append((number, 'Use Multiple choice or Checkbox for the question type.'))
             continue
         if not options_text or not row_options or any(not option for option in row_options):
             result['errors'].append((number, 'Enter answer options separated by commas.'))
@@ -88,7 +88,7 @@ def parse_questions(uploaded_file):
             if len(questions) >= MAX_QUESTIONS:
                 result['errors'].append((number, f'A file can contain at most {MAX_QUESTIONS} questions.'))
                 continue
-            entry = {'question': question, 'type': 'Multiple choice' if allow_multiple else 'Single choice',
+            entry = {'question': question, 'type': 'Checkbox' if allow_multiple else 'Multiple choice',
                      'allow_multiple': allow_multiple, 'options': [], 'row': number}
             questions[key] = entry
         elif entry['allow_multiple'] != allow_multiple:

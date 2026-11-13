@@ -21,7 +21,7 @@ class PollForm(forms.ModelForm):
     question = forms.CharField(max_length=250, label='Question',
         widget=forms.Textarea(attrs={'rows': 1, 'data-autogrow': '', 'class': 'form-control'}))
     allow_multiple = forms.ChoiceField(
-        choices=[('', 'Choose an answer type'), ('false', 'Single choice'), ('true', 'Multiple choice')],
+        choices=[('', 'Choose an answer type'), ('false', 'Multiple choice'), ('true', 'Checkbox')],
         required=True, widget=forms.Select(attrs={'hidden': True, 'data-hide-empty-option': True}), label='Answer type')
     option_lines = forms.CharField(label='Answer options', widget=forms.Textarea(attrs={'rows': 2}),
         help_text='Add at least two options.')

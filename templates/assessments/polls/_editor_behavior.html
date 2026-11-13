@@ -248,7 +248,7 @@
     type.setAttribute('hidden', '');
     type.dataset.hideEmptyOption = '';
     type.id = 'poll-extra-question-' + id + '-type'; typeLabel.htmlFor = type.id; type.dataset.type = '';
-    [['', 'Choose an answer type'], ['single', 'Single choice'], ['multiple', 'Multiple choice']].forEach(function (choice) {
+    [['', 'Choose an answer type'], ['single', 'Multiple choice'], ['multiple', 'Checkbox']].forEach(function (choice) {
       const option = document.createElement('option'); option.value = choice[0]; option.textContent = choice[1]; type.append(option);
     });
     type.value = value.allow_multiple === true ? 'multiple' : value.allow_multiple === false ? 'single' : '';

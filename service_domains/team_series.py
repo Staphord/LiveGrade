@@ -1,7 +1,6 @@
 """Scoped Team series queries, exports, and deletion operations."""
 
 import json
-import re
 import zipfile
 from collections import defaultdict
 from datetime import datetime
@@ -28,7 +27,6 @@ from .models import (
 
 DELETE_EXPORT_MAX_AGE = 15 * 60
 _DELETE_EXPORT_SALT = 'livegrade.team.series-delete-export.v1'
-_SERIES_ID = re.compile(r'[1-9][0-9]*\Z')
 _INT64_MAX = '9223372036854775807'
 _SECRET_EXPORT_FIELDS = {
     'device_digest', 'feedback_public_id', 'hashed_token', 'password',
@@ -166,7 +164,7 @@ def parse_series_ids(raw_ids):
         raise InvalidSeriesSelection
     values = set()
     for value in raw_ids:
-        if (not _SERIES_ID.fullmatch(value) or len(value) > 19
+        if (len(value) > 19 or not (value.isascii() and value.isdecimal()) or value.startswith('0')
                 or (len(value) == 19 and value > _INT64_MAX)):
             raise InvalidSeriesSelection
         values.add(int(value))

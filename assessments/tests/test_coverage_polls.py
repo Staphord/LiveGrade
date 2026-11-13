@@ -23,6 +23,20 @@ def imported(prompt):
     return {'question': prompt, 'allow_multiple': False, 'options': ['A', 'B']}
 
 
+class AnswerTypeNameTests(SimpleTestCase):
+    def test_import_reads_the_new_answer_type_names(self):
+        from assessments import poll_import
+        from assessments.sheets import workbook_bytes
+        rows = [['One answer', 'Multiple choice', 'A, B'], ['Several', 'Checkbox', 'A, B'],
+                ['Old name', 'Single choice', 'A, B']]
+        parsed = poll_import.parse_questions(workbook_bytes(['Question', 'Question Type', 'Answer Options'], rows))
+        kinds = {q['question']: (q['type'], q['allow_multiple']) for q in parsed['questions']}
+        self.assertEqual(kinds['One answer'], ('Multiple choice', False))
+        self.assertEqual(kinds['Several'], ('Checkbox', True))
+        self.assertEqual(kinds['Old name'], ('Multiple choice', False))
+        self.assertEqual(dict(PollForm().fields['allow_multiple'].choices)['true'], 'Checkbox')
+
+
 class FormInputTests(SimpleTestCase):
     def form(self, **overrides):
         data = {'question': 'Where?', 'allow_multiple': 'false', 'option_lines': 'Hall\nLibrary',

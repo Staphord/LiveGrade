@@ -1,5 +1,6 @@
 import json
 import os
+import stat
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -41,7 +42,7 @@ class CompetitionJudgeLoadTests(unittest.TestCase):
 
     def test_refuses_insecure_token_file_duplicate_tokens_and_invalid_tokens(self):
         path = self.private_token_file('a' * 32 + '\n')
-        os.chmod(path, 0o644)
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
         with self.assertRaisesRegex(ValueError, 'accessible by group'):
             read_invitation_tokens(path, 1)
         os.chmod(path, 0o600)

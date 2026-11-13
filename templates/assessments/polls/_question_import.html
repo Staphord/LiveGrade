@@ -10,9 +10,9 @@
     <summary class="small">See the spreadsheet format</summary>
     <p class="small text-muted mt-2 mb-1">Use these exact column headings. Put all answer options in one cell, separated by commas. Add one row for each question; put options containing commas in double quotes.</p>
     <div class="table-responsive"><table class="table table-sm table-bordered mb-2"><caption class="visually-hidden">Example spreadsheet rows for importing poll questions</caption><thead><tr><th scope="col">Question</th><th scope="col">Question Type</th><th scope="col">Answer Options</th></tr></thead><tbody>
-      <tr><td>When should we hold the presentation?</td><td>Single choice</td><td>Monday morning, Wednesday afternoon, Friday morning</td></tr><tr><td>Which topics should we include?</td><td>Multiple choice</td><td>Project progress, Challenges and solutions, Next steps</td></tr>
+      <tr><td>When should we hold the presentation?</td><td>Multiple choice</td><td>Monday morning, Wednesday afternoon, Friday morning</td></tr><tr><td>Which topics should we include?</td><td>Checkbox</td><td>Project progress, Challenges and solutions, Next steps</td></tr>
     </tbody></table></div>
-    <p class="small text-muted mb-0">Supported question types: Single choice and Multiple choice. Every question needs at least two different options.</p>
+    <p class="small text-muted mb-0">Supported question types: Multiple choice (one answer) and Checkbox (several answers). Every question needs at least two different options.</p>
   </details>
   <form method="post" enctype="multipart/form-data" class="mb-3" data-poll-question-import data-unsaved-ignore>
     {% csrf_token %}{% if poll %}<input type="hidden" name="poll" value="{{ poll.uuid }}">{% endif %}

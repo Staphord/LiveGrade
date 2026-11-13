@@ -748,14 +748,14 @@ class ClassroomPollTests(TestCase):
         # Max rows exceeded
         too_many_rows = SimpleUploadedFile('too_many_rows.xlsx', workbook_bytes(
             ['Question', 'Question Type', 'Answer Option'],
-            [['Q', 'Single choice', 'Opt']] * (poll_import.MAX_ROWS + 1)).getvalue())
+            [['Q', 'Multiple choice', 'Opt']] * (poll_import.MAX_ROWS + 1)).getvalue())
         self.assertIn(f'at most {poll_import.MAX_ROWS}', poll_import.parse_questions(too_many_rows)['fatal'])
 
         # Max questions exceeded
         q_rows = []
         for i in range(poll_import.MAX_QUESTIONS + 1):
-            q_rows.append([f'Question {i}', 'Single choice', 'Opt 1'])
-            q_rows.append([f'Question {i}', 'Single choice', 'Opt 2'])
+            q_rows.append([f'Question {i}', 'Multiple choice', 'Opt 1'])
+            q_rows.append([f'Question {i}', 'Multiple choice', 'Opt 2'])
         too_many_q = SimpleUploadedFile('too_many_q.xlsx', workbook_bytes(
             ['Question', 'Question Type', 'Answer Option'], q_rows).getvalue())
         self.assertGreater(len(poll_import.parse_questions(too_many_q)['errors']), 0)
@@ -763,22 +763,22 @@ class ClassroomPollTests(TestCase):
         # Max options exceeded
         too_many_opt = SimpleUploadedFile('too_many_opt.xlsx', workbook_bytes(
             ['Question', 'Question Type', 'Answer Option'],
-            [['Q1', 'Single choice', f'Opt {i}'] for i in range(poll_import.MAX_OPTIONS + 1)]).getvalue())
+            [['Q1', 'Multiple choice', f'Opt {i}'] for i in range(poll_import.MAX_OPTIONS + 1)]).getvalue())
         self.assertGreater(len(poll_import.parse_questions(too_many_opt)['errors']), 0)
 
         # Row validation errors
         headers = ['Question', 'Question Type', 'Answer Option']
         rows = [
-            ['', 'Single choice', 'Opt 1'],  # Missing question
-            ['A' * 251, 'Single choice', 'Opt 1'],  # Question too long
+            ['', 'Multiple choice', 'Opt 1'],  # Missing question
+            ['A' * 251, 'Multiple choice', 'Opt 1'],  # Question too long
             ['Valid question', 'Invalid type', 'Opt 1'],  # Bad type
-            ['Valid question 2', 'Single choice', ''],  # Missing option
-            ['Valid question 3', 'Single choice', 'B' * 251],  # Option too long
-            ['Mixed type', 'Single choice', 'Opt 1'],
-            ['Mixed type', 'Multiple choice', 'Opt 2'],  # Mismatched type
-            ['Duplicate opt', 'Single choice', 'Same'],
-            ['Duplicate opt', 'Single choice', 'Same'],  # Duplicate option
-            ['Single opt question', 'Single choice', 'Only one opt'],  # Fewer than 2 options
+            ['Valid question 2', 'Multiple choice', ''],  # Missing option
+            ['Valid question 3', 'Multiple choice', 'B' * 251],  # Option too long
+            ['Mixed type', 'Multiple choice', 'Opt 1'],
+            ['Mixed type', 'Checkbox', 'Opt 2'],  # Mismatched type
+            ['Duplicate opt', 'Multiple choice', 'Same'],
+            ['Duplicate opt', 'Multiple choice', 'Same'],  # Duplicate option
+            ['Single opt question', 'Multiple choice', 'Only one opt'],  # Fewer than 2 options
         ]
         wb = SimpleUploadedFile('rows.xlsx', workbook_bytes(headers, rows).getvalue())
         result = poll_import.parse_questions(wb)

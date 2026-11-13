@@ -219,9 +219,9 @@ class StandalonePollsEndToEndTests(TestCase):
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.append(['Question', 'Question Type', 'Answer Option'])
-        ws.append(['What is your role?', 'Single choice', 'Frontend'])
-        ws.append(['What is your role?', 'Single choice', 'Backend'])
-        ws.append(['What is your role?', 'Single choice', 'DevOps'])
+        ws.append(['What is your role?', 'Multiple choice', 'Frontend'])
+        ws.append(['What is your role?', 'Multiple choice', 'Backend'])
+        ws.append(['What is your role?', 'Multiple choice', 'DevOps'])
         buf = io.BytesIO()
         wb.save(buf)
         buf.seek(0)
