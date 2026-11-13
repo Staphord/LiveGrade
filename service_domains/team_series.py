@@ -226,8 +226,6 @@ def _assessment_cascade_records(sessions):
                 if relation.on_delete is not CASCADE:
                     continue
                 field = relation.field
-                if not (field.many_to_one or field.one_to_one):
-                    continue
                 related_model = relation.related_model
                 children = related_model._base_manager.filter(
                     **{f'{field.attname}__in': parent_ids})
