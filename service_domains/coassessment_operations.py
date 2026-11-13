@@ -306,11 +306,10 @@ def compute_turn_results(turn):
             (peer_score * w_peer)
         ).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
-        if panel_group_mark is not None and peer_group_mark is not None:
-            blended_group_mark = (
-                (panel_group_mark * w_panel) +
-                (peer_group_mark * w_peer)
-            ).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        blended_group_mark = (
+            (panel_group_mark * w_panel) +
+            (peer_group_mark * w_peer)
+        ).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
         for m in members:
             blended_ind_marks[m.pk] = (
