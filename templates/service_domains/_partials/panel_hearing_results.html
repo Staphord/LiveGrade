@@ -1,0 +1,116 @@
+<div id="panel-results" aria-busy="false">
+  <section class="panel-table-card" aria-labelledby="panel-table-heading">
+    <div class="panel-table-head">
+      <div class="panel-table-heading-group">
+        <h2 id="panel-table-heading">Assessments</h2>
+        <span class="panel-table-count">{% if search_query or status_filter %}{{ filtered_count }} matching{% else %}{{ status_counts.total }} total{% endif %} assessment{{ filtered_count|pluralize }}</span>
+      </div>
+      <div class="panel-table-tools">
+        <form id="panel-bulk-delete" method="post" action="{% url 'panel_hearing_bulk_delete' %}" data-confirm="Delete the selected assessments and all of their candidates, examiners, scores, and results? This cannot be undone." data-confirm-title="Delete selected assessments?" data-confirm-label="Delete selected" data-confirm-tone="danger">
+          {% csrf_token %}
+          <input type="hidden" name="q" value="{{ search_query }}">
+          <input type="hidden" name="status" value="{{ status_filter }}">
+          <input type="hidden" name="per_page" value="{{ per_page }}">
+          <button type="submit" class="btn btn-outline-danger btn-sm" data-bulk-delete-button hidden><i class="bi bi-trash me-1" aria-hidden="true"></i>Delete selected (<span data-selected-count>0</span>)</button>
+        </form>
+        <div class="panel-page-size">
+          <label for="panel-page-size">Rows per page</label>
+          <select id="panel-page-size" class="form-select form-select-sm" name="per_page" data-panel-page-size>
+            {% for size in page_sizes %}
+            <option value="{{ size }}"{% if size == per_page %} selected{% endif %}>{{ size }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+    {% if hearings %}
+    <div class="table-responsive">
+      <table class="table table-hover panel-table" data-panel-row-navigation>
+        <caption class="visually-hidden">Panel assessments with their status, candidates, examiners, hearing date, creation date, and available actions</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="panel-select-column">
+              <input class="form-check-input" type="checkbox" data-panel-select-all aria-label="Select all assessments on this page">
+              <span class="visually-hidden">Select</span>
+            </th>
+            <th scope="col">Assessment</th>
+            <th scope="col">Status</th>
+            <th scope="col">Candidates</th>
+            <th scope="col">Examiners ready</th>
+            <th scope="col">Hearing date</th>
+            <th scope="col">Created</th>
+            <th scope="col"><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for hearing in hearings %}
+          {% if hearing.status == 'draft' %}
+            {% if hearing.dashboard_next_action == 'Ready to open' %}
+              {% url 'panel_hearing_manage' hearing_id=hearing.pk as row_url %}
+            {% else %}
+              {% url 'panel_hearing_manage' hearing_id=hearing.pk as row_url %}
+            {% endif %}
+          {% elif hearing.status == 'open' %}
+            {% url 'panel_hearing_live' hearing_id=hearing.pk as row_url %}
+          {% else %}
+            {% url 'panel_results_review' hearing_id=hearing.pk as row_url %}
+          {% endif %}
+          <tr class="panel-row-clickable" data-panel-row-href="{% if hearing.status == 'draft' and hearing.dashboard_next_action == 'Ready to open' %}{{ row_url }}?step=ready{% else %}{{ row_url }}{% endif %}">
+            <td class="panel-select-column">
+              <input class="form-check-input" type="checkbox" name="hearing_ids" value="{{ hearing.pk }}" form="panel-bulk-delete" data-panel-select aria-label="Select {{ hearing.name }}">
+            </td>
+            <td>
+              <a class="panel-table-name" href="{% if hearing.status == 'draft' and hearing.dashboard_next_action == 'Ready to open' %}{{ row_url }}?step=ready{% else %}{{ row_url }}{% endif %}">{{ hearing.name }}</a>
+              {% if hearing.status == 'open' and hearing.active_candidate %}
+                <span class="panel-table-secondary">Reviewing: {{ hearing.active_candidate.display_name }}</span>
+              {% else %}
+                <span class="panel-table-secondary">{{ hearing.get_workflow_display }}</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="panel-stage"><span class="panel-stage-dot {{ hearing.status }}" aria-hidden="true"></span>{{ hearing.get_status_display }}</span>
+            </td>
+            <td>{{ hearing.candidate_count }}</td>
+            <td>{{ hearing.accepted_examiner_count }}</td>
+            <td>{% if hearing.hearing_date %}{{ hearing.hearing_date|date:'d M Y' }}{% else %}Not set{% endif %}</td>
+            <td>{{ hearing.created_at|date:'d M Y' }}</td>
+            <td class="text-end">{% include 'service_domains/_partials/panel_row_actions.html' %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if paginator.num_pages > 1 %}
+    <nav class="panel-pagination" aria-label="Assessment pages">
+      <span class="panel-pagination-label">Page {{ page_obj.number }} of {{ paginator.num_pages }} · {{ paginator.count }} assessments</span>
+      <div class="panel-pagination-links">
+        {% if page_obj.has_previous %}<a class="btn btn-sm btn-outline-secondary" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page_obj.previous_page_number }}" data-panel-page>Previous</a>{% endif %}
+        {% if page_obj.has_next %}<a class="btn btn-sm btn-outline-secondary" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page_obj.next_page_number }}" data-panel-page>Next</a>{% endif %}
+      </div>
+    </nav>
+    {% endif %}
+    {% elif search_query or status_filter %}
+    <div class="panel-empty">
+      <div class="panel-empty-icon" aria-hidden="true"><i class="bi bi-search"></i></div>
+      <h2>No matching assessments</h2>
+      <p>Try a different assessment name or status filter.</p>
+      <a href="{% url 'panel_hearing_table' %}" class="btn btn-outline-secondary" data-panel-clear-filters>Clear filters</a>
+    </div>
+    {% else %}
+    <div class="panel-empty">
+      <div class="panel-empty-icon" aria-hidden="true"><i class="bi bi-shield-check"></i></div>
+      <h2>No Panel assessments yet</h2>
+      <p>Add candidates and examiners, set the scoring criteria, then open the assessment for live review.</p>
+      <div class="panel-empty-steps" aria-label="Assessment setup steps">
+        <div class="panel-empty-step"><strong>1. Add candidates</strong><span>Import a candidate list or add candidates one by one.</span></div>
+        <div class="panel-empty-step"><strong>2. Set criteria and invite examiners</strong><span>Define the rubric and send private examiner links.</span></div>
+        <div class="panel-empty-step"><strong>3. Open and release results</strong><span>Run the review live, then share chair-approved results.</span></div>
+      </div>
+      <div class="d-flex flex-wrap justify-content-center gap-2">
+        <a href="{% url 'panel_hearing_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create an assessment</a>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+</div>
+

@@ -1,0 +1,210 @@
+{% extends 'base.html' %}
+{% block title %}Anonymous Polls{% endblock %}
+{% block page_title %}Anonymous Polls{% endblock %}
+{% block topbar_actions %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'home' %}">Services</a>{% endblock %}
+{% block extra_css %}<style nonce="{{ csp_nonce }}">
+.poll-grid{display:grid;grid-template-columns:minmax(17rem,1.2fr) minmax(0,2.2fr);gap:1rem}
+.poll-extra-question-fields,.poll-question-fields{display:grid;grid-template-columns:minmax(0,2fr) minmax(12rem,1fr);gap:var(--sp-3)}
+.poll-extra-question-fields .poll-question-options{grid-column:1/-1}
+.poll-extra-question-fields .form-control,.poll-extra-question-fields .form-select{width:100%;min-width:0}
+.poll-option-list{display:grid;gap:.5rem}.poll-option-row{display:flex;align-items:center;gap:.5rem}.poll-option-row .form-control{min-width:0}
+.poll-editor-invalid{border-color:var(--danger)!important}
+.poll-question-fields textarea[data-autogrow],.poll-extra-question-fields textarea[data-autogrow],.poll-option-row textarea{resize:none;overflow:hidden;min-height:calc(1.5em + .75rem + 2px)}
+.poll-sharing-summary{cursor:default}
+.poll-sharing-summary::after{content:none!important}
+.poll-detail-nav{display:flex;flex-wrap:wrap;gap:.5rem;margin:var(--sp-3) 0 var(--sp-4);padding-bottom:var(--sp-3);border-bottom:1px solid var(--border)}
+.poll-detail-nav a{display:inline-flex;align-items:center;gap:.5rem;padding:.5rem .75rem;border:1px solid var(--border);border-radius:var(--radius-pill);background:var(--surface);color:var(--text);font-size:var(--fs-sm);font-weight:650;text-decoration:none}
+.poll-detail-nav a:first-child{border-color:var(--accent-soft);background:var(--accent-soft);color:var(--accent)}
+.poll-detail-nav a:focus-visible{outline:0;box-shadow:var(--focus-ring)}
+.poll-detail-nav-count{color:var(--text-muted);font-size:var(--fs-micro);font-weight:500}
+.poll-page-section{scroll-margin-top:1rem}
+.poll-page-section+.poll-page-section{margin-top:var(--sp-3)}
+.poll-page-section-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);margin-bottom:var(--sp-3)}
+.poll-page-section-head h2{margin:0;font-size:var(--fs-heading);font-weight:750}
+.poll-page-section-head>span{color:var(--text-muted);font-size:var(--fs-sm)}
+.poll-decision-item+.poll-decision-item{margin-top:var(--sp-3);padding-top:var(--sp-3);border-top:1px solid var(--border)}
+.poll-detail-decisions .poll-decision-form{margin:0;padding:0}
+.poll-detail-actions .card-body{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3)}
+.poll-detail-actions h2{margin:0;font-size:var(--fs-strong);font-weight:700}
+.poll-detail-actions p{margin:.2rem 0 0;color:var(--text-muted);font-size:var(--fs-sm)}
+.poll-detail-actions form{flex:0 0 auto}
+.poll-share-links{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:var(--sp-3)}
+@media(max-width:767.98px){.poll-grid,.poll-extra-question-fields,.poll-question-fields{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:575.98px){.poll-detail-actions .card-body{align-items:stretch;flex-direction:column}.poll-detail-actions form,.poll-detail-actions .btn{width:100%}}
+</style>{% include 'assessments/_partials/import_dropzone_styles.html' %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
+  <div><h1 class="h3 mb-1">Anonymous Polls</h1><p class="text-muted mb-0">Create a poll, share one link, and collect anonymous responses.</p></div>
+</div>
+<div class="poll-grid">
+  <aside>{% include 'assessments/polls/_poll_list.html' with polls=polls poll=poll create_url=request.path %}</aside>
+  <div>
+    {% if not poll or poll.status == 'draft' %}
+      <section class="card"><div class="card-body">
+        <h2 class="h4">{% if poll %}Edit poll draft{% else %}Create a poll{% endif %}</h2>
+        {% include 'assessments/polls/_question_import.html' %}
+        <form method="post" novalidate data-poll-deadline-form data-poll-editor data-dirty-initial="{% if form.errors %}true{% else %}false{% endif %}">
+          {% csrf_token %}{% if poll %}<input type="hidden" name="poll" value="{{ poll.uuid }}">{% endif %}
+          <input type="hidden" name="action" value="save"><input type="hidden" name="leave_to" value="">
+          {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+          {% for field in form.hidden_fields %}{% if field.name != 'deadline_local' %}{{ field }}{% endif %}{% endfor %}
+          <fieldset class="border rounded-3 p-3 mb-3">
+            <legend class="h6">Question 1</legend>
+            <div class="poll-question-fields"><div>{% include 'partials/_form_field.html' with field=form.question %}</div><div>{% include 'partials/_form_field.html' with field=form.allow_multiple %}</div></div>
+            <div class="mb-3">
+              <label class="form-label" for="id_option_lines">{{ form.option_lines.label }} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span></label>
+              <input type="hidden" name="option_lines" id="id_option_lines" value="{{ form.option_lines.value|default_if_none:'' }}">
+              <div class="poll-option-list" data-option-list="primary" aria-describedby="primary-option-help"></div>
+              <div class="form-text" id="primary-option-help">Add at least two options.</div>
+              {% include 'partials/_inline_message.html' with messages=form.option_lines.errors tone='danger' message_id='id_option_lines_inline_message' %}
+            </div>
+            <div class="form-check mb-3">{{ form.allow_abstain }}<label class="form-check-label" for="{{ form.allow_abstain.id_for_label }}">{{ form.allow_abstain.label }}</label>{% for error in form.allow_abstain.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}</div>
+          </fieldset>
+          <section class="border rounded-3 p-3 mb-3">
+            <div class="d-flex justify-content-between align-items-center gap-2"><div><h3 class="h6 mb-1">More questions</h3><p class="small text-muted mb-0">Add up to 99 more questions.</p></div><button type="button" class="btn btn-outline-primary btn-sm" id="add-poll-question">Add question</button></div>
+            <div id="poll-extra-questions"></div>
+            {% include 'partials/_inline_message.html' with messages=form.extra_questions_json.errors tone='danger' message_id='extra_questions_json_inline_message' %}
+          </section>
+          <section class="border rounded-3 p-3 mb-3"><h3 class="h6">Poll settings</h3>{% include 'partials/_deadline_picker.html' with field=form.deadline_local date_field=form.deadline_date time_field=form.deadline_time %}</section>
+          <button class="btn btn-primary">Save draft</button>
+        </form>
+        {% if poll %}<hr><p>Publishing locks the questions and options. Anyone with the poll link can respond anonymously. Voters can revise their response in the same browser while voting is open.</p><form method="post" data-confirm="Publishing locks the questions and options. Anyone with the poll link can respond anonymously. Continue?" data-confirm-title="Publish poll?" data-confirm-label="Publish poll" data-confirm-tone="primary">{% csrf_token %}<input type="hidden" name="poll" value="{{ poll.uuid }}"><input type="hidden" name="action" value="publish"><button class="btn btn-success" type="submit">Publish poll</button></form>{% endif %}
+      </div></section>
+    {% else %}
+      <section class="card mb-3"><div class="card-body">
+        {% include 'assessments/polls/_detail_header.html' with poll=poll results=results %}
+        <nav class="poll-detail-nav" aria-label="Poll detail sections">
+          <a href="#poll-detail-results">Results <span class="poll-detail-nav-count">{{ results.questions|length }} question{{ results.questions|length|pluralize }}</span></a>
+          {% if poll.status == 'open' or poll.status == 'closed' %}<a href="#poll-detail-decisions">Decisions <span class="poll-detail-nav-count">{{ results.questions|length }} question{{ results.questions|length|pluralize }}</span></a>{% endif %}
+          <a href="#poll-detail-sharing">{% if poll.accepting_responses %}Share this poll <span class="poll-detail-nav-count">{{ results.responded }} response{{ results.responded|pluralize }}</span>{% else %}Public results{% endif %}</a>
+        </nav>
+        <section id="poll-detail-results" class="poll-page-section" aria-labelledby="poll-detail-results-heading">
+          <div class="poll-page-section-head"><h2 id="poll-detail-results-heading">Results</h2><span>{% if poll.status == 'open' and poll.accepting_responses %}Live{% else %}Final{% endif %} · {{ results.questions|length }} question{{ results.questions|length|pluralize }}</span></div>
+          {% include 'assessments/polls/_results.html' with poll=poll questions=results.questions responded=results.responded invited=None unanswered=None hide_option_bars=True hide_option_percentages=True %}
+        </section>
+      </div></section>
+      {% if poll.status == 'open' or poll.status == 'closed' %}
+      <section class="card poll-detail-decisions poll-page-section" id="poll-detail-decisions" aria-labelledby="poll-detail-decisions-heading"><div class="card-body">
+        <div class="poll-page-section-head"><h2 id="poll-detail-decisions-heading"><i class="bi bi-check2-square me-2" aria-hidden="true"></i>Approve poll results</h2><span>{{ results.questions|length }} question{{ results.questions|length|pluralize }}</span></div>
+        <p class="small text-muted">After voting ends, the option with the most selections is the result. If the top options tie, choose one of those tied options to break the tie.</p>
+        {% for item in results.questions %}
+          <div class="poll-decision-item">
+            <h3 class="h6">{{ forloop.counter }}. {{ item.question.prompt }}</h3>
+            {% if item.confirmed_option %}
+              <div class="alert alert-success mb-0" role="status">Approved result: <strong>{{ item.confirmed_option.label }}</strong></div>
+            {% elif poll.accepting_responses %}
+              <p class="text-muted mb-0">Voting is still open. Close voting before approving a result.</p>
+            {% elif item.decision_state == 'unique_leader' %}
+              <div class="alert alert-info" role="status"><strong>Top-voted option:</strong> {{ item.leading_option.label }} · {{ item.leading_vote_count }} selection{{ item.leading_vote_count|pluralize }}</div>
+              <form method="post" class="poll-decision-form" data-confirm="Approve the top-voted option “{{ item.leading_option.label }}” and finalize this question?" data-confirm-title="Approve poll result?" data-confirm-label="Approve result" data-confirm-tone="primary">{% csrf_token %}<input type="hidden" name="poll" value="{{ poll.uuid }}"><input type="hidden" name="question" value="{{ item.question.pk }}"><input type="hidden" name="action" value="confirm">
+                <label class="form-label" for="note-{{ item.question.pk }}">Approval note (optional)</label><textarea id="note-{{ item.question.pk }}" name="decision_note" class="form-control mb-2" maxlength="2000" rows="2">{{ item.decision_note }}</textarea>
+                <button class="btn btn-primary" type="submit">Approve “{{ item.leading_option.label }}”</button>
+              </form>
+            {% elif item.decision_state == 'tie' %}
+              <div class="alert alert-warning" role="status">The top options are tied at {{ item.leading_vote_count }} selection{{ item.leading_vote_count|pluralize }}. Choose one of the tied options to break the tie.</div>
+              <form method="post" class="poll-decision-form" data-confirm="Approve your selected tied option and finalize this question?" data-confirm-title="Approve poll result?" data-confirm-label="Approve result" data-confirm-tone="primary">{% csrf_token %}<input type="hidden" name="poll" value="{{ poll.uuid }}"><input type="hidden" name="question" value="{{ item.question.pk }}"><input type="hidden" name="action" value="confirm">
+                <label class="form-label" for="tie-option-{{ item.question.pk }}">Choose among the tied top options</label>
+                <select id="tie-option-{{ item.question.pk }}" name="option" class="form-select mb-2" required>
+                  <option value="" selected disabled>Select a tied option</option>
+                  {% for option in item.tied_options %}<option value="{{ option.pk }}">{{ option.label }} · {{ option.vote_count }} selection{{ option.vote_count|pluralize }}</option>{% endfor %}
+                </select>
+                <label class="form-label" for="tie-note-{{ item.question.pk }}">Tie-break note (optional)</label><textarea id="tie-note-{{ item.question.pk }}" name="decision_note" class="form-control mb-2" maxlength="2000" rows="2">{{ item.decision_note }}</textarea>
+                <button class="btn btn-primary" type="submit">Approve selected tied option</button>
+              </form>
+            {% elif item.decision_state == 'no_votes' %}
+              <div class="alert alert-secondary mb-0" role="status">No option received votes for this question, so there is no result to approve.</div>
+            {% else %}
+              <div class="alert alert-secondary mb-0" role="status">No responses were recorded for this question, so there is no result to approve.</div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div></section>
+      {% endif %}
+      <section class="card poll-sharing-panel poll-page-section" id="poll-detail-sharing" aria-labelledby="poll-sharing-heading"><div class="poll-sharing-summary"><h2 class="h5 mb-0" id="poll-sharing-heading">{% if poll.accepting_responses %}<i class="bi bi-share me-2" aria-hidden="true"></i>Share this poll{% else %}<i class="bi bi-bar-chart me-2" aria-hidden="true"></i>Public results{% endif %}</h2>{% if poll.accepting_responses %}<span class="small text-muted">{{ results.responded }} response{{ results.responded|pluralize }}</span>{% endif %}</div><div class="card-body">
+        {% if poll.accepting_responses %}
+        <label for="poll-share" class="form-label">Public voting link</label><div class="input-group mb-2"><input id="poll-share" class="form-control" readonly value="{{ poll_url }}" aria-describedby="poll-share-copy-status"><button class="btn btn-outline-secondary" type="button" data-copy-poll-link>Copy link</button></div><p id="poll-share-copy-status" class="form-text mb-2" role="status" aria-live="polite"></p>
+        <div class="poll-share-links">
+          <a class="btn btn-outline-primary" href="{{ poll_url }}" target="_blank" rel="noopener">Open voting page</a>
+          <a class="btn btn-outline-primary" href="{% url 'standalone_poll_qr_screen' poll.uuid %}" target="_blank" rel="noopener">Open public QR screen</a>
+          <a class="btn btn-outline-primary" href="{% url 'standalone_poll_live_results' poll.uuid %}" target="_blank" rel="noopener">Open live results screen</a>
+        </div>
+        <p class="form-text mb-0">Anyone with this link can respond anonymously. Only the total response count and combined choices are shown.</p>
+        {% else %}
+        <p class="text-muted">Voting is closed. View the final results.</p>
+        <a class="btn btn-primary" href="{% url 'standalone_poll_live_results' poll.uuid %}" target="_blank" rel="noopener"><i class="bi bi-bar-chart me-1" aria-hidden="true"></i>Open public results</a>
+        {% endif %}
+      </div></section>
+      {% if poll.status == 'open' or poll.status == 'closed' %}
+      <section class="card poll-detail-actions poll-page-section" aria-labelledby="poll-actions-heading"><div class="card-body"><div><h2 id="poll-actions-heading">Poll actions</h2><p>Canceling keeps recorded responses.</p></div><form method="post" data-confirm="Cancel this poll? Its responses will be retained.">{% csrf_token %}<input type="hidden" name="poll" value="{{ poll.uuid }}"><input type="hidden" name="action" value="cancel"><button class="btn btn-outline-danger" type="submit"><i class="bi bi-x-circle me-1" aria-hidden="true"></i>Cancel poll</button></form></div></section>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% if poll and poll.accepting_responses %}
+  {{ state_url|json_script:'poll-state-url' }}
+  <script nonce="{{ csp_nonce }}">
+  (function () {
+    const url = JSON.parse(document.getElementById('poll-state-url').textContent);
+    let refreshing = false;
+    async function refresh() {
+      if (refreshing || document.hidden) return;
+      refreshing = true;
+      try {
+        const response = await fetch(url, {headers: {'X-Requested-With': 'XMLHttpRequest'}, cache: 'no-store'});
+        if (!response.ok) throw new Error('Results refresh failed');
+        const state = await response.json();
+        const results = document.getElementById('poll-results');
+        if (results) results.outerHTML = state.html;
+        const nextCount = document.querySelector('#poll-results .poll-results-total strong');
+        const count = nextCount ? nextCount.textContent.trim() : null;
+        const responseCount = document.querySelector('[data-poll-response-count]');
+        if (count !== null && responseCount) {
+          responseCount.textContent = count;
+          const selectedCard = document.querySelector('.poll-list-card[aria-current="page"]');
+          const listLabel = selectedCard && selectedCard.querySelector('[data-poll-list-response-label]');
+          if (listLabel) listLabel.textContent = count + ' response' + (count === '1' ? '' : 's');
+        }
+        const status = document.getElementById('poll-connection');
+        if (status) status.textContent = 'Live results updated.';
+        if (!state.accepting) location.reload();
+      } catch (_) {
+        const status = document.getElementById('poll-connection');
+        if (status) status.textContent = 'Connection interrupted. Retrying…';
+      } finally {
+        refreshing = false;
+      }
+    }
+    const timer = setInterval(refresh, 5000);
+    window.addEventListener('pagehide', function () { clearInterval(timer); });
+  })();
+  </script>
+{% endif %}
+{% include 'assessments/polls/_editor_behavior.html' %}
+{% include 'assessments/polls/_local_deadline.html' %}
+{% include 'assessments/polls/_unsaved_changes.html' %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  const button = document.querySelector('[data-copy-poll-link]');
+  const input = document.getElementById('poll-share');
+  const status = document.getElementById('poll-share-copy-status');
+  if (!button || !input || !status) return;
+  button.addEventListener('click', async function () {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(input.value);
+        status.textContent = 'Poll link copied.';
+      } else {
+        input.focus();
+        input.select();
+        const copied = document.execCommand('copy');
+        status.textContent = copied ? 'Poll link copied.' : 'Poll link selected. Copy it to share.';
+      }
+    } catch (_) {
+      input.focus();
+      input.select();
+      status.textContent = 'Poll link selected. Copy it to share.';
+    }
+  });
+})();
+</script>
+{% endblock %}

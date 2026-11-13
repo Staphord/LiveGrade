@@ -24,10 +24,16 @@
 
   function arm(el, life) {
     let timer = window.setTimeout(function () { dismiss(el, 'timeout'); }, life);
-    // Reading a message should not race a countdown.
-    el.addEventListener('mouseenter', function () { window.clearTimeout(timer); });
-    el.addEventListener('mouseleave', function () {
+    function pause() { window.clearTimeout(timer); }
+    function resume() {
+      window.clearTimeout(timer);
       timer = window.setTimeout(function () { dismiss(el, 'timeout'); }, 2000);
+    }
+    el.addEventListener('mouseenter', pause);
+    el.addEventListener('mouseleave', resume);
+    el.addEventListener('focusin', pause);
+    el.addEventListener('focusout', function (e) {
+      if (!el.contains(e.relatedTarget)) resume();
     });
   }
 

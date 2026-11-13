@@ -53,30 +53,31 @@
   <div class="card mb-3">
     <div class="table-responsive">
       <table class="table table-sm align-middle mb-0 rt-table">
-        <thead><tr><th style="min-width:200px">Category</th><th style="min-width:220px">Description</th><th>Scope</th><th style="width:110px">Weight %</th><th style="width:44px"></th></tr></thead>
+        <thead><tr><th style="min-width:180px">Category</th><th style="min-width:180px">Description</th><th>Scope</th><th style="width:100px">Weight %</th><th style="min-width:260px">Score level guidance</th><th style="width:44px"></th></tr></thead>
         <tbody id="rt-body">
           {% for row in rows %}
           <tr class="rt-row {% if row.problem %}has-problem{% endif %}" data-index="{{ forloop.counter0 }}">
             <td>
               <input type="hidden" name="rows-{{ forloop.counter0 }}-id" value="{{ row.id|default:'' }}">
-              <input type="text" class="form-control form-control-sm" name="rows-{{ forloop.counter0 }}-name" value="{{ row.name }}" maxlength="150" required>
+              <input type="text" class="form-control form-control-sm" name="rows-{{ forloop.counter0 }}-name" value="{{ row.name }}" maxlength="150" aria-label="Category name" required>
             </td>
-            <td><input type="text" class="form-control form-control-sm" name="rows-{{ forloop.counter0 }}-description" value="{{ row.description }}" maxlength="255"></td>
+            <td><input type="text" class="form-control form-control-sm" name="rows-{{ forloop.counter0 }}-description" value="{{ row.description }}" maxlength="255" aria-label="Category description"></td>
             <td>
               {% if row.core_locked %}
               <input type="hidden" name="rows-{{ forloop.counter0 }}-scope" value="{{ row.scope }}">
-              <select class="form-select form-select-sm rt-scope" disabled title="This category already has scores."><option>{% if row.scope == 'individual' %}Individual{% else %}Group{% endif %}</option></select>
+              <select class="form-select form-select-sm rt-scope" disabled title="This category already has scores." aria-label="Category scope"><option>{% if row.scope == 'individual' %}Individual{% else %}Group{% endif %}</option></select>
               {% else %}
-              <select class="form-select form-select-sm rt-scope" name="rows-{{ forloop.counter0 }}-scope">
+              <select class="form-select form-select-sm rt-scope" name="rows-{{ forloop.counter0 }}-scope" aria-label="Category scope">
                 <option value="group" {% if row.scope != 'individual' %}selected{% endif %}>Group</option>
                 <option value="individual" {% if row.scope == 'individual' %}selected{% endif %}>Individual</option>
               </select>
               {% endif %}
             </td>
-            <td><input type="number" class="form-control form-control-sm rt-weight" name="rows-{{ forloop.counter0 }}-weight" value="{{ row.weight }}" step="0.01" min="0.01" max="100" required></td>
+            <td><input type="number" class="form-control form-control-sm rt-weight" name="rows-{{ forloop.counter0 }}-weight" value="{{ row.weight }}" step="0.01" min="0.01" max="100" aria-label="Category weight percentage" required></td>
+            <td><textarea class="form-control form-control-sm" name="rows-{{ forloop.counter0 }}-level_descriptors" rows="3" placeholder="15 | Partly demonstrated" aria-label="Score level guidance">{{ row.level_descriptors }}</textarea></td>
             <td>
               {% if structure_lock %}<span class="rt-lock" title="{{ structure_lock }}"><i class="bi bi-lock-fill"></i></span>
-              {% else %}<button type="button" class="btn btn-sm btn-outline-danger py-0 rt-remove" title="Remove this category"><i class="bi bi-trash"></i></button>{% endif %}
+              {% else %}<button type="button" class="btn btn-sm btn-outline-danger py-0 rt-remove" title="Remove this category" aria-label="Remove this category"><i class="bi bi-trash"></i></button>{% endif %}
             </td>
           </tr>
           {% endfor %}
@@ -94,11 +95,12 @@
 
 <template id="rt-new-row">
   <tr class="rt-row" data-index="__i__">
-    <td><input type="hidden" name="rows-__i__-id" value=""><input type="text" class="form-control form-control-sm" name="rows-__i__-name" maxlength="150" required></td>
-    <td><input type="text" class="form-control form-control-sm" name="rows-__i__-description" maxlength="255"></td>
-    <td><select class="form-select form-select-sm rt-scope" name="rows-__i__-scope"><option value="group">Group</option><option value="individual">Individual</option></select></td>
-    <td><input type="number" class="form-control form-control-sm rt-weight" name="rows-__i__-weight" value="" placeholder="e.g. 30" step="0.01" min="0.01" max="100" required></td>
-    <td><button type="button" class="btn btn-sm btn-outline-danger py-0 rt-remove" title="Remove this category"><i class="bi bi-trash"></i></button></td>
+    <td><input type="hidden" name="rows-__i__-id" value=""><input type="text" class="form-control form-control-sm" name="rows-__i__-name" maxlength="150" aria-label="Category name" required></td>
+    <td><input type="text" class="form-control form-control-sm" name="rows-__i__-description" maxlength="255" aria-label="Category description"></td>
+    <td><select class="form-select form-select-sm rt-scope" name="rows-__i__-scope" aria-label="Category scope"><option value="group">Group</option><option value="individual">Individual</option></select></td>
+    <td><input type="number" class="form-control form-control-sm rt-weight" name="rows-__i__-weight" value="" placeholder="e.g. 30" step="0.01" min="0.01" max="100" aria-label="Category weight percentage" required></td>
+    <td><textarea class="form-control form-control-sm" name="rows-__i__-level_descriptors" rows="3" placeholder="15 | Partly demonstrated" aria-label="Score level guidance"></textarea></td>
+    <td><button type="button" class="btn btn-sm btn-outline-danger py-0 rt-remove" title="Remove this category" aria-label="Remove this category"><i class="bi bi-trash"></i></button></td>
   </tr>
 </template>
 {% endblock %}

@@ -12,7 +12,8 @@ from django.urls import reverse
 
 from accounts.directory import record_sign_in
 from accounts.testing import make_org, make_user, sign_in
-from assessments.models import AssessmentSession, SessionTransfer
+from assessments.models import (AssessmentSession, Evaluation, EvaluationScore, GroupMembership,
+                                PresentationGroup, PresentationTurn, RubricCategory, SessionTransfer, Student)
 
 
 class OversightTestCase(TestCase):
@@ -71,7 +72,8 @@ class SessionListTests(OversightTestCase):
         self.assertContains(mine, 'All sessions in Uni')
         self.assertContains(mine, 'My sessions')
         _, everything = self.listing('?scope=all')
-        self.assertContains(everything, 'page-tab active')
+        self.assertContains(everything, 'class="session-scope-tabs"')
+        self.assertContains(everything, 'class="active" aria-current="page"')
 
     def test_somebody_without_oversight_is_not_offered_it_and_asking_does_nothing(self):
         sign_in(self.client, self.ann, self.plain)
@@ -115,6 +117,37 @@ class SessionListTests(OversightTestCase):
 
 class ReadOnlyPagesTests(OversightTestCase):
 
+    def test_overseer_results_do_not_pair_a_rater_with_another_students_score(self):
+        AssessmentSession.objects.filter(pk=self.anns_closed.pk).update(ungraded_penalty=0)
+        scorer = Student.objects.create(assessment_session=self.anns_closed, full_name='Private scorer')
+        target = Student.objects.create(assessment_session=self.anns_closed, full_name='Scored learner')
+        scored_group = PresentationGroup.objects.create(
+            assessment_session=self.anns_closed, name='Scored group')
+        scorer_group = PresentationGroup.objects.create(
+            assessment_session=self.anns_closed, name='Scorer group')
+        GroupMembership.objects.create(group=scored_group, student=target)
+        GroupMembership.objects.create(group=scorer_group, student=scorer)
+        category = RubricCategory.objects.create(
+            assessment_session=self.anns_closed, name='Criterion', scope='group', weight=100)
+        turn = PresentationTurn.objects.create(
+            assessment_session=self.anns_closed, group=scored_group, status='closed')
+        vote = Evaluation.objects.create(presentation_turn=turn, evaluator=scorer)
+        EvaluationScore.objects.create(
+            evaluation=vote, rubric_category=category, value=75, max_value=100)
+
+        self.as_overseer()
+        page = self.client.get(reverse('assessment_results', args=[self.anns_closed.pk]))
+        target_row = next(row for row in page.context['student_rows'] if row['student'].pk == target.pk)
+        self.assertEqual(float(target_row['final_percent']), 75.0)
+        self.assertFalse(any(key.startswith('evaluator') for key in target_row))
+        html_row = page.content.decode().split(f'<tr data-student-id="{target.pk}">', 1)[1].split('</tr>', 1)[0]
+        self.assertNotIn(scorer.full_name, html_row)
+
+        refreshed = self.client.get(
+            reverse('assessment_results_refresh', args=[self.anns_closed.pk])).json()['rows_html']
+        refreshed_row = refreshed.split(f'<tr data-student-id="{target.pk}">', 1)[1].split('</tr>', 1)[0]
+        self.assertNotIn(scorer.full_name, refreshed_row)
+
     def test_results_and_participation_open_for_somebody_elses_session(self):
         self.as_overseer()
         for name in ('assessment_results', 'assessment_participation'):
@@ -135,6 +168,7 @@ class ReadOnlyPagesTests(OversightTestCase):
         results = self.client.get(reverse('assessment_results', args=[self.anns_closed.pk]))
         self.assertNotContains(results, f'href="{detail}"')
         self.assertNotContains(results, reverse('assessment_results_export', args=[self.anns_closed.pk]))
+        self.assertNotContains(results, reverse('assessment_results_export_csv', args=[self.anns_closed.pk]))
         live_detail = reverse('assessment_session_detail', args=[self.anns_live.pk])
         participation = self.client.get(reverse('assessment_participation', args=[self.anns_live.pk]))
         self.assertNotContains(participation, f'href="{live_detail}"')
@@ -145,12 +179,14 @@ class ReadOnlyPagesTests(OversightTestCase):
         results = self.client.get(reverse('assessment_results', args=[self.anns_closed.pk]))
         self.assertContains(results, f'href="{detail}"')
         self.assertContains(results, reverse('assessment_results_export', args=[self.anns_closed.pk]))
+        self.assertContains(results, reverse('assessment_results_export_csv', args=[self.anns_closed.pk]))
 
     def test_an_overseer_on_their_own_session_sees_both_too(self):
         self.as_overseer()
         results = self.client.get(reverse('assessment_results', args=[self.mine.pk]))
         self.assertContains(results, f'href="{reverse("assessment_session_detail", args=[self.mine.pk])}"')
         self.assertContains(results, reverse('assessment_results_export', args=[self.mine.pk]))
+        self.assertContains(results, reverse('assessment_results_export_csv', args=[self.mine.pk]))
 
     def test_an_ordinary_colleague_still_cannot_open_them(self):
         sign_in(self.client, self.ben, self.plain)
@@ -223,18 +259,18 @@ class HandOverTests(OversightTestCase):
     def test_the_page_tells_an_overseer_who_owns_it_now(self):
         self.as_overseer()
         page = self.client.get(self.url(self.anns_closed))
-        self.assertContains(page, 'belongs to <strong>Ann Owner</strong>')
-        self.assertNotContains(page, 'you will no longer see or control it')
-        self.assertContains(page, 'href="' + reverse('assessment_session_list') + '?scope=all"')
+        self.assertContains(page, 'This session belongs to <strong>Ann Owner</strong>.')
+        self.assertContains(page, 'The current owner will lose access after transfer.')
+        self.assertContains(page, 'Transfer ownership')
 
     def test_an_unowned_session_is_described_as_belonging_to_nobody(self):
         self.as_overseer()
-        self.assertContains(self.client.get(self.url(self.unowned)), 'belongs to <strong>nobody</strong>')
+        self.assertContains(self.client.get(self.url(self.unowned)), 'This session belongs to <strong>nobody</strong>.')
 
-    def test_the_owners_own_page_keeps_its_warning_and_plain_back_link(self):
+    def test_the_owner_dialog_warns_that_access_will_end(self):
         sign_in(self.client, self.ann, self.plain)
         page = self.client.get(self.url(self.anns_closed))
-        self.assertContains(page, 'you will no longer see or control it')
+        self.assertContains(page, 'You will lose access after transfer.')
         self.assertNotContains(page, '?scope=all')
 
     def test_an_ordinary_colleague_cannot_hand_over_somebody_elses(self):

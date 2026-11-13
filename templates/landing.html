@@ -3,10 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LiveGrade - live peer assessment for presentations</title>
-<meta name="description" content="Run live, QR-joined peer assessment in your classroom. Students join from their phones; you watch the grades arrive.">
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" integrity="sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM" crossorigin="anonymous" rel="stylesheet">
-<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" integrity="sha384-QuGBSgV5Im3DzL2z+8Ko9/hqNy/N0O7zwvXAtfd1MvPKWa/UbeLV65cfm4BV5Wgq" crossorigin="anonymous" rel="stylesheet">
+<title>LiveGrade - live assessment for your classroom, panel, or event</title>
+<meta name="description" content="Choose your LiveGrade service: Classroom, Panel, Showcase, Team and Training, or Competition.">
+{% include 'partials/_vendor_styles.html' %}
 {% include 'partials/_design_system.html' %}
 <style nonce="{{ csp_nonce }}">
 :root{
@@ -20,6 +19,20 @@
 html{scroll-behavior:smooth}
 body{background:var(--surface);color:var(--text);font-size:1rem;overflow-x:hidden}
 .lp-wrap{position:relative}
+.lp-service-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1.25rem;margin-top:2rem}
+.lp-service-grid .lp-card{display:flex;flex-direction:column;align-items:flex-start;gap:.7rem}
+.lp-service-grid .lp-card h3{margin:0}
+.lp-service-grid .lp-card p{margin:0}
+.lp-service-actions{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:auto;padding-top:1rem}
+.lp-shortcuts{padding:1.25rem;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);margin-top:1.5rem}
+.lp-service-grid .lp-card{min-height:100%}
+.lp-service-grid .lp-card h3{font-size:1.15rem}
+.lp-service-grid .lp-card .lp-service-audience{font-size:.9rem;color:var(--text-muted)}
+.lp-service-grid .lp-card .badge{align-self:flex-start}
+.lp-combined{display:flex;align-items:center;justify-content:space-between;gap:1.5rem;margin-top:1.5rem;padding:1.25rem 1.4rem;border:1px solid #bfd5f2;border-radius:var(--radius-card);background:linear-gradient(110deg,#f4f8ff,#fff)}
+.lp-combined h3{font-size:1.08rem;font-weight:750;color:var(--ink);margin:0 0 .35rem}
+.lp-combined p{color:var(--text-soft);margin:0;max-width:48rem}
+.lp-combined .btn{flex:0 0 auto}
 
 /* ---------- Navigation ---------- */
 .lp-nav{position:absolute;inset:0 0 auto 0;z-index:20}
@@ -60,14 +73,15 @@ body{background:var(--surface);color:var(--text);font-size:1rem;overflow-x:hidde
 .lp-proof span{display:inline-flex;align-items:center;gap:.45rem}
 .lp-proof i{color:var(--lp-mint)}
 
-/* Hero visual: a live results panel with a phone beside it */
+/* Hero visual: a service overview with a phone beside it */
 .lp-stage{position:relative;min-height:500px;max-width:540px;margin-left:auto}
 .lp-panel{text-align:left;position:absolute;right:0;top:20px;width:min(100%,430px);background:#fff;color:var(--text);border-radius:22px;padding:1.3rem 1.4rem 1.4rem;box-shadow:0 40px 80px rgba(5,20,45,.45),0 0 0 1px rgba(255,255,255,.4);animation:lp-float 7s ease-in-out infinite}
 .lp-panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem}
 .lp-panel-title{font-weight:700;color:var(--ink);font-size:1rem}
 .lp-live-tag{display:inline-flex;align-items:center;gap:.4rem;font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#0a6b54;background:#d6f7ee;border-radius:99px;padding:.25rem .65rem}
-.lp-row{display:grid;grid-template-columns:30px 1fr auto;gap:.8rem;align-items:center;padding:.65rem 0;border-top:1px solid var(--border)}
+.lp-row{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:.8rem;align-items:center;padding:.65rem 0;border-top:1px solid var(--border)}
 .lp-row:first-of-type{border-top:0}
+.lp-row .lp-rank{background:#edf4ff;color:#174b86}
 .lp-rank{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.85rem}
 .lp-rank.r1{background:#fff1c9;color:#7a5600}
 .lp-rank.r2{background:#e6ecf5;color:#41506a}
@@ -144,6 +158,7 @@ body{background:var(--surface);color:var(--text);font-size:1rem;overflow-x:hidde
 
 /* ---------- Small screens ---------- */
 @media (max-width:991px){
+  .lp-service-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .lp-stage{margin:3.2rem auto 0;max-width:460px;min-height:480px}
   .lp-hero{text-align:center}
   .lp-lead{margin-left:auto;margin-right:auto}
@@ -152,6 +167,9 @@ body{background:var(--surface);color:var(--text);font-size:1rem;overflow-x:hidde
   .lp-steps::before{display:none}
 }
 @media (max-width:575px){
+  .lp-service-grid{grid-template-columns:1fr}
+  .lp-combined{align-items:stretch;flex-direction:column}
+  .lp-combined .btn{width:100%}
   .lp-nav-links .lp-link{display:none}
   .lp-nav .btn{padding:.4rem .8rem;font-size:.9rem}
   .lp-stage{min-height:470px}
@@ -161,6 +179,11 @@ body{background:var(--surface);color:var(--text);font-size:1rem;overflow-x:hidde
   .lp-chip-b{right:-4px}
   .lp-steps{grid-template-columns:1fr}
   .lp-cta .btn{width:100%}
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  .lp-pulse,.lp-panel,.lp-phone,.lp-chip,.lp-bar i{animation:none!important}
+  .btn-lp-solid,.btn-lp-ghost,.lp-card{transition:none!important}
 }
 </style>
 </head>
@@ -176,8 +199,8 @@ body{background:var(--surface);color:var(--text);font-size:1rem;overflow-x:hidde
     <div class="lp-nav-links d-flex align-items-center">
       <a href="#how" class="lp-link">How it works</a>
       <div class="d-flex gap-2">
-        <a href="{% url 'oidc_authentication_init' %}" class="btn btn-lp-ghost rounded-pill px-3">Log in</a>
-        <a href="{% url 'oidc_authentication_init' %}?signup=1" class="btn btn-lp-solid rounded-pill px-3">Sign up free</a>
+        <a href="{% if user.is_authenticated %}#services{% else %}{% url 'oidc_authentication_init' %}{% endif %}" class="btn btn-lp-ghost rounded-pill px-3">{% if user.is_authenticated %}Your services{% else %}Log in{% endif %}</a>
+        {% if not user.is_authenticated %}<a href="{% url 'oidc_authentication_init' %}?signup=1" class="btn btn-lp-solid rounded-pill px-3">Get Started</a>{% endif %}
       </div>
     </div>
   </div>
@@ -188,17 +211,17 @@ body{background:var(--surface);color:var(--text);font-size:1rem;overflow-x:hidde
   <div class="container position-relative">
     <div class="row align-items-center g-5">
       <div class="col-lg-6">
-        <span class="lp-eyebrow"><span class="dot"><i class="bi bi-lightning-charge-fill"></i></span>Live peer assessment for presentations</span>
-        <h1>Grade presentations <span class="lp-live">live</span>, together.</h1>
-        <p class="lp-lead">Put a QR code on the screen. Students join from their phones, grade each group as it presents against your rubric, and you watch the results arrive in real time - anonymous for them, effortless for you.</p>
+        <span class="lp-eyebrow"><span class="dot"><i class="bi bi-lightning-charge-fill"></i></span>Assessment, judging and feedback in one place</span>
+        <h1>Run better presentations, decisions and events.</h1>
+        <p class="lp-lead">Choose a workflow for classroom peer grading, formal panels, competitions, showcases, or recurring team training. Set up the criteria and participants, then review results using each service’s controls.</p>
         <div class="lp-cta">
-          <a href="{% url 'oidc_authentication_init' %}?signup=1" class="btn btn-lp-solid btn-lg">Create your free account <i class="bi bi-arrow-right ms-1"></i></a>
-          <a href="{% url 'oidc_authentication_init' %}" class="btn btn-lp-ghost btn-lg">I already have an account</a>
+          <a href="{% if user.is_authenticated %}#services{% else %}{% url 'oidc_authentication_init' %}?signup=1{% endif %}" class="btn btn-lp-solid btn-lg">{% if user.is_authenticated %}Explore services{% else %}Create free account{% endif %}</a>
+          {% if not user.is_authenticated %}<a href="{% url 'oidc_authentication_init' %}" class="btn btn-lp-ghost btn-lg">I already have an account</a>{% else %}<a href="#how" class="btn btn-lp-ghost btn-lg">See how it works</a>{% endif %}
         </div>
         <div class="lp-proof">
-          <span><i class="bi bi-check-circle-fill"></i>No student accounts</span>
-          <span><i class="bi bi-check-circle-fill"></i>Anonymous scoring</span>
-          <span><i class="bi bi-check-circle-fill"></i>Excel export</span>
+          <span><i class="bi bi-check-circle-fill"></i>One organizer account</span>
+          <span><i class="bi bi-check-circle-fill"></i>QR and private-link workflows</span>
+          <span><i class="bi bi-check-circle-fill"></i>Peer, panel and audience input</span>
         </div>
       </div>
 
@@ -206,23 +229,23 @@ body{background:var(--surface);color:var(--text);font-size:1rem;overflow-x:hidde
         <div class="lp-stage" aria-hidden="true">
           <div class="lp-panel">
             <div class="lp-panel-head">
-              <span class="lp-panel-title">Live rankings</span>
-              <span class="lp-live-tag"><span class="lp-pulse"></span>Live</span>
+              <span class="lp-panel-title">Live leaderboard</span>
+              <span class="lp-live-tag"><span class="lp-pulse"></span>Classroom example</span>
             </div>
-            <div class="lp-row"><span class="lp-rank r1">1</span><div><div class="lp-name">Group Aurora</div><div class="lp-bar"><i style="width:92%"></i></div></div><span class="lp-score">4.6</span></div>
-            <div class="lp-row"><span class="lp-rank r2">2</span><div><div class="lp-name">Group Meridian</div><div class="lp-bar"><i style="width:81%"></i></div></div><span class="lp-score">4.1</span></div>
-            <div class="lp-row"><span class="lp-rank r3">3</span><div><div class="lp-name">Group Horizon</div><div class="lp-bar"><i style="width:70%"></i></div></div><span class="lp-score">3.5</span></div>
-            <div class="lp-panel-foot"><i class="bi bi-people-fill"></i>Votes arriving from the class</div>
+            <div class="lp-row"><span class="lp-rank r1">1</span><div><div class="lp-name">Group Aurora</div><div class="lp-bar"><i style="width:92%"></i></div></div><span class="lp-score">92%</span></div>
+            <div class="lp-row"><span class="lp-rank r2">2</span><div><div class="lp-name">Group Meridian</div><div class="lp-bar"><i style="width:86%"></i></div></div><span class="lp-score">86%</span></div>
+            <div class="lp-row"><span class="lp-rank r3">3</span><div><div class="lp-name">Group Horizon</div><div class="lp-bar"><i style="width:81%"></i></div></div><span class="lp-score">81%</span></div>
+            <div class="lp-panel-foot"><i class="bi bi-people-fill"></i>Peer scores update as students submit</div>
           </div>
           <div class="lp-phone">
             <div class="lp-phone-screen">
               <div class="lp-phone-notch"></div>
               <div class="lp-qr"><i class="bi bi-qr-code"></i></div>
-              <div class="lp-phone-cap">Scan to join<small>Enter your name or ID, start grading</small></div>
+              <div class="lp-phone-cap">Bring people in<small>Use a QR code or a private invite link</small></div>
             </div>
           </div>
-          <span class="lp-chip lp-chip-a"><i class="bi bi-phone"></i>Joined in seconds</span>
-          <span class="lp-chip lp-chip-b"><i class="bi bi-file-earmark-excel"></i>Export to Excel</span>
+          <span class="lp-chip lp-chip-a"><i class="bi bi-person-check"></i>Organizer-led setup</span>
+          <span class="lp-chip lp-chip-b"><i class="bi bi-ui-checks-grid"></i>Flexible criteria</span>
         </div>
       </div>
     </div>
@@ -230,18 +253,64 @@ body{background:var(--surface);color:var(--text);font-size:1rem;overflow-x:hidde
   <div class="lp-curve lp-curve-bottom"><svg viewBox="0 0 1440 150" preserveAspectRatio="none"><path fill="#ffffff" d="M0,96 C240,168 480,168 720,112 C960,56 1200,40 1440,96 L1440,150 L0,150 Z"/></svg></div>
 </header>
 
+<main>
+<section class="lp-section" id="services" aria-labelledby="services-heading">
+  <div class="container">
+    <span class="lp-kicker">Choose by the work you need to do</span>
+    <h2 class="lp-h2" id="services-heading">Which workflow fits your event?</h2>
+    <p class="lp-sub mx-0">Every workspace has its own setup and result rules. Choose the closest match; you can link Classroom and Panel when both peer and examiner grading are needed.</p>
+    {% if used_services %}
+    <div class="lp-shortcuts" aria-labelledby="return-heading">
+      <h3 class="h5" id="return-heading">Continue to a workspace</h3>
+      <div class="d-flex flex-wrap gap-2">
+        {% for service in used_services %}<a href="{% url 'service_entry' service.slug %}" class="btn btn-outline-primary">Continue to {{ service.name }}</a>{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    <div class="lp-service-grid">
+      {% for card in service_cards %}
+      <article class="lp-card">
+        {% if not card.released %}<span class="badge text-bg-secondary">Coming soon</span>{% endif %}
+        <h3>{{ card.service.name }}</h3>
+        {% if card.service.slug == 'classroom' %}
+          <p>Run live peer assessment for class presentations. Students join with a room QR code and submit structured feedback.</p>
+        {% elif card.service.slug == 'panel' %}
+          <p>Manage formal hearings: invite examiners, record conflicts, score active candidates against agreed criteria, and review results.</p>
+        {% elif card.service.slug == 'showcase' %}
+          <p>Collect visitor star ratings and invited-judge scorecards for exhibits. Publish category awards and a separate Audience Favorite.</p>
+        {% elif card.service.slug == 'team' %}
+          <p>Run recurring team demos with structured peer feedback, track competency progress, and manage qualification outcomes.</p>
+        {% elif card.service.slug == 'competition' %}
+          <p>Manage judge-scored rounds and audience ballots, resolve ties, and reveal the final leaderboard when the event is ready.</p>
+        {% elif card.service.slug == 'polls' %}
+          <p>Create anonymous polls, share a link or QR code, and display the live results as people vote.</p>
+        {% elif card.service.slug == 'coassessment' %}
+          <p>Grade presentations with shared rubrics, synchronized peer and panel scoring, and chair moderation.</p>
+        {% else %}
+          <p>{{ card.service.promise }}</p>
+        {% endif %}
+        <p class="lp-service-audience">Best for {{ card.service.audience|lower }}.</p>
+        <div class="lp-service-actions">
+          {% if card.released %}<a href="{% url 'service_entry' card.service.slug %}" class="btn btn-primary">Open {{ card.service.name }}</a>{% else %}<span class="small text-muted">This workspace is not open yet.</span>{% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
 <section class="lp-section lp-features">
   <span class="lp-blob lp-blob-a"></span><span class="lp-blob lp-blob-b"></span>
   <div class="container position-relative">
     <div class="text-center">
-      <span class="lp-kicker">Why you’ll love it</span>
-      <h2 class="lp-h2">Everything a live presentation day needs</h2>
-      <p class="lp-sub">Set it up once, run it from the front of the room, and keep the whole class engaged.</p>
+      <span class="lp-kicker">Built around the way you work</span>
+      <h2 class="lp-h2">Set the rules. Run the workflow. Review the outcome.</h2>
+      <p class="lp-sub">Choose a service for your activity, then configure its participants, criteria, and result rules.</p>
     </div>
     <div class="row g-4 mt-3">
-      <div class="col-md-4"><div class="lp-card lp-t1"><div class="lp-ico"><i class="bi bi-qr-code-scan"></i></div><h3>Students join in seconds</h3><p>No accounts, no apps. They scan the code, pick their name from your roster and they are in.</p></div></div>
-      <div class="col-md-4"><div class="lp-card lp-t2"><div class="lp-ico"><i class="bi bi-sliders"></i></div><h3>Your rubric, your weights</h3><p>Build the criteria and weighting once. Group and individual scores are worked out for you.</p></div></div>
-      <div class="col-md-4"><div class="lp-card lp-t3"><div class="lp-ico"><i class="bi bi-bar-chart-line"></i></div><h3>Results as they happen</h3><p>Live participation, rankings and charts, then an Excel export when you are done.</p></div></div>
+      <div class="col-md-4"><div class="lp-card lp-t1"><div class="lp-ico"><i class="bi bi-diagram-3"></i></div><h3>A workflow for your activity</h3><p>Run peer reviews, formal examiner scoring, competitions, showcases, or recurring team demos in the service built for that job.</p></div></div>
+      <div class="col-md-4"><div class="lp-card lp-t2"><div class="lp-ico"><i class="bi bi-sliders"></i></div><h3>Criteria you can explain</h3><p>Set the rubric and scoring rules for your activity. Coverage, moderation, and result calculations follow that service’s workflow.</p></div></div>
+      <div class="col-md-4"><div class="lp-card lp-t3"><div class="lp-ico"><i class="bi bi-bar-chart-line"></i></div><h3>Results with clear controls</h3><p>Review participation and score coverage, then share results, awards, or progress using the controls available in that service.</p></div></div>
     </div>
   </div>
 </section>
@@ -254,10 +323,10 @@ body{background:var(--surface);color:var(--text);font-size:1rem;overflow-x:hidde
       <h2 class="lp-h2">How it works</h2>
     </div>
     <ol class="lp-steps">
-      <li class="lp-step"><div class="lp-step-num"><i class="bi bi-people"></i><b>1</b></div><p>Create a session and import groups and students.</p></li>
-      <li class="lp-step"><div class="lp-step-num"><i class="bi bi-list-check"></i><b>2</b></div><p>Create or import your rubric.</p></li>
-      <li class="lp-step"><div class="lp-step-num"><i class="bi bi-broadcast"></i><b>3</b></div><p>Go live, show the QR code, and run the presentations.</p></li>
-      <li class="lp-step"><div class="lp-step-num"><i class="bi bi-download"></i><b>4</b></div><p>Review the results and export them.</p></li>
+      <li class="lp-step"><div class="lp-step-num"><i class="bi bi-grid"></i><b>1</b></div><p>Choose the workspace that matches your activity.</p></li>
+      <li class="lp-step"><div class="lp-step-num"><i class="bi bi-list-check"></i><b>2</b></div><p>Set up your entries, participants, criteria, and rules.</p></li>
+      <li class="lp-step"><div class="lp-step-num"><i class="bi bi-link-45deg"></i><b>3</b></div><p>Bring people in with the QR code or invitation links available in that workflow.</p></li>
+      <li class="lp-step"><div class="lp-step-num"><i class="bi bi-clipboard2-check"></i><b>4</b></div><p>Review progress and results, then release or record the outcome.</p></li>
     </ol>
   </div>
 </section>
@@ -265,14 +334,14 @@ body{background:var(--surface);color:var(--text);font-size:1rem;overflow-x:hidde
 <section class="lp-final">
   <div class="lp-curve lp-curve-top"><svg viewBox="0 0 1440 150" preserveAspectRatio="none"><path fill="#e8f1fc" d="M0,0 L1440,0 L1440,60 C1200,10 960,10 720,64 C480,118 240,128 0,70 Z"/></svg></div>
   <div class="container position-relative">
-    <h2>Ready for your next presentation day?</h2>
-    <p>Create your free account and have a live session running in minutes.</p>
+    <h2>Ready to run your next assessment or event?</h2>
+    <p>One LiveGrade account opens each service you have permission to use.</p>
     <div class="lp-cta">
-      <a href="{% url 'oidc_authentication_init' %}?signup=1" class="btn btn-lp-solid btn-lg">Create your free account <i class="bi bi-arrow-right ms-1"></i></a>
-      <a href="{% url 'oidc_authentication_init' %}" class="btn btn-lp-ghost btn-lg">Log in</a>
+      <a href="{% if user.is_authenticated %}#services{% else %}{% url 'oidc_authentication_init' %}?signup=1{% endif %}" class="btn btn-lp-solid btn-lg">{% if user.is_authenticated %}Explore services{% else %}Create your free account{% endif %} <i class="bi bi-arrow-right ms-1"></i></a>
     </div>
   </div>
 </section>
+</main>
 
 <footer class="lp-foot">
   <div class="container d-flex flex-wrap justify-content-between gap-2">
@@ -293,7 +362,7 @@ body{background:var(--surface);color:var(--text);font-size:1rem;overflow-x:hidde
   }
   links.forEach(function (a) {
     a.addEventListener('click', function (e) {
-      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.target === '_blank') return;
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.target === '_blank' || a.getAttribute('href').startsWith('#')) return;
       a.classList.add('is-busy');
       a.setAttribute('aria-busy', 'true');
       setTimeout(reset, 15000);

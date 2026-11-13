@@ -164,6 +164,19 @@ class RefusalTests(TestCase):
 
 class VerificationTests(ImportTestCase):
 
+    def test_postgres_sequence_statements_are_executed_after_explicit_id_copy(self):
+        from unittest import mock
+
+        from assessments.management.commands import import_from_devperf as module
+
+        cursor = mock.MagicMock()
+        cursor_context = mock.MagicMock()
+        cursor_context.__enter__.return_value = cursor
+        with mock.patch.object(module.connection.ops, 'sequence_reset_sql', return_value=['SELECT 1']), \
+                mock.patch.object(module.connection, 'cursor', return_value=cursor_context):
+            module.Command().reset_sequences()
+        cursor.execute.assert_called_once_with('SELECT 1')
+
     def test_a_missing_row_is_reported_and_fails_the_command(self):
         from unittest import mock
 

@@ -51,6 +51,15 @@ def get(path, cookie=None, method='GET', data=None, opener=None):
         return err.code, err.read().decode('utf-8', 'replace')
 
 
+def location(path):
+    """(status, Location header) of a GET that is not followed."""
+    try:
+        response = urllib.request.build_opener(NoRedirect).open(urllib.request.Request(BASE + path), timeout=30)
+        return response.status, response.headers.get('Location', '')
+    except urllib.error.HTTPError as err:
+        return err.code, err.headers.get('Location', '')
+
+
 def report(ok, text, warn=False):
     global fails, warns
     if ok:
@@ -95,38 +104,38 @@ def check_escaped(label, body, status):
 
 # 1. Stored XSS on every lecturer page that renders seeded data, plus the JSON/HTML fragments
 # the front end injects with innerHTML/outerHTML.
-for page in ['/assessments/', f'/assessments/{A}/', f'/assessments/{A}/edit/',
-             f'/assessments/{A}/setup/', f'/assessments/{A}/roster/', f'/assessments/{A}/rubric/',
-             f'/assessments/{A}/rubric/table/', f'/assessments/{A}/groups/',
-             f'/assessments/{A}/groups/{GROUP_A}/members/', f'/assessments/{A}/participation/',
-             f'/assessments/{A}/participation/refresh/', f'/assessments/{A}/results/',
-             f'/assessments/{A}/results/refresh/', f'/assessments/{A}/live-state/',
-             f'/assessments/{A}/transfer/', f'/assess/{UUID_A}/join-screen/',
+for page in ['/classroom/app/', f'/classroom/app/{A}/', f'/classroom/app/{A}/edit/',
+             f'/classroom/app/{A}/setup/', f'/classroom/app/{A}/roster/', f'/classroom/app/{A}/rubric/',
+             f'/classroom/app/{A}/rubric/table/', f'/classroom/app/{A}/groups/',
+             f'/classroom/app/{A}/groups/{GROUP_A}/members/', f'/classroom/app/{A}/participation/',
+             f'/classroom/app/{A}/participation/refresh/', f'/classroom/app/{A}/results/',
+             f'/classroom/app/{A}/results/refresh/', f'/classroom/app/{A}/live-state/',
+             f'/classroom/app/{A}/transfer/', f'/assess/{UUID_A}/join-screen/',
              f'/assess/{UUID_A}/join-screen/state/']:
     status, body = get(page, env['ORG_A_COOKIE'])
     check_escaped(f'stored XSS {page}', body, status)
 
 # 2. Reflected XSS through query-string inputs.
 quoted = urllib.parse.quote(PAYLOAD)
-for page, param in ((f'/assessments/{A}/roster/search/', 'q'), (f'/assessments/{A}/results/', 'sort'),
-                    (f'/assessments/{A}/results/', 'dir'), (f'/assessments/{A}/results/', 'status'),
-                    ('/assessments/', 'scope'), ('/assessments/', 'page'), ('/assessments/', 'per_page'),
-                    (f'/assessments/{A}/setup/', 'step')):
+for page, param in ((f'/classroom/app/{A}/roster/search/', 'q'), (f'/classroom/app/{A}/results/', 'sort'),
+                    (f'/classroom/app/{A}/results/', 'dir'), (f'/classroom/app/{A}/results/', 'status'),
+                    ('/classroom/app/', 'scope'), ('/classroom/app/', 'page'), ('/classroom/app/', 'per_page'),
+                    (f'/classroom/app/{A}/setup/', 'step')):
     status, body = get(f'{page}?{param}={quoted}', env['ORG_A_COOKIE'])
     check_escaped(f'reflected XSS {page}?{param}=', body, status)
 
 # 3. Cross-organization access: the other org's cookie must get 403/404, never data.
-for page in (f'/assessments/{A}/', f'/assessments/{A}/setup/', f'/assessments/{A}/roster/',
-             f'/assessments/{A}/results/', f'/assessments/{A}/results/export/',
-             f'/assessments/{A}/live-state/', f'/assessments/{A}/qr.png',
-             f'/assessments/{A}/participation/'):
+for page in (f'/classroom/app/{A}/', f'/classroom/app/{A}/setup/', f'/classroom/app/{A}/roster/',
+             f'/classroom/app/{A}/results/', f'/classroom/app/{A}/results/export/',
+             f'/classroom/app/{A}/live-state/', f'/classroom/app/{A}/qr.png',
+             f'/classroom/app/{A}/participation/'):
     status, _ = get(page, env['ORG_B_COOKIE'])
     report(status in (403, 404), f'cross-org B->A GET {page} -> {status} (want 403/404)')
 
 
 def post_as(cookie, path, fields):
     """POST with a real CSRF token, so a refusal is the view's and not the CSRF check's."""
-    token_request = urllib.request.Request(BASE + '/assessments/new/', headers={'Cookie': f'{COOKIE}={cookie}'})
+    token_request = urllib.request.Request(BASE + '/classroom/app/new/', headers={'Cookie': f'{COOKIE}={cookie}'})
     try:
         response = urllib.request.build_opener(NoRedirect).open(token_request, timeout=30)
     except urllib.error.HTTPError as err:
@@ -146,22 +155,38 @@ def post_as(cookie, path, fields):
 
 
 # These two only accept POST, so a GET is always 405; the real question is a POST from org B.
-for page, fields in ((f'/assessments/{A}/groups/{GROUP_A}/members/', {'action': 'add', 'student_id': STUDENT_A}),
-                     (f'/assessments/{A}/roster/{STUDENT_A}/edit/', {'full_name': 'Hijacked', 'student_id': 'X'})):
+for page, fields in ((f'/classroom/app/{A}/groups/{GROUP_A}/members/', {'action': 'add', 'student_id': STUDENT_A}),
+                     (f'/classroom/app/{A}/roster/{STUDENT_A}/edit/', {'full_name': 'Hijacked', 'student_id': 'X'})):
     status = post_as(env['ORG_B_COOKIE'], page, fields)
     if status is None:
         report(False, f'cross-org B->A POST {page}: could not get a CSRF token to test with', warn=True)
     else:
         report(status in (403, 404), f'cross-org B->A POST {page} -> {status} (want 403/404)')
-for page in (f'/assessments/{B}/', f'/assessments/{B}/results/'):
+for page in (f'/classroom/app/{B}/', f'/classroom/app/{B}/results/'):
     status, _ = get(page, env['ORG_A_COOKIE'])
     report(status in (403, 404), f'cross-org A->B GET {page} -> {status} (want 403/404)')
 
 # 4. Anonymous access to lecturer URLs.
-for page in ('/assessments/', f'/assessments/{A}/', f'/assessments/{A}/results/export/',
-             f'/assessments/{A}/qr.png', f'/assessments/{A}/live-state/'):
+for page in ('/classroom/app/', f'/classroom/app/{A}/', f'/classroom/app/{A}/results/export/',
+             f'/classroom/app/{A}/qr.png', f'/classroom/app/{A}/live-state/'):
     status, _ = get(page)
     report(status in (302, 403), f'anonymous GET {page} -> {status} (want redirect/403)')
+
+# 4b. Service entry addresses: the destination never comes from the request, an unopened
+# service shows its coming-soon page, and anything else is not a route.
+status, where = location('/classroom/')
+report(status == 302 and where == '/oidc/authenticate/',
+       f'service entry /classroom/ sends a visitor to sign in -> {status} {where}')
+for hostile in ('https://evil.example/', '//evil.example/', 'javascript:alert(1)'):
+    status, where = location('/classroom/?next=' + urllib.parse.quote(hostile))
+    report(status == 302 and 'evil' not in where and 'javascript' not in where,
+           f'service entry ignores a hostile next={hostile} -> {status} {where}')
+status, body = get('/panel/')
+report(status == 200 and 'coming soon' in body, f'service entry /panel/ shows coming soon -> {status}')
+status, _ = get('/nope/')
+report(status == 404, f'service entry /nope/ is not a route -> {status} (want 404)')
+status, _ = get('/classroom/', method='POST', data=b'')
+report(status in (403, 405), f'service entry refuses a POST -> {status} (want 403/405)')
 
 # 5. Student flow: no lecturer cookie. Join, then render pages that show teammates' data.
 # The app under test runs with DEBUG off, so its cookies are marked Secure, and Python's cookie jar
@@ -175,9 +200,18 @@ token = next((c.value for c in jar if c.name == 'livegrade_csrftoken'), '')
 join = urllib.parse.urlencode({'identifier': env['ORG_A_GRADER_NAME'],
                                'csrfmiddlewaretoken': token}).encode()
 status, _ = get(f'/assess/{UUID_A}/join/', method='POST', data=join, opener=student)
-report(status == 302, f'student can join the session [{status}] (want a redirect to the evaluate page)')
+report(status == 302, f'student can join the session [{status}] (want a redirect to the privacy notice)')
+status, body = get(f'/assess/{UUID_A}/privacy/', opener=student)
+report(status == 200, f'student sees the privacy notice before scoring [{status}]')
+check_escaped('stored XSS student privacy notice', body, status)
+notice_token = next((c.value for c in jar if c.name == 'livegrade_csrftoken'), '')
+continue_notice = urllib.parse.urlencode({
+    'action': 'continue', 'csrfmiddlewaretoken': notice_token,
+}).encode()
+status, _ = get(f'/assess/{UUID_A}/privacy/', cookie=None, method='POST', data=continue_notice, opener=student)
+report(status == 302, f'student records notice acknowledgement and continues [{status}]')
 status, body = get(f'/assess/{UUID_A}/evaluate/', opener=student)
-report(status == 200, f'student who joined can open the evaluate page [{status}]')
+report(status == 200, f'student who joined and viewed the notice can open the evaluate page [{status}]')
 check_escaped('stored XSS student evaluate page (teammate names, topic, location)', body, status)
 # A second, new visitor: one who already joined is redirected before the form is read.
 fresh_jar = http.cookiejar.CookieJar(http.cookiejar.DefaultCookiePolicy(secure_protocols=('http', 'https')))
@@ -197,23 +231,58 @@ except urllib.error.HTTPError as err:
 report((status == 302 and f'/assess/{UUID_B}/join/' in where) or status in (403, 404),
        f'student pass from session A used on session B -> {status} {where} (want the join page, 403 or 404)')
 
-# 6. WebSocket origin handling.
+# 6. WebSocket origin, authorization, and public-event confidentiality.
 try:
     import asyncio
     import websockets
 
-    async def foreign_origin_accepted():
-        url = BASE.replace('http', 'ws', 1) + f'/ws/assessments/{UUID_A}/'
+    def websocket_url(path):
+        return BASE.replace('http://', 'ws://', 1).replace('https://', 'wss://', 1) + path
+
+    async def connection_accepted(path, *, origin=BASE, cookie=None):
+        headers = {'Cookie': f'{COOKIE}={cookie}'} if cookie else None
         try:
-            async with websockets.connect(url, origin='https://evil.example'):
+            async with websockets.connect(websocket_url(path), origin=origin,
+                                          additional_headers=headers):
                 return True
         except Exception:
             return False
 
-    report(not asyncio.run(foreign_origin_accepted()),
-           'WebSocket refuses a foreign Origin (consider AllowedHostsOriginValidator)', warn=True)
+    async def public_grading_event_is_redacted():
+        path = f'/ws/assessments/{UUID_A}/'
+        try:
+            async with websockets.connect(websocket_url(path), origin=BASE) as socket:
+                token = next((c.value for c in jar if c.name == 'livegrade_csrftoken'), '')
+                fields = urllib.parse.urlencode({
+                    'csrfmiddlewaretoken': token, 'answered': '1', 'total': '2',
+                }).encode()
+                status, _ = await asyncio.to_thread(
+                    get, f'/assess/{UUID_A}/grading-ping/', method='POST', data=fields, opener=student)
+                if status != 200:
+                    return False, f'grading-ping returned {status}'
+                message = await asyncio.wait_for(socket.recv(), timeout=5)
+                event = json.loads(message)
+                details = f"type={event.get('type')}, data-fields={sorted(event.get('data', {}))}"
+                return event == {'type': 'activity.updated', 'data': {}}, details
+        except Exception as error:
+            return False, str(error)
+
+    public_path = f'/ws/assessments/{UUID_A}/'
+    staff_path = public_path[:-1] + '/staff/'
+    report(asyncio.run(connection_accepted(public_path)),
+           'participant WebSocket accepts a same-origin unauthenticated connection')
+    report(not asyncio.run(connection_accepted(public_path, origin='https://evil.example')),
+           'WebSocket refuses a foreign Origin')
+    report(not asyncio.run(connection_accepted(staff_path)),
+           'staff WebSocket refuses an anonymous connection')
+    report(not asyncio.run(connection_accepted(staff_path, cookie=env['ORG_B_COOKIE'])),
+           'staff WebSocket refuses a different organization')
+    report(asyncio.run(connection_accepted(staff_path, cookie=env['ORG_A_COOKIE'])),
+           'session owner can use the staff WebSocket')
+    redacted, detail = asyncio.run(public_grading_event_is_redacted())
+    report(redacted, f'public grading-progress event is redacted ({detail})')
 except ImportError:
-    print('skip  WebSocket check (pip install websockets)')
+    print('skip  WebSocket checks (pip install websockets)')
 
 print(f'\n{fails} FAIL, {warns} WARN')
 sys.exit(1 if fails else 0)

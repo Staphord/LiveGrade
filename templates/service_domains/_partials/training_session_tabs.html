@@ -1,0 +1,22 @@
+{% comment %}
+The one tab list for a workshop demo. Pass `series`, `link` (the series session),
+`session_status` and `active` (live, outcomes, setup or trends).
+{% endcomment %}
+<nav class="page-tabs mb-3" aria-label="Workshop workspace">
+  <a href="{% url 'training_session_live' series_id=series.pk session_id=link.pk %}" class="page-tab{% if active == 'live' %} active{% endif %}"{% if active == 'live' %} aria-current="page"{% endif %}>
+    <i class="bi bi-broadcast me-1" aria-hidden="true"></i>Live workshop
+  </a>
+  {% if session_status != 'draft' %}
+  <a href="{% url 'training_session_competencies' pk=link.assessment_session_id %}" class="page-tab{% if active == 'outcomes' %} active{% endif %}"{% if active == 'outcomes' %} aria-current="page"{% endif %}>
+    <i class="bi bi-award me-1" aria-hidden="true"></i>Outcomes &amp; certificates
+  </a>
+  {% endif %}
+  {% if session_status != 'closed' %}
+  <a href="{% url 'training_series_manage' series_id=series.pk %}?from=live&session_id={{ link.pk }}" class="page-tab{% if active == 'setup' %} active{% endif %}"{% if active == 'setup' %} aria-current="page"{% endif %}>
+    <i class="bi bi-pencil-square me-1" aria-hidden="true"></i>Edit setup
+  </a>
+  {% endif %}
+  <a href="{% url 'training_series_trends' series_id=series.pk %}?session={{ link.pk }}" class="page-tab{% if active == 'trends' %} active{% endif %}"{% if active == 'trends' %} aria-current="page"{% endif %}>
+    <i class="bi bi-graph-up-arrow me-1" aria-hidden="true"></i>Competency trends
+  </a>
+</nav>

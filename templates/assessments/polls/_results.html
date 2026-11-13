@@ -1,0 +1,37 @@
+<div id="poll-results" class="poll-results" aria-live="polite" aria-atomic="true">
+  {% if public_results or poll.standalone %}
+    <div class="poll-results-total"><strong>{{ responded }}</strong><span>total response{{ responded|pluralize }}</span></div>
+  {% endif %}
+  {% for item in questions %}
+    <section class="poll-result-question" aria-labelledby="poll-question-{{ item.question.pk }}">
+      <div class="poll-result-question-heading">
+        <div>
+          <h3 class="h6 mb-1" id="poll-question-{{ item.question.pk }}">{{ forloop.counter }}. {{ item.question.prompt }}</h3>
+          <p class="poll-result-question-count mb-0">{{ item.responded }} response{{ item.responded|pluralize }}</p>
+        </div>
+        <span class="poll-answer-type">{% if item.question.allow_multiple %}Multiple choice{% else %}Single choice{% endif %}</span>
+      </div>
+      {% if item.confirmed_option %}<div class="poll-decision-result"><i class="bi bi-check-circle-fill" aria-hidden="true"></i><div><strong>Decision: {{ item.confirmed_option.label }}</strong>{% if item.decision_note %}<p class="mb-0">{{ item.decision_note|linebreaksbr }}</p>{% endif %}</div></div>{% endif %}
+      {% if item.responded %}
+        {% if item.question.allow_multiple and not hide_option_percentages %}<p class="poll-result-hint">Percentages show the share of respondents who selected each option; they can add up to more than 100%.</p>{% endif %}
+        <div class="poll-answer-chart" role="list" aria-label="Answer results for question {{ forloop.counter }}">
+          {% for option in item.options %}
+            <div class="poll-answer-row" role="listitem">
+              <div class="poll-answer-label"><span>{{ option.label }}</span><span class="poll-answer-value">{{ option.vote_count }} selection{{ option.vote_count|pluralize }}{% if not hide_option_percentages %} <span aria-hidden="true">·</span> {{ option.percent }}%{% endif %}</span></div>
+              {% if not hide_option_bars %}<div class="poll-answer-track" role="progressbar" aria-label="{{ option.label }} selected by {{ option.percent }} percent of respondents" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ option.percent }}"><span style="width:{{ option.percent }}%"></span></div>{% endif %}
+            </div>
+          {% endfor %}
+          {% if item.question.allow_abstain %}
+            {% widthratio item.abstained_count item.responded 100 as abstained_percent %}
+            <div class="poll-answer-row poll-answer-abstain" role="listitem">
+              <div class="poll-answer-label"><span>None of these options</span><span class="poll-answer-value">{{ item.abstained_count }} response{{ item.abstained_count|pluralize }}{% if not hide_option_percentages %} <span aria-hidden="true">·</span> {{ abstained_percent }}%{% endif %}</span></div>
+              {% if not hide_option_bars %}<div class="poll-answer-track" role="progressbar" aria-label="None of these options selected by {{ abstained_percent }} percent of respondents" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ abstained_percent }}"><span style="width:{{ abstained_percent }}%"></span></div>{% endif %}
+            </div>
+          {% endif %}
+        </div>
+      {% else %}
+        <p class="poll-results-empty mb-0"><i class="bi {% if poll and poll.accepting_responses %}bi-hourglass-split{% else %}bi-inbox{% endif %} me-1" aria-hidden="true"></i>{% if poll and poll.accepting_responses %}Waiting for responses.{% else %}No responses were recorded.{% endif %}</p>
+      {% endif %}
+    </section>
+  {% endfor %}
+</div>

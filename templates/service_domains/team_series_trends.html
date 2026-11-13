@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% block title %}Progress · {{ series.name }}{% endblock %}
+{% block page_title %}Series progress{% endblock %}
+{% block content %}
+{% include 'service_domains/_workspace_styles.html' %}
+{% include 'service_domains/_team_competition_styles.html' %}
+<div class="container-fluid py-4 service-workspace tc-workspace">
+  {% if from_session %}{% include 'service_domains/_partials/training_session_tabs.html' with link=from_session session_status=from_session.assessment_session.status active='trends' %}
+  {% else %}<p><a href="{% url 'training_series_manage' series_id=series.pk %}">← {{ series.name }}</a></p>{% endif %}
+  <header class="tc-hero"><div><h1>Series progress</h1><p>Competency results across {{ session_count }} demo{{ session_count|pluralize }}.</p></div>
+    <a class="btn btn-outline-primary" href="{% url 'training_series_export' series_id=series.pk %}">Download outcomes CSV</a>
+  </header>
+  <nav aria-label="Progress sections"><ol class="tc-step-nav"><li><a href="#learner-progress"><span class="tc-step-number">1</span>Learners</a></li><li><a href="#team-progress"><span class="tc-step-number">2</span>Teams</a></li><li><a href="#feedback-progress"><span class="tc-step-number">3</span>Anonymous feedback</a></li></ol></nav>
+
+  <section id="learner-progress" class="tc-panel mb-3" aria-labelledby="learner-progress-heading">
+    <header><div><h2 id="learner-progress-heading">Learner progress</h2><p>Latest trainer competency decision for each learner in each demo. Peer demo scores do not populate these charts.</p><details class="mt-2"><summary>How learners are matched</summary><p class="small text-muted mt-2">Learners are matched by student reference, or by a unique full name when no reference is available.</p></details></div><span class="tc-status is-active">{{ trends|length }} trends</span></header>
+    {% if trends %}<div class="tc-list">{% for trend in trends %}<article class="tc-list-card">
+      <span class="w-100"><h3>{{ trend.learner }} <span class="text-muted fw-normal">· {{ trend.competency }}</span></h3>
+        <span class="tc-context"><span class="tc-chip">First {{ trend.first_score|floatformat:1 }}</span><span class="tc-chip">Latest {{ trend.latest_score|floatformat:1 }}</span><span class="tc-chip">Change {% if trend.change > 0 %}+{% endif %}{{ trend.change|floatformat:1 }}</span></span>
+        <details class="tc-disclosure mt-3"><summary>View scores by demo</summary><div class="tc-disclosure-body"><ul class="tc-history mt-2">
+          {% for session_name, score, passed in trend.sessions %}<li><span>{{ session_name }}</span><progress class="tc-meter" max="100" value="{{ score|floatformat:0 }}" aria-label="{{ session_name }} score: {{ score|floatformat:0 }} out of 100">{{ score|floatformat:0 }}%</progress><span class="tc-number">{{ score|floatformat:1 }}</span><span class="tc-outcome {% if passed %}is-pass{% else %}is-pending{% endif %}">{% if passed %}Passed{% else %}Not yet passed{% endif %}</span></li>{% endfor %}
+        </ul></div></details>
+      </span>
+    </article>{% endfor %}</div>
+    {% elif session_count < 3 %}<div class="tc-empty" role="status"><h3>More demos needed</h3><p>Record trainer competency decisions in at least three demos before learner trends appear.</p></div>
+    {% else %}<div class="tc-empty" role="status"><h3>No learner trends yet</h3><p>No competency has a recorded decision in three or more demos.</p></div>{% endif %}
+  </section>
+
+  <section id="team-progress" class="tc-panel mb-3" aria-labelledby="team-progress-heading">
+    <header><div><h2 id="team-progress-heading">Team competency progress</h2><p>Average score per competency and the number of learner results included. Only teams with an unambiguous name across demos can be compared.</p></div><span class="tc-status is-active">{{ team_trends|length }} trends</span></header>
+    {% if team_trends %}<div class="tc-list">{% for trend in team_trends %}<article class="tc-list-card">
+      <span class="w-100"><h3>{{ trend.team }} <span class="text-muted fw-normal">· {{ trend.competency }}</span></h3>
+        <span class="tc-context"><span class="tc-chip">First {{ trend.first_score|floatformat:1 }}</span><span class="tc-chip">Latest {{ trend.latest_score|floatformat:1 }}</span><span class="tc-chip">Change {% if trend.change > 0 %}+{% endif %}{{ trend.change|floatformat:1 }}</span></span>
+        <details class="tc-disclosure mt-3"><summary>View team averages by demo</summary><div class="tc-disclosure-body"><ul class="tc-history mt-2">
+          {% for session_name, score, learner_count in trend.sessions %}<li><span>{{ session_name }}</span><progress class="tc-meter" max="100" value="{{ score|floatformat:0 }}" aria-label="{{ session_name }} team average: {{ score|floatformat:0 }} out of 100">{{ score|floatformat:0 }}%</progress><span class="tc-number">{{ score|floatformat:1 }}</span><span class="tc-outcome">{{ learner_count }} learner{{ learner_count|pluralize }}</span></li>{% endfor %}
+        </ul></div></details>
+      </span>
+    </article>{% endfor %}</div>
+    {% elif session_count < 3 %}<div class="tc-empty" role="status"><h3>More demos needed</h3><p>Record trainer competency decisions in at least three demos before team trends appear.</p></div>
+    {% else %}<div class="tc-empty" role="status"><h3>No team trends yet</h3><p>Team trends need a consistent, unambiguous team name across at least three demos.</p></div>{% endif %}
+  </section>
+
+  <section id="feedback-progress" class="tc-panel" aria-labelledby="feedback-progress-heading">
+    <header><div><h2 id="feedback-progress-heading">Anonymous demo feedback</h2><p>Only aggregate usefulness ratings are shown. Individual responses and device tokens are never displayed.</p></div>
+      {% if series.feedback_minimum_responses %}<span class="tc-status is-success">Minimum {{ series.feedback_minimum_responses }}</span>{% else %}<span class="tc-status is-warn">Disabled</span>{% endif %}
+    </header>
+    {% if not series.feedback_minimum_responses %}<div class="tc-empty"><h3>Feedback is off</h3><p>Set a response minimum in the <a href="{% url 'training_series_manage' series_id=series.pk %}#feedback-privacy">series privacy settings</a> to enable it.</p></div>
+    {% elif feedback_summaries %}<div class="table-responsive"><table class="table table-hover align-middle tc-table"><caption>Anonymous feedback by demo session</caption>
+      <thead><tr><th scope="col">Demo</th><th scope="col">Responses</th><th scope="col">Average rating</th><th scope="col">Median rating</th></tr></thead><tbody>
+        {% for summary in feedback_summaries %}<tr><th scope="row">{{ summary.session.name }}</th>
+          {% if summary.aggregate %}<td>{{ summary.response_count }}</td><td>{{ summary.aggregate.mean|floatformat:2 }} / 5</td><td>{{ summary.aggregate.median|floatformat:2 }} / 5</td>
+          {% else %}<td>{% if summary.response_count is not None %}{{ summary.response_count }}{% else %}Withheld{% endif %}</td><td colspan="2"><span class="tc-outcome is-pending">Hidden until minimum is reached</span></td>{% endif %}
+        </tr>{% endfor %}
+      </tbody></table></div>
+    {% else %}<div class="tc-empty" role="status"><h3>No demos to summarize</h3><p>Feedback summaries will appear after a demo closes and responses are received.</p></div>{% endif %}
+  </section>
+</div>
+{% endblock %}

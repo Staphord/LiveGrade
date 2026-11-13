@@ -1,0 +1,100 @@
+<section class="border rounded-3 p-3 mt-4" aria-labelledby="poll-import-heading">
+  <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
+    <div>
+      <h3 class="h5 mb-1" id="poll-import-heading"><i class="bi bi-file-earmark-spreadsheet me-1" aria-hidden="true"></i>Import questions from Excel</h3>
+      <p class="text-muted mb-2">{% if pending_question_import and pending_question_import.target_poll %}Review the questions to add to this draft.{% elif poll %}Upload questions to add to this poll draft.{% else %}Upload questions to create a poll draft.{% endif %} Nothing is saved until you confirm the preview.</p>
+    </div>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ poll_question_sample_url }}" download="poll-questions-sample.xlsx" data-poll-leave-guard-ignore><i class="bi bi-download me-1" aria-hidden="true"></i>Download sample file</a>
+  </div>
+  <details class="mb-3">
+    <summary class="small">See the spreadsheet format</summary>
+    <p class="small text-muted mt-2 mb-1">Use these exact column headings. Put all answer options in one cell, separated by commas. Add one row for each question; put options containing commas in double quotes.</p>
+    <div class="table-responsive"><table class="table table-sm table-bordered mb-2"><caption class="visually-hidden">Example spreadsheet rows for importing poll questions</caption><thead><tr><th scope="col">Question</th><th scope="col">Question Type</th><th scope="col">Answer Options</th></tr></thead><tbody>
+      <tr><td>When should we hold the presentation?</td><td>Single choice</td><td>Monday morning, Wednesday afternoon, Friday morning</td></tr><tr><td>Which topics should we include?</td><td>Multiple choice</td><td>Project progress, Challenges and solutions, Next steps</td></tr>
+    </tbody></table></div>
+    <p class="small text-muted mb-0">Supported question types: Single choice and Multiple choice. Every question needs at least two different options.</p>
+  </details>
+  <form method="post" enctype="multipart/form-data" class="mb-3" data-poll-question-import data-unsaved-ignore>
+    {% csrf_token %}{% if poll %}<input type="hidden" name="poll" value="{{ poll.uuid }}">{% endif %}
+    {% include 'assessments/_partials/import_dropzone.html' with file_field=question_import_form.file file_required=True dropzone_id='poll-question-import-dropzone' filename_id='poll-question-import-filename' %}
+    <div class="poll-import-feedback">
+      {% include 'partials/_inline_message.html' with message_id='poll-import-file-message' tone='warning' message='' messages='' %}
+      {% include 'partials/_inline_message.html' with messages=question_import_form.file.errors tone='danger' message_id='poll-import-file-errors' %}
+    </div>
+    <button class="btn btn-outline-primary btn-sm mt-2" name="action" value="upload-questions"><i class="bi bi-eye me-1" aria-hidden="true"></i>Preview questions</button>
+  </form>
+  <div id="poll-import-preview" aria-live="polite">{% include 'assessments/polls/_question_import_preview.html' %}</div>
+</section>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  const form = document.querySelector('[data-poll-question-import]');
+  if (!form) return;
+  const input = form.querySelector('input[type="file"]');
+  const warning = form.querySelector('#poll-import-file-message');
+  let warningText = warning && warning.querySelector('[data-inline-message-text]');
+  if (warning && !warningText) {
+    const content = warning.querySelector('.inline-message-content');
+    if (content) {
+      warningText = document.createElement('span');
+      warningText.dataset.inlineMessageText = '';
+      content.append(warningText);
+    }
+  }
+  if (!input || !warning || !warningText) return;
+  form.addEventListener('submit', async function (event) {
+    event.preventDefault();
+    if (!input.files || !input.files.length) {
+      warningText.textContent = 'Please select a file.';
+      warning.hidden = false;
+      input.focus();
+      return;
+    }
+
+    const submitter = event.submitter;
+    const payload = new FormData(form);
+    if (submitter && submitter.name) payload.set(submitter.name, submitter.value);
+    else payload.set('action', 'upload-questions');
+    const preview = document.getElementById('poll-import-preview');
+    const button = submitter || form.querySelector('button[type="submit"]');
+    // The submit button is named "action", so reading form.action can resolve
+    // to that button through HTMLFormElement's named-control lookup.
+    const requestUrl = form.getAttribute('action') || window.location.href;
+    window.pollImportPreviewPending = false;
+    warning.hidden = true;
+    if (button) button.disabled = true;
+    if (preview) preview.setAttribute('aria-busy', 'true');
+    try {
+      const response = await fetch(requestUrl, {
+        method: 'POST',
+        body: payload,
+        headers: {'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json'},
+        credentials: 'same-origin',
+      });
+      const result = await response.json();
+      if (preview) preview.innerHTML = result.html || '';
+      if (!response.ok || !result.ok) {
+        warningText.textContent = result.error || 'The file could not be previewed. Check it and try again.';
+        warning.hidden = false;
+      }
+      if (result.ok) {
+        input.value = '';
+        const filename = form.querySelector('[data-import-filename]');
+        if (filename) filename.textContent = '';
+      }
+    } catch (error) {
+      warningText.textContent = 'The file could not be previewed. Your poll edits are still here; please try again.';
+      warning.hidden = false;
+    } finally {
+      if (button) button.disabled = false;
+      if (preview) preview.removeAttribute('aria-busy');
+    }
+  });
+  document.addEventListener('submit', function (event) {
+    if (event.target && event.target.matches && event.target.matches('[data-poll-import-cancel]')) {
+      if (window.snapshotPollEditorState) window.snapshotPollEditorState();
+      window.pollImportPreviewPending = true;
+    }
+  });
+  input.addEventListener('change', function () { warning.hidden = true; });
+})();
+</script>

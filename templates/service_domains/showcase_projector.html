@@ -1,0 +1,241 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% block title %}{{ event.name }} · Venue Screen · LiveGrade{% endblock %}
+{% block service_name %}Showcase Venue Display{% endblock %}
+
+{% block extra_css %}
+<style nonce="{{ csp_nonce }}">
+:root {
+  --proj-bg: #0f172a;
+  --proj-surface: #1e293b;
+  --proj-border: #334155;
+  --proj-text: #f8fafc;
+  --proj-muted: #94a3b8;
+  --proj-accent: {{ event.brand_accent_color|default:"#38bdf8" }};
+}
+body {
+  background: var(--proj-bg) !important;
+  color: var(--proj-text) !important;
+  min-height: 100vh;
+}
+.proj-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: clamp(1.5rem, 4vw, 3.5rem) 1.5rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 85vh;
+  justify-content: center;
+}
+.proj-card {
+  background: var(--proj-surface);
+  border: 1px solid var(--proj-border);
+  border-radius: 1.5rem;
+  padding: clamp(2rem, 5vw, 4rem);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+.proj-qr-img {
+  width: min(70vw, 320px);
+  height: min(70vw, 320px);
+  border-radius: 1rem;
+  background: #ffffff;
+  padding: 1rem;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+  margin: 1.5rem auto;
+  display: block;
+}
+.proj-timer-clock {
+  font-size: clamp(4rem, 12vw, 8rem);
+  font-weight: 800;
+  font-family: monospace;
+  color: var(--proj-accent);
+  line-height: 1;
+}
+.proj-timer-clock.is-urgent {
+  color: #ef4444 !important;
+  animation: proj-pulse 1s ease-in-out infinite;
+}
+@keyframes proj-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.03); opacity: 0.85; }
+}
+.proj-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.4rem;
+  border-radius: 999px;
+  background: var(--proj-surface);
+  border: 1px solid var(--proj-border);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<main class="proj-container" id="projector-viewport">
+  {% if projector_mode == 'qr_welcome' %}
+    <!-- Mode 1: Event Welcome and Join QR Code -->
+    <div class="proj-card">
+      <span class="text-uppercase small fw-bold text-info" style="letter-spacing: 0.1em;">Welcome to</span>
+      <h1 class="display-3 fw-bold my-2" style="color: var(--proj-text);">{{ event.name }}</h1>
+      {% if event.brand_tagline %}
+        <p class="fs-4 text-muted mb-4">{{ event.brand_tagline }}</p>
+      {% endif %}
+
+      <div class="my-4">
+        {% if venue_qr_url %}
+          <img src="{{ venue_qr_url }}" alt="Scan QR code to rate exhibits" class="proj-qr-img">
+        {% endif %}
+        <p class="fs-3 fw-bold mb-1" style="color: var(--proj-accent);">Scan to find an exhibit and rate it</p>
+        <p class="text-muted fs-5">Point your phone camera at the code, pick a booth, then give it 1 to 5 stars</p>
+      </div>
+
+      <div class="d-flex justify-content-center gap-4 flex-wrap mt-4">
+        <div class="proj-stat-pill">
+          <i class="bi bi-grid-3x3-gap text-info" aria-hidden="true"></i>
+          <span>{{ rows|length }} Project Booths</span>
+        </div>
+        <div class="proj-stat-pill">
+          <i class="bi bi-star-fill text-warning" aria-hidden="true"></i>
+          <span id="proj-ratings-count">{{ total_ratings }} Ratings Cast</span>
+        </div>
+      </div>
+    </div>
+
+  {% elif projector_mode == 'telemetry_ticker' %}
+    <!-- Mode 2: Live Activity Ticker -->
+    <div class="proj-card">
+      <span class="text-uppercase small fw-bold text-info" style="letter-spacing: 0.1em;">Live Exhibition Floor</span>
+      <h1 class="display-4 fw-bold my-2" style="color: var(--proj-text);">{{ event.name }} Activity Ticker</h1>
+      <p class="text-muted fs-5 mb-5">Visitor participation is active across the exhibition floor.</p>
+
+      <div class="row g-4 my-4 justify-content-center">
+        <div class="col-12 col-md-5">
+          <div class="p-4 rounded-4" style="background: rgba(255,255,255,0.05); border: 1px solid var(--proj-border);">
+            <div class="display-2 fw-bold text-info">{{ total_ratings }}</div>
+            <div class="fs-5 text-muted mt-2">Total Visitor Ratings Cast</div>
+          </div>
+        </div>
+        <div class="col-12 col-md-5">
+          <div class="p-4 rounded-4" style="background: rgba(255,255,255,0.05); border: 1px solid var(--proj-border);">
+            <div class="display-2 fw-bold text-success">{{ total_submitted_scorecards }}</div>
+            <div class="fs-5 text-muted mt-2">Official Scorecards Logged</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-5 text-muted fs-5">
+        <i class="bi bi-broadcast me-2 text-success" aria-hidden="true"></i>
+        Keep voting at each booth until the rating window closes.
+      </div>
+    </div>
+
+  {% elif projector_mode == 'stage_spotlight' %}
+    <!-- Mode 3: Stage Spotlight Pitch and Timer -->
+    <div class="proj-card">
+      <span class="text-uppercase small fw-bold text-warning" style="letter-spacing: 0.1em;">Main Stage Spotlight</span>
+      {% if active_exhibit %}
+        <h1 class="display-3 fw-bold my-3" style="color: var(--proj-text);">{{ active_exhibit.name }}</h1>
+        <p class="fs-4 text-muted mb-4">
+          Booth #{{ active_exhibit.order|default:1 }}
+          {% if active_exhibit.category %} · {{ active_exhibit.category.name }}{% endif %}
+        </p>
+
+        <div class="my-4">
+          <div class="proj-timer-clock {% if pitch_state == 'running' and pitch_seconds_remaining < 30 %}is-urgent{% endif %}" id="proj-timer-clock"
+               data-state="{{ pitch_state }}" data-seconds="{{ pitch_seconds_remaining }}"
+               data-ends-at="{{ pitch_ends_at|default_if_none:''|stringformat:'s' }}"
+               data-server-now="{{ server_now|stringformat:'f' }}">
+            {{ pitch_seconds_remaining|default:0 }}s
+          </div>
+          <span class="fs-5 text-muted d-block mt-2">Pitch Time Remaining</span>
+        </div>
+        {% if stage_qr_url %}
+        <div class="my-4">
+          <img src="{{ stage_qr_url }}" alt="Scan to rate {{ active_exhibit.name }}" class="proj-qr-img">
+          <p class="fs-4 fw-bold mt-2 mb-0" style="color: var(--proj-accent);">Scan to rate this exhibit</p>
+        </div>
+        {% endif %}
+      {% else %}
+        <h1 class="display-4 fw-bold my-4">Main Stage Standby</h1>
+        <p class="fs-4 text-muted">The next presentation will begin shortly.</p>
+      {% endif %}
+    </div>
+
+  {% else %}
+    <!-- Mode 4: Awards Podium Reveal -->
+    <div class="proj-card">
+      <span class="text-uppercase small fw-bold text-warning" style="letter-spacing: 0.1em;">Official Results</span>
+      <h1 class="display-3 fw-bold my-2" style="color: var(--proj-text);">{{ event.name }} Podium</h1>
+      <p class="text-muted fs-4 mb-4">Exhibition Awards Presentation</p>
+
+      {% if awards_preview.audience_favorite %}
+        <div class="p-4 rounded-4 mb-4" style="background: rgba(234, 179, 8, 0.15); border: 2px solid rgba(234, 179, 8, 0.5);">
+          <span class="fs-4 text-warning fw-bold d-block">★ Audience Favorite Award ★</span>
+          <h2 class="display-5 fw-bold text-white my-2">{{ awards_preview.audience_favorite.name }}</h2>
+          <span class="fs-5 text-muted">Rated {{ awards_preview.audience_favorite_mean }} / 5 stars by attendees</span>
+        </div>
+      {% endif %}
+
+      <div class="row g-3 justify-content-center">
+        {% for cat in awards_preview.categories %}
+          {% if cat.winner %}
+            <div class="col-12 col-md-6">
+              <div class="p-3 rounded-4" style="background: rgba(255,255,255,0.05); border: 1px solid var(--proj-border);">
+                <span class="small text-uppercase text-info fw-bold">{{ cat.category }} Winner</span>
+                <h3 class="h4 fw-bold text-white mt-1 mb-0">{{ cat.winner.name }}</h3>
+              </div>
+            </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+</main>
+
+<script nonce="{{ csp_nonce }}">
+(() => {
+  // The console pushes changes over a socket; reloading re-reads the server state.
+  // Without a healthy socket, fall back to a slow reload so the screen never goes stale.
+  let socket = null;
+  let retries = 0;
+  let pending = null;
+  const refresh = () => {
+    window.clearTimeout(pending);
+    pending = window.setTimeout(() => window.location.reload(), 300);
+  };
+  const connect = () => {
+    if (!window.WebSocket) return;
+    try {
+      socket = new WebSocket(`${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/showcase/display/{{ event.public_id }}/`);
+      socket.onopen = () => { retries = 0; };
+      socket.onmessage = refresh;
+      socket.onclose = () => { window.setTimeout(connect, Math.min(30000, 2000 * Math.pow(1.5, retries++))); };
+      socket.onerror = () => socket.close();
+    } catch (_err) {}
+  };
+  connect();
+  window.setInterval(() => {
+    if (!socket || socket.readyState !== WebSocket.OPEN) window.location.reload();
+  }, 15000);
+
+  // Pitch clock: the server sends its state and deadline; this only draws it.
+  const timer = document.getElementById('proj-timer-clock');
+  if (timer) {
+    const offset = Number(timer.dataset.serverNow) - Date.now() / 1000;
+    const endsAt = timer.dataset.endsAt === '' ? null : Number(timer.dataset.endsAt);
+    const draw = () => {
+      const seconds = (timer.dataset.state === 'running' && endsAt !== null)
+        ? Math.max(0, Math.ceil(endsAt - (Date.now() / 1000 + offset)))
+        : Number(timer.dataset.seconds);
+      timer.textContent = `${seconds}s`;
+      timer.classList.toggle('is-urgent', timer.dataset.state === 'running' && seconds < 30);
+    };
+    draw();
+    setInterval(draw, 500);
+  }
+})();
+</script>
+{% endblock %}

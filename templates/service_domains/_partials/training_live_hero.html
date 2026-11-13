@@ -1,0 +1,45 @@
+<section class="card border-0 shadow-sm mb-4" id="training-live-hero">
+  <div class="card-body p-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+      <div>
+        <h2 class="h4 mb-0 fw-bold">{{ assessment_session.name }}</h2>
+        {% if session.scheduled_for %}<p class="text-muted small mb-0">Planned {{ session.scheduled_for|date:"M j, Y" }}</p>{% endif %}
+      </div>
+      <div class="d-flex flex-wrap align-items-center gap-3">
+        <a href="{% url 'assessment_session_detail' pk=assessment_session.pk %}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-people me-1" aria-hidden="true"></i>Open demo
+        </a>
+        <a href="{% url 'training_session_projector' series_id=series.pk session_id=session.pk %}" class="btn btn-outline-primary btn-sm" target="_blank" rel="noopener">
+          <i class="bi bi-projector me-1" aria-hidden="true"></i>Open projector screen<i class="bi bi-box-arrow-up-right small ms-1" aria-hidden="true"></i>
+        </a>
+        <div class="d-flex align-items-center gap-3" title="Phase countdown, kept by the server">
+          <div class="turn-ring-wrap">
+            <div class="turn-ring{% if drill_timer.urgent or drill_timer.expired %} is-urgent{% endif %}" id="training-drill-ring" style="--turn-pct: {{ drill_timer.percent }};">
+              <span class="turn-ring-label" id="training-timer-label">{{ drill_timer.display }}</span>
+            </div>
+          </div>
+          <div class="d-flex flex-column gap-1">
+            <span class="small fw-semibold text-muted">Phase countdown</span>
+            <span class="badge {% if drill_timer.expired %}text-bg-danger{% elif timer_paused %}text-bg-warning{% else %}text-bg-success{% endif %}" id="training-timer-state-badge">{% if drill_timer.expired %}Time is up{% elif timer_paused %}Paused{% else %}Running{% endif %}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 pt-3 border-top">
+      <div class="d-flex flex-wrap align-items-center gap-2" role="group" aria-label="Drill phase">
+        <button type="button" class="btn btn-sm {% if drill_phase == 'briefing' %}btn-primary{% else %}btn-outline-secondary{% endif %}" data-training-action="set_drill_phase" data-phase="briefing"{% if drill_phase == 'briefing' %} aria-pressed="true"{% endif %}>1. Briefing</button>
+        <i class="bi bi-chevron-right text-muted small" aria-hidden="true"></i>
+        <button type="button" class="btn btn-sm {% if drill_phase == 'simulation' %}btn-primary{% else %}btn-outline-secondary{% endif %}" data-training-action="set_drill_phase" data-phase="simulation"{% if drill_phase == 'simulation' %} aria-pressed="true"{% endif %}>2. Drill</button>
+        <i class="bi bi-chevron-right text-muted small" aria-hidden="true"></i>
+        <button type="button" class="btn btn-sm {% if drill_phase == 'debrief' %}btn-primary{% else %}btn-outline-secondary{% endif %}" data-training-action="set_drill_phase" data-phase="debrief"{% if drill_phase == 'debrief' %} aria-pressed="true"{% endif %}>3. Debrief</button>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-training-action="adjust_drill_timer" data-delta="300"><i class="bi bi-plus-circle me-1" aria-hidden="true"></i>5 min</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-training-action="adjust_drill_timer" data-delta="600"><i class="bi bi-plus-circle me-1" aria-hidden="true"></i>10 min</button>
+        <button type="button" class="btn {% if timer_paused %}btn-success{% else %}btn-outline-warning{% endif %} btn-sm" data-training-action="toggle_drill_pause">
+          <i class="bi {% if timer_paused %}bi-play-fill{% else %}bi-pause-fill{% endif %} me-1" aria-hidden="true"></i>{% if timer_paused %}Resume{% else %}Pause{% endif %}
+        </button>
+      </div>
+    </div>
+  </div>
+</section>

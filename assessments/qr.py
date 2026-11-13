@@ -4,6 +4,7 @@ from io import BytesIO
 from urllib.parse import urlsplit, urlunsplit
 
 import qrcode
+from django.conf import settings
 
 from config.netutils import detect_lan_ip
 
@@ -14,7 +15,19 @@ LOCAL_HOSTNAMES = {'localhost', '127.0.0.1', '0.0.0.0'}  # nosec B104
 
 
 def join_url(request, assessment_session):
-    raw = request.build_absolute_uri(f'/assess/{assessment_session.uuid}/join/')
+    return public_url(request, f'/assess/{assessment_session.uuid}/join/')
+
+
+def public_url(request, path):
+    """Build a share URL, preferring the explicitly configured public origin."""
+    configured_base = settings.LIVEGRADE_PUBLIC_BASE_URL
+    if configured_base:
+        base_parts = urlsplit(configured_base)
+        path_parts = urlsplit(path)
+        return urlunsplit((base_parts.scheme, base_parts.netloc, path_parts.path,
+                           path_parts.query, path_parts.fragment))
+
+    raw = request.build_absolute_uri(path)
     parts = urlsplit(raw)
     if parts.hostname not in LOCAL_HOSTNAMES:
         return raw  # already a real host (LAN IP, ngrok domain, production) — leave it alone

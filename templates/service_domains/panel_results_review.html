@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+{% block title %}Results · {{ hearing.name }} · Panel{% endblock %}
+{% block page_title %}Panel results{% endblock %}
+{% block content %}
+{% include 'service_domains/_workspace_styles.html' %}
+{% include 'service_domains/_panel_ui_styles.html' %}
+<div class="container-fluid py-4 service-workspace panel-page--wide">
+  {% if hearing.status != 'open' %}
+  <div class="mb-3">
+    <a class="btn btn-link px-0" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}?from=results"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i>{{ hearing.name }}</a>
+  </div>
+  {% endif %}
+
+  {% include 'service_domains/_partials/panel_hearing_tabs.html' with active_tab='results' %}
+
+  {% if hearing.status == 'open' %}
+  <div class="alert alert-info d-flex align-items-center mb-4">
+    <div>
+      <span class="badge text-bg-success me-2"><i class="bi bi-broadcast me-1" aria-hidden="true"></i>Live in progress</span>
+      <strong>Provisional results and chamber deliberation</strong>
+      <div class="small text-muted mt-1">Scores and responses are updating live as examiners evaluate. Final outcomes lock upon closing the assessment.</div>
+    </div>
+  </div>
+  {% endif %}
+
+  <header class="panel-hero mb-4"><div class="panel-hero__copy"><p class="panel-eyebrow">Panel assessment · {{ hearing.get_status_display }}</p><h1 class="page-title">Results review</h1><p class="page-subtitle mt-2">Check the results and approve what will be shared.</p></div><div class="panel-hero__actions">{% if result_rows or show_decisions %}<a class="btn btn-outline-secondary" href="{% url 'panel_results_export' hearing_id=hearing.pk %}"><i class="bi bi-download me-1" aria-hidden="true"></i>Download workbook</a>{% endif %}</div></header>
+  {% if action_error %}<div class="alert alert-danger" role="alert">{{ action_error }}</div>{% endif %}
+  <section class="panel-kpis mb-4" aria-label="Results overview">
+    <div class="panel-kpi"><span class="panel-kpi__label">Candidates</span><span class="panel-kpi__value">{{ entrant_candidates|length }}</span></div>
+    <div class="panel-kpi"><span class="panel-kpi__label">Criteria results</span><span class="panel-kpi__value">{{ criteria_count }}</span></div>
+    <div class="panel-kpi"><span class="panel-kpi__label">Decision process</span><span class="panel-kpi__value fs-6 mt-2">{{ hearing.get_workflow_display }}</span></div>
+  </section>
+
+  {% if result_rows %}<section class="panel-card mb-4" aria-labelledby="scores-heading"><div class="panel-section-heading"><div><h2 class="h4" id="scores-heading">Scores by candidate</h2><p>Only combined examiner results appear here.</p></div></div>
+    {% for row in result_rows %}<article class="panel-score-form mb-3">
+      <div class="panel-card__top"><div><p class="panel-eyebrow mb-1">{{ row.snapshot.candidate.display_name }}</p><h3 class="h5 mb-0">{{ row.snapshot.criterion.name }}</h3></div><div class="text-end"><span class="d-block fs-3 fw-bold panel-number">{% if row.latest_adjustment %}{{ row.latest_adjustment.adjusted_score|floatformat:'-2' }}{% else %}{{ row.snapshot.score|floatformat:'-2' }}{% endif %}</span><span class="small panel-muted">out of 100</span></div></div>
+      <div class="panel-progress mt-3" role="meter" aria-label="{{ row.snapshot.candidate.display_name }}: {{ row.snapshot.criterion.name }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{% if row.latest_adjustment %}{{ row.latest_adjustment.adjusted_score }}{% else %}{{ row.snapshot.score }}{% endif %}"><span style="width:{% if row.latest_adjustment %}{{ row.latest_adjustment.adjusted_score }}{% else %}{{ row.snapshot.score }}{% endif %}%"></span></div>
+      <div class="d-flex flex-wrap gap-2 mt-3"><span class="badge text-bg-light border">{{ row.snapshot.rater_count }} examiner{{ row.snapshot.rater_count|pluralize }}</span>{% if row.snapshot.below_minimum %}<span class="badge text-bg-warning">Below minimum coverage</span>{% endif %}{% if row.latest_adjustment %}<span class="badge text-bg-info">Adjusted</span>{% endif %}</div>
+      {% if row.snapshot.below_minimum %}<p class="alert alert-warning mt-3 mb-0">Some examiner groups have not met their required response count. Review before sign-off.</p>{% endif %}
+      {% if row.snapshot.panel_methodology|length > 1 or row.adjustment_history %}<details class="mt-3"><summary class="small fw-semibold">View calculation and change history</summary><div class="small panel-muted mt-2">{% if row.snapshot.panel_methodology|length > 1 %}<ul>{% for method in row.snapshot.panel_methodology %}<li>{{ method.panel }}: {{ method.score }} points, {{ method.effective_share }}% of this criterion, {{ method.rater_count }} examiners{% if method.below_minimum %} ({{ method.minimum_examiners }} required){% endif %}</li>{% endfor %}</ul>{% else %}<p>Combined by {{ row.snapshot.get_aggregation_display|lower }}.</p>{% endif %}{% if row.adjustment_history %}<p><strong>Original aggregate:</strong> {{ row.snapshot.score|floatformat:'-2' }}</p><h4 class="h6">Changes</h4><ol>{% for adjustment in row.adjustment_history %}<li><strong>Revision {{ adjustment.revision }}:</strong> {{ adjustment.adjusted_score }} points : {{ adjustment.reason }} ({{ adjustment.adjusted_at|date:'j M Y, H:i' }})</li>{% endfor %}</ol>{% endif %}</div></details>{% endif %}
+      {% if hearing.status == 'signed_off' or hearing.status == 'released' %}<details class="mt-3"><summary class="btn btn-sm btn-outline-secondary">Record a score change</summary><form method="post" class="panel-score-form mt-2">{% csrf_token %}<input type="hidden" name="action" value="adjust"><input type="hidden" name="snapshot_id" value="{{ row.snapshot.pk }}">{% include 'partials/_form_fields.html' with form=row.adjustment_form %}<button class="btn btn-outline-primary" type="submit">Save score change</button></form></details>{% endif %}
+    </article>{% endfor %}
+  </section>
+  {% elif provisional_entries %}
+  <section class="panel-card mb-4" aria-labelledby="provisional-scores-heading">
+    <div class="panel-section-heading">
+      <div>
+        <h2 class="h4" id="provisional-scores-heading">Provisional scores by candidate</h2>
+        <p>Live aggregates update as examiners submit ratings during the open session.</p>
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead>
+          <tr>
+            <th style="width: 70px;">Rank</th>
+            <th>Candidate</th>
+            <th>Provisional score</th>
+            <th>Responses received</th>
+            <th>Coverage status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for entry in provisional_entries %}
+          <tr {% if entry.active %}class="table-primary"{% endif %}>
+            <td class="fw-bold">{% if entry.rank %}#{{ entry.rank }}{% else %}-{% endif %}</td>
+            <td>
+              <span class="fw-semibold">{{ entry.name }}</span>
+              {% if entry.active %}<span class="badge text-bg-primary ms-2">On Floor</span>{% endif %}
+            </td>
+            <td>
+              {% if entry.score %}
+                <span class="fs-5 fw-bold panel-number">{{ entry.score }}</span> <span class="small panel-muted">/ 100</span>
+              {% else %}
+                <span class="text-muted">Awaiting scores</span>
+              {% endif %}
+            </td>
+            <td>{{ entry.responses }} responses ({{ entry.candidate_progress }}/{{ entry.candidate_required }} {{ entry.progress_unit }})</td>
+            <td>
+              {% if entry.complete %}
+                <span class="badge text-bg-success">Minimum met</span>
+              {% else %}
+                <span class="badge text-bg-warning">Collecting</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% elif uses_rubric_scoring %}<section class="panel-empty mb-4"><h2 class="h5">No score summaries yet</h2><p class="panel-muted mb-0">There are no numeric results to review.</p></section>{% endif %}
+
+  {% if show_decisions %}<section class="panel-card mb-4" aria-labelledby="decision-heading"><div class="panel-section-heading"><div><h2 class="h4" id="decision-heading">Committee decisions</h2><p>Record the decision and any conditions for each candidate.</p></div></div>
+    {% for row in decision_rows %}<article class="panel-score-form mb-3"><p class="panel-eyebrow mb-1">Candidate</p><h3 class="h5">{{ row.candidate.display_name }}</h3>
+      {% if row.written_reviews %}<details class="mb-3"><summary class="fw-semibold">Read examiner reports ({{ row.written_reviews|length }})</summary><p class="small panel-muted mt-2">Reports are shown without examiner names.</p>{% for report in row.written_reviews %}<article class="panel-score-form mt-2"><p class="small panel-muted">Report {{ forloop.counter }} · updated {{ report.created_at|date:'j M Y' }}</p><div>{{ report.report|linebreaksbr }}</div></article>{% endfor %}</details>{% endif %}
+      {% if show_votes %}<p class="panel-muted">Private votes: {{ row.votes.support }} support, {{ row.votes.oppose }} do not support, {{ row.votes.abstain }} abstained.</p>{% endif %}
+      {% if row.decision %}<div class="panel-result-highlight mb-3"><div><span class="small panel-muted">Latest decision</span><h4 class="h5 mb-1">{{ row.decision.get_outcome_display }}</h4><p class="mb-1">{{ row.decision.rationale }}</p>{% if row.decision.conditions %}<p class="small mb-0"><strong>Conditions:</strong> {{ row.decision.conditions }}</p>{% endif %}{% if row.decision.dissent %}<p class="small mt-2 mb-0"><strong>Recorded concern:</strong> {{ row.decision.dissent }}</p>{% endif %}</div></div>{% endif %}
+      {% if hearing.status == 'review' %}<form method="post" class="panel-score-form">{% csrf_token %}<input type="hidden" name="action" value="decision"><input type="hidden" name="candidate_id" value="{{ row.candidate.pk }}">{% include 'partials/_form_fields.html' with form=row.form %}<button class="btn btn-outline-primary" type="submit">Save decision</button></form>{% endif %}
+    </article>{% endfor %}
+  </section>{% endif %}
+
+  {% if hearing.status == 'review' and uses_rubric_scoring %}<section class="panel-card mb-4" aria-labelledby="comment-moderation-heading"><div class="panel-section-heading"><div><h2 class="h4" id="comment-moderation-heading">Anonymous comments</h2><p>Choose which comments, if any, should be included with released results.</p></div></div>
+    {% for row in moderation_comments %}<article class="panel-score-form mb-3"><p class="small panel-muted mb-1">{{ row.score.candidate.display_name }} · {{ row.score.criterion.name }}</p><blockquote class="mb-3">{{ row.score.comment }}</blockquote>
+      {% if not row.score.comment_released_to_entrant %}<form method="post" class="mb-3">{% csrf_token %}<input type="hidden" name="action" value="release_comment"><input type="hidden" name="score_id" value="{{ row.score.pk }}">{% include 'partials/_form_fields.html' with form=row.release_form %}<button class="btn btn-outline-primary" type="submit">Approve for release</button></form>{% else %}<p class="text-success">Approved for release.</p>{% endif %}
+      <details><summary class="small text-danger fw-semibold">Remove this comment</summary><form method="post" class="mt-2">{% csrf_token %}<input type="hidden" name="action" value="redact_comment"><input type="hidden" name="score_id" value="{{ row.score.pk }}">{% include 'partials/_form_fields.html' with form=row.redaction_form %}<button class="btn btn-outline-danger" type="submit">Remove comment</button></form></details>
+    </article>{% empty %}<p class="panel-empty panel-muted mb-0">No comments need review.</p>{% endfor %}
+  </section>{% endif %}
+
+  {% if hearing.status == 'review' %}<section class="panel-card mb-4"><h2 class="h5">Approve results</h2><p class="panel-muted">After approval, results are locked. You can then release them to candidates.</p><form method="post" data-confirm="Approve these results? They will be locked for review." data-confirm-title="Approve results" data-confirm-label="Approve results">{% csrf_token %}<input type="hidden" name="action" value="sign_off"><button class="btn btn-primary" type="submit">Approve results</button></form></section>
+  {% elif hearing.status == 'signed_off' %}<section class="panel-card mb-4"><h2 class="h5">Ready to release</h2><p class="panel-muted">Results are approved and locked. Candidates will be able to open their private result links after release.</p><p class="small panel-muted">Approved {{ hearing.signed_off_at|date:'j M Y, H:i' }}</p><form method="post" data-confirm="Release approved results to candidates?" data-confirm-title="Release results" data-confirm-label="Release results">{% csrf_token %}<input type="hidden" name="action" value="release"><button class="btn btn-primary" type="submit">Release results</button></form></section>
+  {% elif hearing.status == 'released' %}<p class="alert alert-success" role="status">Results released {{ hearing.released_at|date:'j M Y, H:i' }}.</p>{% endif %}
+
+  {% if hearing.status == 'released' %}<section class="panel-card" aria-labelledby="entrant-links-heading"><div class="panel-section-heading"><div><h2 class="h4" id="entrant-links-heading">Candidate links</h2><p>Create a private link for each candidate and share it directly.</p></div></div>
+    {% if one_time_entrant_url %}<div class="alert alert-success" role="status"><strong>Copy this private link now.</strong><div class="mt-2"><a href="{{ one_time_entrant_url }}">{{ one_time_entrant_url }}</a></div></div>{% endif %}
+    <div class="row g-3">{% for candidate in entrant_candidates %}<div class="col-12 col-md-6"><article class="panel-score-form h-100"><h3 class="h6">{{ candidate.display_name }}</h3><form method="post">{% csrf_token %}<input type="hidden" name="action" value="issue_entrant_link"><input type="hidden" name="candidate_id" value="{{ candidate.pk }}"><button class="btn btn-outline-primary btn-sm" type="submit">Create private result link</button></form></article></div>{% endfor %}</div>
+    {% if entrant_links %}<h3 class="h5 mt-4">Issued links</h3><ul class="list-group">{% for link in entrant_links %}<li class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2"><span><strong>{{ link.candidate.display_name }}</strong><small class="d-block panel-muted">Created {{ link.issued_at|date:'j M Y, H:i' }}{% if link.revoked_at %} · revoked{% endif %}</small></span>{% if not link.revoked_at %}<form method="post" class="d-flex flex-wrap gap-2 align-items-end" data-confirm="Revoke this candidate’s result link? Anyone using it will lose access." data-confirm-title="Revoke result link" data-confirm-label="Revoke link" data-confirm-tone="danger">{% csrf_token %}<input type="hidden" name="action" value="revoke_entrant_link"><input type="hidden" name="link_id" value="{{ link.pk }}"><label class="visually-hidden" for="revoke-result-link-{{ link.pk }}">Reason for revoking {{ link.candidate.display_name }}’s link</label><input class="form-control form-control-sm" id="revoke-result-link-{{ link.pk }}" name="reason" maxlength="500" required placeholder="Reason for revoking"><button class="btn btn-sm btn-outline-danger" type="submit">Revoke link</button></form>{% endif %}</li>{% endfor %}</ul>{% endif %}
+  </section>{% endif %}
+</div>
+
+{% if hearing.status == 'open' %}
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const wsUrl = `${scheme}://${window.location.host}/ws/panel/hearing/{{ hearing.pk }}/live/`;
+  try {
+    const socket = new WebSocket(wsUrl);
+    socket.onmessage = () => {
+      window.location.reload();
+    };
+  } catch (_e) {}
+})();
+</script>
+{% endif %}
+{% endblock %}

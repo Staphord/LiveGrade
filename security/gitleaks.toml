@@ -7,3 +7,7 @@ useDefault = true
 [[allowlists]]
 description = "Local tooling and generated output, never committed"
 paths = ['''venv/''', '''security/\.tools-venv/''', '''security/reports/''']
+
+[[allowlists]]
+description = "Test fixture passes key= as a plain argument, not a credential"
+paths = ['''assessments/tests/test_coverage_edges\.py''']

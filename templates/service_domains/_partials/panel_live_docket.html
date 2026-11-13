@@ -1,0 +1,63 @@
+<section id="panel-live-docket" class="card shadow-sm mb-4" aria-labelledby="docket-head">
+  <div class="card-header bg-surface d-flex justify-content-between align-items-center py-3">
+    <div class="d-flex align-items-center gap-2">
+      <div class="icon-badge bg-primary-subtle text-primary rounded-circle p-2 d-inline-flex">
+        <i class="bi bi-list-ol" aria-hidden="true"></i>
+      </div>
+      <h2 id="docket-head" class="h6 mb-0 fw-bold">Candidate Docket &amp; Queue</h2>
+    </div>
+    <span class="badge bg-secondary-subtle text-secondary-emphasis">
+      {{ docket|length }} Candidate{{ docket|length|pluralize }}
+    </span>
+  </div>
+
+  <div class="list-group list-group-flush">
+    {% for item in docket %}
+      <div class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2 py-3 {% if item.is_active %}bg-primary-subtle border-primary{% endif %}">
+        <div class="d-flex align-items-center gap-3">
+          <span class="badge rounded-circle {% if item.is_active %}bg-primary text-white{% else %}bg-light text-dark border{% endif %} p-2" style="width: 2rem; height: 2rem; display: flex; align-items: center; justify-content: center;">
+            {{ forloop.counter }}
+          </span>
+          <div>
+            <div class="fw-bold text-dark">
+              {{ item.candidate.display_name }}
+              {% if item.is_active %}
+                <span class="badge bg-primary text-white ms-2">On Floor</span>
+              {% endif %}
+            </div>
+            <div class="small text-muted">
+              {% if item.candidate.reference %}Ref: {{ item.candidate.reference }} · {% endif %}
+              {% if item.candidate.scheduled_time %}Scheduled: {{ item.candidate.scheduled_time|time:"H:i" }}{% else %}Order {{ item.candidate.order|default:forloop.counter }}{% endif %}
+              {% if item.has_decision %}
+                · <span class="text-success fw-semibold"><i class="bi bi-check-circle me-1" aria-hidden="true"></i>{{ item.decision.get_outcome_display }}</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        <div class="d-flex align-items-center gap-2">
+          {% if item.is_active %}
+            <span class="badge bg-success-subtle text-success-emphasis py-2 px-3">
+              <span class="pulse-dot bg-success d-inline-block rounded-circle me-1" style="width: 6px; height: 6px;"></span>Currently presenting
+            </span>
+          {% else %}
+            <button type="button" class="btn btn-outline-primary btn-sm"
+                    data-panel-live-action="set_candidate" data-candidate-id="{{ item.candidate.pk }}"
+                    {% if active_candidate %}
+                      data-confirm="Candidate {{ active_candidate.display_name }} is currently on the floor. Switch to {{ item.candidate.display_name }}?"
+                      data-confirm-title="Switch presenter on the floor?"
+                      data-confirm-label="Call to floor"
+                      data-confirm-tone="primary"
+                    {% endif %}>
+              <i class="bi bi-mic me-1" aria-hidden="true"></i>Call to floor
+            </button>
+          {% endif %}
+        </div>
+      </div>
+    {% empty %}
+      <div class="p-4 text-center text-muted">
+        No candidates added to this hearing yet.
+      </div>
+    {% endfor %}
+  </div>
+</section>

@@ -1,0 +1,126 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% block title %}Live results · {{ hearing.name }}{% endblock %}
+{% block service_name %}Panel live display{% endblock %}
+{% block content %}
+{% include 'service_domains/_panel_ui_styles.html' %}
+<main id="public-main" class="panel-public-display" data-scoring="{{ activity.scoring|yesno:'true,false' }}">
+  <header class="panel-hero mb-4"><div class="panel-hero__copy"><p class="panel-eyebrow">LiveGrade Panel</p><h1>{{ hearing.name }}</h1><p class="panel-muted mt-2 mb-0">{% if activity.open %}Live assessment progress{% else %}Scoring closed{% endif %}</p></div><div class="panel-hero__actions"><span class="panel-state {% if activity.open %}panel-state--live{% else %}panel-state--done{% endif %}" data-live-state>{% if activity.open %}Live{% else %}{{ hearing.get_status_display }}{% endif %}</span><button class="btn btn-outline-secondary no-print" type="button" data-fullscreen>Full screen</button></div></header>
+  <section class="panel-kpis mb-4" aria-label="Live progress summary"><div class="panel-kpi"><span class="panel-kpi__label">Responses</span><span class="panel-kpi__value" data-total-responses>{{ activity.responses }}</span></div><div class="panel-kpi"><span class="panel-kpi__label">Assessment progress</span><span class="panel-kpi__value"><span data-progress-percent>{{ activity.progress.percent }}</span>%</span><div class="panel-progress mt-2" role="progressbar" aria-label="Assessment progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ activity.progress.percent }}"><span data-total-progress style="width:{{ activity.progress.percent }}%"></span></div><small class="panel-muted d-block mt-1"><span data-progress-completed>{{ activity.progress.completed }}</span> of <span data-progress-required>{{ activity.progress.required }}</span> required <span data-progress-unit>{{ activity.progress_unit }}</span></small></div><div class="panel-kpi"><span class="panel-kpi__label">Now reviewing</span><span class="panel-kpi__value fs-6 mt-2" data-active-candidate>{% if activity.active_candidate %}{{ activity.active_candidate }}{% else %}Waiting for next candidate{% endif %}</span></div></section>
+  {% if activity.scoring %}<section class="panel-card" aria-labelledby="standings-heading"><div class="panel-section-heading"><div><p class="panel-eyebrow">Provisional</p><h2 class="h3" id="standings-heading">Live standings</h2><p>Only candidates meeting the minimum response count are ranked. Criteria count equally; final results are approved later.</p></div><span class="small panel-muted" data-update-status aria-live="polite">Updating automatically</span></div>
+    <div class="panel-rank-list" data-candidate-list>{% for row in activity.candidates %}<article class="panel-rank" data-candidate-row="{{ row.id }}" data-rank="{{ row.rank|default_if_none:'' }}"><span class="panel-rank__number" data-rank-number>{{ row.rank|default_if_none:'-' }}</span><div class="min-w-0"><strong class="text-break" data-candidate-name>{{ row.name }}</strong><div class="panel-rank__bar"><span data-candidate-progress style="width:{% if row.candidate_required %}{% widthratio row.candidate_progress row.candidate_required 100 %}{% else %}0{% endif %}%"></span></div><small class="panel-muted" data-candidate-progress-label>{{ row.responses }} responses · {% if row.complete %}minimum met{% else %}collecting responses{% endif %}</small></div><strong class="panel-number" data-candidate-score>{% if row.complete %}{{ row.score }}{% else %}-{% endif %}</strong></article>{% endfor %}</div>
+  </section>{% else %}<section class="panel-card" aria-labelledby="responses-heading"><div class="panel-section-heading"><div><p class="panel-eyebrow">Response progress</p><h2 class="h3" id="responses-heading">Responses by candidate</h2><p>Only response counts are shown. Individual votes and examiner identities stay private.</p></div><span class="small panel-muted" data-update-status aria-live="polite">Updating automatically</span></div>
+    <div class="panel-rank-list" data-candidate-list>{% for row in activity.candidates %}<article class="panel-rank" data-candidate-row="{{ row.id }}" data-rank=""><span class="panel-rank__number" data-rank-number><i class="bi bi-person-check" aria-hidden="true"></i></span><div class="min-w-0"><strong class="text-break" data-candidate-name>{{ row.name }}</strong><div class="panel-rank__bar"><span data-candidate-progress style="width:{% if row.candidate_required %}{% widthratio row.candidate_progress row.candidate_required 100 %}{% else %}0{% endif %}%"></span></div><small class="panel-muted" data-candidate-progress-label>{{ row.candidate_progress }} of {{ row.candidate_required }} required responses</small></div><strong class="panel-number"><span data-candidate-responses>{{ row.responses }}</span> <span class="small fw-normal panel-muted">responses</span></strong></article>{% endfor %}</div>
+  </section>{% endif %}
+  <p class="small panel-muted text-end mt-3 mb-0">Updated <time data-updated-at>just now</time></p>
+</main>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const root = document.getElementById('public-main');
+  const updateStatus = document.querySelector('[data-update-status]');
+  const updatesUrl = '{{ updates_url|escapejs }}';
+  const list = document.querySelector('[data-candidate-list]');
+  const scoring = root.dataset.scoring === 'true';
+  const write = (selector, value) => { const node = document.querySelector(selector); if (node) node.textContent = value; };
+  async function updateDisplay() {
+    try {
+      const response = await fetch(updatesUrl, {headers: {'Accept': 'application/json'}, cache: 'no-store'});
+      if (!response.ok) throw new Error('Live update unavailable');
+      const data = await response.json();
+      write('[data-total-responses]', data.responses);
+      write('[data-progress-percent]', data.progress.percent);
+      write('[data-progress-completed]', data.progress.completed);
+      write('[data-progress-required]', data.progress.required);
+      write('[data-progress-unit]', data.progress_unit);
+      write('[data-active-candidate]', data.active_candidate || 'Waiting for next candidate');
+      const totalProgress = document.querySelector('[data-total-progress]');
+      if (totalProgress) totalProgress.style.width = `${data.progress.percent}%`;
+      const progressBar = document.querySelector('[role="progressbar"]');
+      if (progressBar) progressBar.setAttribute('aria-valuenow', data.progress.percent);
+      const state = document.querySelector('[data-live-state]');
+      if (state) { state.textContent = data.open ? 'Live' : data.status.replace('_', ' '); state.classList.toggle('panel-state--live', data.open); }
+      for (const row of data.candidates) {
+        const node = document.querySelector(`[data-candidate-row="${row.id}"]`);
+        if (!node) continue;
+        node.dataset.rank = row.rank == null ? '' : row.rank;
+        writeIn(node, '[data-candidate-name]', row.name);
+        writeIn(node, '[data-rank-number]', scoring ? (row.rank == null ? '-' : row.rank) : '•');
+        writeIn(node, '[data-candidate-score]', scoring ? (row.complete ? row.score : '-') : '');
+        writeIn(node, '[data-candidate-responses]', row.responses);
+        writeIn(node, '[data-candidate-progress-label]', scoring
+          ? `${row.responses} responses · ${row.complete ? 'minimum met' : 'collecting responses'}`
+          : `${row.candidate_progress} of ${row.candidate_required} required ${row.progress_unit}`);
+        const bar = node.querySelector('[data-candidate-progress]');
+        if (bar) bar.style.width = `${row.candidate_required ? Math.round(row.candidate_progress / row.candidate_required * 100) : 0}%`;
+        node.classList.toggle('is-active', row.active);
+      }
+      if (scoring && list) {
+        const sorted = [...list.children].sort((a, b) => {
+          const ar = Number(a.dataset.rank) || Number.MAX_SAFE_INTEGER;
+          const br = Number(b.dataset.rank) || Number.MAX_SAFE_INTEGER;
+          return ar - br;
+        });
+        let orderChanged = false;
+        for (let i = 0; i < sorted.length; i++) {
+          if (list.children[i] !== sorted[i]) { orderChanged = true; break; }
+        }
+        if (orderChanged) {
+          sorted.forEach(row => list.appendChild(row));
+        }
+      }
+      const updated = document.querySelector('[data-updated-at]');
+      if (updated) updated.textContent = new Intl.DateTimeFormat(undefined, {hour: 'numeric', minute: '2-digit'}).format(new Date(data.updated));
+      if (updateStatus) updateStatus.textContent = 'Updating automatically';
+    } catch (_error) {
+      if (updateStatus) updateStatus.textContent = 'Reconnecting…';
+    }
+  }
+  function writeIn(parent, selector, value) { const node = parent.querySelector(selector); if (node) node.textContent = value; }
+  const fullscreen = document.querySelector('[data-fullscreen]');
+  if (fullscreen) fullscreen.addEventListener('click', () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else root.requestFullscreen?.();
+  });
+  // WebSocket connection for real-time display updates
+  const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const token = window.location.pathname.split('/').filter(Boolean).pop();
+  const wsUrl = `${scheme}://${window.location.host}/ws/panel/display/${encodeURIComponent(token)}/`;
+  let socket = null;
+  let reconnectTimer = null;
+  let retryCount = 0;
+
+  function connectSocket() {
+    if (!window.WebSocket) return;
+    try {
+      socket = new WebSocket(wsUrl);
+      socket.onopen = () => {
+        retryCount = 0;
+        if (updateStatus) updateStatus.textContent = 'Updating automatically';
+      };
+      socket.onmessage = () => {
+        updateDisplay();
+      };
+      socket.onclose = () => {
+        window.clearTimeout(reconnectTimer);
+        const delay = Math.min(30000, 2000 * Math.pow(1.5, retryCount++));
+        reconnectTimer = window.setTimeout(connectSocket, delay);
+      };
+      socket.onerror = () => { socket.close(); };
+    } catch (_err) {}
+  }
+  connectSocket();
+
+  const updateInterval = window.setInterval(() => {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      updateDisplay();
+    }
+  }, 30000);
+  window.addEventListener('pagehide', () => {
+    window.clearInterval(updateInterval);
+    window.clearTimeout(reconnectTimer);
+    if (socket) socket.close();
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,149 @@
+<section id="showcase-live-table" class="card assess-stagger shadow-sm mb-4" aria-labelledby="floor-head">
+  <div class="card-header bg-surface d-flex justify-content-between align-items-center py-3 flex-wrap gap-2">
+    <div class="d-flex align-items-center gap-2">
+      <div class="icon-badge bg-primary-subtle text-primary rounded-circle p-2 d-inline-flex">
+        <i class="bi bi-grid-3x3-gap" aria-hidden="true"></i>
+      </div>
+      <h2 id="floor-head" class="h6 mb-0 fw-bold">Exhibition Floor Radar</h2>
+    </div>
+
+    <!-- Filter Buttons -->
+    <div class="btn-group btn-group-sm" role="group" aria-label="Floor radar filters">
+      <button type="button" class="btn btn-outline-secondary active" data-showcase-filter="all">All exhibits ({{ rows|length }})</button>
+      <button type="button" class="btn btn-outline-secondary" data-showcase-filter="attention">Needs attention ({{ attention_count }})</button>
+      <button type="button" class="btn btn-outline-secondary" data-showcase-filter="missing-judge">Missing judge</button>
+      <button type="button" class="btn btn-outline-secondary" data-showcase-filter="zero-ratings">No ratings</button>
+    </div>
+  </div>
+
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0" id="showcase-exhibit-radar-table">
+        <thead class="table-light">
+          <tr>
+            <th scope="col" class="ps-3">Booth &amp; Exhibit</th>
+            <th scope="col">Category</th>
+            <th scope="col">Visitor Ratings</th>
+            <th scope="col">Judge Progress</th>
+            <th scope="col">Radar Status</th>
+            <th scope="col" class="text-end pe-3">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr data-row-attention="{{ row.needs_attention|yesno:'true,false' }}"
+                data-row-missing-judge="{{ row.missing_judge|yesno:'true,false' }}"
+                data-row-zero-ratings="{{ row.zero_ratings|yesno:'true,false' }}"
+                class="{% if row.is_stage_active %}table-primary{% endif %}">
+              <td class="ps-3">
+                <div class="fw-bold text-dark">{{ row.exhibit.name }}</div>
+                <div class="small text-muted">
+                  Booth #{{ row.exhibit.order|default:forloop.counter }}
+                  {% if row.stage_status == 'on_stage' %}· <span class="badge bg-primary text-white"><i class="bi bi-mic-fill me-1" aria-hidden="true"></i>On stage</span>{% elif row.stage_status == 'presented' %}· <span class="badge bg-secondary-subtle text-secondary-emphasis">Presented</span>{% endif %}
+                </div>
+              </td>
+              <td>
+                <span class="badge bg-light text-dark border">
+                  {{ row.exhibit.category.name|default:"General" }}
+                </span>
+              </td>
+              <td>
+                <div class="fw-semibold">{{ row.audience_count }} rating{{ row.audience_count|pluralize }}</div>
+                <div class="small text-muted">
+                  {% if row.audience_mean %}{{ row.audience_mean }}★{% else %}No feedback yet{% endif %}
+                </div>
+              </td>
+              <td style="min-width: 140px;">
+                <div class="small fw-semibold mb-1">{{ row.judge_submitted_count }} of {{ row.judge_assigned_count }} scorecards</div>
+                <div class="progress" style="height: 6px;" role="progressbar"
+                     aria-valuenow="{{ row.judge_submitted_count }}" aria-valuemin="0" aria-valuemax="{{ row.judge_assigned_count|default:1 }}">
+                  <div class="progress-bar {% if row.judge_submitted_count >= row.judge_assigned_count and row.judge_assigned_count > 0 %}bg-success{% else %}bg-primary{% endif %}"
+                       style="width:{% if row.judge_assigned_count %}{% widthratio row.judge_submitted_count row.judge_assigned_count 100 %}{% else %}0{% endif %}%;"></div>
+                </div>
+              </td>
+              <td>
+                {% if row.missing_judge %}
+                  <span class="badge bg-danger-subtle text-danger-emphasis">
+                    <i class="bi bi-shield-x me-1" aria-hidden="true"></i>No judge assigned
+                  </span>
+                {% elif row.pending_scores %}
+                  <span class="badge bg-warning-subtle text-warning-emphasis">
+                    <i class="bi bi-hourglass-split me-1" aria-hidden="true"></i>Cards pending
+                  </span>
+                {% elif row.zero_ratings %}
+                  <span class="badge bg-info-subtle text-info-emphasis">
+                    <i class="bi bi-qr-code-scan me-1" aria-hidden="true"></i>Awaiting visitors
+                  </span>
+                {% else %}
+                  <span class="badge bg-success-subtle text-success-emphasis">
+                    <i class="bi bi-check-circle me-1" aria-hidden="true"></i>All clear
+                  </span>
+                {% endif %}
+              </td>
+              <td class="text-end pe-3">
+                <div class="d-inline-flex gap-1">
+                  {% if row.stage_status == 'on_stage' %}
+                  <button type="button" class="btn btn-primary btn-sm" data-showcase-live-action="stage_clear" title="Take this exhibit off stage">
+                    <i class="bi bi-mic-mute me-1" aria-hidden="true"></i>End pitch
+                  </button>
+                  {% else %}
+                  <button type="button" class="btn btn-outline-primary btn-sm"
+                          data-showcase-live-action="stage_set_exhibit" data-exhibit-id="{{ row.exhibit.pk }}"
+                          title="Put on the main stage">
+                    <i class="bi bi-mic me-1" aria-hidden="true"></i>{% if row.stage_status == 'presented' %}Stage again{% else %}Stage{% endif %}
+                  </button>
+                  {% endif %}
+                  {% if row.missing_judge and judges %}
+                    <button type="button" class="btn btn-outline-warning btn-sm"
+                            data-bs-toggle="modal" data-bs-target="#assign-judge-modal-{{ row.exhibit.pk }}"
+                            title="Assign a roving judge">
+                      <i class="bi bi-person-plus" aria-hidden="true"></i>
+                    </button>
+                  {% endif %}
+                  <a href="{% url 'showcase_exhibit_label' exhibit_id=row.exhibit.public_id %}" target="_blank" class="btn btn-outline-secondary btn-sm" title="View label QR">
+                    <i class="bi bi-qr-code" aria-hidden="true"></i>
+                  </a>
+                </div>
+
+                {% if row.missing_judge and judges %}
+                  <!-- Roving Judge Assignment Modal -->
+                  <div class="modal fade text-start" id="assign-judge-modal-{{ row.exhibit.pk }}" tabindex="-1" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-centered">
+                      <div class="modal-content">
+                        <div class="modal-header">
+                          <h2 class="modal-title h6">Assign Judge to {{ row.exhibit.name }}</h2>
+                          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                          <p class="small text-muted mb-2">Select an invited judge to dispatch to this booth:</p>
+                          <select class="form-select form-select-sm" id="roving-judge-select-{{ row.exhibit.pk }}">
+                            {% for j in judges %}
+                              <option value="{{ j.pk }}">{{ j.email }}</option>
+                            {% endfor %}
+                          </select>
+                        </div>
+                        <div class="modal-footer">
+                          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                          <button type="button" class="btn btn-primary btn-sm"
+                                  data-assign-roving-judge-btn data-exhibit-id="{{ row.exhibit.pk }}">
+                            Assign judge
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                {% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="6" class="text-center py-4 text-muted">
+                No exhibits have been added to this showcase event.
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>

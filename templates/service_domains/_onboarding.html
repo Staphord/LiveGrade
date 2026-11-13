@@ -1,0 +1,31 @@
+<section class="empty-hero mb-4 service-onboarding"
+         aria-labelledby="service-onboarding-title" data-service-onboarding="{{ onboarding.slug }}">
+  <div class="empty-icon-wrap" aria-hidden="true">
+    {% if onboarding.slug == 'panel' %}<i class="bi bi-people"></i>
+    {% elif onboarding.slug == 'team' %}<i class="bi bi-graph-up-arrow"></i>
+    {% elif onboarding.slug == 'showcase' %}<i class="bi bi-easel2"></i>
+    {% elif onboarding.slug == 'competition' %}<i class="bi bi-trophy"></i>
+    {% else %}<i class="bi bi-signpost-split"></i>{% endif %}
+  </div>
+  <div>
+    <div class="status-pill action mb-2">{{ onboarding.kicker }}</div>
+    <h2 id="service-onboarding-title">{{ onboarding.title }}</h2>
+    <p class="mt-2 mx-auto">{{ onboarding.summary }}</p>
+  </div>
+  <div class="empty-steps service-onboarding-steps" role="list">
+    {% for step in onboarding.steps %}
+      <div class="empty-step-card" role="listitem">
+        <div class="empty-step-num">{{ forloop.counter }}</div>
+        <strong>{{ step.0 }}</strong>
+        <span>{{ step.1 }}</span>
+      </div>
+    {% endfor %}
+  </div>
+  <p class="small text-muted mb-0"><i class="bi bi-shield-lock me-1" aria-hidden="true"></i>{{ onboarding.privacy_note }}</p>
+  <div class="d-flex flex-wrap justify-content-center gap-2">
+    <a class="btn btn-primary" href="{{ onboarding.create_anchor }}">{{ onboarding.create_label }}</a>
+    {% if onboarding.resume_url %}
+      <a class="btn btn-outline-primary" href="{{ onboarding.resume_url }}">{{ onboarding.resume_label }}{% if onboarding.resume_name %}: {{ onboarding.resume_name }}{% endif %}</a>
+    {% endif %}
+  </div>
+</section>

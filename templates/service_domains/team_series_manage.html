@@ -1,0 +1,357 @@
+{% extends 'base.html' %}
+{% block title %}{% if is_new_series %}New training series{% else %}{{ series.name }}{% endif %} · Team and Training{% endblock %}
+{% block page_title %}{% if is_new_series %}New training series{% else %}{{ series.name }}{% endif %}{% endblock %}
+{% block content %}
+{% include 'service_domains/_workspace_styles.html' %}
+{% include 'service_domains/_team_competition_styles.html' %}
+{% include 'service_domains/_panel_ui_styles.html' %}
+{% include 'assessments/_partials/import_dropzone_styles.html' %}
+<div class="container-fluid py-4 service-workspace tc-workspace">
+  {% if workspace_link %}{% include 'service_domains/_partials/training_session_tabs.html' with link=workspace_link session_status=workspace_link.assessment_session.status active='setup' %}
+  {% else %}<p><a href="{{ back_url }}">← {{ back_label }}</a></p>{% endif %}
+  <header class="tc-hero">
+    <div><h1>{% if is_new_series %}Create a training series{% else %}{{ series.name }}{% endif %}</h1>
+      {% if series.description %}<p>{{ series.description }}</p>{% else %}<p>Manage the team, competency criteria and demos for this series.</p>{% endif %}
+      {% if not is_new_series %}
+      <div class="tc-context">
+        {% if series.cadence_note %}<span class="tc-chip">Usual rhythm: {{ series.cadence_note }}</span>{% endif %}
+        <span class="tc-chip"><strong>{{ participants|length }}</strong> team member{{ participants|length|pluralize }}</span>
+        <span class="tc-chip"><strong>{{ competencies|length }}</strong> competenc{{ competencies|length|pluralize:"y,ies" }}</span>
+        <span class="tc-chip"><strong>{{ sessions|length }}</strong> demo{{ sessions|length|pluralize }}</span>
+      </div>
+      {% endif %}
+    </div>
+    {% if not is_new_series %}<span class="tc-status is-active">Active series</span>{% endif %}
+  </header>
+
+  {% if messages %}<div aria-live="polite">{% for message in messages %}<p class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'warning' %}alert-warning{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %}">{{ message }}</p>{% endfor %}</div>{% endif %}
+  {% if roster_import_pending %}<div class="alert alert-info" role="status">Your roster is ready to review. <a href="{% url 'training_series_roster_preview' series_id=series.pk %}">Continue to import review</a>.</div>{% endif %}
+
+  <div class="panel-step-layout mt-3" data-panel-steps data-initial-step="{{ active_step|default:'details' }}">
+    {% include 'partials/_stepper.html' with steps=stepper_steps %}
+
+    <div data-panel-panel="details">
+      <section class="tc-panel mb-3" id="series-details" aria-labelledby="series-details-heading">
+        <header>
+          <div>
+            <h2 id="series-details-heading">1. Series details</h2>
+            <p>Set the series name, skill goal, and expected practice cadence.</p>
+          </div>
+          <span class="tc-status {% if is_new_series %}is-warn{% else %}is-success{% endif %}">{% if is_new_series %}Step 1 of 5{% else %}Configured{% endif %}</span>
+        </header>
+        {% if request.GET.saved == '1' %}
+        <div class="alert alert-success d-flex align-items-center gap-2 mb-3" role="status">
+          <i class="bi bi-check-circle-fill" aria-hidden="true"></i>
+          <span>Series details saved successfully.</span>
+        </div>
+        {% endif %}
+        <form method="post" class="service-flow-form mt-2" data-panel-form data-panel-details-form novalidate>
+          {% csrf_token %}
+          <input type="hidden" name="action" value="series_details">
+          <input type="hidden" name="setup_step" value="details">
+          <input type="hidden" name="from" value="{{ from_param }}">
+          <input type="hidden" name="session_id" value="{{ target_session_id }}">
+          {% include 'partials/_form_fields.html' with form=details_form %}
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3 pt-3 border-top">
+            <button class="btn btn-outline-primary" type="submit">Save details</button>
+            <button class="btn btn-primary" type="submit" name="advance" value="1">Next: Roster <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    {% if not is_new_series %}<div data-panel-panel="roster" hidden>
+      <section id="team-roster" class="tc-panel mb-3" aria-labelledby="team-roster-heading">
+        <header><div><h2 id="team-roster-heading">Team roster</h2><p>Add people one at a time or review a spreadsheet before importing.</p></div><span class="tc-status {% if participants %}is-success{% else %}is-warn{% endif %}">{% if participants %}{{ participants|length }} added{% else %}Needs team members{% endif %}</span></header>
+        {% if participants %}
+          <div class="table-responsive mb-3"><table class="table tc-table align-middle"><caption>People in this reusable series roster</caption><thead><tr><th scope="col">Name</th><th scope="col">Reference</th><th scope="col">Team</th><th scope="col" class="text-end">Action</th></tr></thead><tbody>
+            {% for participant in participants %}<tr>
+              <th scope="row">{{ participant.display_name }}</th>
+              <td>{{ participant.reference|default:'-' }}</td>
+              <td>{{ participant.group_name }}</td>
+              <td class="text-end">
+                <form method="post" class="d-inline" data-panel-form>
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="remove_participant">
+                  <input type="hidden" name="setup_step" value="roster">
+                  <input type="hidden" name="participant_id" value="{{ participant.pk }}">
+                  <button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="Remove this team member from the series roster?" data-confirm-title="Remove team member?" data-confirm-label="Remove" data-confirm-tone="danger">Remove</button>
+                </form>
+              </td>
+            </tr>{% endfor %}
+          </tbody></table></div>
+        {% else %}<div class="tc-empty mb-3"><h3>No team members yet</h3><p>Add a person or import a roster. The roster is reused for each demo in this series.</p></div>{% endif %}
+
+        <section aria-labelledby="roster-import-heading" class="mb-3">
+          <h3 class="h5" id="roster-import-heading">Import a roster</h3>
+          <p class="text-muted">Use one learner per row. Include names, optional learner references and team names only. Do not include email addresses or sensitive HR details.</p>
+          <form method="post" action="{% url 'training_series_roster_import' series_id=series.pk %}?embedded=1" enctype="multipart/form-data" class="service-flow-form" data-panel-form data-panel-import-form novalidate>
+            {% csrf_token %}
+            <input type="hidden" name="setup_step" value="roster">
+            {% include 'assessments/_partials/import_dropzone.html' with file_field=roster_import_form.file dropzone_id='team-roster-dropzone' filename_id='team-roster-filename' file_required=True %}
+            {% include 'partials/_inline_message.html' with message_id='team-roster-import-error' tone='warning' %}
+            <div class="d-flex flex-wrap gap-2 mt-3">
+              <button class="btn btn-primary" type="submit">Review roster</button>
+              <a class="btn btn-outline-secondary" href="{% url 'training_series_roster_sample' series_id=series.pk %}">Download sample file</a>
+            </div>
+          </form>
+
+          {% if roster_import_plan %}
+          <div class="card border-primary mt-3" id="roster-inline-preview">
+            <div class="card-header bg-primary-subtle d-flex flex-wrap justify-content-between align-items-center gap-2">
+              <div>
+                <strong>Import preview:</strong> {{ roster_import_plan.summary.ready }} learner{{ roster_import_plan.summary.ready|pluralize }} ready across {{ roster_import_plan.summary.teams }} team{{ roster_import_plan.summary.teams|pluralize }}
+              </div>
+              <span class="badge {% if roster_import_plan.summary.ready %}text-bg-success{% else %}text-bg-danger{% endif %}">{% if roster_import_plan.summary.ready %}Ready to import{% else %}Needs attention{% endif %}</span>
+            </div>
+            <div class="card-body">
+              {% if roster_import_plan.participants %}
+              <div class="table-responsive mb-3">
+                <table class="table table-sm align-middle mb-0">
+                  <thead><tr><th>Row</th><th>Name</th><th>Reference</th><th>Team</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {% for row in roster_import_plan.participants %}
+                    <tr>
+                      <td>{{ row.row }}</td>
+                      <td>{{ row.display_name|default:'-' }}</td>
+                      <td><code>{{ row.reference|default:'-' }}</code></td>
+                      <td>{{ row.group_name|default:'-' }}</td>
+                      <td>
+                        {% if row.issues %}
+                          <span class="text-danger small">{{ row.issues|join:'; ' }}</span>
+                        {% elif row.warnings %}
+                          <span class="text-warning small">{{ row.warnings|join:'; ' }}</span>
+                        {% else %}
+                          <span class="badge text-bg-success">Ready to add</span>
+                        {% endif %}
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              {% endif %}
+              <div class="d-flex flex-wrap gap-2">
+                <form method="post" action="{% url 'training_series_roster_preview' series_id=series.pk %}?embedded=1" data-panel-form>
+                  {% csrf_token %}
+                  <input type="hidden" name="setup_step" value="roster">
+                  <input type="hidden" name="action" value="apply">
+                  <button class="btn btn-primary btn-sm" type="submit" {% if not roster_import_plan.summary.ready %}disabled{% endif %}>Import {{ roster_import_plan.summary.ready }} learner{{ roster_import_plan.summary.ready|pluralize }}</button>
+                </form>
+                <form method="post" action="{% url 'training_series_roster_preview' series_id=series.pk %}?embedded=1" data-panel-form>
+                  {% csrf_token %}
+                  <input type="hidden" name="setup_step" value="roster">
+                  <input type="hidden" name="action" value="cancel">
+                  <button class="btn btn-outline-secondary btn-sm" type="submit">Cancel preview</button>
+                </form>
+              </div>
+            </div>
+          </div>
+          {% endif %}
+        </section>
+
+        <details class="tc-disclosure mb-3" {% if participant_form.errors or not participants %}open{% endif %}>
+          <summary>Add one team member</summary><div class="tc-disclosure-body"><form method="post" class="service-flow-form mt-2" data-panel-form novalidate>{% csrf_token %}<input type="hidden" name="action" value="participant"><input type="hidden" name="setup_step" value="roster">{% include 'partials/_form_fields.html' with form=participant_form %}<button class="btn btn-secondary" type="submit">Add team member</button></form></div>
+        </details>
+        <div class="d-flex justify-content-end mt-3 pt-3 border-top">
+          <button type="button" class="btn btn-primary" data-panel-next="competencies">Next: Competencies <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button>
+        </div>
+      </section>
+    </div>
+
+    <div data-panel-panel="competencies" hidden>
+      <section id="competency-criteria" class="tc-panel mb-3" aria-labelledby="competency-criteria-heading">
+        <header><div><h2 id="competency-criteria-heading">Competency criteria</h2><p>Track work outcomes separately from the peer feedback rubric used during a demo. Set a pass score for each competency.</p></div><span class="tc-status {% if competencies %}is-success{% else %}is-warn{% endif %}">{% if competencies %}{{ competencies|length }} set{% else %}Needs criteria{% endif %}</span></header>
+        {% if competencies %}<div class="tc-list mb-3">{% for competency in competencies %}<article class="tc-list-card"><span><h3>{{ competency.name }}</h3>{% if competency.description %}<p>{{ competency.description }}</p>{% endif %}</span><div class="d-flex align-items-center gap-2"><span class="tc-chip">Pass score {{ competency.passing_score }}</span><form method="post" class="d-inline" data-panel-form>{% csrf_token %}<input type="hidden" name="action" value="remove_competency"><input type="hidden" name="setup_step" value="competencies"><input type="hidden" name="competency_id" value="{{ competency.pk }}"><button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="Remove this competency criterion from the series?" data-confirm-title="Remove competency criterion?" data-confirm-label="Remove" data-confirm-tone="danger">Remove</button></form></div></article>{% endfor %}</div>
+        {% else %}<div class="tc-empty mb-3"><h3>No criteria yet</h3><p>Add a competency and pass score before recording outcomes.</p></div>{% endif %}
+        {% url 'training_competency_import' series.pk as competency_import_url %}{% url 'training_competency_import_sample' series.pk as competency_sample_url %}
+        {% include 'partials/_import_card.html' with title='Import competencies' intro='One competency per row with a Competency and a Pass score column. Description is optional. Existing competencies stay unchanged.' form=competency_import_form import_url=competency_import_url sample_url=competency_sample_url dropzone_id='team-competency-dropzone' filename_id='team-competency-filename' preview_label='Preview competencies' file_hint='One competency per row (.xlsx)' plan=competency_import_plan token=competency_import_token errors=competency_import_errors %}
+        <details class="tc-disclosure" {% if competency_form.errors or not competencies %}open{% endif %}>
+          <summary>Add a competency</summary><div class="tc-disclosure-body"><form method="post" class="service-flow-form mt-2" data-panel-form novalidate>{% csrf_token %}<input type="hidden" name="action" value="competency"><input type="hidden" name="setup_step" value="competencies">{% include 'partials/_form_fields.html' with form=competency_form %}<button class="btn btn-secondary" type="submit">Add competency</button></form></div>
+        </details>
+        <div class="d-flex justify-content-end mt-3 pt-3 border-top">
+          <button type="button" class="btn btn-primary" data-panel-next="demos">Next: Session evaluation <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button>
+        </div>
+      </section>
+    </div>
+
+    <div data-panel-panel="demos" hidden>
+      <section id="series-demos" class="tc-panel mb-3" aria-labelledby="series-demos-heading">
+        <header><div><h2 id="series-demos-heading">Demos</h2><p>Each new demo starts with this roster and a selected Team rubric.</p></div>
+          {% if sessions %}<a class="btn btn-outline-primary" href="{% url 'training_series_trends' series_id=series.pk %}">View progress</a>{% endif %}
+        </header>
+        {% if target_session_id %}
+        <div class="alert alert-info d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+          <div>
+            <strong>Live workshop session in progress.</strong>
+            <div class="small text-muted">Observation matrix and real-time learner feedback are active.</div>
+          </div>
+          <a class="btn btn-primary btn-sm" href="{% url 'training_session_live' series_id=series.pk session_id=target_session_id %}">
+            <i class="bi bi-broadcast me-1" aria-hidden="true"></i>Go to Live Workshop
+          </a>
+        </div>
+        {% endif %}
+        {% if sessions %}<div class="tc-list mb-3">{% for link in sessions %}<article class="tc-list-card">
+          <span><h3>{{ forloop.counter }}. {{ link.assessment_session.name }}</h3>
+            <p>{% if link.scheduled_for %}Planned {{ link.scheduled_for|date:'j M Y, H:i' }} · {% endif %}{{ link.assessment_session.get_status_display }}</p>
+            <span class="tc-context">{% if link.assessment_session.status == 'draft' %}<a class="btn btn-sm btn-primary" href="{% url 'training_session_live' series_id=series.pk session_id=link.pk %}"><i class="bi bi-play-circle me-1" aria-hidden="true"></i>Start workshop</a>{% elif link.assessment_session.status == 'closed' %}<a class="btn btn-sm btn-outline-primary" href="{% url 'training_session_competencies' pk=link.assessment_session_id %}"><i class="bi bi-award me-1" aria-hidden="true"></i>View outcomes</a>{% if series.feedback_minimum_responses %}<a class="btn btn-sm btn-link" href="{% url 'training_anonymous_feedback' feedback_public_id=link.feedback_public_id %}">Feedback link</a>{% endif %}{% else %}<a class="btn btn-sm btn-primary" href="{% url 'training_session_live' series_id=series.pk session_id=link.pk %}"><i class="bi bi-broadcast me-1" aria-hidden="true"></i>Go to live workshop</a>{% endif %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'assessment_session_detail' pk=link.assessment_session_id %}"><i class="bi bi-people me-1" aria-hidden="true"></i>Open demo</a></span>
+          </span><span class="tc-status {% if link.assessment_session.status == 'closed' %}is-success{% else %}is-active{% endif %}">{{ link.assessment_session.get_status_display }}</span>
+        </article>{% endfor %}</div>{% else %}<div class="tc-empty mb-3"><h3>No demos yet</h3><p>Create the first demo when the roster is ready. You can reuse a built-in or saved Team rubric.</p></div>{% endif %}
+        <details class="tc-disclosure" {% if launch_form.errors or not sessions %}open{% endif %}>
+          <summary>Create the next demo</summary><div class="tc-disclosure-body">
+            <p class="text-muted mt-2">The planned date is shown here only; it does not send invitations or reminders. Use Student ID when learner names may repeat.</p>
+            <details class="mb-3"><summary class="fw-semibold">What the built-in rubrics cover</summary><ul class="mt-2">{% for starter in team_starters %}<li><strong>{{ starter.name }}:</strong> {{ starter.description }}</li>{% endfor %}</ul></details>
+            <form method="post" class="service-flow-form" data-panel-form novalidate>{% csrf_token %}<input type="hidden" name="action" value="create_session"><input type="hidden" name="setup_step" value="demos">{% include 'partials/_form_fields.html' with form=launch_form %}<button class="btn btn-primary" type="submit" {% if not participants %}disabled{% endif %}>Create demo session</button>{% if not participants %}<p class="form-text">Add at least one team member to enable demo creation.</p>{% endif %}</form>
+          </div>
+        </details>
+        <div class="border-top pt-3 mt-3" id="feedback-privacy">
+          <h3 class="h6 fw-bold">Anonymous learner feedback</h3>
+        {% if series.feedback_minimum_responses %}<p>Results stay hidden until at least <strong>{{ series.feedback_minimum_responses }}</strong> responses are received.</p>{% else %}<p>Choose a response minimum to enable feedback collection. Leave it blank to keep feedback disabled.</p>{% endif %}
+        <details class="tc-disclosure mb-3" {% if privacy_form.errors %}open{% endif %}><summary>Change response minimum</summary><div class="tc-disclosure-body"><form method="post" class="service-flow-form mt-2" data-panel-form novalidate>{% csrf_token %}<input type="hidden" name="action" value="feedback_privacy"><input type="hidden" name="setup_step" value="demos">{% include 'partials/_form_fields.html' with form=privacy_form %}<button class="btn btn-outline-secondary" type="submit">Save privacy setting</button></form></div></details>
+        </div>
+        <div class="d-flex justify-content-end mt-3 pt-3 border-top">
+          <button type="button" class="btn btn-primary" data-panel-next="review">Next: Review <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button>
+        </div>
+      </section>
+    </div>
+
+    <div data-panel-panel="review" hidden>
+      <section id="series-review" class="tc-panel" aria-labelledby="series-review-heading">
+        <header><div><h2 id="series-review-heading">Review</h2><p>Check the setup, then run each demo from its live workshop. Nothing is configured here.</p></div>
+          {% if live_link %}<span class="tc-status is-success">Ready</span>{% else %}<span class="tc-status is-warn">Needs a demo</span>{% endif %}
+        </header>
+        <ul class="list-unstyled mb-3" aria-label="Setup checklist">
+          <li class="d-flex gap-2 mb-2"><i class="bi {% if participants %}bi-check-circle-fill text-success{% else %}bi-dash-circle text-muted{% endif %} mt-1" aria-hidden="true"></i><span><button type="button" class="btn btn-link p-0 align-baseline" data-panel-step="roster">Roster</button><span class="d-block small text-muted">{{ participants|length }} learner{{ participants|length|pluralize }}</span></span></li>
+          <li class="d-flex gap-2 mb-2"><i class="bi {% if competencies %}bi-check-circle-fill text-success{% else %}bi-dash-circle text-muted{% endif %} mt-1" aria-hidden="true"></i><span><button type="button" class="btn btn-link p-0 align-baseline" data-panel-step="competencies">Competencies</button><span class="d-block small text-muted">{{ competencies|length }} competenc{{ competencies|length|pluralize:'y,ies' }}</span></span></li>
+          <li class="d-flex gap-2 mb-2"><i class="bi {% if sessions %}bi-check-circle-fill text-success{% else %}bi-exclamation-circle-fill text-warning{% endif %} mt-1" aria-hidden="true"></i><span><button type="button" class="btn btn-link p-0 align-baseline" data-panel-step="demos">Session evaluation</button><span class="d-block small text-muted">{{ sessions|length }} demo{{ sessions|length|pluralize }}{% if series.feedback_minimum_responses %} · feedback hidden until {{ series.feedback_minimum_responses }} response{{ series.feedback_minimum_responses|pluralize }}{% else %} · learner feedback off{% endif %}</span></span></li>
+        </ul>
+        {% if live_link %}
+        <a class="btn btn-primary" href="{% url 'training_session_live' series_id=series.pk session_id=live_link.pk %}"><i class="bi bi-broadcast me-1" aria-hidden="true"></i>Go to live workshop: {{ live_link.assessment_session.name }}</a>
+        {% elif sessions %}
+        <p class="text-muted mb-0">Every demo is closed. Create another demo to run a new workshop, or open a closed one from the Demos step to see its results.</p>
+        {% else %}
+        <p class="text-muted mb-0">Create the first demo in the Session evaluation step, then come back to start it.</p>
+        {% endif %}
+      </section>
+    </div>
+    {% endif %}
+  </div>
+
+  {% include 'partials/_unsaved_changes.html' with form_selector='form[data-panel-details-form]' dialog_id='team-unsaved-dialog' title_id='team-unsaved-title' dialog_title='Leave setup?' dialog_body='You have unsaved changes in setup details. Save your changes before leaving, or discard them.' save_btn_text='Save details' step_selector='[data-panel-step]' %}
+</div>
+
+<script nonce="{{ csp_nonce }}">
+  (function () {
+    const stepRoot = document.querySelector('[data-panel-steps]');
+    if (stepRoot) {
+      const buttons = Array.from(stepRoot.querySelectorAll('[data-panel-step]'));
+      const panels = Array.from(stepRoot.querySelectorAll('[data-panel-panel]'));
+      const validKeys = buttons.map((b) => b.dataset.panelStep);
+
+      function activateStep(key, updateUrl) {
+        if (!validKeys.includes(key)) key = validKeys[0];
+        window.DevPerfStepper.setCurrent(stepRoot, key);
+        panels.forEach((panel) => {
+          panel.hidden = panel.dataset.panelPanel !== key;
+        });
+        if (updateUrl && window.history && window.history.replaceState) {
+          const url = new URL(window.location.href);
+          url.searchParams.set('step', key);
+          url.searchParams.delete('saved');
+          window.history.replaceState({}, '', url.toString());
+        }
+      }
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const initialKey = urlParams.get('step') || stepRoot.dataset.initialStep || validKeys[0];
+      activateStep(initialKey, false);
+
+      buttons.forEach((btn) => {
+        btn.addEventListener('click', () => activateStep(btn.dataset.panelStep, true));
+      });
+      stepRoot.querySelectorAll('[data-panel-next]').forEach((nextBtn) => {
+        nextBtn.addEventListener('click', () => {
+          activateStep(nextBtn.dataset.panelNext, true);
+          stepRoot.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      });
+    }
+
+    const purposeField = document.querySelector('[data-purpose-autogrow]');
+    if (purposeField) {
+      const wordLimit = Number(purposeField.dataset.wordLimit) || 100;
+      const fieldId = purposeField.id || 'training-series-purpose';
+      const counter = document.createElement('div');
+      counter.className = 'form-text text-muted';
+      counter.id = fieldId + '_word_count';
+      const limitNotice = document.createElement('div');
+      limitNotice.className = 'form-text text-danger';
+      limitNotice.id = fieldId + '_word_limit_notice';
+      limitNotice.setAttribute('role', 'status');
+      limitNotice.setAttribute('aria-live', 'polite');
+      limitNotice.hidden = true;
+      purposeField.insertAdjacentElement('afterend', counter);
+      counter.insertAdjacentElement('afterend', limitNotice);
+
+      const describedBy = new Set((purposeField.getAttribute('aria-describedby') || '')
+        .split(/\s+/).filter(Boolean));
+      describedBy.add(counter.id);
+      describedBy.add(limitNotice.id);
+      purposeField.setAttribute('aria-describedby', Array.from(describedBy).join(' '));
+
+      function resizePurposeField() {
+        purposeField.style.height = 'auto';
+        purposeField.style.height = purposeField.scrollHeight + 'px';
+      }
+
+      function updatePurposeField() {
+        const words = purposeField.value.trim().split(/\s+/u).filter(Boolean);
+        if (words.length > wordLimit) {
+          const caret = purposeField.selectionStart ?? purposeField.value.length;
+          purposeField.value = words.slice(0, wordLimit).join(' ');
+          const nextCaret = Math.min(caret, purposeField.value.length);
+          purposeField.setSelectionRange(nextCaret, nextCaret);
+          limitNotice.textContent = 'Maximum 100 words. Extra words were removed.';
+          limitNotice.hidden = false;
+        } else {
+          limitNotice.hidden = true;
+          limitNotice.textContent = '';
+        }
+        const count = Math.min(words.length, wordLimit);
+        counter.textContent = count + ' of ' + wordLimit + ' words';
+        resizePurposeField();
+      }
+
+      purposeField.addEventListener('input', updatePurposeField);
+      purposeField.addEventListener('change', updatePurposeField);
+      window.addEventListener('resize', resizePurposeField);
+      updatePurposeField();
+    }
+
+    document.querySelectorAll('form[data-panel-import-form]').forEach((form) => {
+      const fileInput = form.querySelector('input[type="file"]');
+      const errorBox = form.querySelector('.inline-message');
+      const errorText = errorBox ? errorBox.querySelector('[data-inline-message-text]') : null;
+      if (fileInput && errorBox) {
+        fileInput.addEventListener('change', () => {
+          if (fileInput.files && fileInput.files.length > 0) {
+            errorBox.classList.add('d-none');
+          }
+        });
+      }
+      form.addEventListener('submit', (event) => {
+        if (fileInput && (!fileInput.files || fileInput.files.length === 0)) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          if (errorBox && errorText) {
+            errorText.textContent = 'Please choose a spreadsheet file (.xlsx) first.';
+            errorBox.classList.remove('d-none');
+          }
+          const dropzone = form.querySelector('[data-import-dropzone]');
+          if (dropzone) dropzone.focus();
+        }
+      });
+    });
+  })();
+</script>
+{% endblock %}

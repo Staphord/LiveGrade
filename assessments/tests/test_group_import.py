@@ -3,7 +3,7 @@ from django.test import TestCase
 
 from accounts.testing import make_org
 from assessments.group_import import MAX_ROWS, apply_import, parse_groups, plan_import, sample_workbook
-from assessments.models import (AssessmentSession, GroupMembership, PresentationGroup, PresentationTurn,
+from assessments.models import (AssessmentSession, Evaluator, GroupMembership, PresentationGroup, PresentationTurn,
                                 Student)
 from assessments.sheets import UNREADABLE
 
@@ -129,6 +129,8 @@ class PlanAndApplyTests(TestCase):
         self.assertEqual(PresentationGroup.objects.get(name='Meridian').order, 2)
         self.assertEqual(group.member_count(), 2)
         self.assertEqual(Student.objects.count(), 3)
+        self.assertEqual(Evaluator.objects.filter(
+            assessment_session=self.session, kind=Evaluator.Kind.ROSTER).count(), 3)
 
     def test_an_empty_group_is_created(self):
         counts = self.apply(['Zephyr', None])

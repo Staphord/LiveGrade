@@ -7,7 +7,9 @@ organizations they may run LiveGrade for. See README.md.
 from pathlib import Path
 import os
 import sys
+from urllib.parse import urlsplit
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 from config.netutils import detect_lan_ip
@@ -20,8 +22,35 @@ INSECURE_DEFAULT_SECRET_KEY = 'django-insecure-livegrade-change-in-production'
 SECRET_KEY = os.getenv('SECRET_KEY', INSECURE_DEFAULT_SECRET_KEY)
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = [h for h in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h]
+# Where LiveGrade and DevPerf live. Placeholders until the domain is
+# chosen: the production values are set in the environment.
+_default_livegrade_base_url = 'http://localhost:8001' if DEBUG else 'https://localhost:8001'
+LIVEGRADE_BASE_URL = os.getenv('LIVEGRADE_BASE_URL', _default_livegrade_base_url).rstrip('/')
+DEVPERF_URL = os.getenv('DEVPERF_URL', 'http://localhost:8000').rstrip('/')
+_livegrade_url = urlsplit(LIVEGRADE_BASE_URL)
+_local_http_development = (
+    _livegrade_url.scheme == 'http'
+    and _livegrade_url.hostname in {'localhost', '127.0.0.1', '::1'}
+)
+
+ALLOWED_HOSTS = [h for h in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,192.168.2.114').split(',') if h]
 CSRF_TRUSTED_ORIGINS = [o for o in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if o]
+LIVEGRADE_PUBLIC_BASE_URL = os.getenv('LIVEGRADE_PUBLIC_BASE_URL', '').strip().rstrip('/')
+_public_url = None
+if LIVEGRADE_PUBLIC_BASE_URL:
+    try:
+        _public_url = urlsplit(LIVEGRADE_PUBLIC_BASE_URL)
+        _public_url.port  # Validate the optional port during startup.
+    except ValueError as exc:
+        raise ImproperlyConfigured('LIVEGRADE_PUBLIC_BASE_URL must be a valid HTTP(S) origin.') from exc
+    if (_public_url.scheme not in {'http', 'https'} or not _public_url.hostname
+            or _public_url.username or _public_url.password
+            or _public_url.path not in {'', '/'} or _public_url.query or _public_url.fragment):
+        raise ImproperlyConfigured('LIVEGRADE_PUBLIC_BASE_URL must be a valid HTTP(S) origin.')
+    if not DEBUG and not _local_http_development and _public_url.scheme != 'https':
+        raise ImproperlyConfigured('LIVEGRADE_PUBLIC_BASE_URL must use HTTPS when DEBUG is off.')
+    if (DEBUG or _local_http_development) and _public_url.hostname not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_public_url.hostname)
 
 # Development only. Students join by scanning a QR code with a phone, so the
 # dev server must accept the address a phone can reach and the tunnelled hosts
@@ -29,9 +58,7 @@ CSRF_TRUSTED_ORIGINS = [o for o in os.getenv('CSRF_TRUSTED_ORIGINS', '').split('
 # the whole suffix is allowed rather than one name).
 if DEBUG:
     ALLOWED_HOSTS += ['.ngrok-free.app', '.ngrok-free.dev', '.ngrok.io']
-    # Auto-detected, because assessments/qr.py rewrites the join URL to this same
-    # address: whatever network this machine is on today, the phone is allowed
-    # in, rather than relying on a hardcoded address staying correct.
+    # Keep the current best-effort route address allowed for LAN development.
     _lan_ip = detect_lan_ip()
     if _lan_ip not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append(_lan_ip)
@@ -39,10 +66,32 @@ if DEBUG:
     # through the tunnel.
     CSRF_TRUSTED_ORIGINS += ['https://*.ngrok-free.app', 'https://*.ngrok-free.dev']
 
-# Where LiveGrade and DevPerf live. Placeholders until the real domain is
-# chosen: the production values are set in the environment.
-LIVEGRADE_BASE_URL = os.getenv('LIVEGRADE_BASE_URL', 'http://localhost:8001').rstrip('/')
-DEVPERF_URL = os.getenv('DEVPERF_URL', 'http://localhost:8000').rstrip('/')
+# Panel examiner invitations use Django's configured backend. Credentials stay
+# in the deployment environment; local development may leave SMTP unset and
+# use the one-time organizer copy fallback when mail cannot be delivered.
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'localhost')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '25'))
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'False') == 'True'
+EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'False') == 'True'
+EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT', '10'))
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'webmaster@localhost')
+if EMAIL_USE_TLS and EMAIL_USE_SSL:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured('Configure SMTP with TLS or SSL, not both.')
+if not DEBUG and (EMAIL_HOST_USER or EMAIL_HOST_PASSWORD) and not (EMAIL_USE_TLS or EMAIL_USE_SSL):
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured('Authenticated SMTP must use TLS or SSL when DEBUG is off.')
+
+# The services that are open to the public (portal/services.py). Any other service is shown
+# as coming soon and cannot be entered. Names that are not in the registry are ignored.
+LIVEGRADE_LIVE_SERVICES = [s.strip() for s in os.getenv('LIVEGRADE_LIVE_SERVICES', 'classroom,polls').split(',') if s.strip()]
+if 'test' in sys.argv:
+    LIVEGRADE_LIVE_SERVICES = ['classroom', 'polls']
 
 # Production hardening, as in DevPerf: refuse to start weak rather than start
 # with a published key. Never during `manage.py test`.
@@ -60,9 +109,14 @@ if not DEBUG and 'test' not in sys.argv:
             'OIDC_RP_CLIENT_ID and OIDC_RP_CLIENT_SECRET must be set when '
             'DEBUG is off (see `manage.py register_livegrade_client` in DevPerf).')
 
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
-    SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'True') == 'True'
+    # Local HTTP is useful when DEBUG is disabled to exercise the production
+    # error pages and service configuration. Secure cookies cannot be sent by
+    # an HTTP localhost origin, so limit this exception to an explicitly
+    # configured loopback base URL; every non-local deployment stays HTTPS-only.
+    SESSION_COOKIE_SECURE = not _local_http_development
+    CSRF_COOKIE_SECURE = not _local_http_development
+    SECURE_SSL_REDIRECT = os.getenv(
+        'SECURE_SSL_REDIRECT', 'False' if _local_http_development else 'True') == 'True'
     SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', str(30 * 24 * 60 * 60)))
     # Both are off until every subdomain of the site is known to serve HTTPS: HSTS with
     # includeSubDomains makes browsers refuse plain HTTP on all of them for SECURE_HSTS_SECONDS,
@@ -98,7 +152,9 @@ INSTALLED_APPS = [
     'channels',
     'mozilla_django_oidc',
     'accounts',
+    'portal',
     'assessments',
+    'service_domains',
 ]
 
 MIDDLEWARE = [
@@ -108,9 +164,17 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'portal.middleware.ServiceMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+# Production static assets are collected into STATIC_ROOT and served by
+# WhiteNoise with content-hashed names plus precompressed gzip/Brotli variants.
+# Keep normal development/test storage so local source files work without a
+# collectstatic run.
+if not DEBUG and 'test' not in sys.argv:
+    MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
 
 ROOT_URLCONF = 'config.urls'
 WSGI_APPLICATION = 'config.wsgi.application'
@@ -140,16 +204,58 @@ DATABASES = {
     }
 }
 if DATABASES['default']['ENGINE'] != 'django.db.backends.sqlite3':  # pragma: no cover - server databases only; tests and dev run on SQLite
-    # Reuse the database connection between requests instead of opening a new one
-    # for each (a handshake on every page and every live-state poll). The health
-    # check replaces a connection the server dropped rather than failing a request.
-    DATABASES['default']['CONN_MAX_AGE'] = int(os.getenv('DB_CONN_MAX_AGE', '60'))
+    # ASGI workers must not retain per-thread persistent connections. Configure
+    # database-side pooling and its connection budget in the deployment environment.
+    DATABASES['default']['CONN_MAX_AGE'] = int(os.getenv('DB_CONN_MAX_AGE', '0'))
     DATABASES['default']['CONN_HEALTH_CHECKS'] = True
+    if DATABASES['default']['ENGINE'].endswith('postgresql'):
+        DATABASES['default']['OPTIONS'] = {'connect_timeout': int(os.getenv('DB_CONNECT_TIMEOUT', '5'))}
 
 # Live updates and the turn timers. Redis database 1, not DevPerf's 0, so the
 # two services sharing one Redis server can never read each other's messages or
 # jobs.
 REDIS_URL = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/1')
+
+# Shared across web workers, including the coming-soon signup abuse limit.
+CACHES = {'default': {
+    'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+    'LOCATION': REDIS_URL,
+    'KEY_PREFIX': 'livegrade',
+    'OPTIONS': {'socket_connect_timeout': 2, 'socket_timeout': 2},
+}}
+LIVEGRADE_INTEREST_RATE_LIMIT = int(os.getenv('LIVEGRADE_INTEREST_RATE_LIMIT', '5'))
+LIVEGRADE_INTEREST_RATE_WINDOW = int(os.getenv('LIVEGRADE_INTEREST_RATE_WINDOW', '600'))
+if LIVEGRADE_INTEREST_RATE_LIMIT < 1 or LIVEGRADE_INTEREST_RATE_WINDOW < 1:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured('Service interest rate limit and window must be positive.')
+# Per-event source budgets allow shared classroom and event Wi-Fi addresses.
+COMPETITION_JOIN_RATE_LIMIT = int(os.getenv('COMPETITION_JOIN_RATE_LIMIT', '6000'))
+if COMPETITION_JOIN_RATE_LIMIT < 1:
+    raise ImproperlyConfigured('Competition join request budget must be positive.')
+POLL_PUBLIC_READ_RATE_LIMIT = int(os.getenv('POLL_PUBLIC_READ_RATE_LIMIT', '60000'))
+POLL_PUBLIC_SUBMISSION_RATE_LIMIT = int(os.getenv('POLL_PUBLIC_SUBMISSION_RATE_LIMIT', '6000'))
+if min(POLL_PUBLIC_READ_RATE_LIMIT, POLL_PUBLIC_SUBMISSION_RATE_LIMIT) < 1:
+    raise ImproperlyConfigured('Poll request budgets must be positive.')
+
+PANEL_EXAMINER_RATE_LIMIT = int(os.getenv('PANEL_EXAMINER_RATE_LIMIT', '120'))
+PANEL_EXAMINER_RATE_WINDOW = int(os.getenv('PANEL_EXAMINER_RATE_WINDOW', '60'))
+if PANEL_EXAMINER_RATE_LIMIT < 1 or PANEL_EXAMINER_RATE_WINDOW < 1:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured('Panel examiner rate limit and window must be positive.')
+PUBLIC_BEARER_UNKNOWN_RATE_LIMIT = int(os.getenv('PUBLIC_BEARER_UNKNOWN_RATE_LIMIT', '300'))
+PUBLIC_BEARER_UNKNOWN_RATE_WINDOW = int(os.getenv('PUBLIC_BEARER_UNKNOWN_RATE_WINDOW', '60'))
+if PUBLIC_BEARER_UNKNOWN_RATE_LIMIT < 1 or PUBLIC_BEARER_UNKNOWN_RATE_WINDOW < 1:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured('Unknown bearer-link rate limit and window must be positive.')
+SHOWCASE_PUBLIC_RATE_LIMIT = int(os.getenv('SHOWCASE_PUBLIC_RATE_LIMIT', '2000'))
+SHOWCASE_PUBLIC_RATE_WINDOW = int(os.getenv('SHOWCASE_PUBLIC_RATE_WINDOW', '60'))
+if SHOWCASE_PUBLIC_RATE_LIMIT < 1 or SHOWCASE_PUBLIC_RATE_WINDOW < 1:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured('Showcase public rate limit and window must be positive.')
 
 CHANNEL_LAYERS = {
     'default': {
@@ -195,6 +301,8 @@ if 'test' in sys.argv:
     CELERY_RESULT_BACKEND = 'cache+memory://'
     # A stand-in for DevPerf's database, so the importer can be tested.
     DATABASES['devperf'] = {'ENGINE': 'django.db.backends.sqlite3', 'NAME': ':memory:'}
+    CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+                          'LOCATION': 'livegrade-tests'}}
 
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'UTC'
@@ -202,8 +310,13 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = 'static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATIC_ROOT = Path(os.getenv('STATIC_ROOT', BASE_DIR / 'staticfiles'))
 STATICFILES_DIRS = [BASE_DIR / 'static']
+if not DEBUG and 'test' not in sys.argv:
+    STORAGES = {
+        'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+        'staticfiles': {'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage'},
+    }
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Our own 404 and 500 pages even while DEBUG is on (see accounts/error_pages.py). Set

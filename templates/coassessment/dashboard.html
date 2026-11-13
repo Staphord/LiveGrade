@@ -1,0 +1,275 @@
+{% extends 'base.html' %}
+{% block title %}Co-Assessment dashboard · LiveGrade{% endblock %}
+{% block page_title %}Co-Assessment dashboard{% endblock %}
+
+{% block extra_css %}
+{% include 'partials/_service_dashboard_styles.html' %}
+<style nonce="{{ csp_nonce }}">
+.coassessment-dashboard{gap:var(--sp-4)}
+.coassessment-dashboard a,.coassessment-dashboard a:hover{text-decoration:none}
+.coassessment-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:var(--sp-3)}
+.coassessment-kpi{min-width:0;padding:var(--sp-4);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);box-shadow:var(--elev-1)}
+.coassessment-kpi-label{color:var(--text-muted);font-size:var(--fs-sm);font-weight:650}
+.coassessment-kpi-value{margin-top:var(--sp-2);font-size:1.8rem;line-height:1.1;font-weight:800;letter-spacing:-.04em;color:var(--ink)}
+.coassessment-kpi-note{margin-top:var(--sp-2);color:var(--text-muted);font-size:var(--fs-micro);line-height:1.45}
+.coassessment-live-panel{padding:var(--sp-4);border:1px solid var(--tone-success-bg);border-radius:var(--radius-card);background:var(--surface)}
+.coassessment-live-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:var(--sp-3);margin-top:var(--sp-3)}
+.coassessment-live-card-link{display:block;height:100%;border-radius:var(--radius-control);color:var(--text)}
+.coassessment-live-card-link:focus-visible{outline:0;box-shadow:var(--focus-ring)}
+.coassessment-live-item{height:100%;padding:var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface-hover);transition:border-color var(--motion-fast) var(--ease),background var(--motion-fast) var(--ease),transform var(--motion-fast) var(--ease)}
+.coassessment-live-card-link:hover .coassessment-live-item{border-color:var(--accent);background:var(--surface);transform:translateY(-1px)}
+.coassessment-live-item h3{margin:0;color:var(--ink);font-size:var(--fs-strong);font-weight:750}
+.coassessment-live-meta{display:flex;flex-wrap:wrap;gap:var(--sp-2) var(--sp-4);margin-top:var(--sp-2);color:var(--text-muted);font-size:var(--fs-sm)}
+.coassessment-live-footer{margin-top:var(--sp-3);padding-top:var(--sp-2);border-top:1px solid var(--border);color:var(--accent);font-size:var(--fs-sm);font-weight:650}
+.coassessment-live-now{display:inline-flex;align-items:center;gap:6px;color:var(--tone-success-fg);font-size:var(--fs-micro);font-weight:750;text-transform:uppercase;letter-spacing:.04em}
+.coassessment-live-dot{width:8px;height:8px;border-radius:50%;background:var(--success)}
+.coassessment-visual-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-3)}
+.coassessment-data-card{min-width:0;padding:var(--sp-4);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.coassessment-data-card h2{margin:0;font-size:var(--fs-heading);font-weight:750}
+.coassessment-data-subtitle{margin:var(--sp-1) 0 var(--sp-4);color:var(--text-muted);font-size:var(--fs-sm)}
+.coassessment-stage-chart{display:grid;grid-template-columns:minmax(140px,180px) minmax(0,1fr);align-items:center;gap:var(--sp-4)}
+.coassessment-stage-pie{width:100%;aspect-ratio:1;border:1px solid var(--border);border-radius:50%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.4)}
+.coassessment-stage-legend{display:grid;gap:var(--sp-3);margin:0;padding:0;list-style:none}
+.coassessment-stage-legend li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:var(--sp-2);font-size:var(--fs-sm)}
+.coassessment-stage-swatch{width:11px;height:11px;border-radius:3px;background:var(--text-subtle)}
+.coassessment-stage-swatch.draft{background:#d28a08}
+.coassessment-stage-swatch.active{background:var(--success)}
+.coassessment-stage-swatch.review{background:var(--accent)}
+.coassessment-stage-swatch.signed_off{background:var(--primary)}
+.coassessment-stage-swatch.released{background:var(--text-muted)}
+.coassessment-stage-legend strong{white-space:nowrap;color:var(--ink)}
+.coassessment-stage-legend small{color:var(--text-muted);font-weight:500}
+.coassessment-roster-list{display:grid;gap:var(--sp-3);margin:0;padding:0;list-style:none}
+.coassessment-roster-label{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2);margin-bottom:var(--sp-1);font-size:var(--fs-sm)}
+.coassessment-roster-label a{overflow:hidden;color:var(--text);font-weight:650;text-overflow:ellipsis;white-space:nowrap}
+.coassessment-roster-label a:hover,.coassessment-recent-name:hover{color:var(--accent)}
+.coassessment-roster-label strong{flex:0 0 auto}
+.coassessment-roster-track{height:12px;overflow:hidden;border-radius:var(--radius-pill);background:var(--surface-sunken)}
+.coassessment-roster-fill{height:100%;border-radius:inherit;background:var(--accent);transition:width var(--motion) var(--ease)}
+.coassessment-roster-axis{display:flex;justify-content:space-between;margin-top:var(--sp-1);padding-left:0;color:var(--text-muted);font-size:var(--fs-micro)}
+.coassessment-recent{overflow:hidden;padding:0;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.coassessment-recent-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);padding:var(--sp-4);border-bottom:1px solid var(--border)}
+.coassessment-recent-head h2{margin:0;font-size:var(--fs-heading);font-weight:750}
+.coassessment-recent .table{margin:0;vertical-align:middle}
+.coassessment-recent .table th{color:var(--text-muted);font-size:var(--fs-micro);font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.coassessment-recent .table td{font-size:var(--fs-sm)}
+.coassessment-recent-name{color:var(--text);font-size:var(--fs-body);font-weight:700;text-decoration:none}
+.coassessment-recent-name:hover{text-decoration:none;color:var(--accent)}
+.coassessment-recent-secondary{display:block;margin-top:3px;color:var(--text-muted);font-size:var(--fs-micro)}
+.coassessment-recent .coassessment-actions-cell{width:1%;white-space:nowrap}
+.coassessment-recent .coassessment-actions-cell .dropdown-menu{z-index:var(--z-dropdown)}
+.coassessment-empty{padding:var(--sp-5);text-align:center;color:var(--text-muted)}
+.coassessment-empty h2{margin:0 0 var(--sp-2);color:var(--ink);font-size:var(--fs-title)}
+@media(max-width:1199.98px){.coassessment-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:767.98px){.coassessment-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.coassessment-visual-grid{grid-template-columns:1fr}}
+@media(max-width:575.98px){.coassessment-kpi{padding:var(--sp-3)}.coassessment-kpi-value{font-size:1.5rem}.coassessment-stage-chart{grid-template-columns:minmax(120px,150px) minmax(0,1fr);gap:var(--sp-3)}.coassessment-recent-head{align-items:flex-start;flex-direction:column}.coassessment-recent .table{min-width:680px}}
+</style>
+{% include 'service_domains/_partials/coassessment_row_actions_styles.html' %}
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'coassessment_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>New co-assessment</a>
+{% endblock %}
+
+{% block content %}
+<div class="stage-content coassessment-dashboard">
+  <header class="hero-banner between-banner">
+    <div class="hero-meta">
+      <p>A live summary of your co-assessments, presentation stages, rubrics, and moderation status.</p>
+    </div>
+    <div class="hero-actions">
+      <a href="{% url 'coassessment_table' %}" class="btn btn-outline-primary">Browse co-assessments</a>
+      <a href="{% url 'coassessment_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create co-assessment</a>
+    </div>
+  </header>
+
+  <section class="coassessment-kpis" aria-label="Co-assessment key metrics">
+    <article class="coassessment-kpi">
+      <div class="coassessment-kpi-label">Total co-assessments</div>
+      <div class="coassessment-kpi-value">{{ dashboard_stats.total }}</div>
+      <div class="coassessment-kpi-note">Your events in this organization</div>
+    </article>
+    <article class="coassessment-kpi">
+      <div class="coassessment-kpi-label">In progress</div>
+      <div class="coassessment-kpi-value">{{ dashboard_stats.active }}</div>
+      <div class="coassessment-kpi-note">Presentations live on stage</div>
+    </article>
+    <article class="coassessment-kpi">
+      <div class="coassessment-kpi-label">Draft</div>
+      <div class="coassessment-kpi-value">{{ dashboard_stats.draft }}</div>
+      <div class="coassessment-kpi-note">Setup not finished</div>
+    </article>
+    <article class="coassessment-kpi">
+      <div class="coassessment-kpi-label">Moderation &amp; review</div>
+      <div class="coassessment-kpi-value">{{ dashboard_stats.review }}</div>
+      <div class="coassessment-kpi-note">Pending chair sign-off</div>
+    </article>
+    <article class="coassessment-kpi">
+      <div class="coassessment-kpi-label">Results released</div>
+      <div class="coassessment-kpi-value">{{ dashboard_stats.released }}</div>
+      <div class="coassessment-kpi-note">{% if dashboard_stats.signed_off %}{{ dashboard_stats.signed_off }} signed off{% else %}Final grades published{% endif %}</div>
+    </article>
+    <article class="coassessment-kpi">
+      <div class="coassessment-kpi-label">Presenting groups</div>
+      <div class="coassessment-kpi-value">{{ dashboard_stats.total_groups }}</div>
+      <div class="coassessment-kpi-note">{{ dashboard_stats.total_criteria }} criteria across your events</div>
+    </article>
+  </section>
+
+  {% if attention_sessions %}
+  <section class="coassessment-live-panel" aria-labelledby="coassessment-live-heading">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <div>
+        <span class="coassessment-live-now"><span class="coassessment-live-dot" aria-hidden="true"></span>Live and moderation queue</span>
+        <h2 class="h5 mt-1 mb-0" id="coassessment-live-heading">{{ attention_sessions|length }} co-assessment{{ attention_sessions|length|pluralize }} need attention</h2>
+      </div>
+      <a href="{% url 'coassessment_table' %}?status=active" class="btn btn-sm btn-outline-primary">View active co-assessments</a>
+    </div>
+    <div class="coassessment-live-list">
+      {% for sess in attention_sessions %}
+      {% if sess.status == 'active' %}
+        {% url 'coassessment_live_chair' session_id=sess.pk as card_url %}
+      {% elif sess.status == 'review' %}
+        {% url 'coassessment_results' session_id=sess.pk as card_url %}
+      {% else %}
+        {% url 'coassessment_setup' session_id=sess.pk as card_url %}
+      {% endif %}
+      <a class="coassessment-live-card-link" href="{{ card_url }}">
+        <article class="coassessment-live-item">
+          <h3>{{ sess.name }}</h3>
+          <div class="coassessment-live-meta">
+            <span>{{ sess.group_count }} group{{ sess.group_count|pluralize }}</span> · <span>{{ sess.criterion_count }} criteria</span> · <span>{{ sess.examiner_count }} examiner{{ sess.examiner_count|pluralize }}</span>
+          </div>
+          <div class="coassessment-live-meta">
+            <span>{% if sess.status == 'active' %}Presentation stage in progress · Monitor turns or moderate variances{% else %}Stage scoring finished · Review marks, resolve flags, and sign off{% endif %}</span>
+          </div>
+          <div class="coassessment-live-footer">
+            {% if sess.status == 'active' %}Manage live stage{% else %}Review &amp; moderate{% endif %}
+          </div>
+        </article>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% else %}
+  <section class="coassessment-live-panel" aria-labelledby="coassessment-live-heading">
+    <h2 class="h6 mb-1" id="coassessment-live-heading">None of your co-assessments are in progress right now</h2>
+    <p class="text-muted small mb-0">Active presentations and events pending chair review will appear here.</p>
+  </section>
+  {% endif %}
+
+  <section class="coassessment-visual-grid" aria-label="Co-assessment data visualizations">
+    <article class="coassessment-data-card" aria-labelledby="coassessment-stage-heading">
+      <h2 id="coassessment-stage-heading">Co-assessment stages</h2>
+      <p class="coassessment-data-subtitle">Distribution across your {{ dashboard_stats.total }} co-assessment{{ dashboard_stats.total|pluralize }}.</p>
+      {% if dashboard_stats.total %}
+      <div class="coassessment-stage-chart">
+        <div class="coassessment-stage-pie" style="background:{{ stage_pie_background }}" aria-hidden="true"></div>
+        <ul class="coassessment-stage-legend" aria-label="Co-assessment stage breakdown">
+          {% for stage in stage_distribution %}
+          <li>
+            <span class="coassessment-stage-swatch {{ stage.key }}" aria-hidden="true"></span>
+            <span>{{ stage.label }}</span>
+            <strong>{{ stage.count }} <small>({{ stage.percentage }}%)</small></strong>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% else %}
+        <p class="coassessment-empty mb-0">Stage data will appear after you create a co-assessment.</p>
+      {% endif %}
+    </article>
+
+    <article class="coassessment-data-card" aria-labelledby="coassessment-bars-heading">
+      <h2 id="coassessment-bars-heading">Largest presentations</h2>
+      <p class="coassessment-data-subtitle">Groups by co-assessment; bars are scaled to the event with the most presenting groups.</p>
+      {% if largest_sessions and largest_group_count %}
+      <ol class="coassessment-roster-list">
+        {% for sess in largest_sessions %}
+        <li>
+          <div class="coassessment-roster-label">
+            <a href="{% url 'coassessment_setup' session_id=sess.pk %}">{{ sess.name }}</a>
+            <strong>{{ sess.group_count }}</strong>
+          </div>
+          <div class="coassessment-roster-track" aria-hidden="true">
+            <div class="coassessment-roster-fill" style="width:{{ sess.group_bar_percent }}%"></div>
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+      <div class="coassessment-roster-axis" aria-hidden="true"><span>0 groups</span><span>{{ largest_group_count }} group{{ largest_group_count|pluralize }}</span></div>
+      {% else %}
+        <p class="coassessment-empty mb-0">Group data will appear after groups are added to a co-assessment.</p>
+      {% endif %}
+    </article>
+  </section>
+
+  <section class="coassessment-recent" aria-labelledby="coassessment-recent-heading">
+    <div class="coassessment-recent-head">
+      <div>
+        <h2 id="coassessment-recent-heading">Recent co-assessments</h2>
+        <p class="coassessment-data-subtitle mb-0">Your five most recently created co-assessments.</p>
+      </div>
+      <a href="{% url 'coassessment_table' %}" class="btn btn-outline-primary btn-sm">View all co-assessments</a>
+    </div>
+    {% if recent_sessions %}
+    <div class="table-responsive">
+      <table class="table table-hover" data-coassessment-row-navigation>
+        <caption class="visually-hidden">Five most recently created co-assessments</caption>
+        <thead>
+          <tr>
+            <th scope="col">Co-assessment</th>
+            <th scope="col">Status</th>
+            <th scope="col">Groups</th>
+            <th scope="col">Criteria</th>
+            <th scope="col">Examiners</th>
+            <th scope="col">Created</th>
+            <th scope="col"><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for sess in recent_sessions %}
+          {% if sess.status == 'active' %}
+            {% url 'coassessment_live_chair' session_id=sess.pk as row_url %}
+          {% elif sess.status == 'review' or sess.status == 'released' %}
+            {% url 'coassessment_results' session_id=sess.pk as row_url %}
+          {% else %}
+            {% url 'coassessment_setup' session_id=sess.pk as row_url %}
+          {% endif %}
+          <tr class="coassessment-row-clickable" data-coassessment-row-href="{{ row_url }}">
+            <td>
+              <a class="coassessment-recent-name" href="{{ row_url }}">{{ sess.name }}</a>
+              <span class="coassessment-recent-secondary">
+                {% if sess.status == 'draft' %}Next: complete rubric and roster setup
+                {% elif sess.status == 'active' %}Next: manage live stage turns and scoring
+                {% elif sess.status == 'review' %}Next: review variance and moderate marks
+                {% else %}Next: view signed results and leaderboard{% endif %}
+              </span>
+            </td>
+            <td>
+              <span class="badge {% if sess.status == 'active' %}bg-success-subtle text-success-emphasis{% elif sess.status == 'draft' %}bg-warning-subtle text-warning-emphasis{% elif sess.status == 'review' %}bg-info-subtle text-info-emphasis{% else %}bg-secondary-subtle text-secondary-emphasis{% endif %}">{{ sess.get_status_display }}</span>
+            </td>
+            <td>{{ sess.group_count }}</td>
+            <td>{{ sess.criterion_count }}</td>
+            <td>{{ sess.examiner_count }}</td>
+            <td>{{ sess.created_at|date:'d M Y' }}</td>
+            <td class="coassessment-actions-cell text-end">{% include 'service_domains/_partials/coassessment_row_actions.html' with session=sess %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <div class="coassessment-empty">
+        <h2>You have not created a co-assessment yet</h2>
+        <p>Your dashboard shows co-assessments you own. Create a co-assessment to see stage turns, rubrics, and moderation status here.</p>
+        <a href="{% url 'coassessment_create' %}" class="btn btn-primary">Create a co-assessment</a>
+      </div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% include 'service_domains/_partials/coassessment_clickable_rows_script.html' %}
+{% endblock %}

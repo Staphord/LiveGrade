@@ -1,0 +1,27 @@
+<form method="post" action="{% url 'assessment_session_duplicate' session.pk %}" data-session-action-form novalidate>
+  {% csrf_token %}
+  {% include 'partials/_inline_message.html' with messages=form.non_field_errors tone='danger' message_id='session-duplicate-form-error' %}
+  <p class="text-muted mb-3">Creates a draft with this session’s setup.</p>
+  <div class="session-action-field{% if form.name.errors %} has-error{% endif %}">
+    <label class="form-label" for="{{ form.name.id_for_label }}">{{ form.name.label }}</label>
+    {{ form.name }}
+    {% include 'partials/_inline_message.html' with messages=form.name.errors tone='danger' message_id='id_name_inline_message' %}
+  </div>
+  <fieldset class="border rounded-3 p-3 mb-3">
+    <legend class="h6">Copy data</legend>
+    <div class="session-action-field{% if form.include_roster.errors %} has-error{% endif %}">
+      <div class="form-check">{{ form.include_roster }}<label class="form-check-label" for="{{ form.include_roster.id_for_label }}">Copy student roster</label></div>
+      <p class="form-text ms-4 mb-1" id="id_include_roster_helptext">Includes names, IDs, emails, and programmes.</p>
+      {% include 'partials/_inline_message.html' with messages=form.include_roster.errors tone='danger' message_id='id_include_roster_inline_message' %}
+    </div>
+    <div class="session-action-field{% if form.include_groups.errors %} has-error{% endif %}">
+      <div class="form-check">{{ form.include_groups }}<label class="form-check-label" for="{{ form.include_groups.id_for_label }}">Copy presentation groups</label></div>
+      <p class="form-text ms-4 mb-1" id="id_include_groups_helptext">Group members copy only with the roster.</p>
+      {% include 'partials/_inline_message.html' with messages=form.include_groups.errors tone='danger' message_id='id_include_groups_inline_message' %}
+    </div>
+  </fieldset>
+  <div class="session-action-form-actions">
+    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+    <button type="submit" class="btn btn-primary">Create draft copy</button>
+  </div>
+</form>

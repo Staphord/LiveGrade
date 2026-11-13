@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block title %}New competition · LiveGrade{% endblock %}
+{% block page_title %}Competition setup{% endblock %}
+
+{% block content %}
+{% include 'service_domains/_workspace_styles.html' %}
+{% include 'service_domains/_team_competition_styles.html' %}
+{% include 'service_domains/_panel_ui_styles.html' %}
+<div class="container-fluid py-4 service-workspace tc-workspace">
+  <p><a href="{% url 'competition_table' %}">← Competitions</a></p>
+  <header class="tc-hero mb-4" id="competition-overview">
+    <div>
+      <p class="panel-eyebrow text-muted small mb-1">Competition · New</p>
+      <h1>New competition</h1>
+      <p>Configure the competition name, audience weighting, and minimum scorecard coverage.</p>
+    </div>
+    <span class="tc-status is-success">Draft</span>
+  </header>
+
+  <div class="panel-step-layout mt-3">
+    {% include 'partials/_stepper.html' with steps=stepper_steps %}
+
+    <div>
+      <section class="tc-panel mb-3" id="competition-details-section" aria-labelledby="competition-details-heading">
+        <header>
+          <div>
+            <h2 id="competition-details-heading" class="h4">1. Competition details</h2>
+            <p>Configure the competition name, audience weighting, and minimum scorecard coverage.</p>
+          </div>
+          <span class="tc-status is-success">Draft</span>
+        </header>
+
+        <form method="post" class="service-flow-form" data-panel-details-form data-dirty-initial="{{ form.is_bound|yesno:'true,false' }}" novalidate>{% csrf_token %}
+          <input type="hidden" name="setup_step" value="details">
+          <input type="hidden" name="leave_to" value="">
+          {% include 'partials/_form_fields.html' with form=form %}
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3 pt-3 border-top">
+            <button class="btn btn-outline-primary" type="submit">Save details</button>
+            <button class="btn btn-primary" type="submit" name="advance" value="1">Next: Tracks and categories <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </div>
+</div>
+{% include 'partials/_unsaved_changes.html' with form_selector='form[data-panel-details-form]' dialog_id='competition-create-unsaved-dialog' title_id='competition-create-unsaved-title' dialog_title='Leave competition setup?' dialog_body='You have unsaved competition details. Save before leaving, or discard your changes.' save_btn_text='Save details' has_leave_to=True %}
+{% endblock %}

@@ -1,8 +1,12 @@
 <div class="page-tabs mb-3">
+
   {% if is_owner is not False %}
   <a href="{% url 'assessment_session_detail' session.pk %}" class="page-tab {% if active == 'overview' %}active{% endif %}">
     <i class="bi bi-broadcast me-1"></i>Live control
   </a>
+  {% endif %}
+  {% if is_owner is not False and session.service == 'classroom' %}
+  <a href="{% url 'assessment_polls' session.pk %}" class="page-tab">Polls</a>
   {% endif %}
   {% if is_owner is not False and session.status == 'live' %}
   <a href="{% url 'assessment_setup' session.pk %}" class="page-tab {% if active == 'setup' %}active{% endif %}">

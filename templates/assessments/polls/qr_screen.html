@@ -1,0 +1,100 @@
+{% extends 'assessments/student/_student_base.html' %}
+{% block title %}Poll access - {{ poll.question }}{% endblock %}
+{% block hero_sub %}Public poll display{% endblock %}
+{% block main_class %} public-poll-main public-poll-qr-main{% endblock %}
+{% block extra_css %}{% include 'assessments/polls/_participant_ui_styles.html' %}
+<style nonce="{{ csp_nonce }}">
+.public-poll-qr-card{max-width:72rem;margin-inline:auto}
+.public-poll-qr-heading{display:grid;gap:.8rem;padding-bottom:1.25rem;border-bottom:1px solid var(--border)}
+.public-poll-qr-heading h2{margin:0;color:var(--ink);font-size:clamp(1.8rem,4vw,3rem);font-weight:800;line-height:1.1;overflow-wrap:anywhere;text-wrap:balance}
+.public-poll-qr-meta{display:flex;flex-wrap:wrap;gap:.5rem 1rem;color:var(--text-muted);font-size:var(--fs-sm)}
+.public-poll-qr-meta span{display:inline-flex;align-items:center;gap:.4rem}
+.public-poll-qr-content{display:grid;grid-template-columns:minmax(0,1fr) minmax(18rem,.9fr);align-items:center;gap:clamp(1.25rem,4vw,3rem);padding-top:clamp(1.25rem,3vw,2rem)}
+.public-poll-qr-instructions h3{margin:0 0 .55rem;font-size:clamp(1.35rem,2.5vw,2rem);font-weight:750}
+.public-poll-qr-instructions p{max-width:38rem;margin:0;color:var(--text-muted);font-size:clamp(1rem,1.5vw,1.2rem);line-height:1.55}
+.public-poll-qr-voting-link{display:inline-flex;margin-top:1rem;font-weight:650}
+.public-poll-qr-image-wrap{display:grid;place-items:center;padding:clamp(.75rem,2vw,1.25rem);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface-hover)}
+.public-poll-qr-image-wrap img{display:block;width:min(100%,26rem);height:auto;aspect-ratio:1;object-fit:contain;padding:.5rem;border:1px solid var(--border);border-radius:var(--radius-control);background:#fff}
+.public-poll-qr-notice{display:flex;align-items:flex-start;gap:.75rem;margin-top:1.25rem;padding:1rem 1.1rem;border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface-hover);color:var(--text-muted)}
+.public-poll-qr-notice i{flex:0 0 auto;margin-top:.2rem;color:var(--accent)}
+.public-poll-qr-notice p{margin:0}
+.public-poll-qr-closed{margin-top:1.5rem;padding:1.25rem;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface-hover)}
+.public-poll-qr-closed h3{margin:0 0 .45rem;font-size:var(--fs-heading);font-weight:750}
+.public-poll-qr-closed p{color:var(--text-muted)}
+.public-poll-qr-live-state{margin:0;color:var(--text-muted);font-size:var(--fs-sm)}
+@media(max-width:700px){.public-poll-qr-content{grid-template-columns:minmax(0,1fr)}.public-poll-qr-instructions{order:1}.public-poll-qr-image-wrap{order:0}.public-poll-qr-image-wrap img{width:min(100%,22rem)}}
+</style>{% endblock %}
+{% block content %}
+<div class="public-poll-screen public-poll-qr-screen">
+  <section class="s-card public-poll-qr-card" aria-labelledby="public-poll-qr-title">
+    <div class="public-poll-screen-status"><span id="public-poll-qr-badge">{% include 'assessments/polls/_status_badge.html' %}</span><span id="public-poll-qr-live-state" class="public-poll-qr-live-state" role="status" aria-live="polite">{% if poll.accepting_responses %}Ready to vote{% else %}Voting has ended{% endif %}</span></div>
+    <header class="public-poll-qr-heading">
+      <h2 id="public-poll-qr-title">{{ poll.question }}</h2>
+      <div class="public-poll-qr-meta">
+        {% if poll.questions.count > 1 %}<span><i class="bi bi-list-ol" aria-hidden="true"></i>{{ poll.questions.count }} questions</span>{% endif %}
+        {% if poll.deadline %}<span><i class="bi bi-clock" aria-hidden="true"></i>Closes <time data-local-deadline datetime="{{ poll.deadline|date:'c' }}">{{ poll.deadline|date:'j M Y, H:i' }}</time></span>{% endif %}
+      </div>
+    </header>
+
+    {% if poll.accepting_responses and qr_available %}
+      <div class="public-poll-qr-content" id="public-poll-qr-active">
+        <div class="public-poll-qr-instructions"><h3>Scan to vote</h3><p>Open your phone camera and scan the code. {% if poll.standalone %}Anyone with the link can respond anonymously.{% else %}Students can enter their class roster name or ID to respond.{% endif %}</p><a class="public-poll-qr-voting-link" href="{{ voting_url }}">Open the voting page</a></div>
+        <div class="public-poll-qr-image-wrap"><img src="{{ qr_image_url }}" width="416" height="416" fetchpriority="high" alt="QR code to open the poll voting page"></div>
+      </div>
+    {% elif poll.accepting_responses %}
+      <div class="public-poll-qr-notice" id="public-poll-personal-links-note" role="note"><i class="bi bi-person-vcard" aria-hidden="true"></i><p><strong>Use your personal voting link.</strong><br>This poll requires individual links. Ask your teacher for yours.</p></div>
+    {% endif %}
+
+    <section class="public-poll-qr-closed" id="public-poll-qr-closed"{% if poll.accepting_responses %} hidden{% endif %} aria-labelledby="public-poll-qr-closed-heading">
+      <h3 id="public-poll-qr-closed-heading">Voting is closed</h3>
+      <p class="mb-3">This poll is no longer accepting responses. You can view the public results.</p>
+      <a class="btn btn-primary" href="{{ results_url }}"><i class="bi bi-bar-chart me-1" aria-hidden="true"></i>View public results</a>
+    </section>
+  </section>
+</div>
+{% if poll.accepting_responses %}{{ state_url|json_script:'public-poll-qr-state-url' }}
+<script nonce="{{ csp_nonce }}">
+(function(){
+  const stateUrl=JSON.parse(document.getElementById('public-poll-qr-state-url').textContent);
+  const active=document.getElementById('public-poll-qr-active');
+  const personalNote=document.getElementById('public-poll-personal-links-note');
+  const closed=document.getElementById('public-poll-qr-closed');
+  const liveState=document.getElementById('public-poll-qr-live-state');
+  const badge=document.getElementById('public-poll-qr-badge');
+  let checking=false;
+  async function refreshState(){
+    if(checking||document.hidden)return;
+    checking=true;
+    try{
+      const response=await fetch(stateUrl,{cache:'no-store'});
+      if(!response.ok)throw new Error('Poll state unavailable');
+      const state=await response.json();
+      if(state.accepting){if(liveState)liveState.textContent='Ready to vote';return;}
+      if(active)active.hidden=true;
+      if(personalNote)personalNote.hidden=true;
+      if(closed)closed.hidden=false;
+      if(liveState)liveState.textContent='Voting has ended';
+      if(badge){
+        const cancelled=state.status==='cancelled';
+        const confirmed=state.status==='confirmed';
+        const badgeClass=cancelled?'poll-status-cancelled':confirmed?'poll-status-confirmed':'poll-status-closed';
+        const iconClass=cancelled?'bi-slash-circle-fill':confirmed?'bi-check-circle-fill':'bi-lock-fill';
+        const label=cancelled?'Cancelled':confirmed?'Decision confirmed':'Closed';
+        badge.replaceChildren();
+        const icon=document.createElement('i');
+        icon.className='bi '+iconClass;
+        icon.setAttribute('aria-hidden','true');
+        badge.className='poll-status-badge '+badgeClass;
+        badge.append(icon,document.createTextNode(' '+label));
+      }
+      window.clearInterval(timer);
+    }catch(_){
+      if(liveState)liveState.textContent='Live status unavailable. The display will keep checking.';
+    }finally{checking=false;}
+  }
+  const timer=window.setInterval(refreshState,5000);
+  window.addEventListener('pagehide',function(){window.clearInterval(timer);},{once:true});
+})();
+</script>{% endif %}
+{% include 'assessments/polls/_local_deadline.html' %}
+{% endblock %}

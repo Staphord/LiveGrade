@@ -46,6 +46,13 @@ class OwnedQuerySet(OrganizationQuerySet):
             return self.none()
         return self.filter(created_by_id=user.pk)
 
+    def for_service(self, service):
+        """Rows of one service (a registry slug). With no service there is nothing:
+        a query that loses its service shows nothing, never every service's rows."""
+        if not service:
+            return self.none()
+        return self.filter(service=service)
+
 
 class OwnedManager(models.Manager.from_queryset(OwnedQuerySet)):
     """Default manager for scoped, owned models. Deliberately not auto-filtering."""

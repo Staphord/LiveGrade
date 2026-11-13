@@ -15,19 +15,37 @@ from django.test import SimpleTestCase, TestCase
 from django.urls import URLResolver, get_resolver, reverse
 
 from accounts.testing import make_org, make_user, sign_in
+from portal.services import SERVICES
 
 GET, POST = 'get', 'post'
 LOGIN = 'login'  # redirected to the sign-in page
 ACTORS = ('anonymous', 'unauthorised', 'lecturer')
 
-MISSING = {'int': 999999, 'uuid': uuid.UUID('00000000-0000-4000-8000-000000000000')}
+MISSING = {'int': 999999, 'uuid': uuid.UUID('00000000-0000-4000-8000-000000000000'),
+           'serviceslug': 'classroom'}
 
 LECTURER_PAGES = {
     # name: (method, anonymous, unauthorised, lecturer)
+    'assessment_dashboard':   (GET, LOGIN, 403, 200),
     'assessment_session_list':   (GET, LOGIN, 403, 200),
+    'assessment_session_bulk_delete': (POST, LOGIN, 403, '/classroom/app/sessions/'),
     'assessment_session_create': (GET, LOGIN, 403, 200),
+    'assessment_template_list': (GET, LOGIN, 403, 200),
+    'assessment_group_onboarding_sample': (GET, LOGIN, 403, 200),
+    'assessment_rubric_onboarding_sample': (GET, LOGIN, 403, 200),
+    'standalone_poll_list': (GET, LOGIN, 403, 200),
+    'standalone_poll_sample': (GET, LOGIN, 403, 200),
+    'standalone_poll_delete': (POST, LOGIN, 403, '/polls/app/'),
+    'assessment_walkthrough_start': (POST, LOGIN, 403, '/classroom/app/new/'),
+    'assessment_walkthrough_dismiss': (POST, LOGIN, 403, '/classroom/app/sessions/'),
 }
 LECTURER_ROW_ROUTES = {
+    'standalone_poll_state': GET,
+    'assessment_poll_delete': POST,
+    'assessment_polls': GET, 'assessment_leaderboard_scores': POST,
+    'assessment_poll_questions_sample': GET,
+    'assessment_session_duplicate': GET,
+    'assessment_template_save': GET, 'assessment_template_delete': POST,
     'assessment_session_edit': GET, 'assessment_session_detail': GET,
     'assessment_live_state': GET, 'assessment_session_delete': POST,
     'assessment_roster': GET, 'assessment_roster_search': GET,
@@ -42,9 +60,11 @@ LECTURER_ROW_ROUTES = {
     'assessment_set_next_group': POST, 'assessment_toggle_joining': POST,
     'assessment_toggle_pause': POST, 'assessment_adjust_timer': POST,
     'assessment_close_turn': POST, 'assessment_close_session': POST,
+    'assessment_public_results': POST,
     'assessment_participation': GET, 'assessment_participation_refresh': GET,
     'assessment_results': GET, 'assessment_results_refresh': GET,
-    'assessment_results_export': GET, 'assessment_qr': GET, 'assessment_transfer': GET,
+    'assessment_results_export': GET, 'assessment_results_export_csv': GET,
+    'assessment_qr': GET, 'assessment_transfer': GET,
     'assessment_setup': GET, 'assessment_group_import_preview': GET,
     'assessment_group_import_sample': GET, 'assessment_groups_bulk_delete': POST,
     'assessment_rubric_import': POST, 'assessment_rubric_import_preview': GET,
@@ -52,29 +72,189 @@ LECTURER_ROW_ROUTES = {
     'assessment_rubric_bulk_delete': POST,
 }
 STUDENT_ROUTES = {
-    # Reached by session link, no login: an unknown link is a 404 for everybody.
+    'classroom_poll': GET, 'classroom_poll_results': GET,
+    'classroom_poll_qr': GET, 'classroom_poll_qr_screen': GET, 'classroom_poll_invitation': GET,
+    'standalone_poll_live_results': GET, 'standalone_poll_live_state': GET,
+    'standalone_poll_public': GET, 'standalone_poll_qr': GET, 'standalone_poll_qr_screen': GET,
+    # Reached by participant link, no login: an unknown link is a 404 for everybody.
     'assessment_join_screen': GET, 'assessment_join_screen_state': GET,
-    'assessment_join_screen_qr': GET, 'student_join': GET, 'student_evaluate': GET,
+    'assessment_join_screen_qr': GET, 'student_join': GET, 'student_privacy_notice': GET,
+    'student_evaluate': GET,
     'student_submitted': GET, 'student_check_expiry': POST, 'student_grading_ping': POST,
+    'showcase_rate_exhibit': GET, 'showcase_rating_state': GET, 'showcase_exhibit_label': GET, 'showcase_exhibit_qr': GET,
+    'showcase_judge_workspace': GET, 'showcase_judge_state': GET,
+    'showcase_visit': GET, 'showcase_visit_qr': GET,
+    'showcase_public_results': GET,
+    'showcase_certificate_verify': GET,
+    'training_anonymous_feedback': GET,
+    'training_learner_report': GET,
+    'training_certificate_verify': GET,
+    'competition_audience_join': GET,
+    'competition_audience_vote': GET,
+    'competition_judge_scorecard': GET,
+    'competition_public_leaderboard': GET,
+    'panel_examiner': GET,
+    'panel_live_display': GET,
+    'panel_live_display_updates': GET,
+    'panel_entrant_results': GET,
+}
+CLOSED_SERVICE_ROUTES = {
+    # Owner workspaces under construction stay unreachable while the registry has no dashboard.
+    'showcase_event_list': GET,
+    'showcase_event_table': GET,
+    'showcase_event_create': GET,
+    'showcase_event_manage': GET,
+    'showcase_event_delete': POST,
+    'showcase_event_bulk_delete': POST,
+    'showcase_live_monitor': GET,
+    'showcase_live_activity': GET,
+    'showcase_live_control': GET,
+    'showcase_live_state': GET,
+    'showcase_live_action': POST,
+    'showcase_event_labels': GET,
+    'showcase_event_transition': POST,
+    'showcase_exhibit_import': GET,
+    'showcase_exhibit_import_sample': GET,
+    'showcase_rubric_import': POST,
+    'showcase_rubric_import_sample': GET,
+    'training_series_list': GET,
+    'training_series_table': GET,
+    'training_series_create': GET,
+    'training_series_manage': GET,
+    'training_series_delete': POST,
+    'training_series_bulk_delete': POST,
+    'training_series_delete_export': GET,
+    'training_series_bulk_delete_export': POST,
+    'training_session_competencies': GET,
+    'training_series_trends': GET,
+    'training_series_export': GET,
+    'training_series_roster_import': GET,
+    'training_series_roster_preview': GET,
+    'training_series_roster_sample': GET,
+    'training_session_live': GET,
+    'training_session_live_state': GET,
+    'training_session_live_action': POST,
+    'training_session_feedback_qr': GET,
+    'panel_hearing_list': GET,
+    'panel_hearing_table': GET,
+    'panel_hearing_create': GET,
+    'panel_hearing_delete': POST,
+    'panel_hearing_bulk_delete': POST,
+    'panel_hearing_live': GET,
+    'panel_hearing_live_state': GET,
+    'panel_hearing_live_action': POST,
+    'panel_hearing_live_display_toggle': POST,
+    'combined_assessment_list': GET,
+    'combined_assessment_create': GET,
+    'combined_assessment_detail': GET,
+    'combined_assessment_delete': POST,
+    'combined_assessment_bulk_delete': POST,
+    'combined_assessment_live_state': GET,
+    'panel_hearing_manage': GET,
+    'panel_candidate_import': GET,
+    'panel_candidate_import_sample': GET,
+    'panel_rubric_import': GET,
+    'panel_rubric_import_sample': GET,
+    'panel_invitation_import': GET,
+    'panel_invitation_import_sample': GET,
+    'panel_results_review': GET,
+    'panel_oversight_list': GET,
+    'panel_oversight_detail': GET,
+    'panel_recusal_export': GET,
+    'panel_results_export': GET,
+    'competition_list': GET,
+    'competition_table': GET,
+    'competition_create': GET,
+    'competition_manage': GET,
+    'competition_delete': POST,
+    'competition_bulk_delete': POST,
+    'competition_entry_import': POST,
+    'competition_entry_import_sample': GET,
+    'competition_results_export': GET,
+    'competition_judge_scorecard': GET,
+    'competition_live_control': GET,
+    'competition_live_state': GET,
+    'competition_live_action': POST,
+    'competition_live_projector_toggle': POST,
+    # Added with the co-assessment, projector and import screens; all answer 404 while their service is closed.
+    'coassessment_activate_turn': POST,
+    'coassessment_advance_turn': POST,
+    'coassessment_bulk_delete': POST,
+    'coassessment_create': GET,
+    'coassessment_dashboard': GET,
+    'coassessment_delete': POST,
+    'coassessment_examiner_import': POST,
+    'coassessment_examiner_portal': GET,
+    'coassessment_examiner_sample': GET,
+    'coassessment_export_csv': GET,
+    'coassessment_export_results_csv': GET,
+    'coassessment_live_chair': GET,
+    'coassessment_live_console': GET,
+    'coassessment_live_state': GET,
+    'coassessment_moderate': POST,
+    'coassessment_pause_turn': POST,
+    'coassessment_peer_join': GET,
+    'coassessment_peer_scorecard': GET,
+    'coassessment_peer_submit': POST,
+    'coassessment_projector': GET,
+    'coassessment_public_qr': GET,
+    'coassessment_public_results': GET,
+    'coassessment_public_screen': GET,
+    'coassessment_public_state': GET,
+    'coassessment_publish': POST,
+    'coassessment_release': POST,
+    'coassessment_results': GET,
+    'coassessment_roster_import': POST,
+    'coassessment_roster_sample': GET,
+    'coassessment_rubric_import': POST,
+    'coassessment_rubric_sample': GET,
+    'coassessment_setup': GET,
+    'coassessment_setup_examiners': GET,
+    'coassessment_setup_policy': GET,
+    'coassessment_setup_review': GET,
+    'coassessment_setup_roster': GET,
+    'coassessment_setup_rubric': GET,
+    'coassessment_sign_off': POST,
+    'coassessment_stage_display': GET,
+    'coassessment_table': GET,
+    'coassessment_update_timers': POST,
+    'competition_criteria_import': POST,
+    'competition_criteria_import_sample': GET,
+    'competition_projector': GET,
+    'competition_projector_qr': GET,
+    'panel_hearing_participants': GET,
+    'showcase_event_results': GET,
+    'showcase_projector_screen': GET,
+    'training_competency_import': POST,
+    'training_competency_import_sample': GET,
+    'training_session_projector': GET,
 }
 ACCOUNT_ROUTES = {
     # LiveGrade's own sign-in and housekeeping pages.
-    'home': (GET, 200, 403, '/assessments/'),
+    'home': (GET, 200, 403, 200),
     'no_access': (GET, 403, 403, 403),
     'switch_account': (GET, 405, 405, 405),
     'switch_organization': (GET, LOGIN, 403, 405),
+    'service_switch_organization': (GET, LOGIN, 403, 405),
     'health': (GET, 200, 200, 200),
+    'readiness': (GET, 200, 200, 200),
     'oidc_authentication_callback': (GET, '/no-access/', '/no-access/', '/no-access/'),
     'oidc_authentication_init': (GET, 'idp', 'idp', 'idp'),
     'oidc_logout': (GET, 405, 405, 405),
+    # Choosing a service: a visitor is sent to sign in, somebody with no right to run
+    # LiveGrade is refused, a lecturer goes on to the service's dashboard.
+    'service_entry': (GET, LOGIN, 403, '/classroom/app/'),
+    'service_interest': (GET, 405, 405, 405),
+    'legacy_assessments_bare': (GET, '/classroom/app/', '/classroom/app/', '/classroom/app/'),
+    'legacy_assessments_root': (GET, '/classroom/app/', '/classroom/app/', '/classroom/app/'),
+    'legacy_assessments_path': (GET, 404, 404, 404),
 }
 
 URL_MATRIX = {**LECTURER_PAGES}
 URL_MATRIX.update({name: (method, LOGIN, 403, 404) for name, method in LECTURER_ROW_ROUTES.items()})
 URL_MATRIX.update({name: (method, 404, 404, 404) for name, method in STUDENT_ROUTES.items()})
+URL_MATRIX.update({name: (method, 404, 404, 404) for name, method in CLOSED_SERVICE_ROUTES.items()})
 URL_MATRIX.update(ACCOUNT_ROUTES)
-
-
 def named_patterns(resolver=None):
     """Every named URL in the project."""
     for pattern in (resolver or get_resolver()).url_patterns:
@@ -93,10 +273,11 @@ def url_arguments(pattern):
 
 
 def outcome(response):
-    if response.status_code not in (301, 302):
+    if response.status_code not in (301, 302, 307, 308):
         return response.status_code
     target = response['Location'].split('?')[0]
-    if target == reverse('oidc_authentication_init'):
+    if target == reverse('oidc_authentication_init') or any(
+            target == reverse('service_entry', args=[service.slug]) for service in SERVICES):
         return LOGIN
     if target.startswith(settings.OIDC_OP_AUTHORIZATION_ENDPOINT):
         return 'idp'

@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% block title %}{{ event.name }} · Results · LiveGrade{% endblock %}
+{% block page_title %}{{ event.name }}{% endblock %}
+
+{% block topbar_actions %}
+<div class="d-flex align-items-center gap-2">
+  {% if is_published %}
+    <a href="{{ public_results_url }}" target="_blank" rel="noopener" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i>Public results page
+    </a>
+  {% endif %}
+  <a href="{% url 'showcase_event_table' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>All events
+  </a>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style nonce="{{ csp_nonce }}">
+.results-kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));gap:.75rem;margin-bottom:1rem}
+.results-kpi .card-body{padding:.9rem 1rem}
+.results-kpi .kpi-value{font-size:var(--fs-title);font-weight:800;color:var(--ink);line-height:1.1}
+.results-kpi .kpi-label{font-size:var(--fs-sm);color:var(--text-muted)}
+.results-bar{height:.4rem;border-radius:var(--radius-pill);background:var(--surface-sunken);overflow:hidden;min-width:5rem}
+.results-bar>span{display:block;height:100%;background:var(--accent);border-radius:inherit}
+.results-live-badge{display:inline-flex;align-items:center;gap:5px;font-size:var(--fs-micro);font-weight:700;padding:.2rem .55rem;border-radius:999px;background:var(--tone-success-bg);color:var(--tone-success-fg)}
+.results-live-badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:results-pulse 1.4s ease-in-out infinite}
+.results-live-badge.is-offline{background:var(--tone-warn-bg);color:var(--tone-warn-fg)}
+@keyframes results-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 service-workspace" style="max-width: 1400px;">
+  {% include 'service_domains/_partials/showcase_event_tabs.html' with active='results' from_param='results' %}
+  <h1 class="visually-hidden">{{ event.name }} results</h1>
+  <div id="showcase-results-live" data-results-url="{% url 'showcase_event_results' event_id=event.pk %}" data-live-enabled="{% if event.status != 'published' %}true{% else %}false{% endif %}">
+    {% include 'service_domains/_partials/showcase_results_body.html' %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const root = document.getElementById('showcase-results-live');
+  if (!root) return;
+  // Results follow the event: the console's socket nudges this page, which then
+  // re-reads the server's numbers. Polling only runs while the socket is down.
+  let refreshing = false;
+  let timer = null;
+  let socket = null;
+  let retries = 0;
+  const setBadge = online => {
+    const badge = document.getElementById('results-live-badge');
+    if (!badge) return;
+    badge.classList.toggle('is-offline', !online);
+    badge.innerHTML = '<span class="dot"></span>' + (online ? 'Live' : 'Reconnecting');
+  };
+  const refresh = async () => {
+    if (refreshing) return;
+    refreshing = true;
+    try {
+      const response = await fetch(root.dataset.resultsUrl, {
+        credentials: 'same-origin', cache: 'no-store', headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+      if (!response.ok) throw new Error('refresh failed');
+      const html = await response.text();
+      if (html !== root.dataset.lastHtml) { root.innerHTML = html; root.dataset.lastHtml = html; }
+      setBadge(true);
+    } catch (_err) { setBadge(false); } finally { refreshing = false; }
+  };
+  const schedule = () => { window.clearTimeout(timer); timer = window.setTimeout(refresh, 250); };
+  const connect = () => {
+    if (!window.WebSocket) return;
+    try {
+      socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/showcase/event/{{ event.pk }}/live/`);
+      socket.onopen = () => { retries = 0; setBadge(true); };
+      socket.onmessage = schedule;
+      socket.onclose = () => { setBadge(false); window.setTimeout(connect, Math.min(30000, 2000 * Math.pow(1.5, retries++))); };
+      socket.onerror = () => socket.close();
+    } catch (_err) {}
+  };
+  connect();
+  window.setInterval(() => { if (!socket || socket.readyState !== WebSocket.OPEN) refresh(); }, 20000);
+})();
+</script>
+{% endblock %}

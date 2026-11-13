@@ -1,0 +1,260 @@
+{% extends 'base.html' %}
+{% block title %}Panel dashboard - LiveGrade{% endblock %}
+{% block page_title %}Panel dashboard{% endblock %}
+
+{% block extra_css %}
+{% include 'partials/_service_dashboard_styles.html' %}
+<style nonce="{{ csp_nonce }}">
+.panel-dashboard{gap:var(--sp-4)}
+.panel-dashboard a,.panel-dashboard a:hover{text-decoration:none}
+.panel-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:var(--sp-3)}
+.panel-kpi{min-width:0;padding:var(--sp-4);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);box-shadow:var(--elev-1)}
+.panel-kpi-label{color:var(--text-muted);font-size:var(--fs-sm);font-weight:650}
+.panel-kpi-value{margin-top:var(--sp-2);font-size:1.8rem;line-height:1.1;font-weight:800;letter-spacing:-.04em;color:var(--ink)}
+.panel-kpi-note{margin-top:var(--sp-2);color:var(--text-muted);font-size:var(--fs-micro);line-height:1.45}
+.panel-live-panel{padding:var(--sp-4);border:1px solid var(--tone-success-bg);border-radius:var(--radius-card);background:var(--surface)}
+.panel-live-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:var(--sp-3);margin-top:var(--sp-3)}
+.panel-live-card-link{display:block;height:100%;border-radius:var(--radius-control);color:var(--text)}
+.panel-live-card-link:focus-visible{outline:0;box-shadow:var(--focus-ring)}
+.panel-live-item{height:100%;padding:var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface-hover);transition:border-color var(--motion-fast) var(--ease),background var(--motion-fast) var(--ease),transform var(--motion-fast) var(--ease)}
+.panel-live-card-link:hover .panel-live-item{border-color:var(--accent);background:var(--surface);transform:translateY(-1px)}
+.panel-live-item h3{margin:0;color:var(--ink);font-size:var(--fs-strong);font-weight:750}
+.panel-live-meta{display:flex;flex-wrap:gap:var(--sp-2) var(--sp-4);margin-top:var(--sp-2);color:var(--text-muted);font-size:var(--fs-sm)}
+.panel-live-now{display:inline-flex;align-items:center;gap:6px;color:var(--tone-success-fg);font-size:var(--fs-micro);font-weight:750;text-transform:uppercase;letter-spacing:.04em}
+.panel-live-dot{width:8px;height:8px;border-radius:50%;background:var(--success)}
+.panel-attention-panel{padding:var(--sp-4);border:1px solid var(--tone-warn-bg, var(--border));border-radius:var(--radius-card);background:var(--surface)}
+.panel-attention-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:var(--sp-2);margin-bottom:var(--sp-3)}
+.panel-attention-badge{display:inline-flex;align-items:center;gap:6px;font-weight:750;font-size:var(--fs-sm);color:var(--tone-warn-fg, #b45309)}
+.panel-attention-item{display:flex;justify-content:space-between;align-items:center;padding:var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface-hover);gap:var(--sp-3);flex-wrap:wrap}
+.panel-attention-detail strong{display:block;color:var(--ink);font-size:var(--fs-body)}
+.panel-attention-detail span{color:var(--text-muted);font-size:var(--fs-sm)}
+.panel-visual-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-3)}
+.panel-data-card{min-width:0;padding:var(--sp-4);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.panel-data-card h2{margin:0;font-size:var(--fs-heading);font-weight:750}
+.panel-data-subtitle{margin:var(--sp-1) 0 var(--sp-4);color:var(--text-muted);font-size:var(--fs-sm)}
+.panel-stage-chart{display:grid;grid-template-columns:minmax(140px,180px) minmax(0,1fr);align-items:center;gap:var(--sp-4)}
+.panel-stage-pie{width:100%;aspect-ratio:1;border:1px solid var(--border);border-radius:50%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.4)}
+.panel-stage-legend{display:grid;gap:var(--sp-3);margin:0;padding:0;list-style:none}
+.panel-stage-legend li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:var(--sp-2);font-size:var(--fs-sm)}
+.panel-stage-swatch{width:11px;height:11px;border-radius:3px;background:var(--text-subtle)}
+.panel-stage-swatch.open{background:var(--success)}
+.panel-stage-swatch.draft{background:#d28a08}
+.panel-stage-swatch.review{background:var(--accent)}
+.panel-stage-swatch.signed_off{background:var(--text-muted)}
+.panel-stage-swatch.released{background:var(--text-subtle)}
+.panel-stage-legend strong{white-space:nowrap;color:var(--ink)}
+.panel-stage-legend small{color:var(--text-muted);font-weight:500}
+.panel-candidate-list{display:grid;gap:var(--sp-3);margin:0;padding:0;list-style:none}
+.panel-candidate-label{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2);margin-bottom:var(--sp-1);font-size:var(--fs-sm)}
+.panel-candidate-label a{overflow:hidden;color:var(--text);font-weight:650;text-overflow:ellipsis;white-space:nowrap}
+.panel-candidate-label a:hover,.panel-recent-name:hover{color:var(--accent)}
+.panel-candidate-label strong{flex:0 0 auto}
+.panel-candidate-track{height:12px;overflow:hidden;border-radius:var(--radius-pill);background:var(--surface-sunken);background-image:linear-gradient(to right,transparent calc(50% - .5px),var(--border) calc(50% - .5px),var(--border) calc(50% + .5px),transparent calc(50% + .5px))}
+.panel-candidate-fill{height:100%;border-radius:inherit;background:var(--accent);transition:width var(--motion) var(--ease)}
+.panel-candidate-axis{display:flex;justify-content:space-between;margin-top:var(--sp-1);padding-left:0;color:var(--text-muted);font-size:var(--fs-micro)}
+.panel-recent{overflow:hidden;padding:0;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.panel-recent-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);padding:var(--sp-4);border-bottom:1px solid var(--border)}
+.panel-recent-head h2{margin:0;font-size:var(--fs-heading);font-weight:750}
+.panel-recent .table{margin:0;vertical-align:middle}
+.panel-recent .table th{color:var(--text-muted);font-size:var(--fs-micro);font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.panel-recent .table td{font-size:var(--fs-sm)}
+.panel-recent-name{color:var(--text);font-size:var(--fs-body);font-weight:700;text-decoration:none}
+.panel-recent-name:hover{text-decoration:none}
+.panel-table-secondary{display:block;margin-top:3px;color:var(--text-muted);font-size:var(--fs-micro)}
+.panel-recent .panel-actions-cell{width:1%;white-space:nowrap}
+.panel-recent .panel-actions-cell .dropdown-menu{z-index:var(--z-dropdown)}
+.panel-empty{padding:var(--sp-5);text-align:center;color:var(--text-muted)}
+.panel-empty h2{margin:0 0 var(--sp-2);color:var(--ink);font-size:var(--fs-title)}
+@media(max-width:1199.98px){.panel-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:767.98px){.panel-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.panel-visual-grid{grid-template-columns:1fr}}
+@media(max-width:575.98px){.panel-kpi{padding:var(--sp-3)}.panel-kpi-value{font-size:1.5rem}.panel-stage-chart{grid-template-columns:minmax(120px,150px) minmax(0,1fr);gap:var(--sp-3)}.panel-recent-head{align-items:flex-start;flex-direction:column}.panel-recent .table{min-width:680px}}
+</style>
+{% include 'service_domains/_partials/panel_row_actions_styles.html' %}
+{% endblock %}
+
+{% block topbar_actions %}
+{% if can_oversee_panel %}
+<a href="{% url 'panel_oversight_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-shield-check me-1" aria-hidden="true"></i>Oversight results</a>
+{% endif %}
+<a href="{% url 'panel_hearing_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>New assessment</a>
+{% endblock %}
+
+{% block content %}
+<div class="stage-content panel-dashboard">
+  <header class="hero-banner between-banner">
+    <div class="hero-meta">
+      <p>A live summary of your assessments, candidates, and examiner activity.</p>
+    </div>
+    <div class="hero-actions">
+      <a href="{% url 'panel_hearing_table' %}" class="btn btn-outline-primary">Panel assessments</a>
+      <a href="{% url 'panel_hearing_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create assessment</a>
+    </div>
+  </header>
+
+  {% if messages %}<div aria-live="polite">{% for message in messages %}<div class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'warning' %}alert-warning{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %}" role="status">{{ message }}</div>{% endfor %}</div>{% endif %}
+
+  <section class="panel-kpis" aria-label="Panel key metrics">
+    <article class="panel-kpi"><div class="panel-kpi-label">Total assessments</div><div class="panel-kpi-value">{{ dashboard_stats.total }}</div><div class="panel-kpi-note">Your assessments in this organization</div></article>
+    <article class="panel-kpi"><div class="panel-kpi-label">Live now</div><div class="panel-kpi-value">{{ dashboard_stats.live }}</div><div class="panel-kpi-note">Open for scoring right now</div></article>
+    <article class="panel-kpi"><div class="panel-kpi-label">In setup</div><div class="panel-kpi-value">{{ dashboard_stats.drafts }}</div><div class="panel-kpi-note">Drafts not yet opened</div></article>
+    <article class="panel-kpi"><div class="panel-kpi-label">To review</div><div class="panel-kpi-value">{{ dashboard_stats.review }}</div><div class="panel-kpi-note">Awaiting chair sign-off</div></article>
+    <article class="panel-kpi"><div class="panel-kpi-label">Ready to share</div><div class="panel-kpi-value">{{ dashboard_stats.release }}</div><div class="panel-kpi-note">Signed off and ready for entrant release</div></article>
+    <article class="panel-kpi"><div class="panel-kpi-label">Completed</div><div class="panel-kpi-value">{{ dashboard_stats.completed }}</div><div class="panel-kpi-note">Released to entrants</div></article>
+  </section>
+
+  {% if live_hearings %}
+  <section class="panel-live-panel" aria-labelledby="panel-live-heading">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <div><span class="panel-live-now"><span class="panel-live-dot" aria-hidden="true"></span>Live in Panel</span><h2 class="h5 mt-1 mb-0" id="panel-live-heading">{{ dashboard_stats.live }} open assessment{{ dashboard_stats.live|pluralize }}</h2></div>
+      <a href="{% url 'panel_hearing_table' %}?status=open" class="btn btn-sm btn-outline-primary">View open assessments</a>
+    </div>
+    <div class="panel-live-list">
+      {% for hearing in live_hearings %}
+      <a class="panel-live-card-link" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}">
+        <article class="panel-live-item">
+          <h3>{{ hearing.name }}</h3>
+          <div class="panel-live-meta"><span>{{ hearing.candidate_count }} candidate{{ hearing.candidate_count|pluralize }}</span><span>{{ hearing.accepted_examiner_count }} examiner{{ hearing.accepted_examiner_count|pluralize }} ready</span></div>
+          <div class="panel-live-meta">{% if hearing.active_candidate %}<span>Reviewing: {{ hearing.active_candidate.display_name }}</span>{% else %}<span>No candidate is being reviewed right now</span>{% endif %}</div>
+        </article>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% else %}
+  <section class="panel-live-panel" aria-labelledby="panel-live-heading">
+    <h2 class="h6 mb-1" id="panel-live-heading">None of your assessments are open right now</h2>
+    <p class="text-muted small mb-0">Open assessments will appear here with their current candidate.</p>
+  </section>
+  {% endif %}
+
+  {% if attention_hearings %}
+  <section class="panel-attention-panel" aria-labelledby="attention-heading">
+    <div class="panel-attention-header">
+      <span class="panel-attention-badge" id="attention-heading"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> Action Required · Needs your attention</span>
+      <span class="small text-muted">{{ attention_hearings|length }} assessment{{ attention_hearings|length|pluralize }} awaiting chair or organizer action</span>
+    </div>
+    <div class="d-flex flex-column gap-2">
+      {% for hearing in attention_hearings %}
+      <div class="panel-attention-item">
+        <div class="panel-attention-detail">
+          <strong>{{ hearing.name }}</strong>
+          <span>{% if hearing.dashboard_invitation_issue %}{{ hearing.dashboard_invitation_issue }}{% else %}{{ hearing.dashboard_next_action }}{% endif %} · {{ hearing.candidate_count }} candidate{{ hearing.candidate_count|pluralize }}</span>
+        </div>
+        {% if hearing.status == 'review' or hearing.status == 'signed_off' or hearing.status == 'released' %}
+          <a class="btn btn-sm btn-primary" href="{% url 'panel_results_review' hearing_id=hearing.pk %}">{% if hearing.status == 'signed_off' %}Release results{% else %}Review results{% endif %}</a>
+        {% elif hearing.status == 'draft' and hearing.dashboard_next_action == 'Ready to open' %}
+          <a class="btn btn-sm btn-primary" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}?step=ready">Review and launch</a>
+        {% elif hearing.status == 'open' %}
+          <a class="btn btn-sm btn-primary" href="{% url 'panel_hearing_live' hearing_id=hearing.pk %}">Open live controls</a>
+        {% else %}
+          <a class="btn btn-sm btn-primary" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}">Continue setup</a>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="panel-visual-grid" aria-label="Panel data visualizations">
+    <article class="panel-data-card" aria-labelledby="panel-stage-heading">
+      <h2 id="panel-stage-heading">Assessment stages</h2>
+      <p class="panel-data-subtitle">Distribution across your {{ dashboard_stats.total }} assessment{{ dashboard_stats.total|pluralize }}.</p>
+      {% if dashboard_stats.total %}
+      <div class="panel-stage-chart">
+        <div class="panel-stage-pie" style="background:{{ stage_pie_background }}" aria-hidden="true"></div>
+        <ul class="panel-stage-legend" aria-label="Assessment stage breakdown">
+          {% for stage in stage_distribution %}
+          <li><span class="panel-stage-swatch {{ stage.key }}" aria-hidden="true"></span><span>{{ stage.label }}</span><strong>{{ stage.count }} <small>({{ stage.percentage }}%)</small></strong></li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% else %}
+        <p class="panel-empty mb-0">Assessment stage data will appear after you create an assessment.</p>
+      {% endif %}
+    </article>
+
+    <article class="panel-data-card" aria-labelledby="panel-candidate-heading">
+      <h2 id="panel-candidate-heading">Largest candidate lists</h2>
+      <p class="panel-data-subtitle">Candidate counts by assessment; bars are scaled to the largest list shown.</p>
+      {% if candidate_hearings and largest_candidates %}
+      <ol class="panel-candidate-list">
+        {% for hearing in candidate_hearings %}
+        <li>
+          <div class="panel-candidate-label"><a href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}">{{ hearing.name }}</a><strong>{{ hearing.candidate_count }}</strong></div>
+          <div class="panel-candidate-track" aria-hidden="true"><div class="panel-candidate-fill" style="width:{{ hearing.candidate_bar_percent }}%"></div></div>
+        </li>
+        {% endfor %}
+      </ol>
+      <div class="panel-candidate-axis" aria-hidden="true"><span>0 candidates</span><span>{{ largest_candidates }} candidates</span></div>
+      {% else %}
+        <p class="panel-empty mb-0">Candidate data will appear after candidates are added to an assessment.</p>
+      {% endif %}
+    </article>
+  </section>
+
+  <section class="panel-recent" aria-labelledby="panel-recent-heading">
+    <div class="panel-recent-head"><div><h2 id="panel-recent-heading">Recent assessments</h2><p class="panel-data-subtitle mb-0">Your five most recently created assessments.</p></div><a href="{% url 'panel_hearing_table' %}" class="btn btn-outline-primary btn-sm">View all assessments</a></div>
+    {% if recent_hearings %}
+    <div class="table-responsive">
+      <table class="table table-hover" data-panel-row-navigation>
+        <caption class="visually-hidden">Five most recently created Panel assessments</caption>
+        <thead>
+          <tr>
+            <th scope="col">Assessment</th>
+            <th scope="col">Status</th>
+            <th scope="col">Candidates</th>
+            <th scope="col">Examiners ready</th>
+            <th scope="col">Hearing date</th>
+            <th scope="col">Created</th>
+            <th scope="col"><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for hearing in recent_hearings %}
+          {% if hearing.status == 'draft' %}
+            {% if hearing.dashboard_next_action == 'Ready to open' %}
+              {% url 'panel_hearing_manage' hearing_id=hearing.pk as row_url %}
+            {% else %}
+              {% url 'panel_hearing_manage' hearing_id=hearing.pk as row_url %}
+            {% endif %}
+          {% elif hearing.status == 'open' %}
+            {% url 'panel_hearing_live' hearing_id=hearing.pk as row_url %}
+          {% else %}
+            {% url 'panel_results_review' hearing_id=hearing.pk as row_url %}
+          {% endif %}
+          <tr class="panel-row-clickable" data-panel-row-href="{% if hearing.status == 'draft' and hearing.dashboard_next_action == 'Ready to open' %}{{ row_url }}?step=ready{% else %}{{ row_url }}{% endif %}">
+            <td>
+              <a class="panel-recent-name" href="{% if hearing.status == 'draft' and hearing.dashboard_next_action == 'Ready to open' %}{{ row_url }}?step=ready{% else %}{{ row_url }}{% endif %}">{{ hearing.name }}</a>
+              {% if hearing.status == 'open' and hearing.active_candidate %}
+                <span class="panel-table-secondary">Reviewing: {{ hearing.active_candidate.display_name }}</span>
+              {% else %}
+                <span class="panel-table-secondary">{{ hearing.get_workflow_display }}</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="badge {% if hearing.status == 'open' %}bg-success-subtle text-success-emphasis{% elif hearing.status == 'draft' %}bg-warning-subtle text-warning-emphasis{% else %}bg-secondary-subtle text-secondary-emphasis{% endif %}">{{ hearing.get_status_display }}</span>
+            </td>
+            <td>{{ hearing.candidate_count }}</td>
+            <td>{{ hearing.accepted_examiner_count }}</td>
+            <td>{% if hearing.hearing_date %}{{ hearing.hearing_date|date:'d M Y' }}{% else %}Not set{% endif %}</td>
+            <td>{{ hearing.created_at|date:'d M Y' }}</td>
+            <td class="panel-actions-cell text-end">{% include 'service_domains/_partials/panel_row_actions.html' %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <div class="panel-empty">
+        <h2>You haven’t created an assessment yet</h2>
+        <p>Your dashboard shows assessments you own. Create an assessment to see candidates and live activity here.</p>
+        <a href="{% url 'panel_hearing_create' %}" class="btn btn-primary">Create an assessment</a>
+      </div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% include 'service_domains/_partials/panel_clickable_rows_script.html' %}
+{% endblock %}

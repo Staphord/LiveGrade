@@ -1,0 +1,28 @@
+{% comment %}
+Shared setup stepper (vertical, one visual system for every service).
+Pass `steps` built with portal.stepper.build_steps; optional `stepper_label`.
+Behaviour hooks: each item carries data-step / data-panel-step, and
+the inline DevPerfStepper.setCurrent below keeps is-current and
+aria-current in sync when a page switches panels without reloading.
+{% endcomment %}
+<nav class="stepper-nav" aria-label="{{ stepper_label|default:'Setup steps' }}" data-stepper>
+  <ol class="stepper-list">
+    {% for step in steps %}<li>{% include 'partials/_stepper_item.html' %}</li>
+    {% endfor %}
+  </ol>
+</nav>
+<script nonce="{{ csp_nonce }}">
+// Shared setup stepper state. Pages decide which panel to show; this keeps
+// the current marker (class and aria-current) identical everywhere. It ships
+// with the markup so a page script never runs without it.
+window.DevPerfStepper = window.DevPerfStepper || {
+  setCurrent: function (root, key) {
+    (root || document).querySelectorAll('.stepper-item[data-step]').forEach(function (item) {
+      var current = item.dataset.step === key;
+      item.classList.toggle('is-current', current);
+      if (current) item.setAttribute('aria-current', 'step');
+      else item.removeAttribute('aria-current');
+    });
+  }
+};
+</script>

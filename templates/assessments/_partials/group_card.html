@@ -10,7 +10,7 @@
                  {% if group.delete_lock %}disabled title="{{ group.delete_lock }}"{% endif %}>
           <span class="icon-badge"><i class="bi bi-diagram-3"></i></span>
           <div>
-            <div class="title group-name">{{ group.name }}</div>
+            <div class="title group-name">{{ group.name }}{% if group.is_practice %} <span class="badge bg-info-subtle text-info-emphasis">Practice</span>{% endif %}</div>
             <div class="sub">{{ group.member_count }} member{{ group.member_count|pluralize }}{% if group.max_size %} of {{ group.max_size }}{% endif %}</div>
           </div>
         </div>
@@ -18,9 +18,9 @@
           <span class="count-chip {% if group.is_full %}is-full{% else %}is-open{% endif %}">
             {{ group.member_count }}{% if group.max_size %}/{{ group.max_size }}{% endif %}
           </span>
-          <button type="button" class="btn btn-sm btn-outline-secondary py-0 group-edit-btn" title="Edit group"
+          <button type="button" class="btn btn-sm btn-outline-secondary py-0 group-edit-btn" title="Edit group" aria-label="Edit group {{ group.name }}"
                   data-id="{{ group.pk }}" data-name="{{ group.name }}" data-max-size="{{ group.max_size|default:'' }}"
-                  data-topic="{{ group.topic }}" data-location="{{ group.location }}"
+                  data-is-practice="{{ group.is_practice|yesno:'true,false' }}" data-topic="{{ group.topic }}" data-location="{{ group.location }}"
                   data-edit-url="{% url 'assessment_group_edit' session.pk group.pk %}">
             <i class="bi bi-pencil"></i>
           </button>
@@ -53,7 +53,7 @@
           {% csrf_token %}
           <input type="hidden" name="action" value="remove">
           <input type="hidden" name="student_id" value="{{ membership.student.pk }}">
-          <button class="btn btn-sm btn-link text-danger p-0" title="Remove from group"><i class="bi bi-x-lg"></i></button>
+          <button class="btn btn-sm btn-link text-danger p-0" title="Remove from group" aria-label="Remove {{ membership.student.full_name|default:membership.student.student_id }} from {{ group.name }}"><i class="bi bi-x-lg"></i></button>
         </form>
         {% endif %}
       </div>
@@ -69,13 +69,13 @@
       <form method="post" action="{% url 'assessment_group_members' session.pk group.pk %}" class="d-flex gap-1 mt-2 add-member-form">
         {% csrf_token %}
         <input type="hidden" name="action" value="add">
-        <select name="student_id" class="form-select form-select-sm" required>
+        <select name="student_id" class="form-select form-select-sm" aria-label="Add student to {{ group.name }}" required>
           <option value="">Add student…</option>
           {% for student in ungrouped_students %}
           <option value="{{ student.pk }}">{{ student.full_name|default:student.student_id }}</option>
           {% endfor %}
         </select>
-        <button class="btn btn-sm btn-outline-primary" title="Add"><i class="bi bi-plus-lg"></i></button>
+        <button class="btn btn-sm btn-outline-primary" title="Add" aria-label="Add selected student to {{ group.name }}"><i class="bi bi-plus-lg"></i></button>
       </form>
       {% else %}
       <div class="text-muted t-micro mt-2">No unassigned students left to add.</div>

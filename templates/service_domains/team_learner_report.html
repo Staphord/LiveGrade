@@ -1,0 +1,14 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% block title %}Your competency results{% endblock %}
+{% block service_name %}Team and Training{% endblock %}
+{% block content %}
+{% include 'service_domains/_team_competition_styles.html' %}
+<main id="public-main" class="public-service-content narrow">
+  <header class="tc-public-head mb-3"><h1>{{ report.learner }}</h1><p>{{ report.series }} · {{ report.session }}</p></header>
+  <p class="small text-muted">Private results released by your trainer. Keep this link private.</p>
+  {% for outcome in report.outcomes %}<section class="tc-panel mb-3"><h2 class="h5">{{ outcome.criterion }}</h2>
+    <p><strong>{{ outcome.score }} / 100</strong> · {% if outcome.passed %}Passed{% else %}Not yet passed{% endif %} · Pass score {{ outcome.passing_score }}</p>
+    <h3 class="h6">Your trainer’s feedback</h3><p>{{ outcome.evidence|linebreaksbr }}</p>
+  </section>{% endfor %}
+</main>
+{% endblock %}

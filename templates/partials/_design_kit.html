@@ -1,6 +1,6 @@
 <style nonce="{{ csp_nonce }}">
 /* ==========================================================================
-   DevPerf kit — the shared components built on the tokens in
+   DevPerf kit - the shared components built on the tokens in
    _design_system.html. Tokens live there; this file only composes them.
    Live reference: /design-kit/ (superusers).
    ========================================================================== */
@@ -76,7 +76,7 @@
 .page-tabs{gap:var(--sp-4)}
 }
 
-/* F-2b Sticky tab header — an opt-in wrapper (not baked into .page-tabs
+/* F-2b Sticky tab header - an opt-in wrapper (not baked into .page-tabs
    itself, so unrelated pages that already use tabs keep their normal,
    non-sticky layout). Pins the session sub-nav under the topbar as the
    page scrolls, with a compact KPI strip pinned along with it when a page
@@ -87,7 +87,7 @@
 .tabs-sticky-header .page-tabs{margin-bottom:0}
 .tabs-sticky-header > *:not(:last-child){margin-bottom:var(--sp-3)}
 
-/* Shared stat-pill strip — a quick at-a-glance KPI row, originally built for
+/* Shared stat-pill strip - a quick at-a-glance KPI row, originally built for
    the Groups tab and reused (with an added is-bad tone + optional filter-link
    affordance) on Participation, so both "overview strip" instances share one
    definition instead of drifting apart. */
@@ -102,7 +102,7 @@
 .groups-stat-pill .stat-val{font-size:var(--fs-heading);font-weight:800;color:var(--ink);line-height:1.1}
 .groups-stat-pill .stat-val .stat-of{font-size:var(--fs-sm);font-weight:600;color:var(--text-muted)}
 .groups-stat-pill .stat-lbl{font-size:var(--fs-micro);color:var(--text-muted)}
-/* A stat pill that doubles as a filter link — same shape, plus a hover lift
+/* A stat pill that doubles as a filter link - same shape, plus a hover lift
    and an active ring so the current filter reads clearly among the four. */
 a.groups-stat-pill.filter-pill{text-decoration:none;cursor:pointer;transition:transform var(--motion-fast) var(--ease),box-shadow var(--motion-fast) var(--ease)}
 a.groups-stat-pill.filter-pill:hover{transform:translateY(-1px);box-shadow:var(--elev-1)}
@@ -110,7 +110,7 @@ a.groups-stat-pill.filter-pill.is-active{border-color:var(--accent);box-shadow:0
 
 /* A small initials avatar gives every row a distinct visual anchor to
    scan by, the way a real roster/contacts list (not a bare spreadsheet
-   dump) would — Bootstrap's own "subtle" tone classes cycle per row so no
+   dump) would - Bootstrap's own "subtle" tone classes cycle per row so no
    new colour tokens are needed. Originally built for the Roster tab, now
    shared with Results' student column for the same at-a-glance feel. */
 .roster-avatar{width:30px;height:30px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
@@ -219,6 +219,8 @@ a.cu-more:hover{color:var(--accent)}
 .dp-modal .modal-header{padding:var(--sp-4);border-bottom:1px solid var(--border)}
 .dp-modal .modal-body{padding:var(--sp-4)}
 .dp-modal .modal-footer{padding:var(--sp-3) var(--sp-4);border-top:1px solid var(--border);gap:var(--sp-2)}
+.session-action-form-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:var(--sp-2);padding-top:var(--sp-3);margin-top:var(--sp-3);border-top:1px solid var(--border)}
+.session-action-field.has-error .form-control,.session-action-field.has-error .form-select{border-color:var(--danger)!important}
 .dp-confirm .dp-confirm-icon{width:40px;height:40px;border-radius:var(--radius-pill);display:inline-flex;align-items:center;justify-content:center;font-size:var(--icon-md);background:var(--accent-soft);color:var(--accent);flex-shrink:0}
 .dp-confirm.is-danger .dp-confirm-icon{background:var(--tone-danger-bg);color:var(--tone-danger-fg)}
 .modal.fade .modal-dialog{transition:transform var(--motion) var(--ease)}
@@ -263,7 +265,7 @@ a.cu-more:hover{color:var(--accent)}
 .flash-region .toast-action{margin-left:var(--sp-3);padding:0;border:0;background:none;color:inherit;font-weight:700;text-decoration:underline;text-underline-offset:2px}
 .flash-region .toast-action:hover{text-decoration-thickness:2px}
 .flash-region .toast-timer{position:absolute;left:0;bottom:0;height:2px;width:100%;background:currentColor;opacity:.35;transform-origin:left;animation:toast-timer var(--toast-life,5s) linear forwards}
-.flash-region .alert:hover .toast-timer{animation-play-state:paused}
+.flash-region .alert:hover .toast-timer,.flash-region .alert:focus-within .toast-timer{animation-play-state:paused}
 @keyframes toast-timer{from{transform:scaleX(1)}to{transform:scaleX(0)}}
 
 /* The card at the foot of a column stack: it takes the leftover height so
@@ -355,4 +357,32 @@ a.stat-link:hover{border-color:var(--accent);box-shadow:var(--elev-1);color:inhe
 .chart-tooltip .ct-row strong{margin-left:auto;padding-left:var(--sp-4);color:var(--ink);font-weight:700}
 .chart-tooltip .ct-key{display:inline-block;width:10px;height:2px;border-radius:1px;background:var(--swatch,var(--accent));flex-shrink:0}
 .chart-tooltip .ct-key-dashed{background:none;border-top:2px dashed var(--swatch,var(--text-subtle));height:0}
+
+/* Stepper - the one setup stepper used by every service's setup flow.
+   Markup: partials/_stepper.html. State classes: is-current, is-done,
+   is-locked, is-final; aria-current="step" marks the current step. */
+.stepper-nav{position:sticky;top:calc(var(--topbar-h) + var(--sp-3));align-self:start;min-width:0}
+.stepper-list{list-style:none;margin:0;padding:0}
+.stepper-list>li{position:relative;min-width:0}
+.stepper-item{position:relative;display:flex;align-items:flex-start;gap:.75rem;width:100%;padding:0 0 1.5rem 0;
+     border:0;background:transparent;font:inherit;text-align:left;text-decoration:none;color:inherit;cursor:pointer}
+.stepper-list>li:last-child .stepper-item{padding-bottom:0}
+.stepper-list>li:not(:last-child)::before{content:"";position:absolute;left:15px;top:32px;bottom:-.2rem;width:2px;background:var(--border)}
+.stepper-dot{width:32px;height:32px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+     background:var(--surface-hover);border:2px solid var(--border);color:var(--text-muted);font-weight:700;font-size:var(--fs-sm);
+     transition:background .15s ease,border-color .15s ease,color .15s ease}
+.stepper-label{padding-top:3px;min-width:0}
+.stepper-title{display:block;font-weight:700;font-size:var(--fs-body);color:var(--ink)}
+.stepper-optional{font-weight:500;font-size:var(--fs-micro);color:var(--text-muted)}
+.stepper-desc{display:block;font-size:var(--fs-micro);color:var(--text-muted)}
+.stepper-item.is-done .stepper-dot,.stepper-item.is-final .stepper-dot{background:var(--tone-success-bg);border-color:var(--success);color:var(--tone-success-fg)}
+.stepper-item.is-current .stepper-dot{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.stepper-item.is-current:not(.is-done):not(.is-final) .stepper-dot{background:var(--accent-soft);color:var(--accent)}
+.stepper-item.is-current .stepper-title{color:var(--accent)}
+.stepper-item.is-locked{opacity:.5}
+.stepper-item.is-locked .stepper-dot{background:var(--surface-hover);border-color:var(--border);color:var(--text-muted)}
+.stepper-item:disabled{cursor:not-allowed}
+.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
+.stepper-item:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:var(--radius-control)}
+@media(max-width:991.98px){.stepper-nav{position:static}}
 </style>

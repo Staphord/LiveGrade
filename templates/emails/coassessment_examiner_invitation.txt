@@ -1,0 +1,10 @@
+LiveGrade
+
+Hello {{ examiner_name }},
+
+You are invited to score {{ session_name }} as a panel examiner{% if is_chair %} and panel chair{% endif %}.
+
+Open your private scoring link:
+{{ invitation_url }}
+
+The link is for you only. Do not forward it. If you were not expecting this invitation, contact the organizer.

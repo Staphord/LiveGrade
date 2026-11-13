@@ -1,0 +1,252 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% load static %}
+
+{% block title %}Peer Scorecard : {{ session.name }} : LiveGrade{% endblock %}
+{% block service_name %}Co-Assessment{% endblock %}
+{% block extra_css %}
+<style nonce="{{ csp_nonce }}">
+  .public-service-content .score-slider { --score-progress: 0%; }
+  .public-service-content .score-slider::-webkit-slider-runnable-track {
+    background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--score-progress), var(--surface-sunken) var(--score-progress), var(--surface-sunken) 100%);
+  }
+  .public-service-content .score-slider::-moz-range-track { background-color: var(--surface-sunken); }
+  .public-service-content .score-slider::-moz-range-progress { background-color: var(--accent); }
+</style>
+{% endblock %}
+
+{% block content %}
+<main id="public-main" class="public-service-content narrow">
+  {% include 'coassessment/_messages.html' %}
+  
+  <!-- Participant Header Bar -->
+  <div class="card p-3 mb-3 bg-light border-0" style="border-radius: var(--radius-card);">
+    <div class="d-flex justify-content-between align-items-center">
+      <div>
+        <span class="small text-muted">Checked in as:</span>
+        <strong class="d-block">{{ participant.full_name }}</strong>
+      </div>
+      <div>
+        {% if participant.group %}
+          <span class="badge bg-secondary">Member: {{ participant.group.name }}</span>
+        {% else %}
+          <span class="badge bg-light text-dark border">Independent Rater</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if active_turn %}
+    <!-- Active Stage Banner -->
+    <div class="card p-4 mb-4" style="background: #0f172a; color: #fff; border-radius: var(--radius-card);">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="badge bg-danger text-uppercase fw-bold" style="font-size: var(--fs-micro);">Now Presenting</span>
+        <span class="text-info small font-monospace">Team #{{ active_turn.group.order }}</span>
+      </div>
+      <h2 class="h3 fw-bold mb-1">{{ active_turn.group.name }}</h2>
+      <div class="text-muted small">{{ active_turn.group.topic|default:"No topic description provided." }}</div>
+    </div>
+
+    {% if is_self_group %}
+      <!-- Self Voting Disabled Notice -->
+      <div class="card p-5 text-center" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card);">
+        <i class="bi bi-shield-lock text-warning fs-1 mb-2"></i>
+        <h3 class="h5 fw-bold mb-2">Your Team is Currently Presenting</h3>
+        <p class="text-muted small mb-0">
+          Self-scoring is disabled to maintain grading integrity. Deliver your presentation with confidence!
+        </p>
+      </div>
+
+    {% elif already_submitted %}
+      <!-- Submission Confirmed Notice -->
+      <div class="card p-5 text-center" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card);">
+        <i class="bi bi-check-circle text-success fs-1 mb-2"></i>
+        <h3 class="h5 fw-bold mb-2">Scorecard Submitted</h3>
+        <p class="text-muted small mb-0">
+          Thank you! Your peer ratings for {{ active_turn.group.name }} have been recorded.
+        </p>
+      </div>
+
+    {% else %}
+      <!-- Active Peer Scoring Form -->
+      <div class="card p-4" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card);">
+        <form method="post" action="{% url 'coassessment_peer_submit' session.pk %}" novalidate id="peerScoreForm">
+          <div class="alert alert-warning d-none" role="alert" id="peerScoreProblem" tabindex="-1"></div>
+          {% csrf_token %}
+
+          <!-- Section 1: Team / Group Criteria -->
+          <div class="mb-4">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <h3 class="h6 fw-bold mb-0">1. Group Presentation Criteria</h3>
+              <span class="badge bg-secondary">Weight: {{ session.group_weight_total }}%</span>
+            </div>
+            <p class="small text-muted mb-3">Rate the overall team delivery, cohesion, and structure.</p>
+
+            {% for crit in group_criteria %}
+            <div class="mb-3 p-3 border rounded bg-light score-item" data-score-item data-item-name="{{ crit.name }}">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <div>
+                  <strong>{{ crit.name }}</strong>
+                  <span class="badge bg-secondary ms-1 small">{{ crit.weight }}%</span>
+                </div>
+                <span class="font-monospace fw-bold text-primary fs-6" id="critLabel_{{ crit.pk }}" data-score-label>Not scored</span>
+              </div>
+              {% if crit.description %}
+                <p class="small text-muted mb-2">{{ crit.description }}</p>
+              {% endif %}
+              <input type="range" class="form-range score-slider" data-label-id="critLabel_{{ crit.pk }}" data-name="criterion_{{ crit.pk }}" min="0" max="100" value="0" aria-label="{{ crit.name }}">
+              <div class="small text-danger mt-1 d-none" data-score-hint>Please score this before submitting.</div>
+            </div>
+            {% empty %}
+              <div class="small text-muted mb-3 fst-italic">No group-scoped criteria configured.</div>
+            {% endfor %}
+          </div>
+
+          <!-- Section 2: Individual Student Delivery -->
+          {% if individual_criteria %}
+          <div class="mb-4 pt-3 border-top">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <h3 class="h6 fw-bold mb-0">2. Individual Student Contribution</h3>
+              <span class="badge bg-info text-dark">Weight: {{ session.individual_weight_total }}%</span>
+            </div>
+            <p class="small text-muted mb-3">Rate each student presenter individually on technical mastery and delivery.</p>
+
+            {% if presenting_members %}
+              {% for mem in presenting_members %}
+              <div class="p-3 border rounded bg-light mb-3">
+                <div class="fw-bold mb-2 text-primary">{{ mem.full_name }}{% if mem.student_id %} <small class="text-muted">({{ mem.student_id }})</small>{% endif %}</div>
+                {% for crit in individual_criteria %}
+                <div class="mb-3 p-2 border-bottom score-item" data-score-item data-item-name="{{ crit.name }} for {{ mem.full_name }}">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <div>
+                      <strong>{{ crit.name }}</strong>
+                      <span class="badge bg-info text-dark ms-1 small">{{ crit.weight }}%</span>
+                    </div>
+                    <span class="font-monospace fw-bold text-primary fs-6" id="indLabel_{{ mem.pk }}_{{ crit.pk }}" data-score-label>Not scored</span>
+                  </div>
+                  {% if crit.description %}
+                    <p class="small text-muted mb-1" style="font-size: var(--fs-xs);">{{ crit.description }}</p>
+                  {% endif %}
+                  <input type="range" class="form-range score-slider" data-label-id="indLabel_{{ mem.pk }}_{{ crit.pk }}" data-name="individual_criterion_{{ mem.pk }}_{{ crit.pk }}" min="0" max="100" value="0" aria-label="{{ crit.name }} for {{ mem.full_name }}">
+                  <div class="small text-danger mt-1 d-none" data-score-hint>Please score this before submitting.</div>
+                </div>
+                {% endfor %}
+              </div>
+              {% endfor %}
+            {% else %}
+              <div class="alert alert-light border small text-muted">
+                No individual student roster records assigned to this team yet. Group scoring applies.
+              </div>
+            {% endif %}
+          </div>
+          {% endif %}
+
+          {% if session.allow_anonymous_peer_comments %}
+          <div class="mb-4 pt-3 border-top">
+            <label for="peerFeedback" class="form-label small fw-bold">Constructive Peer Feedback (Anonymous to presenters):</label>
+            <textarea id="peerFeedback" name="qualitative_feedback" class="form-control" rows="3" placeholder="What was clear? What could be refined?"></textarea>
+          </div>
+          {% endif %}
+
+          <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold">
+            Submit Peer Scorecard &rarr;
+          </button>
+        </form>
+      </div>
+    {% endif %}
+
+  {% else %}
+    <!-- Waiting Room -->
+    <div class="card p-5 text-center" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card);">
+      <i class="bi bi-hourglass-split text-primary fs-1 mb-2"></i>
+      <h3 class="h5 fw-bold mb-2">Waiting for Next Presentation</h3>
+      <p class="text-muted small mb-0">
+        The session chair has not called a team to the stage yet. This page will update automatically when scoring opens.
+      </p>
+    </div>
+  {% endif %}
+</main>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  // A slider only counts once the rater has touched it: untouched ones carry no name, so they are never submitted.
+  function updateSliderProgress(slider) {
+    const min = Number(slider.min || 0);
+    const max = Number(slider.max || 100);
+    const value = Number(slider.value);
+    const progress = max > min ? Math.min(100, Math.max(0, (value - min) / (max - min) * 100)) : 0;
+    slider.style.setProperty('--score-progress', progress + '%');
+  }
+
+  function markScored(slider) {
+    updateSliderProgress(slider);
+    const label = document.getElementById(slider.getAttribute('data-label-id'));
+    slider.setAttribute('name', slider.getAttribute('data-name'));
+    slider.closest('[data-score-item]').classList.remove('border-danger');
+    const hint = slider.closest('[data-score-item]').querySelector('[data-score-hint]');
+    if (hint) hint.classList.add('d-none');
+    if (label) label.textContent = slider.value;
+  }
+  document.querySelectorAll('.score-slider').forEach(function (slider) {
+    updateSliderProgress(slider);
+    ['input', 'change', 'click', 'keydown', 'touchend'].forEach(function (name) {
+      slider.addEventListener(name, function () { markScored(slider); });
+    });
+  });
+
+  const form = document.getElementById('peerScoreForm');
+  if (form) {
+    form.addEventListener('submit', function (event) {
+      const missing = [];
+      let first = null;
+      document.querySelectorAll('[data-score-item]').forEach(function (item) {
+        const slider = item.querySelector('.score-slider');
+        if (slider.getAttribute('name')) return;
+        missing.push(item.getAttribute('data-item-name'));
+        item.classList.add('border-danger');
+        item.querySelector('[data-score-hint]').classList.remove('d-none');
+        if (!first) first = item;
+      });
+      if (!missing.length) return;
+      event.preventDefault();
+      const box = document.getElementById('peerScoreProblem');
+      box.textContent = 'Almost there. Please score: ' + missing.join(', ') + '. Move the slider to 0 if you mean zero.';
+      box.classList.remove('d-none');
+      box.focus();
+      first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }
+
+  const activeTurnId = {% if active_turn %}{{ active_turn.pk }}{% else %}null{% endif %};
+
+  function checkTurnChange(data) {
+    if (!data) return;
+    if (data.active_turn_id !== activeTurnId) {
+      window.location.reload();
+    }
+  }
+
+  // WebSocket real-time update
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = protocol + '//' + window.location.host + '/ws/coassessment/{{ session.pk }}/live/';
+  try {
+    const socket = new WebSocket(wsUrl);
+    socket.onmessage = function (event) {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.state) {
+          checkTurnChange(payload.state);
+        }
+      } catch (e) {}
+    };
+  } catch (e) {}
+
+  // Fallback poll
+  setInterval(function () {
+    fetch("{% url 'coassessment_live_state' session.pk %}")
+      .then(function (res) { return res.json(); })
+      .then(checkTurnChange)
+      .catch(function () {});
+  }, 4000);
+})();
+</script>
+{% endblock %}

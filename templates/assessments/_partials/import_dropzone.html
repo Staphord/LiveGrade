@@ -1,0 +1,23 @@
+
+<div class="import-dropzone" id="{{ dropzone_id }}" data-import-dropzone>
+  <i class="bi bi-cloud-arrow-up" aria-hidden="true"></i>
+  <label class="dz-text" for="{{ file_field.id_for_label }}">{{ dropzone_prompt|default:'Choose a file or drag it here' }}{% if file_required or file_field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>
+  <div class="dz-filename" id="{{ filename_id }}" data-import-filename aria-live="polite"></div>
+  {{ file_field }}
+</div>
+<script nonce="{{ csp_nonce }}">
+(function(){
+  document.querySelectorAll('[data-import-dropzone]').forEach(function(zone){
+    if(zone.dataset.importDropzoneReady)return;
+    zone.dataset.importDropzoneReady='true';
+    const input=zone.querySelector('input[type="file"]');
+    const filename=zone.querySelector('[data-import-filename]');
+    if(!input)return;
+    function updateFilename(){if(filename)filename.textContent=input.files&&input.files.length?input.files[0].name:'';}
+    input.addEventListener('change',updateFilename);
+    ['dragenter','dragover'].forEach(function(name){zone.addEventListener(name,function(event){event.preventDefault();zone.classList.add('is-dragover');});});
+    ['dragleave','drop'].forEach(function(name){zone.addEventListener(name,function(event){event.preventDefault();zone.classList.remove('is-dragover');});});
+    zone.addEventListener('drop',function(event){if(event.dataTransfer&&event.dataTransfer.files.length){input.files=event.dataTransfer.files;updateFilename();}});
+  });
+})();
+</script>

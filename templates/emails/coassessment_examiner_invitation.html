@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <body style="margin:0;padding:32px 16px;background:#f4f7fb;color:#202938;font-family:Arial,Helvetica,sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+      <tr><td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background:#fff;border:1px solid #dfe5ed;border-radius:14px;overflow:hidden;">
+          <tr><td style="padding:22px 28px;border-bottom:1px solid #e6ebf2;">
+            <div style="font-size:20px;font-weight:700;color:#172033;">LiveGrade</div>
+            <div style="margin-top:4px;font-size:13px;color:#596575;">Co-Assessment examiner invitation</div>
+          </td></tr>
+          <tr><td style="padding:28px;">
+            <p style="margin:0 0 8px;color:#526174;font-size:14px;">You have been invited to score</p>
+            <h1 style="margin:0 0 16px;font-size:25px;line-height:1.2;color:#172033;">{{ session_name }}</h1>
+            <p style="margin:0 0 24px;font-size:16px;line-height:1.55;color:#394658;">Open your private link to reach the examiner scorecard{% if is_chair %}. You are the panel chair for this event{% endif %}.</p>
+            <p style="margin:0 0 24px;"><a href="{{ invitation_url }}" style="display:inline-block;padding:13px 20px;border-radius:8px;background:#0d6efd;color:#fff;font-size:15px;font-weight:700;text-decoration:none;">Open scorecard</a></p>
+            <p style="margin:0 0 8px;font-size:14px;color:#526174;">This private link is for you only. Do not forward it.</p>
+            <p style="margin:0;font-size:13px;line-height:1.5;color:#667386;">If the button does not open, copy this address into your browser:</p>
+            <p style="margin:8px 0 0;word-break:break-all;font-size:13px;line-height:1.5;"><a href="{{ invitation_url }}" style="color:#0d6efd;">{{ invitation_url }}</a></p>
+          </td></tr>
+          <tr><td style="padding:16px 28px;background:#f8fafc;border-top:1px solid #e6ebf2;font-size:12px;line-height:1.5;color:#667386;">
+            LiveGrade Co-Assessment. This message was sent to the invited examiner. If you were not expecting it, contact the organizer.
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>

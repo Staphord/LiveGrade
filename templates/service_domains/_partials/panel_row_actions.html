@@ -1,0 +1,33 @@
+<div class="dropdown panel-actions">
+  <button class="dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Actions for {{ hearing.name }}"><i class="bi bi-three-dots" aria-hidden="true"></i></button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    {% if hearing.status == 'draft' %}
+      {% if hearing.dashboard_next_action == 'Ready to open' %}
+        <li><a class="dropdown-item" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}?step=ready"><i class="bi bi-pencil me-2" aria-hidden="true"></i>Review and launch</a></li>
+      {% else %}
+        <li><a class="dropdown-item" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}"><i class="bi bi-pencil me-2" aria-hidden="true"></i>Continue setup</a></li>
+      {% endif %}
+    {% elif hearing.status == 'open' %}
+      <li><a class="dropdown-item" href="{% url 'panel_hearing_live' hearing_id=hearing.pk %}"><i class="bi bi-broadcast me-2" aria-hidden="true"></i>Open live controls</a></li>
+    {% elif hearing.status == 'review' %}
+      <li><a class="dropdown-item" href="{% url 'panel_results_review' hearing_id=hearing.pk %}"><i class="bi bi-bar-chart me-2" aria-hidden="true"></i>Review results</a></li>
+    {% elif hearing.status == 'signed_off' %}
+      <li><a class="dropdown-item" href="{% url 'panel_results_review' hearing_id=hearing.pk %}"><i class="bi bi-send-check me-2" aria-hidden="true"></i>Release results</a></li>
+    {% elif hearing.status == 'released' %}
+      <li><a class="dropdown-item" href="{% url 'panel_results_review' hearing_id=hearing.pk %}"><i class="bi bi-bar-chart me-2" aria-hidden="true"></i>View released results</a></li>
+    {% endif %}
+
+    {% if hearing.status == 'review' or hearing.status == 'signed_off' or hearing.status == 'released' %}
+      <li><a class="dropdown-item" href="{% url 'panel_results_export' hearing_id=hearing.pk %}"><i class="bi bi-file-earmark-spreadsheet me-2" aria-hidden="true"></i>Export results (.xlsx)</a></li>
+    {% endif %}
+
+    <li><hr class="dropdown-divider"></li>
+    <li>
+      <form method="post" action="{% url 'panel_hearing_delete' hearing_id=hearing.pk %}" data-confirm="Delete &quot;{{ hearing.name }}&quot;? This permanently removes its candidates, examiners, scores, and results." data-confirm-title="Delete assessment?" data-confirm-label="Delete assessment" data-confirm-tone="danger">
+        {% csrf_token %}
+        <button type="submit" class="dropdown-item text-danger"><i class="bi bi-trash me-2" aria-hidden="true"></i>Delete assessment</button>
+      </form>
+    </li>
+  </ul>
+</div>
+

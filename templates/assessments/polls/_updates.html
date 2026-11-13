@@ -1,0 +1,122 @@
+<script nonce="{{ csp_nonce }}">
+(function () {
+  let refreshing = false;
+  const originalStatus = '{{ poll.status|escapejs }}';
+  const originallyAccepting = {{ poll.accepting_responses|yesno:'true,false' }};
+  const status = document.getElementById('poll-connection');
+  async function refresh() {
+    if (refreshing || document.hidden) return;
+    refreshing = true;
+    try {
+      const url = new URL(location.href);
+      url.searchParams.delete('saved');
+      url.searchParams.set('state', '1');
+      const result = await fetch(url, {cache: 'no-store'});
+      if (!result.ok) throw new Error('Refresh failed');
+      const state = await result.json();
+      if (state.status !== originalStatus || state.accepting !== originallyAccepting) {
+        location.reload(); return;
+      }
+      const el = document.getElementById('poll-results');
+      if (el) {
+        const container = document.createElement('div');
+        container.innerHTML = state.html;
+        const fresh = container.firstElementChild;
+        if (fresh) {
+          el.replaceWith(fresh);
+        }
+      }
+      if (state.responded_voters) {
+        const responded = new Set(state.responded_voters.map(String));
+        document.querySelectorAll('[data-voter-status]').forEach(function (el) {
+          el.textContent = responded.has(el.dataset.voterStatus) ? 'Responded' : 'Awaiting response';
+        });
+        const count = responded.size;
+        const responseCount = document.querySelector('[data-poll-response-count]');
+        const total = responseCount ? Number(responseCount.dataset.pollTotal || 0) : 0;
+        if (responseCount) {
+          if (responseCount.firstChild && responseCount.firstChild.nodeType === Node.TEXT_NODE) {
+            responseCount.firstChild.nodeValue = String(count);
+          } else {
+            responseCount.textContent = String(count);
+          }
+        }
+        const unanswered = document.querySelector('[data-poll-unanswered]');
+        if (unanswered) unanswered.textContent = String(Math.max(0, total - count));
+        const rate = document.querySelector('[data-poll-response-rate]');
+        if (rate && total) rate.textContent = Math.round(count * 100 / total) + '%';
+        const progress = document.querySelector('[data-poll-progress]');
+        const percent = total ? Math.round(count * 100 / total) : 0;
+        if (progress) {
+          progress.setAttribute('aria-valuenow', String(percent));
+          progress.setAttribute('aria-label', count + ' of ' + total + ' students responded');
+          const fill = progress.querySelector('[data-poll-progress-fill]');
+          if (fill) fill.style.width = percent + '%';
+        }
+        const selectedCard = document.querySelector('.poll-list-card[aria-current="page"]');
+        const listLabel = selectedCard && selectedCard.querySelector('[data-poll-list-response-label]');
+        if (listLabel) listLabel.textContent = count + ' of ' + total + ' responded';
+        const listProgress = selectedCard && selectedCard.querySelector('[data-poll-list-progress]');
+        if (listProgress) {
+          listProgress.setAttribute('aria-valuenow', String(percent));
+          listProgress.setAttribute('aria-label', count + ' of ' + total + ' students responded');
+          const fill = listProgress.querySelector('span');
+          if (fill) fill.style.width = percent + '%';
+        }
+      }
+      if (status) status.textContent = 'Live results updated.';
+    } catch (_) {
+      if (status) status.textContent = 'Connection interrupted. Displayed results may be out of date; retrying…';
+    } finally { refreshing = false; }
+  }
+  let activeSocket = null;
+  let reconnectTimer = null;
+  function connect() {
+    if (!window.WebSocket) return;
+    if (activeSocket) {
+      activeSocket.onmessage = null;
+      activeSocket.onopen = null;
+      activeSocket.onclose = null;
+      activeSocket.onerror = null;
+      try { activeSocket.close(); } catch (_) {}
+      activeSocket = null;
+    }
+    const socket = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/assessments/{{ session.uuid }}/');
+    activeSocket = socket;
+    socket.onmessage = function(event) {
+      try { if (JSON.parse(event.data).type === 'poll.changed') refresh(); } catch (_) {}
+    };
+    socket.onopen = refresh;
+    socket.onclose = function () {
+      socket.onmessage = null;
+      socket.onopen = null;
+      socket.onclose = null;
+      socket.onerror = null;
+      if (activeSocket === socket) activeSocket = null;
+      clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(connect, 3000);
+    };
+  }
+  connect();
+  const pollInterval = setInterval(refresh, 5000);
+  window.addEventListener('pagehide', function () {
+    clearInterval(pollInterval);
+    clearTimeout(reconnectTimer);
+    if (activeSocket) {
+      activeSocket.onmessage = null;
+      activeSocket.onopen = null;
+      activeSocket.onclose = null;
+      activeSocket.onerror = null;
+      try { activeSocket.close(); } catch (_) {}
+      activeSocket = null;
+    }
+  });
+  document.querySelectorAll('[data-question-vote]').forEach(function (fieldset) {
+    const abstain = fieldset.querySelector('input[type="checkbox"][name^="abstain-"]');
+    const choices = fieldset.querySelectorAll('[name^="question-"]');
+    if (!abstain) return;
+    abstain.addEventListener('change', function () { if (abstain.checked) choices.forEach(function (choice) { choice.checked = false; }); });
+    choices.forEach(function (choice) { choice.addEventListener('change', function () { if (choice.checked) abstain.checked = false; }); });
+  });
+})();
+</script>

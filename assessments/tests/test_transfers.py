@@ -96,7 +96,7 @@ class TransferPageTests(TransferTestCase):
 
     def test_the_page_warns_and_lists_only_the_colleagues_known_in_this_organization(self):
         response = self.client.get(self.url)
-        self.assertContains(response, 'you will no longer see or control it')
+        self.assertContains(response, 'You will lose access after transfer.')
         self.assertContains(response, 'Ben Colleague (ben@uni.test)')
         self.assertContains(response, '>cat<')                    # no name or email: the username
         for hidden in ('Ann Owner (ann@uni.test)', 'dan', 'eve'):
@@ -106,7 +106,7 @@ class TransferPageTests(TransferTestCase):
         record_sign_in(self.ben, [])
         record_sign_in(self.cat, [])
         response = self.client.get(self.url)
-        self.assertContains(response, 'No other colleague has signed in')
+        self.assertContains(response, 'No other colleague has signed in yet.')
         self.assertNotContains(response, 'name="new_owner"')
 
     def test_choosing_a_colleague_hands_it_over_and_returns_to_the_list(self):
@@ -168,12 +168,12 @@ class TransferPageTests(TransferTestCase):
         self.assertEqual(self.client.get(self.url).status_code, 302)
 
     def test_the_session_pages_link_to_it(self):
-        self.assertContains(self.client.get(reverse('assessment_session_detail', args=[self.session.pk])), self.url)
-        self.assertContains(self.client.get(reverse('assessment_session_list')), self.url)
+        self.assertContains(self.client.get(reverse('assessment_session_detail', args=[self.session.pk])), f'data-action-url="{self.url}"')
+        self.assertContains(self.client.get(reverse('assessment_session_list')), f'data-action-url="{self.url}"')
 
     def test_the_live_control_page_links_to_it_too(self):
         AssessmentSession.objects.filter(pk=self.session.pk).update(status='live')
-        self.assertContains(self.client.get(reverse('assessment_session_detail', args=[self.session.pk])), self.url)
+        self.assertContains(self.client.get(reverse('assessment_session_detail', args=[self.session.pk])), f'data-action-url="{self.url}"')
 
     def test_the_new_session_page_has_no_transfer_link(self):
         self.assertNotContains(self.client.get(reverse('assessment_session_create')), '/transfer/')

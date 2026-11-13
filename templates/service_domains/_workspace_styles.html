@@ -1,0 +1,28 @@
+<style nonce="{{ csp_nonce }}">
+main.service-workspace .service-onboarding-icon{display:grid;place-items:center;flex:0 0 2.75rem;height:2.75rem;border-radius:.75rem;background:var(--accent-soft);color:var(--accent);font-size:1.2rem}
+main.service-workspace .service-onboarding-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:.65rem;counter-reset:service-step}
+main.service-workspace .service-onboarding-steps .list-group-item{position:relative;border:1px solid var(--border);border-radius:var(--radius-card);padding:.85rem .9rem .85rem 2.9rem;min-height:5rem}
+main.service-workspace .service-onboarding-steps .list-group-item::before{position:absolute;left:.85rem;top:.85rem;display:grid;place-items:center;width:1.45rem;height:1.45rem;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-size:.8rem;font-weight:700;counter-increment:service-step;content:counter(service-step)}
+main.service-workspace form p{margin:0 0 1rem}
+main.service-workspace form label{display:block;margin-bottom:.35rem;font-weight:600;color:var(--ink)}
+main.service-workspace form input:not([type=hidden]):not([type=checkbox]):not([type=radio]),main.service-workspace form select,main.service-workspace form textarea{display:block;width:100%;min-height:2.65rem;padding:.55rem .75rem;border:1px solid var(--border-strong);border-radius:var(--radius-control);background:var(--surface);color:var(--text);font:inherit}
+main.service-workspace form textarea{min-height:6rem}
+main.service-workspace form input[type=checkbox],main.service-workspace form input[type=radio]{width:1rem;height:1rem;accent-color:var(--accent)}
+main.service-workspace form input:focus-visible,main.service-workspace form select:focus-visible,main.service-workspace form textarea:focus-visible{outline:0;box-shadow:var(--focus-ring);border-color:var(--accent)}
+main.service-workspace form .helptext{display:block;margin-top:.35rem;color:var(--text-muted);font-size:.875rem}
+main.service-workspace form ul.errorlist{margin:.35rem 0 0;padding-left:1.1rem;color:var(--danger)}
+main.service-workspace .service-section{padding:1.25rem;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+main.service-workspace .service-section h2{margin-bottom:.6rem}
+main.service-workspace .service-workflow{border-left:.25rem solid var(--accent);background:var(--accent-soft)}
+main.service-workspace .import-dropzone{position:relative;border:1.5px dashed var(--border-strong);border-radius:var(--radius-card);padding:1.1rem .9rem;text-align:center;background:var(--surface-sunken);transition:border-color .15s ease,background .15s ease}
+main.service-workspace .import-dropzone.is-dragover{border-color:var(--accent);background:var(--accent-soft)}
+main.service-workspace .import-dropzone i.bi-cloud-arrow-up{display:block;font-size:1.6rem;color:var(--accent);margin-bottom:.3rem}
+main.service-workspace .import-dropzone .dz-text{font-size:var(--fs-sm);font-weight:600;color:var(--ink)}
+main.service-workspace .import-dropzone .dz-filename{min-height:1.1em;margin-top:.25rem;color:var(--text-muted);font-size:var(--fs-micro)}
+main.service-workspace .import-dropzone input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+main.service-workspace .service-setup-nav{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:.55rem;margin:0 0 1.25rem;padding:0;list-style:none}
+main.service-workspace .service-setup-nav a{display:flex;align-items:center;gap:.65rem;min-height:3.2rem;padding:.6rem .75rem;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);color:var(--ink);font-weight:650;text-decoration:none}
+main.service-workspace .service-setup-nav a:hover,main.service-workspace .service-setup-nav a:focus-visible{border-color:var(--accent);box-shadow:var(--focus-ring);color:var(--accent)}
+main.service-workspace .service-setup-nav .step-index{display:grid;place-items:center;width:1.8rem;height:1.8rem;flex:0 0 1.8rem;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-size:.82rem;font-weight:800}
+@media(max-width:575.98px){main.service-workspace .service-onboarding-steps{grid-template-columns:1fr}main.service-workspace .service-section{padding:1rem}}
+</style>

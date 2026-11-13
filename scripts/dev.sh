@@ -28,4 +28,5 @@ trap 'kill $WORKER 2>/dev/null || true' EXIT INT TERM
 
 echo
 echo "LiveGrade: ${LIVEGRADE_BASE_URL:-http://localhost:8001}   (sign in with a DevPerf account that may run LiveGrade)"
-$PY manage.py runserver 8001
+# Accept connections from the LAN so configured public links work on other devices.
+$PY manage.py runserver 0.0.0.0:8001

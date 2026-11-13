@@ -7,5 +7,6 @@ urlpatterns = [
     path('no-access/', views.no_access, name='no_access'),
     path('switch-account/', views.switch_account, name='switch_account'),
     path('switch-organization/', views.switch_organization, name='switch_organization'),
+    path('readyz', views.readiness, name='readiness'),
     path('healthz', views.health, name='health'),
 ]

@@ -1,0 +1,669 @@
+{% extends 'base.html' %}
+{% block title %}{{ assessment.name }} · Combined assessment · LiveGrade{% endblock %}
+{% block page_title %}Combined assessment{% endblock %}
+
+{% block extra_css %}
+{% include 'service_domains/_workspace_styles.html' %}
+{% include 'service_domains/_panel_ui_styles.html' %}
+<style nonce="{{ csp_nonce }}">
+.combined-detail-page {
+  max-width: 1400px;
+  margin: 0 auto;
+  display: grid;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+.combined-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+.combined-hero__copy {
+  min-width: 0;
+}
+.combined-eyebrow {
+  margin: 0 0 var(--sp-1);
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.combined-card {
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+.combined-source-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--sp-3);
+}
+.combined-source-box {
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-hover);
+}
+.combined-stage-box {
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface-hover);
+}
+.combined-stage-box.is-active {
+  border-color: var(--success);
+  background: rgba(46, 125, 50, 0.04);
+}
+.combined-live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  margin-right: 6px;
+  animation: combined-pulse 1.8s infinite ease-in-out;
+}
+@keyframes combined-pulse {
+  0% { transform: scale(0.9); opacity: 0.6; }
+  50% { transform: scale(1.3); opacity: 1; }
+  100% { transform: scale(0.9); opacity: 0.6; }
+}
+.combined-table th {
+  font-size: var(--fs-micro);
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.combined-audit-item {
+  padding: var(--sp-3);
+  border-left: 3px solid var(--accent);
+  background: var(--surface-hover);
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  margin-bottom: var(--sp-2);
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="combined-detail-page stage-content">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-1">
+    <a href="{% url 'combined_assessment_list' %}" class="btn btn-link px-0 text-decoration-none">
+      <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>Combined assessments
+    </a>
+  </div>
+
+  <header class="combined-hero">
+    <div class="combined-hero__copy">
+      <p class="combined-eyebrow">
+        Combined assessment · <span class="badge {% if assessment.status == 'active' %}text-bg-success{% elif assessment.status == 'draft' %}text-bg-warning{% else %}text-bg-secondary{% endif %}">{{ assessment.get_status_display }}</span>
+      </p>
+      <h1 class="page-title mb-1">{{ assessment.name }}</h1>
+      <p class="text-muted mb-0">{{ assessment.get_result_policy_display }}</p>
+    </div>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      {% if assessment.status == 'draft' %}
+        <form method="post" class="d-inline">
+          {% csrf_token %}
+          <button class="btn btn-primary" name="action" value="publish" {% if not mapping_complete %}disabled title="Map all presentation entries first"{% endif %}>
+            <i class="bi bi-lock me-1" aria-hidden="true"></i>Publish and lock policy
+          </button>
+        </form>
+        <form method="post" class="d-inline" data-confirm="Delete this draft and release its source assessments?" data-confirm-title="Delete combined assessment draft" data-confirm-label="Delete draft" data-confirm-tone="danger">
+          {% csrf_token %}
+          <button class="btn btn-outline-danger" name="action" value="delete_draft">
+            <i class="bi bi-trash me-1" aria-hidden="true"></i>Delete draft
+          </button>
+        </form>
+      {% elif assessment.status == 'active' %}
+        <form method="post" class="d-inline" data-confirm="Close this combined assessment and finalize all presentations?" data-confirm-title="Close combined assessment?" data-confirm-label="Close assessment" data-confirm-tone="danger">
+          {% csrf_token %}
+          <button class="btn btn-outline-danger" name="action" value="close">
+            <i class="bi bi-stop-circle me-1" aria-hidden="true"></i>Close combined assessment
+          </button>
+        </form>
+      {% endif %}
+    </div>
+  </header>
+
+  {% if messages %}
+    <div aria-live="polite">
+      {% for message in messages %}
+        <div class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'warning' %}alert-warning{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %}" role="status">
+          {{ message }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <!-- Section 1: Linked Assessments & Policy Overview -->
+  <section class="combined-card" aria-labelledby="linked-sources-heading">
+    <h2 id="linked-sources-heading" class="h5 mb-3">Linked assessments</h2>
+    <div class="combined-source-grid">
+      <div class="combined-source-box">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <span class="text-muted small fw-semibold"><i class="bi bi-mortarboard me-1" aria-hidden="true"></i>Classroom session</span>
+          <span class="badge text-bg-light border">{{ assessment.classroom_session.get_status_display }}</span>
+        </div>
+        <div class="fw-bold mb-1">
+          <a href="{% url 'assessment_session_detail' assessment.classroom_session.pk %}" class="text-decoration-none">
+            {{ assessment.classroom_session.name }}
+          </a>
+        </div>
+        <p class="small text-muted mb-0">
+          Quorum: {{ assessment.minimum_peer_ratings }} peer rating{{ assessment.minimum_peer_ratings|pluralize }} required per group.
+        </p>
+      </div>
+
+      <div class="combined-source-box">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <span class="text-muted small fw-semibold"><i class="bi bi-people me-1" aria-hidden="true"></i>Panel hearing</span>
+          <span class="badge text-bg-light border">{{ assessment.panel_hearing.get_status_display }}</span>
+        </div>
+        <div class="fw-bold mb-1">
+          <a href="{% url 'panel_hearing_manage' assessment.panel_hearing.pk %}" class="text-decoration-none">
+            {{ assessment.panel_hearing.name }}
+          </a>
+        </div>
+        <p class="small text-muted mb-0">
+          Workflow: {{ assessment.panel_hearing.get_workflow_display }} · Quorum: {{ assessment.minimum_panel_raters }} examiner{{ assessment.minimum_panel_raters|pluralize }} required.
+        </p>
+      </div>
+
+      <div class="combined-source-box">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <span class="text-muted small fw-semibold"><i class="bi bi-sliders me-1" aria-hidden="true"></i>Scoring policy</span>
+          <span class="badge text-bg-light border">{{ assessment.get_result_policy_display }}</span>
+        </div>
+        {% if assessment.result_policy == 'weighted' %}
+          <p class="mb-1">
+            Combined mark = peer score × {{ assessment.peer_weight }}% + examiner score × {{ assessment.panel_weight }}%.
+          </p>
+          <p class="small text-muted mb-0">
+            A difference above {{ assessment.moderation_threshold }} points needs a moderator review before release.
+          </p>
+        {% else %}
+          <p class="mb-1">Peer and examiner results stay separate.</p>
+          <p class="small text-muted mb-0">Independent peer and examiner marks are published directly.</p>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 2: Candidate & Group Mapping Console (Draft State) -->
+  {% if assessment.status == 'draft' %}
+    <section class="combined-card" aria-labelledby="mapping-heading">
+      <h2 id="mapping-heading" class="h5">Match the candidates</h2>
+      <p class="text-muted">Match each Classroom group to one Panel candidate. Check the members; similar names do not confirm a match.</p>
+
+      {% if roster_changed_mappings %}
+        <div class="alert alert-warning" role="alert">
+          <strong>Classroom group membership changed after mapping.</strong> Recheck these entries before publishing: {% for mapping in roster_changed_mappings %}{{ mapping.group.name }}{% if not forloop.last %}, {% endif %}{% endfor %}. Remove and recreate the affected mapping to capture the corrected membership.
+        </div>
+      {% endif %}
+
+      {% if mapping_complete %}
+        <div class="alert alert-success d-flex align-items-center gap-2" role="status">
+          <i class="bi bi-check-circle-fill text-success" aria-hidden="true"></i>
+          <span>All entries are mapped and the saved Classroom group memberships still match.</span>
+        </div>
+      {% endif %}
+
+      {% if unusable_candidates %}
+        <div class="alert alert-warning" role="alert">
+          <strong>Some Panel candidates cannot match the remaining Classroom groups.</strong> {% for candidate in unusable_candidates %}{{ candidate.display_name }}{% if candidate.source_group_id %} (already linked to a different Classroom group){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}. Choose a Panel hearing whose entries match this session, or prepare a new draft hearing with the correct candidates.
+        </div>
+      {% endif %}
+
+      {% if unmapped_groups and assessment.panel_hearing.status != 'draft' %}
+        <div class="alert alert-warning" role="alert">
+          This Panel hearing is no longer a draft, so new candidates cannot be added from Classroom groups. Choose a draft hearing or link existing candidates.
+        </div>
+      {% endif %}
+
+      {% if unmapped_groups %}
+        <h3 class="h6 mt-3">Unmatched Classroom groups</h3>
+        <ul class="list-group mb-3">
+          {% for group in unmapped_groups %}
+            <li class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-3">
+              <div>
+                <strong>{{ group.name }}</strong>
+                <div class="small text-muted">
+                  Members: {% for membership in group.memberships.all %}{{ membership.student.full_name }}{% if not forloop.last %}, {% endif %}{% empty %}No members recorded{% endfor %}
+                </div>
+              </div>
+              {% if assessment.panel_hearing.status == 'draft' %}
+                <form method="post">
+                  {% csrf_token %}
+                  <input type="hidden" name="group_id" value="{{ group.pk }}">
+                  <button class="btn btn-sm btn-outline-primary" name="action" value="create_candidate_from_group">
+                    <i class="bi bi-plus-circle me-1" aria-hidden="true"></i>Create linked Panel entry
+                  </button>
+                </form>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+
+      {% if unmapped_groups and unmapped_candidates %}
+        <form method="post" class="row g-2 align-items-end mb-3">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="add_mapping">
+          <div class="col-md-5">
+            <label class="form-label" for="group-id">Classroom group</label>
+            <select class="form-select" id="group-id" name="group_id" required>
+              <option value="">Choose a group</option>
+              {% for group in unmapped_groups %}
+                <option value="{{ group.pk }}">{{ group.name }} · {% for membership in group.memberships.all %}{{ membership.student.full_name }}{% if not forloop.last %}, {% endif %}{% empty %}no members{% endfor %}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-5">
+            <label class="form-label" for="candidate-id">Existing Panel candidate</label>
+            <select class="form-select" id="candidate-id" name="candidate_id" required>
+              <option value="">Choose a candidate</option>
+              {% for candidate in unmapped_candidates %}
+                <option value="{{ candidate.pk }}">{{ candidate.display_name }}{% if candidate.reference %} ({{ candidate.reference }}){% endif %}{% if candidate.source_group_id %} · linked Classroom group{% endif %}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-2">
+            <button class="btn btn-primary w-100" type="submit">Confirm mapping</button>
+          </div>
+        </form>
+      {% endif %}
+
+      {% if not mapping_complete and not unmapped_groups and unmapped_candidates %}
+        <p class="text-warning">There are unmatched Panel candidates. Choose a Panel hearing whose candidate list matches the Classroom groups before publishing.</p>
+      {% endif %}
+
+      {% if assessment.mappings.exists %}
+        <h3 class="h6 mt-4">Confirmed mappings</h3>
+        <ul class="list-group">
+          {% for row in rows %}
+            <li class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2">
+              <div>
+                <strong>{{ row.group.name }}</strong>
+                <span class="text-muted small">({% for membership in row.group.memberships.all %}{{ membership.student.full_name }}{% if not forloop.last %}, {% endif %}{% empty %}no members{% endfor %})</span>
+                <span class="mx-1" aria-hidden="true">→</span>
+                <strong>{{ row.candidate.display_name }}</strong>
+                {% if row.candidate.source_group_id %}
+                  <span class="badge text-bg-success ms-2">linked to this group</span>
+                {% else %}
+                  <span class="badge text-bg-light border ms-2">organizer confirmed</span>
+                {% endif %}
+              </div>
+              <div>
+                {% for changed in roster_changed_mappings %}
+                  {% if changed.pk == row.mapping_id %}
+                    <form method="post" class="d-inline">
+                      {% csrf_token %}
+                      <input type="hidden" name="mapping_id" value="{{ row.mapping_id }}">
+                      <button class="btn btn-sm btn-outline-warning" name="action" value="remove_mapping">
+                        Remove and reconfirm
+                      </button>
+                    </form>
+                  {% endif %}
+                {% endfor %}
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  <!-- Section 3: Live Presentation Control Console (Active State) -->
+  {% if assessment.status == 'active' %}
+    <section class="combined-card" aria-labelledby="paired-control-heading" data-combined-live-console>
+      <div class="d-flex justify-content-between align-items-baseline flex-wrap gap-2 mb-3">
+        <div>
+          <h2 id="paired-control-heading" class="h5 mb-1">Start a presentation</h2>
+          <p class="text-muted mb-0">Start a matched entry here to activate it in both assessments.</p>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge text-bg-light border" data-live-poll-indicator>
+            <i class="bi bi-arrow-repeat me-1" aria-hidden="true"></i>Live sync active
+          </span>
+        </div>
+      </div>
+
+      {% if not mapping_complete %}
+        <div class="alert alert-warning" role="alert">
+          A source roster, group membership, or entry mapping changed after publishing. Paired activation and weighted results are paused until the confirmed setup is restored.
+        </div>
+      {% endif %}
+
+      <!-- Active Stage Presentation Arena -->
+      <div class="combined-stage-box mb-4 {% if paired_slot_active %}is-active{% endif %}">
+        {% if paired_slot_active %}
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <div>
+              <span class="badge text-bg-success mb-2">
+                <span class="combined-live-dot" aria-hidden="true"></span>Paired scoring active
+              </span>
+              <h3 class="h4 mb-1">{{ active_turn.group.name }}</h3>
+              <p class="text-muted small mb-0">
+                Classroom turn: <strong>{{ active_turn.group.name }}</strong> ↔ Panel candidate: <strong>{{ assessment.panel_hearing.active_candidate.display_name }}</strong>
+              </p>
+            </div>
+            <div>
+              <form method="post">
+                {% csrf_token %}
+                <button class="btn btn-outline-secondary" name="action" value="pause_entry">
+                  <i class="bi bi-pause-circle me-1" aria-hidden="true"></i>Pause active scoring slot
+                </button>
+              </form>
+            </div>
+          </div>
+        {% elif has_unpaired_active_entry %}
+          <div class="alert alert-warning mb-0" role="status">
+            <div class="fw-bold mb-1">
+              <i class="bi bi-exclamation-triangle-fill me-1" aria-hidden="true"></i>The peer and Panel active entries do not match. Check both assessments before continuing.
+            </div>
+            <div class="small">
+              Classroom active turn: <strong>{{ active_turn.group.name|default:'None' }}</strong> ·
+              Panel active candidate: <strong>{{ assessment.panel_hearing.active_candidate.display_name|default:'None' }}</strong>.
+              Select any presentation below and click "Start paired scoring" to synchronize both sources.
+            </div>
+          </div>
+        {% else %}
+          <div class="text-center py-2">
+            <p class="text-muted mb-0">No presentation is active. Start paired scoring when both assessments are open.</p>
+          </div>
+        {% endif %}
+      </div>
+
+      <!-- Mapped Presentations Table -->
+      <div class="table-responsive">
+        <table class="table table-hover align-middle combined-table mb-0">
+          <caption class="visually-hidden">Mapped presentations available for paired scoring</caption>
+          <thead>
+            <tr>
+              <th scope="col">Presentation entry</th>
+              <th scope="col">Panel candidate</th>
+              <th scope="col">Status</th>
+              <th scope="col" class="text-end">Live action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                <th scope="row">
+                  <div class="fw-bold">{{ row.group.name }}</div>
+                  <div class="small text-muted">
+                    {% for membership in row.group.memberships.all %}
+                      {{ membership.student.full_name }}{% if not forloop.last %}, {% endif %}
+                    {% empty %}
+                      no members
+                    {% endfor %}
+                  </div>
+                </th>
+                <td>
+                  <div>{{ row.candidate.display_name }}</div>
+                  {% if row.candidate.reference %}
+                    <div class="small text-muted">{{ row.candidate.reference }}</div>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if active_turn and active_turn.group_id == row.group.pk and assessment.panel_hearing.active_candidate_id == row.candidate.pk %}
+                    <span class="badge text-bg-success">
+                      <span class="combined-live-dot" aria-hidden="true"></span>Active now
+                    </span>
+                  {% elif row.already_presented %}
+                    <span class="badge text-bg-light border text-muted">Completed</span>
+                  {% else %}
+                    <span class="badge text-bg-light border">Ready</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  {% if row.can_start %}
+                    <form method="post" class="d-inline">
+                      {% csrf_token %}
+                      <input type="hidden" name="mapping_id" value="{{ row.mapping_id }}">
+                      <button class="btn btn-sm btn-primary" name="action" value="activate_entry">
+                        <i class="bi bi-play-circle me-1" aria-hidden="true"></i>Start paired scoring
+                      </button>
+                    </form>
+                  {% elif row.already_presented %}
+                    <span class="small text-muted">Presentation completed</span>
+                  {% elif active_turn and active_turn.group_id == row.group.pk %}
+                    <span class="small text-success fw-semibold">Scoring active</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="4" class="text-muted text-center py-3">No presentation entries are mapped.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% endif %}
+
+  <!-- Section 4: Results Matrix & Discrepancy Analysis (Active & Closed States) -->
+  <section class="combined-card" aria-labelledby="combined-results-heading">
+    <div class="d-flex justify-content-between align-items-baseline flex-wrap gap-2 mb-3">
+      <div>
+        <h2 id="combined-results-heading" class="h4 mb-1">Results</h2>
+        <p class="text-muted mb-0">Missing responses stay pending; they are not counted as zero. These views do not change the result policy.</p>
+      </div>
+    </div>
+
+    <nav class="nav nav-pills mb-3" aria-label="Select result view">
+      <a class="nav-link {% if result_view == 'all' %}active{% endif %}" href="?results=all" {% if result_view == 'all' %}aria-current="page"{% endif %}>Both</a>
+      <a class="nav-link {% if result_view == 'peer' %}active{% endif %}" href="?results=peer" {% if result_view == 'peer' %}aria-current="page"{% endif %}>Peer</a>
+      <a class="nav-link {% if result_view == 'panel' %}active{% endif %}" href="?results=panel" {% if result_view == 'panel' %}aria-current="page"{% endif %}>Panel</a>
+      {% if assessment.result_policy == 'weighted' %}
+        <a class="nav-link {% if result_view == 'combined' %}active{% endif %}" href="?results=combined" {% if result_view == 'combined' %}aria-current="page"{% endif %}>Weighted combined</a>
+      {% endif %}
+    </nav>
+
+    <div class="table-responsive">
+      <table class="table table-striped align-middle combined-table mb-0">
+        <caption class="visually-hidden">Combined presentation results showing peer marks, panel outcomes, and composite scores</caption>
+        <thead>
+          <tr>
+            <th scope="col">Presentation</th>
+            {% if result_view == 'all' or result_view == 'peer' %}
+              <th scope="col">Peer result</th>
+            {% endif %}
+            {% if result_view == 'all' or result_view == 'panel' %}
+              <th scope="col">Panel result</th>
+            {% endif %}
+            {% if assessment.result_policy == 'weighted' and result_view != 'peer' and result_view != 'panel' %}
+              <th scope="col">Weighted combined mark</th>
+            {% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              <th scope="row">
+                <div class="fw-bold">{{ row.group.name }}</div>
+                {% if assessment.result_policy == 'weighted' and row.moderation_required %}
+                  <div class="small text-warning-emphasis">
+                    <i class="bi bi-shield-exclamation me-1" aria-hidden="true"></i>Needs review: {{ row.moderation_state }}
+                  </div>
+                {% endif %}
+              </th>
+
+              {% if result_view == 'all' or result_view == 'peer' %}
+                <td>
+                  {% if row.peer_score is not None %}
+                    <div class="fw-semibold">{{ row.peer_score|floatformat:2 }} / 100</div>
+                    <div class="small text-muted">
+                      {{ row.peer_rater_count }} rating{{ row.peer_rater_count|pluralize }}
+                      {% if not row.peer_covered %}
+                        <span class="text-danger">· below minimum ({{ assessment.minimum_peer_ratings }})</span>
+                      {% endif %}
+                    </div>
+                  {% else %}
+                    <span class="text-muted">Pending</span>
+                  {% endif %}
+                </td>
+              {% endif %}
+
+              {% if result_view == 'all' or result_view == 'panel' %}
+                <td>
+                  {% if row.panel_score is not None %}
+                    <div class="fw-semibold">{{ row.panel_score|floatformat:2 }} / 100</div>
+                    <div class="small text-muted">
+                      {{ row.panel_rater_count }} examiner{{ row.panel_rater_count|pluralize }}
+                      {% if not row.panel_covered %}
+                        <span class="text-danger">· below minimum ({{ assessment.minimum_panel_raters }})</span>
+                      {% endif %}
+                    </div>
+                  {% else %}
+                    {% if row.panel_decision %}
+                      <div class="fw-bold">{{ row.panel_decision.get_outcome_display }}</div>
+                      <p class="small mb-1">{{ row.panel_decision.rationale }}</p>
+                      {% if row.panel_decision.conditions %}
+                        <p class="small text-muted mb-0">Next steps: {{ row.panel_decision.conditions }}</p>
+                      {% endif %}
+                    {% elif row.panel_vote_counts or row.panel_review_count %}
+                      <span class="badge text-bg-light border">Decision pending</span>
+                    {% else %}
+                      <span class="text-muted">Pending</span>
+                    {% endif %}
+                  {% endif %}
+
+                  {% if row.panel_vote_counts %}
+                    <div class="small text-muted mt-1">
+                      Private votes: {{ row.panel_vote_counts.support|default:0 }} support, {{ row.panel_vote_counts.oppose|default:0 }} oppose, {{ row.panel_vote_counts.abstain|default:0 }} abstain
+                    </div>
+                  {% endif %}
+                  {% if row.panel_review_count %}
+                    <div class="small text-muted">
+                      {{ row.panel_review_count }} written review{{ row.panel_review_count|pluralize }}
+                    </div>
+                  {% endif %}
+                </td>
+              {% endif %}
+
+              {% if assessment.result_policy == 'weighted' and result_view != 'peer' and result_view != 'panel' %}
+                <td>
+                  {% if row.combined_score is not None %}
+                    <div class="h5 mb-0 text-success fw-bold">{{ row.combined_score|floatformat:2 }} / 100</div>
+                    <div class="small text-muted">Weighted composite mark</div>
+                  {% elif row.moderation_required and row.sources_final and row.peer_covered and row.panel_covered and assessment.status != 'draft' %}
+                    <div class="card border p-2 bg-light">
+                      <div class="small fw-semibold text-warning-emphasis mb-1">
+                        <i class="bi bi-shield-alert me-1" aria-hidden="true"></i>Score divergence exceeds threshold ({{ assessment.moderation_threshold }} pts)
+                      </div>
+                      <form method="post" class="d-grid gap-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="mapping_id" value="{{ row.mapping_id }}">
+                        <label class="visually-hidden" for="decision-{{ row.mapping_id }}">Review decision for {{ row.group.name }}</label>
+                        <select class="form-select form-select-sm" id="decision-{{ row.mapping_id }}" name="decision">
+                          <option value="approve">Accept combined mark</option>
+                          <option value="hold">Hold for correction</option>
+                        </select>
+                        <label class="visually-hidden" for="reason-{{ row.mapping_id }}">Reason for review decision on {{ row.group.name }}</label>
+                        <textarea class="form-control form-control-sm" id="reason-{{ row.mapping_id }}" name="reason" maxlength="1200" required placeholder="Enter the reason"></textarea>
+                        <button class="btn btn-sm btn-outline-primary" name="action" value="moderate">Save review decision</button>
+                      </form>
+                    </div>
+                  {% else %}
+                    <span class="text-muted small">Waiting for responses or minimum coverage</span>
+                  {% endif %}
+                </td>
+              {% endif %}
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="4" class="text-center text-muted py-4">No presentation entries are mapped.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Section 5: Moderation Audit Trail -->
+  {% if assessment.result_policy == 'weighted' %}
+    <section class="combined-card" aria-labelledby="moderation-audit-heading">
+      <h2 id="moderation-audit-heading" class="h5 mb-3">
+        <i class="bi bi-journal-text me-1" aria-hidden="true"></i>Moderation audit trail
+      </h2>
+      {% with has_audit=False %}
+        {% for row in rows %}
+          {% if row.moderation_history %}
+            <div class="mb-3">
+              <h3 class="h6 mb-2 text-primary">{{ row.group.name }} ↔ {{ row.candidate.display_name }}</h3>
+              {% for decision in row.moderation_history %}
+                <div class="combined-audit-item">
+                  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
+                    <div>
+                      <span class="badge {% if decision.decision == 'approve' %}text-bg-success{% else %}text-bg-warning{% endif %} me-2">
+                        Revision {{ decision.revision }}: {{ decision.get_decision_display }}
+                      </span>
+                      <span class="small text-muted">
+                        Recorded by {{ decision.reviewed_by.get_full_name|default:decision.reviewed_by.username|default:'Moderator' }} · {{ decision.created_at|date:'d M Y, H:i' }}
+                      </span>
+                    </div>
+                    <div class="small fw-semibold text-muted">
+                      Snapshot: Peer {{ decision.peer_score_at_review|floatformat:2 }} · Panel {{ decision.panel_score_at_review|floatformat:2 }}
+                    </div>
+                  </div>
+                  <div class="small text-secondary">{{ decision.reason }}</div>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% empty %}
+          <p class="text-muted small mb-0">No moderation decisions recorded.</p>
+        {% endfor %}
+      {% endwith %}
+    </section>
+  {% endif %}
+</div>
+
+{% if assessment.status == 'active' %}
+<script nonce="{{ csp_nonce }}">
+(() => {
+  const liveUrl = '{% url "combined_assessment_live_state" assessment.pk %}';
+  const indicator = document.querySelector('[data-live-poll-indicator]');
+  let pollTimer = null;
+
+  async function pollLiveState() {
+    try {
+      const response = await fetch(liveUrl, {
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json'
+        }
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      if (indicator) {
+        indicator.classList.remove('text-bg-danger');
+        indicator.classList.add('text-bg-light');
+      }
+    } catch (err) {
+      if (indicator) {
+        indicator.classList.remove('text-bg-light');
+        indicator.classList.add('text-bg-danger');
+      }
+    }
+  }
+
+  pollTimer = setInterval(pollLiveState, 4000);
+  window.addEventListener('beforeunload', () => {
+    if (pollTimer) clearInterval(pollTimer);
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

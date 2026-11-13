@@ -1,0 +1,83 @@
+{% extends 'assessments/student/_student_base.html' %}
+{% block title %}{{ poll.question }} - Anonymous poll{% endblock %}
+{% block hero_sub %}Anonymous poll{% endblock %}
+{% block main_class %} poll-participant-shell{% endblock %}
+{% block extra_css %}{% include 'assessments/polls/_participant_ui_styles.html' %}{% endblock %}
+{% block content %}
+<div class="poll-participant-grid">
+  <section class="s-card poll-response-card" aria-labelledby="poll-response-title">
+    <header class="poll-response-heading">
+      <div class="poll-response-status">
+        {% include 'assessments/polls/_status_badge.html' %}
+        {% if questions|length > 1 %}<span class="poll-detail-question-count">{{ questions|length }} questions · One response covers all</span>{% endif %}
+      </div>
+      <h2 id="poll-response-title">{{ poll.question }}</h2>
+      {% if poll.deadline %}<div class="poll-response-meta"><span><i class="bi bi-clock" aria-hidden="true"></i>Respond by <time datetime="{{ poll.deadline|date:'c' }}" data-local-deadline>{{ poll.deadline|date:'j M Y, H:i' }}</time></span></div>{% endif %}
+      <p class="poll-privacy-note"><i class="bi bi-incognito" aria-hidden="true"></i><span>No name or roster information is collected. The poll owner sees totals and combined answers only.</span></p>
+    </header>
+
+    {% if error %}<div class="alert alert-danger poll-state-alert" role="alert"><i class="bi bi-exclamation-circle-fill" aria-hidden="true"></i><span>{{ error }}</span></div>{% endif %}
+    {% if saved %}<div class="alert alert-success poll-state-alert" role="status"><i class="bi bi-check-circle-fill" aria-hidden="true"></i><span>Your anonymous response was saved.{% if poll.accepting_responses %} You can update it from this browser while voting is open.{% endif %}</span></div>{% endif %}
+
+    {% if poll.accepting_responses %}
+      <form method="post" class="poll-vote-form">{% csrf_token %}<input type="hidden" name="action" value="vote">
+        {% for question in questions %}
+          <fieldset class="poll-question-card" data-question-vote="{{ question.pk }}" aria-describedby="poll-question-help-{{ question.pk }}">
+            <legend>{{ forloop.counter }}. {{ question.prompt }}</legend>
+            <p class="poll-question-help" id="poll-question-help-{{ question.pk }}">{% if question.allow_multiple %}Select all that apply.{% else %}Select one answer.{% endif %}</p>
+            <div class="poll-answer-choices">
+              {% for option in question.options.all %}
+                <label class="poll-answer-choice" for="option-{{ option.pk }}"><input class="form-check-input" type="{% if question.allow_multiple %}checkbox{% else %}radio{% endif %}" name="question-{{ question.pk }}" id="option-{{ option.pk }}" value="{{ option.pk }}" {% if option.pk in question.user_selections %}checked{% endif %}><span>{{ option.label }}</span></label>
+              {% endfor %}
+              {% if question.allow_abstain %}<label class="poll-answer-choice poll-answer-choice-abstain" for="abstain-{{ question.pk }}"><input class="form-check-input" type="checkbox" name="abstain-{{ question.pk }}" id="abstain-{{ question.pk }}" value="yes" {% if question.user_abstained %}checked{% endif %}><span>None of these options</span></label>{% endif %}
+            </div>
+          </fieldset>
+        {% endfor %}
+        <button class="btn btn-primary w-100 poll-vote-submit">{% if response %}Update anonymous response{% else %}Submit anonymous response{% endif %}</button>
+      </form>
+    {% else %}
+      <div class="alert alert-secondary poll-state-alert"><i class="bi bi-lock-fill" aria-hidden="true"></i><span>{% if poll.status == 'cancelled' %}This poll was cancelled.{% else %}Voting is closed.{% endif %}</span></div>
+      {% if response %}<section class="poll-your-response" aria-labelledby="poll-your-response-title"><h3 id="poll-your-response-title">Your anonymous response</h3>{% for question in questions %}<div class="poll-your-response-item"><p><strong>{{ forloop.counter }}. {{ question.prompt }}</strong><br>{{ question.user_answer_display }}</p></div>{% endfor %}</section>{% endif %}
+    {% endif %}
+  </section>
+
+  <aside class="s-card poll-live-results-panel" aria-labelledby="live-poll-results-heading">
+    <header class="poll-live-results-heading"><div><div class="public-poll-screen-status">{% include 'assessments/polls/_status_badge.html' %}<span>{% if poll.accepting_responses %}Live results{% else %}Final results{% endif %}</span></div><h2 id="live-poll-results-heading">Poll results</h2></div><a class="btn btn-sm btn-outline-primary" href="{{ results_url }}" target="_blank" rel="noopener">Open display screen</a></header>
+    {% include 'assessments/polls/_results.html' with poll=poll questions=results.questions responded=results.responded invited=None unanswered=None public_results=True hide_option_bars=True hide_option_percentages=True %}
+    <p id="poll-connection" role="status" class="poll-live-connection">{% if poll.accepting_responses %}Live results update automatically.{% else %}Final results{% endif %}</p>
+  </aside>
+</div>
+{% if poll.accepting_responses %}{{ state_url|json_script:'anonymous-poll-state' }}
+<script nonce="{{ csp_nonce }}">
+(function(){
+  const url=JSON.parse(document.getElementById('anonymous-poll-state').textContent);
+  const status=document.getElementById('poll-connection');
+  let pending=false, failures=0;
+  async function refresh(){
+    if(pending) return;
+    if(document.hidden){setTimeout(refresh,10000);return;}
+    pending=true;
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),10000);
+    try{
+      const response=await fetch(url,{cache:'no-store',signal:controller.signal});
+      if(!response.ok)throw new Error('Refresh failed');
+      const state=await response.json();
+      const results=document.getElementById('poll-results');
+      if(results)results.outerHTML=state.html;
+      status.textContent='Results are up to date.';
+      failures=0;
+      if(!state.accepting){location.reload();return;}
+    }catch(error){
+      failures=Math.min(failures+1,4);
+      status.textContent='Connection interrupted. Results may be out of date. Retrying…';
+    }finally{
+      clearTimeout(timeout);pending=false;
+      setTimeout(refresh,Math.min(30000,3000*Math.pow(2,failures))+Math.random()*1000);
+    }
+  }
+  setTimeout(refresh,3000+Math.random()*1000);
+})();
+</script>{% endif %}
+{% include 'assessments/polls/_local_deadline.html' %}
+{% endblock %}

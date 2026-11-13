@@ -1,0 +1,183 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% block title %}{{ session.name }} : Public screen : LiveGrade{% endblock %}
+{% block service_name %}Co-Assessment{% endblock %}
+
+{% block public_header_action %}
+<div class="d-flex align-items-center gap-2">
+  <span class="live-badge" id="stage-conn-badge"><span class="dot"></span><span id="stage-conn-text">Live</span></span>
+  <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-toggle-fullscreen">
+    <i class="bi bi-arrows-fullscreen me-1" aria-hidden="true"></i>Fullscreen
+  </button>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style nonce="{{ csp_nonce }}">
+:root { --proj-bg:#0f172a; --proj-surface:#1e293b; --proj-border:#334155; --proj-text:#f8fafc; --proj-muted:#94a3b8; --proj-accent:#38bdf8; }
+body { background: var(--proj-bg) !important; color: var(--proj-text) !important; }
+.public-service-header { background: var(--proj-surface) !important; border-bottom-color: var(--proj-border) !important; }
+.public-service-brand strong, .public-service-brand small, .public-service-footer { color: var(--proj-text) !important; }
+.stage-wrap { width: min(100% - 2rem, 78rem); margin: 0 auto; padding: clamp(1.25rem, 4vw, 3rem) 0; flex: 1; }
+.stage-card { background: var(--proj-surface); border: 1px solid var(--proj-border); border-radius: 1.25rem; padding: clamp(1.25rem, 3vw, 2.25rem); box-shadow: 0 15px 30px rgba(0,0,0,.35); text-align: center; }
+.stage-eyebrow { text-transform: uppercase; letter-spacing: .08em; font-size: .8rem; font-weight: 700; color: var(--proj-muted); margin: 0 0 .5rem; }
+.stage-title { font-size: clamp(2rem, 5vw, 3.75rem); font-weight: 800; letter-spacing: -.02em; margin: 0 0 .5rem; color: var(--proj-text); }
+.stage-sub { font-size: clamp(1rem, 2vw, 1.5rem); color: var(--proj-muted); margin: 0 auto; max-width: 46rem; }
+.stage-clock { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: clamp(3.5rem, 9vw, 7rem); font-weight: 800; line-height: 1; color: var(--proj-accent); margin-top: 1.5rem; }
+.stage-clock.is-qa { color: #cbd5e1; }
+.stage-clock-label { margin-top: .5rem; color: var(--proj-muted); font-weight: 600; }
+.join-qr { background: #fff; padding: 12px; border-radius: 14px; display: block; margin: 1.5rem auto 0; width: min(18rem, 70vw); height: auto; }
+.join-qr.small { width: 7rem; margin: 0; padding: 8px; border-radius: 10px; }
+.join-pin { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--proj-accent); font-weight: 800; letter-spacing: .06em; }
+.join-link { color: var(--proj-muted); word-break: break-all; font-size: .95rem; }
+.join-strip { display: flex; align-items: center; gap: 1rem; justify-content: center; margin-top: 1.25rem; text-align: left; }
+.stage-table { width: 100%; border-collapse: collapse; margin-top: 1.25rem; text-align: left; }
+.stage-table th { color: var(--proj-muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; padding: .6rem 1rem; border-bottom: 1px solid var(--proj-border); }
+.stage-table td { padding: .9rem 1rem; border-bottom: 1px solid rgba(255,255,255,.06); font-size: 1.2rem; }
+.stage-table .mark { text-align: right; font-weight: 800; color: var(--proj-accent); font-family: ui-monospace, Menlo, monospace; }
+.stage-table .topic { color: var(--proj-muted); font-size: 1rem; }
+.live-badge { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-micro); font-weight: 700; padding: .25rem .65rem; border-radius: 999px; background: rgba(34,197,94,.15); color: #4ade80; }
+.live-badge.is-offline { background: rgba(234,179,8,.15); color: #facc15; }
+.live-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: live-pulse 1.4s ease-in-out infinite; }
+@keyframes live-pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(.7); } }
+</style>
+{% endblock %}
+
+{% block content %}
+<main class="stage-wrap" id="public-main">
+  <div id="display-main">
+    {% if is_released %}
+      <section class="stage-card" aria-labelledby="stage-heading">
+        <p class="stage-eyebrow">Results released</p>
+        <h1 class="stage-title" id="stage-heading">{{ session.name }}</h1>
+        <table class="stage-table">
+          <thead><tr><th scope="col">Rank</th><th scope="col">Team</th><th scope="col" class="text-end">Final mark</th></tr></thead>
+          <tbody>
+            {% for r in leaderboard_rows %}
+            <tr>
+              <td>{{ forloop.counter }}</td>
+              <td><strong>{{ r.group_name }}</strong>{% if r.group_topic %}<div class="topic">{{ r.group_topic }}</div>{% endif %}</td>
+              <td class="mark">{{ r.final_mark }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+    {% elif active_turn %}
+      <section class="stage-card" aria-labelledby="stage-heading">
+        <p class="stage-eyebrow">On stage now</p>
+        <h1 class="stage-title" id="stage-heading">{{ active_turn.group.name }}</h1>
+        {% if active_turn.group.topic %}<p class="stage-sub">{{ active_turn.group.topic }}</p>{% endif %}
+        <div class="stage-clock" id="liveDisplayClock" role="timer" aria-live="off">--:--</div>
+        <div class="stage-clock-label" id="liveDisplayClockSub">Presentation</div>
+      </section>
+      <div class="join-strip" aria-label="Join as a peer evaluator">
+        <img class="join-qr small" src="{{ qr_url }}" alt="QR code to join" width="112" height="112">
+        <div>
+          <div class="stage-eyebrow mb-1">Peer evaluators</div>
+          <div class="join-link">Scan to check in</div>
+        </div>
+      </div>
+    {% else %}
+      <section class="stage-card" aria-labelledby="stage-heading">
+        <p class="stage-eyebrow">Join as peer evaluator</p>
+        <h1 class="stage-title" id="stage-heading">{{ session.name }}</h1>
+        <p class="stage-sub">Scan the QR code, then enter your student ID or full name to check in. Presentations start shortly.</p>
+        <img class="join-qr" src="{{ qr_url }}" alt="QR code to join as a peer evaluator" width="288" height="288">
+        <p class="join-link mt-3 mb-0">{{ join_url }}</p>
+      </section>
+    {% endif %}
+  </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  let activeTurnId = {% if active_turn %}{{ active_turn.pk }}{% else %}null{% endif %};
+  let isReleased = {% if is_released %}true{% else %}false{% endif %};
+  let clock = null;  // seconds left when the server last told us
+
+  function format(total) {
+    const seconds = Math.max(0, Math.round(total));
+    return String(Math.floor(seconds / 60)).padStart(2, '0') + ':' + String(seconds % 60).padStart(2, '0');
+  }
+
+  function tick() {
+    const display = document.getElementById('liveDisplayClock');
+    const sub = document.getElementById('liveDisplayClockSub');
+    if (!display || !clock) return;
+    const spent = clock.paused ? 0 : (Date.now() - clock.at) / 1000;
+    const presentation = Math.max(0, clock.presentation - spent);
+    const qa = Math.max(0, clock.qa - Math.max(0, spent - clock.presentation));
+    const inPresentation = presentation > 0;
+    display.textContent = format(inPresentation ? presentation : qa);
+    display.classList.toggle('is-qa', !inPresentation);
+    if (sub) sub.textContent = inPresentation ? (clock.paused ? 'Presentation paused' : 'Presentation') : 'Questions and answers';
+  }
+  setInterval(tick, 250);
+
+  function setConnection(online) {
+    const badge = document.getElementById('stage-conn-badge');
+    const text = document.getElementById('stage-conn-text');
+    if (badge) badge.classList.toggle('is-offline', !online);
+    if (text) text.textContent = online ? 'Live' : 'Reconnecting';
+  }
+
+  // Swap the stage area in place when the team on stage (or the results) change.
+  async function redraw() {
+    const response = await fetch(window.location.href, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+    const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+    const next = doc.getElementById('display-main');
+    const main = document.getElementById('display-main');
+    if (next && main) main.innerHTML = next.innerHTML;
+  }
+
+  async function refresh() {
+    try {
+      const response = await fetch("{{ state_url }}", { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      if (!response.ok) return;
+      const data = await response.json();
+      const releasedNow = data.session_status === 'released';
+      if (data.active_turn_id !== activeTurnId || releasedNow !== isReleased) {
+        activeTurnId = data.active_turn_id;
+        isReleased = releasedNow;
+        await redraw();
+      }
+      clock = {
+        presentation: data.presentation_remaining_seconds || 0, qa: data.qa_remaining_seconds || 0,
+        paused: !!data.timer_paused, at: Date.now(),
+      };
+      tick();
+    } catch (err) { /* the next event or fallback check retries */ }
+  }
+
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  let socket = null, retries = 0, retryTimer = null;
+  function connect() {
+    if (!window.WebSocket) return;
+    try {
+      socket = new WebSocket(protocol + '//' + window.location.host + '/ws/coassessment/{{ session.pk }}/live/');
+      socket.onopen = function () { retries = 0; setConnection(true); refresh(); };
+      socket.onmessage = function () { refresh(); };
+      socket.onclose = function () {
+        setConnection(false);
+        window.clearTimeout(retryTimer);
+        retryTimer = window.setTimeout(connect, Math.min(30000, 2000 * Math.pow(1.5, retries++)));
+      };
+      socket.onerror = function () { socket.close(); };
+    } catch (err) { /* the fallback check keeps the screen current */ }
+  }
+  connect();
+  setInterval(function () { if (!socket || socket.readyState !== WebSocket.OPEN) refresh(); }, 15000);
+  refresh();
+
+  const fsBtn = document.getElementById('btn-toggle-fullscreen');
+  if (fsBtn) {
+    fsBtn.addEventListener('click', function () {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(function () {});
+      else document.exitFullscreen().catch(function () {});
+    });
+  }
+})();
+</script>
+{% endblock %}

@@ -132,19 +132,17 @@ class HomeAccessTests(TestCase):
 
     def test_a_visitor_sees_the_public_landing_page_with_both_ways_in(self):
         response = self.client.get(reverse('home'))
-        self.assertContains(response, 'Grade presentations')
+        self.assertContains(response, 'Run live peer assessment for class presentations')
         self.assertContains(response, reverse('oidc_authentication_init') + '?signup=1')
         self.assertContains(response, 'Log in')
 
-    def test_a_protected_page_still_sends_a_visitor_to_sign_in_and_back(self):
+    def test_a_protected_service_page_starts_sign_in_at_the_service_entry(self):
         response = self.client.get(reverse('assessment_session_list'))
-        self.assertEqual(response.status_code, 302)
-        self.assertTrue(response['Location'].startswith(reverse('oidc_authentication_init')))
-        self.assertIn('next=', response['Location'])
+        self.assertRedirects(response, reverse('service_entry', args=['classroom']), fetch_redirect_response=False)
 
-    def test_a_lecturer_is_taken_to_their_sessions(self):
+    def test_a_lecturer_can_choose_a_service_from_the_landing_page(self):
         signed_in(self.client)
-        self.assertRedirects(self.client.get(reverse('home')), reverse('assessment_session_list'))
+        self.assertContains(self.client.get(reverse('home')), 'Choose your LiveGrade service')
 
     def test_the_page_header_names_the_lecturer_and_organization(self):
         signed_in(self.client)
@@ -155,7 +153,10 @@ class HomeAccessTests(TestCase):
 
     def test_the_organization_switcher_appears_only_for_several(self):
         signed_in(self.client, orgs=[ACME, GLOBEX])
-        self.assertContains(self.client.get(reverse('assessment_session_list')), 'name="organization"')
+        response = self.client.get(reverse('assessment_session_list'))
+        self.assertContains(response, 'name="organization"')
+        self.assertContains(response, '<label class="text-muted d-block mb-1 u-label" for="organization-switcher">Organization</label>', html=False)
+        self.assertContains(response, '<select id="organization-switcher" name="organization"', html=False)
 
     def test_one_organization_is_shown_without_a_switcher(self):
         signed_in(self.client)

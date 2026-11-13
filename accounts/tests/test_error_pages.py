@@ -36,7 +36,7 @@ class FriendlyPagesTests(TestCase):
         sign_in(client, other, org)
         for debug_flag in (False, True):
             with self.subTest(debug=debug_flag), override_settings(DEBUG=debug_flag):
-                self.assertFriendly404(client.get(f'/assessments/{session.pk}/'))
+                self.assertFriendly404(client.get(f'/classroom/app/{session.pk}/'))
 
     def test_a_crash_gets_the_friendly_page_and_the_traceback_still_reaches_the_log(self):
         for debug_flag in (False, True):
@@ -78,6 +78,13 @@ class FriendlyPagesTests(TestCase):
         self.assertContains(response, 'Reload and try again', status_code=403)
         self.assertContains(response, 'href="/switch-organization/"', status_code=403)
         self.assertNotContains(response, 'CSRF verification failed', status_code=403)
+
+        logout_expired = client.post('/oidc/logout/')
+        self.assertContains(logout_expired, 'This page has expired', status_code=403)
+        self.assertContains(logout_expired, 'href="/"', status_code=403)
+
+        logout_from_polls = client.post('/oidc/logout/', HTTP_REFERER='http://testserver/polls/app/?poll=123')
+        self.assertContains(logout_from_polls, 'href="/polls/app/?poll=123"', status_code=403)
 
 
 class InstallTests(SimpleTestCase):

@@ -56,17 +56,17 @@ class GroupViewsCapacityTests(TestCase):
         self.c = Student.objects.create(assessment_session=self.session, full_name='C')
 
     def test_create_group_with_size_and_exact_members(self):
-        response = self.client.post(f'/assessments/{self.session.pk}/groups/', {
+        response = self.client.post(f'/classroom/app/{self.session.pk}/groups/', {
             'name': 'Group 1', 'max_size': '2',
             'members': [str(self.a.pk), str(self.b.pk)],
         })
-        self.assertRedirects(response, f'/assessments/{self.session.pk}/groups/')
+        self.assertRedirects(response, f'/classroom/app/{self.session.pk}/groups/')
         group = PresentationGroup.objects.get(assessment_session=self.session, name='Group 1')
         self.assertEqual(group.max_size, 2)
         self.assertEqual(group.member_count(), 2)
 
     def test_create_group_rejects_more_members_than_size(self):
-        response = self.client.post(f'/assessments/{self.session.pk}/groups/', {
+        response = self.client.post(f'/classroom/app/{self.session.pk}/groups/', {
             'name': 'Group 1', 'max_size': '2',
             'members': [str(self.a.pk), str(self.b.pk), str(self.c.pk)],
         })
@@ -76,15 +76,15 @@ class GroupViewsCapacityTests(TestCase):
     def test_add_student_to_full_group_is_rejected(self):
         group = PresentationGroup.objects.create(assessment_session=self.session, name='Group 1', max_size=1)
         GroupMembership.objects.create(group=group, student=self.a)
-        self.client.post(f'/assessments/{self.session.pk}/groups/{group.pk}/members/',
+        self.client.post(f'/classroom/app/{self.session.pk}/groups/{group.pk}/members/',
                           {'action': 'add', 'student_id': self.b.pk})
         self.assertEqual(group.member_count(), 1)
 
     def test_edit_group_updates_size(self):
         group = PresentationGroup.objects.create(assessment_session=self.session, name='Group 1')
-        response = self.client.post(f'/assessments/{self.session.pk}/groups/{group.pk}/edit/',
+        response = self.client.post(f'/classroom/app/{self.session.pk}/groups/{group.pk}/edit/',
                                      {'name': 'Group 1', 'max_size': '3'})
-        self.assertRedirects(response, f'/assessments/{self.session.pk}/groups/')
+        self.assertRedirects(response, f'/classroom/app/{self.session.pk}/groups/')
         group.refresh_from_db()
         self.assertEqual(group.max_size, 3)
 
@@ -92,15 +92,15 @@ class GroupViewsCapacityTests(TestCase):
         group = PresentationGroup.objects.create(assessment_session=self.session, name='Group 1')
         GroupMembership.objects.create(group=group, student=self.a)
         GroupMembership.objects.create(group=group, student=self.b)
-        response = self.client.post(f'/assessments/{self.session.pk}/groups/{group.pk}/edit/',
+        response = self.client.post(f'/classroom/app/{self.session.pk}/groups/{group.pk}/edit/',
                                      {'name': 'Group 1', 'max_size': '1'})
-        self.assertRedirects(response, f'/assessments/{self.session.pk}/groups/')
+        self.assertRedirects(response, f'/classroom/app/{self.session.pk}/groups/')
         group.refresh_from_db()
         self.assertIsNone(group.max_size)  # rejected, unchanged
 
     def test_groups_page_shows_capacity_and_edit_controls(self):
         group = PresentationGroup.objects.create(assessment_session=self.session, name='Group 1', max_size=2)
-        response = self.client.get(f'/assessments/{self.session.pk}/groups/')
+        response = self.client.get(f'/classroom/app/{self.session.pk}/groups/')
         self.assertContains(response, '0/2')
         self.assertContains(response, 'group-edit-btn')
 
@@ -136,7 +136,7 @@ class RosterFormLabelsTests(TestCase):
         session = AssessmentSession.objects.create(
             organization_id=self.org.pk, name='FYP 2026',
             identify_by=AssessmentSession.IdentifyBy.STUDENT_ID, created_by=self.lecturer)
-        response = self.client.get(f'/assessments/{session.pk}/roster/')
+        response = self.client.get(f'/classroom/app/{session.pk}/roster/')
         self.assertContains(response, 'Full name')
         self.assertContains(response, 'Student ID')
         self.assertContains(response, 'used to join')

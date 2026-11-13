@@ -335,7 +335,7 @@ class ModelEdgeTests(SessionFixture):
         self.assertEqual(str(self.quality), 'Quality (Group / project, 60%)')
         self.assertEqual(str(self.red), 'Red')
         turn = self.active_turn(self.red)
-        self.assertEqual(str(turn), 'Red — Active')
+        self.assertEqual(str(turn), 'Red - Active')
         record = ParticipationRecord.objects.create(
             assessment_session=self.session, student=self.ann)
         self.assertEqual(str(record), 'Ann Able joined Demo day')

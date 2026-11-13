@@ -7,6 +7,7 @@ nothing here may need a broker, and what is checked is what the view stores
 and says.
 """
 import datetime
+import csv
 from decimal import Decimal
 from io import BytesIO
 from unittest import mock
@@ -470,11 +471,59 @@ class LiveControlTests(LecturerTestCase):
 
 class ReportingTests(LecturerTestCase):
 
+    def test_spreadsheet_sanitizer_neutralizes_unicode_format_prefixes(self):
+        from assessments.spreadsheet_safety import spreadsheet_safe_text
+
+        for value, expected in (
+            ('=1+1', "'=1+1"),
+            (' \t@SUM(1,1)', "' \t@SUM(1,1)"),
+            ('\ufeff=HYPERLINK("https://bad.example")', "'\ufeff=HYPERLINK(\"https://bad.example\")"),
+            ('ordinary learner', 'ordinary learner'),
+            (None, ''),
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(spreadsheet_safe_text(value), expected)
+
+    def test_renderer_neutral_report_data_discloses_rules_and_aggregate_rater_counts_only(self):
+        from assessments.models import EvaluationScore, LevelDescriptor
+        from assessments.reports import results_report_data
+        from assessments.scoring import session_results
+
+        LevelDescriptor.objects.create(rubric_category=self.quality, score=Decimal('30'),
+                                       description='Meets the expected standard')
+        turn = PresentationTurn.objects.create(
+            assessment_session=self.session, group=self.red, status='closed',
+            opened_at=timezone.now(), closed_at=timezone.now())
+        group_vote = Evaluation.objects.create(presentation_turn=turn, evaluator=self.cat)
+        EvaluationScore.objects.create(evaluation=group_vote, rubric_category=self.quality,
+                                       value=Decimal('30'), max_value=Decimal('60'))
+        individual_vote = Evaluation.objects.create(
+            presentation_turn=turn, evaluator=self.cat, target_student=self.ann)
+        EvaluationScore.objects.create(evaluation=individual_vote, rubric_category=self.teamwork,
+                                       value=Decimal('20'), max_value=Decimal('40'))
+
+        data = results_report_data(self.session, session_results(self.session))
+        ann = next(row for row in data['students'] if row['name'] == self.ann.full_name)
+        red = next(row for row in data['groups'] if row['name'] == self.red.name)
+        self.assertEqual(data['scoring_rules']['peer_contribution_percent'], 100)
+        self.assertEqual(data['scoring_rules']['ungraded_penalty_per_other_group'], self.session.ungraded_penalty)
+        self.assertEqual(data['criteria'][0]['levels'][0]['description'], 'Meets the expected standard')
+        self.assertEqual((ann['group_score'], ann['individual_score'], ann['penalty'], ann['final_score']),
+                         (Decimal('30.0'), Decimal('20.0'), Decimal('1.00'), Decimal('49.0')))
+        self.assertEqual((ann['group_raters'], ann['individual_raters'], red['rater_count']), (1, 1, 1))
+        self.assertNotIn('evaluator', str(data).lower())
+        self.assertNotIn('evaluation_id', str(data).lower())
+
     def vote(self, voter, group):
         turn = PresentationTurn.objects.create(
             assessment_session=self.session, group=group, status='closed',
             opened_at=timezone.now(), closed_at=timezone.now())
         Evaluation.objects.create(presentation_turn=turn, evaluator=voter)
+
+    def test_the_results_page_offers_both_owner_download_formats(self):
+        response = self.client.get(self.url('assessment_results'))
+        self.assertContains(response, reverse('assessment_results_export_csv', args=[self.session.pk]))
+        self.assertContains(response, reverse('assessment_results_export', args=[self.session.pk]))
 
     def test_participation_can_be_filtered_by_status(self):
         self.vote(self.cat, self.red)
@@ -523,8 +572,177 @@ class ReportingTests(LecturerTestCase):
         book = openpyxl.load_workbook(BytesIO(response.content))
         self.assertEqual(book.sheetnames, ['Participation', 'Results', 'Group scores'])
 
+    def test_owner_results_and_exports_do_not_pair_a_rater_with_another_students_score(self):
+        from assessments.models import EvaluationScore
+
+        AssessmentSession.objects.filter(pk=self.session.pk).update(ungraded_penalty=Decimal('0'))
+        scorer = self.student('Scorer Private Name', 'RATER-1')
+        target = self.student('Target Public Name', 'TARGET-1')
+        target_group = self.group('Target group', 3, target)
+        scorer_group = self.group('Scorer group', 4, scorer)
+        category = RubricCategory.objects.create(
+            assessment_session=self.session, name='Criterion', scope='group', weight=100)
+        turn = PresentationTurn.objects.create(
+            assessment_session=self.session, group=target_group, status='closed',
+            opened_at=timezone.now(), closed_at=timezone.now())
+        vote = Evaluation.objects.create(presentation_turn=turn, evaluator=scorer)
+        EvaluationScore.objects.create(
+            evaluation=vote, rubric_category=category, value=Decimal('75'), max_value=Decimal('100'))
+
+        page = self.client.get(self.url('assessment_results'))
+        target_row = next(row for row in page.context['student_rows'] if row['student'].pk == target.pk)
+        self.assertEqual(target_row['final_percent'], Decimal('75.0'))
+        self.assertFalse(any(key.startswith('evaluator') for key in target_row))
+        target_html = page.content.decode().split(f'<tr data-student-id="{target.pk}">', 1)[1].split('</tr>', 1)[0]
+        self.assertNotIn(scorer.full_name, target_html)
+
+        refresh = self.client.get(self.url('assessment_results_refresh')).json()['rows_html']
+        target_refresh_row = refresh.split(f'<tr data-student-id="{target.pk}">', 1)[1].split('</tr>', 1)[0]
+        self.assertNotIn(scorer.full_name, target_refresh_row)
+
+        csv_rows = list(csv.DictReader(self.client.get(
+            self.url('assessment_results_export_csv')).content.decode('utf-8-sig').splitlines()))
+        target_csv = next(row for row in csv_rows if row['Student'] == target.full_name)
+        self.assertEqual(Decimal(target_csv['Final score']), target_row['final_percent'])
+        self.assertNotIn(scorer.full_name, str(target_csv))
+        self.assertFalse(any('evaluator' in column.lower() or 'grader' in column.lower()
+                             for column in target_csv))
+
+        workbook = openpyxl.load_workbook(BytesIO(
+            self.client.get(self.url('assessment_results_export')).content), data_only=True)
+        result_sheet = workbook['Results']
+        headers = [cell.value for cell in result_sheet[1]]
+        target_xlsx = next(row for row in result_sheet.iter_rows(min_row=2, values_only=True)
+                           if row[0] == target.full_name)
+        self.assertEqual(Decimal(str(target_xlsx[5])), target_row['final_percent'])
+        self.assertNotIn(scorer.full_name, str(target_xlsx))
+        self.assertFalse(any('evaluator' in str(column).lower() or 'grader' in str(column).lower()
+                             for column in headers))
+
+    def test_csv_export_matches_final_marks_and_sanitizes_spreadsheet_text(self):
+        from assessments.models import EvaluationScore
+        from assessments.scoring import session_results
+
+        turn = PresentationTurn.objects.create(
+            assessment_session=self.session, group=self.red, status='closed',
+            opened_at=timezone.now(), closed_at=timezone.now())
+        group_vote = Evaluation.objects.create(presentation_turn=turn, evaluator=self.cat)
+        EvaluationScore.objects.create(evaluation=group_vote, rubric_category=self.quality,
+                                       value=Decimal('30'), max_value=Decimal('60'))
+        individual_vote = Evaluation.objects.create(
+            presentation_turn=turn, evaluator=self.cat, target_student=self.ann)
+        EvaluationScore.objects.create(evaluation=individual_vote, rubric_category=self.teamwork,
+                                       value=Decimal('20'), max_value=Decimal('40'))
+        Student.objects.filter(pk=self.ann.pk).update(
+            full_name='=HYPERLINK("https://bad.example")', student_id='\t@SUM(1,1)')
+        PresentationGroup.objects.filter(pk=self.red.pk).update(name='@SUM(1,1)')
+        response = self.client.get(self.url('assessment_results_export_csv'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'text/csv; charset=utf-8')
+        self.assertIn('results.csv', response['Content-Disposition'])
+        rows = list(csv.DictReader(response.content.decode('utf-8-sig').splitlines()))
+        ann = next(row for row in rows if row['Student'].startswith("'=HYPERLINK"))
+        expected = next(row for row in session_results(self.session)['student_rows']
+                        if row['student'].pk == self.ann.pk)
+        self.assertEqual(Decimal(ann['Final score']), expected['final_percent'])
+        self.assertEqual(ann['Group'], "'@SUM(1,1)")
+        self.assertIn('Group raters', ann)
+        self.assertEqual((ann['Group raters'], ann['Individual raters']), ('1', '1'))
+        self.assertNotIn('evaluator', '\n'.join(rows[0].keys()).lower())
+
+        screen = self.client.get(self.url('assessment_results'))
+        screen_row = next(row for row in screen.context['student_rows'] if row['student'].pk == self.ann.pk)
+        self.assertEqual(screen_row['final_percent'], expected['final_percent'])
+        self.assertContains(screen, f'{expected["final_percent"]}%')
+
+        workbook_response = self.client.get(self.url('assessment_results_export'))
+        book = openpyxl.load_workbook(BytesIO(workbook_response.content), data_only=False)
+        results_sheet = book['Results']
+        excel_ann = next(row for row in results_sheet.iter_rows(min_row=2, values_only=True)
+                         if row[0].startswith("'=HYPERLINK"))
+        self.assertEqual(Decimal(str(excel_ann[5])), expected['final_percent'])
+        self.assertEqual(results_sheet['A2'].data_type, 's')
+        self.assertEqual(results_sheet['B2'].value, "'@SUM(1,1)")
+        self.assertEqual(results_sheet['B2'].data_type, 's')
+        self.assertEqual(book['Participation']['A2'].value, "'=HYPERLINK(\"https://bad.example\")")
+        self.assertEqual(book['Participation']['A2'].data_type, 's')
+        self.assertEqual(book['Participation']['B2'].value, "'\t@SUM(1,1)")
+        self.assertEqual(book['Participation']['B2'].data_type, 's')
+        self.assertEqual(book['Participation']['C2'].value, "'@SUM(1,1)")
+
+    def test_csv_export_keeps_numeric_negative_penalty_numeric(self):
+        AssessmentSession.objects.filter(pk=self.session.pk).update(ungraded_penalty=Decimal('2.5'))
+        rows = list(csv.DictReader(self.client.get(
+            self.url('assessment_results_export_csv')).content.decode('utf-8-sig').splitlines()))
+        self.assertTrue(all(not row['Penalty (points)'].startswith("'") for row in rows))
+
+    def test_csv_and_xlsx_final_marks_match_the_screen_for_every_student_with_penalties(self):
+        from assessments.models import EvaluationScore
+
+        AssessmentSession.objects.filter(pk=self.session.pk).update(ungraded_penalty=Decimal('2.5'))
+        for group, evaluator, group_value, individual_values in (
+                (self.red, self.cat, Decimal('30'),
+                 ((self.ann, Decimal('20')), (self.bob, Decimal('10')))),
+                (self.blue, self.ann, Decimal('60'),
+                 ((self.cat, Decimal('40')), (self.dan, Decimal('20'))))):
+            turn = PresentationTurn.objects.create(
+                assessment_session=self.session, group=group, status='closed',
+                opened_at=timezone.now(), closed_at=timezone.now())
+            group_vote = Evaluation.objects.create(presentation_turn=turn, evaluator=evaluator)
+            EvaluationScore.objects.create(evaluation=group_vote, rubric_category=self.quality,
+                                           value=group_value, max_value=Decimal('60'))
+            for student, value in individual_values:
+                vote = Evaluation.objects.create(
+                    presentation_turn=turn, evaluator=evaluator, target_student=student)
+                EvaluationScore.objects.create(evaluation=vote, rubric_category=self.teamwork,
+                                               value=value, max_value=Decimal('40'))
+
+        screen = self.client.get(self.url('assessment_results'))
+        screen_marks = {
+            row['student'].full_name: row['final_percent']
+            for row in screen.context['student_rows']
+        }
+        csv_rows = {
+            row['Student']: Decimal(row['Final score'])
+            for row in csv.DictReader(self.client.get(
+                self.url('assessment_results_export_csv')).content.decode('utf-8-sig').splitlines())
+        }
+        workbook = openpyxl.load_workbook(BytesIO(
+            self.client.get(self.url('assessment_results_export')).content), data_only=True)
+        xlsx_rows = {
+            row[0]: (Decimal(str(row[4])), Decimal(str(row[5])))
+            for row in workbook['Results'].iter_rows(min_row=2, values_only=True)
+        }
+
+        self.assertEqual(set(screen_marks), {self.ann.full_name, self.bob.full_name,
+                                             self.cat.full_name, self.dan.full_name})
+        self.assertEqual(csv_rows, screen_marks)
+        self.assertEqual({name: values[1] for name, values in xlsx_rows.items()}, screen_marks)
+        self.assertEqual({name: values[0] for name, values in xlsx_rows.items()}, {
+            self.ann.full_name: Decimal('0'), self.bob.full_name: Decimal('2.5'),
+            self.cat.full_name: Decimal('0'), self.dan.full_name: Decimal('2.5'),
+        })
+
 
 class LecturerViewGapsTests(LecturerTestCase):
+
+    def test_closed_turn_activity_formats_both_short_and_long_durations(self):
+        now = timezone.now()
+        PresentationTurn.objects.create(
+            assessment_session=self.session, group=self.red, status='closed',
+            opened_at=now - datetime.timedelta(seconds=65), closed_at=now)
+        PresentationTurn.objects.create(
+            assessment_session=self.session, group=self.blue, status='closed',
+            opened_at=now - datetime.timedelta(seconds=20), closed_at=now)
+        self.set_status('closed')
+        response = self.client.get(self.url('assessment_session_detail'))
+        labels = {turn['duration_label'] for turn in response.context['presentation_timeline']}
+        self.assertEqual(labels, {'1m 5s', '20s'})
+
+    def test_the_owner_can_delete_their_session_with_post(self):
+        response = self.client.post(self.url('assessment_session_delete'))
+        self.assertRedirects(response, reverse('assessment_session_list'), fetch_redirect_response=False)
+        self.assertFalse(AssessmentSession.objects.filter(pk=self.session.pk).exists())
 
     def test_a_closed_turn_with_no_start_time_still_appears_in_the_activity(self):
         PresentationTurn.objects.create(

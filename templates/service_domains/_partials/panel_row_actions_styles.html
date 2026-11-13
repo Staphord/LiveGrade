@@ -1,0 +1,15 @@
+<style nonce="{{ csp_nonce }}">
+.panel-actions .dropdown-toggle{display:grid;width:2rem;height:2rem;place-items:center;padding:0;border:1px solid var(--border);border-radius:50%;background:var(--surface);color:var(--text-muted)}
+.panel-actions .dropdown-toggle::after{display:none}
+.panel-actions .dropdown-menu{min-width:12rem;padding:var(--sp-1);border:1px solid var(--border);border-radius:var(--radius-control);box-shadow:var(--elev-3);z-index:var(--z-dropdown)}
+.panel-actions .dropdown-item{padding:.5rem .65rem;border-radius:var(--radius-xs);font-size:var(--fs-sm)}
+.panel-actions .dropdown-item form{margin:calc(-1 * var(--sp-2)) calc(-1 * var(--sp-3))}
+.panel-actions .dropdown-item button{width:100%;padding:.5rem .65rem;border:0;background:transparent;text-align:left}
+.panel-actions .dropdown-item button:focus-visible{outline:0;box-shadow:var(--focus-ring)}
+.panel-actions form{margin:0}
+.panel-actions .dropdown-menu form .dropdown-item{width:100%;border:0;background:transparent;text-align:left}
+.panel-actions .dropdown-menu form .dropdown-item:focus-visible{outline:0;box-shadow:var(--focus-ring)}
+.panel-row-clickable{cursor:pointer}
+.panel-row-clickable .panel-actions{cursor:default}
+</style>
+

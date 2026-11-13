@@ -1,0 +1,278 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% block title %}{{ series.name }} · Session {{ session.sequence }} · Venue Display{% endblock %}
+{% block service_name %}Workshop Venue Display{% endblock %}
+
+{% block public_header_action %}
+<div class="d-flex align-items-center gap-2">
+  <span class="live-badge" id="proj-conn-badge">
+    <span class="dot"></span>Live Drill
+  </span>
+  <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-toggle-fullscreen">
+    <i class="bi bi-arrows-fullscreen me-1" aria-hidden="true"></i>Fullscreen
+  </button>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style nonce="{{ csp_nonce }}">
+:root {
+  --proj-bg: #0f172a;
+  --proj-surface: #1e293b;
+  --proj-border: #334155;
+  --proj-text: #f8fafc;
+  --proj-muted: #94a3b8;
+  --proj-accent: #38bdf8;
+}
+body {
+  background: var(--proj-bg) !important;
+  color: var(--proj-text) !important;
+  min-height: 100vh;
+}
+.public-service-header {
+  background: var(--proj-surface) !important;
+  border-bottom-color: var(--proj-border) !important;
+}
+.public-service-brand strong, .public-service-brand small {
+  color: var(--proj-text) !important;
+}
+.proj-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+.proj-card {
+  background: var(--proj-surface);
+  border: 1px solid var(--proj-border);
+  border-radius: 1.25rem;
+  padding: 1.75rem;
+  box-shadow: 0 15px 30px rgba(0, 0, 0, 0.35);
+}
+.proj-timer-clock {
+  font-size: clamp(3.5rem, 8vw, 6.5rem);
+  font-weight: 800;
+  font-family: monospace;
+  color: var(--proj-accent);
+  line-height: 1;
+}
+.proj-timer-clock.is-urgent {
+  color: #ef4444 !important;
+  animation: proj-pulse 1s ease-in-out infinite;
+}
+@keyframes proj-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.02); opacity: 0.85; }
+}
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  padding: .25rem .65rem;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+.live-badge.is-offline {
+  background: rgba(234, 179, 8, 0.15);
+  color: #facc15;
+}
+.live-badge .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: live-pulse 1.4s ease-in-out infinite;
+}
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .4; transform: scale(.7); }
+}
+.phase-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  background: var(--proj-surface);
+  border: 1px solid var(--proj-border);
+  color: var(--proj-muted);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.phase-pill.is-active {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: var(--proj-accent);
+  color: var(--proj-accent);
+}
+.pod-badge {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--proj-border);
+  color: var(--proj-text);
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.9rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<main class="proj-container" id="public-main">
+  <!-- Command Header -->
+  <header class="proj-card mb-4 text-center">
+    <div class="d-flex align-items-center justify-content-center gap-2 mb-2">
+      <span class="badge text-bg-primary text-uppercase">{{ series.name }}</span>
+      <span class="badge text-bg-secondary">Session {{ session.sequence }}</span>
+    </div>
+    <h1 class="display-5 fw-bold mb-2" style="color: var(--proj-text);">{{ assessment_session.name }}</h1>
+    <p class="text-muted mb-3">Live Simulation &amp; Observation Drill</p>
+
+    <!-- Phase Pipeline Indicator -->
+    <div class="d-flex flex-wrap justify-content-center align-items-center gap-2 pt-2 border-top border-secondary border-opacity-25" id="proj-phase-pipeline">
+      <span class="phase-pill {% if drill_phase == 'briefing' %}is-active{% endif %}" data-phase="briefing">
+        <i class="bi bi-info-circle me-1" aria-hidden="true"></i>1. Scenario Briefing
+      </span>
+      <i class="bi bi-chevron-right text-muted small" aria-hidden="true"></i>
+      <span class="phase-pill {% if drill_phase == 'simulation' %}is-active{% endif %}" data-phase="simulation">
+        <i class="bi bi-lightning-charge me-1" aria-hidden="true"></i>2. Active Drill / Simulation
+      </span>
+      <i class="bi bi-chevron-right text-muted small" aria-hidden="true"></i>
+      <span class="phase-pill {% if drill_phase == 'debrief' %}is-active{% endif %}" data-phase="debrief">
+        <i class="bi bi-chat-square-text me-1" aria-hidden="true"></i>3. Debrief &amp; Assessment
+      </span>
+    </div>
+  </header>
+
+  <div class="row g-4 mb-4">
+    <!-- Left: Large Live Timer -->
+    <div class="col-lg-6">
+      <div class="proj-card text-center h-100 d-flex flex-column justify-content-center py-5">
+        <span class="text-uppercase small fw-bold text-muted mb-2" style="letter-spacing: 0.08em;">
+          Phase Countdown
+        </span>
+        <div class="proj-timer-clock{% if drill_timer.urgent or drill_timer.expired %} is-urgent{% endif %} my-3" id="proj-clock">{{ drill_timer.display }}</div>
+        <div>
+          <span class="badge {% if drill_timer.expired %}text-bg-danger{% elif timer_paused %}text-bg-warning{% else %}text-bg-success{% endif %}" id="proj-timer-badge">{% if drill_timer.expired %}Time is up{% elif timer_paused %}Paused{% else %}Running{% endif %}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: current phase -->
+    <div class="col-lg-6">
+      <div class="proj-card text-center h-100 d-flex flex-column justify-content-center py-5">
+        <span class="text-uppercase small fw-bold text-muted mb-2" style="letter-spacing: 0.08em;">Now</span>
+        <h2 class="display-6 fw-bold mb-0" id="proj-phase-title" style="color: var(--proj-accent);">{% if drill_phase == 'briefing' %}Scenario briefing{% elif drill_phase == 'simulation' %}Active drill{% else %}Debrief and assessment{% endif %}</h2>
+      </div>
+    </div>
+  </div>
+
+  <!-- Breakout Pod Stations Roster -->
+  {% if pods %}
+  <section class="proj-card mb-4" aria-labelledby="pods-station-heading">
+    <h2 class="h6 fw-bold mb-3 text-muted text-uppercase" id="pods-station-heading" style="letter-spacing: .06em;">
+      Breakout Station Roster ({{ pods|length }} Pod{{ pods|length|pluralize }})
+    </h2>
+    <div class="row g-3">
+      {% for pod in pods %}
+      <div class="col-md-6 col-xl-4">
+        <div class="pod-badge">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <strong class="text-info">{{ pod.name }}</strong>
+            {% if pod.is_visited %}
+            <span class="badge text-bg-success"><i class="bi bi-check-circle me-1" aria-hidden="true"></i>Coach Visited</span>
+            {% endif %}
+          </div>
+          <div class="small text-muted">
+            {% for member in pod.members %}
+            <span>{{ member.participant.display_name }}{% if not forloop.last %}, {% endif %}</span>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+</main>
+{% endblock %}
+
+{% block scripts %}
+{{ drill_timer|json_script:"drill-timer-data" }}
+<script nonce="{{ csp_nonce }}">
+(function() {
+  const stateUrl = "{% url 'training_session_live_state' series_id=series.pk session_id=session.pk %}";
+  const titles = { briefing: "Scenario briefing", simulation: "Active drill", debrief: "Debrief and assessment" };
+  let timer = JSON.parse(document.getElementById('drill-timer-data').textContent);
+  let clockOffset = timer.server_now_ms - Date.now();
+  let activePhase = "{{ drill_phase }}";
+  const clockEl = document.getElementById("proj-clock");
+  const badgeEl = document.getElementById("proj-timer-badge");
+  const connBadge = document.getElementById("proj-conn-badge");
+
+  function remaining() {
+    if (timer.paused || timer.ends_at_ms === null) return timer.seconds;
+    return Math.max(0, Math.round((timer.ends_at_ms - (Date.now() + clockOffset)) / 1000));
+  }
+
+  function tick() {
+    const seconds = remaining();
+    const up = seconds === 0 && !timer.paused;
+    if (clockEl) {
+      clockEl.textContent = Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
+      clockEl.classList.toggle("is-urgent", up || (seconds > 0 && seconds <= 60));
+    }
+    if (badgeEl) {
+      badgeEl.textContent = up ? "Time is up" : (timer.paused ? "Paused" : "Running");
+      badgeEl.className = "badge " + (up ? "text-bg-danger" : (timer.paused ? "text-bg-warning" : "text-bg-success"));
+    }
+  }
+  setInterval(tick, 250);
+
+  async function refresh() {
+    try {
+      const res = await fetch(stateUrl, { headers: { "X-Requested-With": "XMLHttpRequest" } });
+      if (!res.ok) throw new Error("state");
+      const data = await res.json();
+      timer = data.drill_timer;
+      clockOffset = timer.server_now_ms - Date.now();
+      if (data.active_drill_phase !== activePhase) {
+        activePhase = data.active_drill_phase;
+        document.querySelectorAll("#proj-phase-pipeline [data-phase]").forEach(function(el) {
+          el.classList.toggle("is-active", el.getAttribute("data-phase") === activePhase);
+        });
+        const title = document.getElementById("proj-phase-title");
+        if (title) title.textContent = titles[activePhase] || "";
+      }
+      tick();
+    } catch (err) { /* the next event or fallback check retries */ }
+  }
+
+  const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+  let socket = null, retries = 0, retryTimer = null;
+  function connect() {
+    if (!window.WebSocket) return;
+    try {
+      socket = new WebSocket(scheme + "://" + window.location.host + "/ws/training/session/{{ session.pk }}/live/");
+      socket.onopen = function() { retries = 0; if (connBadge) connBadge.classList.remove("is-offline"); refresh(); };
+      socket.onmessage = function() { refresh(); };
+      socket.onclose = function() {
+        if (connBadge) connBadge.classList.add("is-offline");
+        window.clearTimeout(retryTimer);
+        retryTimer = window.setTimeout(connect, Math.min(30000, 2000 * Math.pow(1.5, retries++)));
+      };
+      socket.onerror = function() { socket.close(); };
+    } catch (err) { /* fallback check below keeps the screen current */ }
+  }
+  connect();
+  setInterval(function() { if (!socket || socket.readyState !== WebSocket.OPEN) refresh(); }, 15000);
+  tick();
+
+  const fsBtn = document.getElementById("btn-toggle-fullscreen");
+  if (fsBtn) {
+    fsBtn.addEventListener("click", function() {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+      else document.exitFullscreen().catch(() => {});
+    });
+  }
+})();
+</script>
+{% endblock %}

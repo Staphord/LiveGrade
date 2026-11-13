@@ -1,0 +1,97 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% load static %}
+
+{% block title %}Official Results : {{ session.name }} : LiveGrade{% endblock %}
+{% block service_name %}Co-Assessment Leaderboard{% endblock %}
+
+{% block content %}
+<main id="public-main" class="public-service-content wide" style="max-width: 1100px; margin: 2rem auto; padding: 0 var(--sp-3);">
+  <header class="text-center mb-4">
+    <span class="badge bg-primary text-uppercase mb-2 py-1 px-2" style="font-size: var(--fs-micro); letter-spacing: 0.05em;">
+      {% if is_released %}Official Released Results{% else %}Results Embargoed{% endif %}
+    </span>
+    <h1 class="h3 fw-bold mb-1">{{ session.name }}</h1>
+    <p class="text-muted small mb-0">
+      Combined Evaluation: Panel {{ session.panel_weight }}% + Peer {{ session.peer_weight }}%
+    </p>
+  </header>
+
+  {% if is_released %}
+    <div class="card p-0 mb-4" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); overflow: hidden; box-shadow: var(--elev-1);">
+      <div class="p-3 border-bottom d-flex justify-content-between align-items-center bg-light">
+        <h2 class="h6 fw-bold mb-0">Final Presentation Standings</h2>
+        <span class="badge bg-success">&check; Certified &amp; Released</span>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead style="background: var(--surface-sunken);">
+            <tr>
+              <th style="width: 70px; text-align: center; font-size: var(--fs-micro); text-transform: uppercase;">Rank</th>
+              <th style="font-size: var(--fs-micro); text-transform: uppercase;">Team</th>
+              <th style="font-size: var(--fs-micro); text-transform: uppercase;">Topic</th>
+              <th style="font-size: var(--fs-micro); text-transform: uppercase; text-align: right;">Panel ({{ session.panel_weight }}%)</th>
+              <th style="font-size: var(--fs-micro); text-transform: uppercase; text-align: right;">Peer ({{ session.peer_weight }}%)</th>
+              <th style="font-size: var(--fs-micro); text-transform: uppercase; text-align: right;">Final Mark</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rows %}
+            <tr>
+              <td style="text-align: center;">
+                {% if forloop.counter == 1 %}
+                  <span class="badge rounded-pill bg-warning text-dark px-2 py-1 fs-6">1st</span>
+                {% elif forloop.counter == 2 %}
+                  <span class="badge rounded-pill bg-secondary text-white px-2 py-1 fs-6">2nd</span>
+                {% elif forloop.counter == 3 %}
+                  <span class="badge rounded-pill bg-dark text-white px-2 py-1 fs-6">3rd</span>
+                {% else %}
+                  <span class="font-monospace text-muted fw-bold">#{{ forloop.counter }}</span>
+                {% endif %}
+              </td>
+              <td>
+                <div class="fw-bold fs-6">{{ r.group_name }}</div>
+                {% if r.member_results %}
+                  <div class="small text-muted mt-1">
+                    {% for m in r.member_results %}
+                      <span class="me-2">{{ m.full_name }}{% if r.has_individual_criteria %} ({{ m.final_score }}){% endif %}</span>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </td>
+              <td class="small text-muted">{{ r.group_topic|default:"None specified" }}</td>
+              <td style="text-align: right; font-family: var(--font-mono);">
+                {{ r.panel_score|default:"-" }}
+              </td>
+              <td style="text-align: right; font-family: var(--font-mono);">
+                {{ r.peer_score|default:"-" }}
+              </td>
+              <td style="text-align: right; font-family: var(--font-mono); font-size: 1.15rem; font-weight: bold; color: var(--ink);">
+                {{ r.final_mark|default:"-" }}
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="6" class="text-center py-4 text-muted">
+                No presentation marks recorded for this event.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  {% else %}
+    <div class="card p-5 text-center" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); max-width: 560px; margin: 0 auto; box-shadow: var(--elev-1);">
+      <div style="width: 56px; height: 56px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: inline-flex; align-items: center; justify-content: center; font-size: 1.5rem; margin: 0 auto var(--sp-3);">
+        <i class="bi bi-clock-history"></i>
+      </div>
+      <h2 class="h5 fw-bold mb-2">Results Pending Release</h2>
+      <p class="text-muted small mb-0">
+        Evaluation and moderation for this event are currently in progress. Official marks will be displayed here once released by the event organizers.
+      </p>
+    </div>
+  {% endif %}
+</main>
+{% endblock %}

@@ -6,12 +6,13 @@
 <meta name="csrf-token" content="{{ csrf_token }}">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{% block title %}LiveGrade{% endblock %}</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" integrity="sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM" crossorigin="anonymous" rel="stylesheet">
-<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" integrity="sha384-QuGBSgV5Im3DzL2z+8Ko9/hqNy/N0O7zwvXAtfd1MvPKWa/UbeLV65cfm4BV5Wgq" crossorigin="anonymous" rel="stylesheet">
+{% include 'partials/_vendor_styles.html' %}
 {% include 'partials/_design_system.html' %}
 {% include 'partials/_design_kit.html' %}
 <style nonce="{{ csp_nonce }}">
 body{background:var(--canvas)}
+.skip-link{position:absolute;z-index:1100;top:.5rem;left:.5rem;padding:.65rem 1rem;border-radius:var(--radius-control);background:var(--surface);color:var(--ink);transform:translateY(-160%);text-decoration:none;font-weight:600;box-shadow:var(--elev-2)}
+.skip-link:focus{transform:translateY(0)}
 
 /* Sidebar */
 .sidebar{width:var(--sidebar);min-height:100vh;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;display:flex;flex-direction:column;z-index:var(--z-sidebar);transition:width var(--motion) var(--ease)}
@@ -37,6 +38,10 @@ display:none!important;
 .sidebar-signout{color:var(--danger);display:inline-flex;align-items:center;justify-content:center;font-size:var(--fs-heading);padding:2px;flex-shrink:0}
 .sidebar-signout:hover{color:var(--tone-danger-fg)}
 .sidebar.collapsed .sidebar-footer{justify-content:center}
+.tenant-pill{padding:.45rem .65rem;border-radius:var(--radius-control);background:var(--surface-sunken, #f1f5f9);border:1px solid var(--border);display:flex;align-items:center;gap:.6rem}
+.tenant-avatar{width:28px;height:28px;border-radius:6px;background:#0f172a;color:#fff;font-size:.72rem;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;text-transform:uppercase}
+.user-avatar{width:32px;height:32px;border-radius:999px;background:var(--accent-soft, #eff6ff);border:1px solid var(--border);color:var(--accent, #2563eb);font-weight:700;font-size:.75rem;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;text-transform:uppercase}
+.sidebar.collapsed .user-avatar{display:none!important}
 
 .nav-link{display:flex;align-items:center;gap:var(--sp-2);margin:1px var(--sp-2);padding:var(--nav-pad) var(--sp-2);color:var(--text-soft);font-size:var(--fs-body);border-radius:var(--radius-control);transition:background var(--motion-fast) var(--ease),color var(--motion-fast) var(--ease)}
 .nav-link:hover{background:var(--surface-hover);color:var(--text)}
@@ -52,7 +57,7 @@ display:none!important;
 .nav-section{padding:var(--sp-1) var(--sp-4);font-size:var(--fs-micro);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-subtle);margin-top:var(--sp-4)}
 .nav-section:first-child{margin-top:0}
 .main-wrap{margin-left:var(--sidebar);min-height:100vh;display:flex;flex-direction:column;background:var(--canvas)}
-.topbar{height:var(--topbar-h);background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--border);padding:var(--sp-2) var(--sp-5);display:flex;align-items:center;gap:var(--sp-4);position:sticky;top:0;z-index:var(--z-sticky)}
+.topbar{height:var(--topbar-h);background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--border);padding:var(--sp-2) var(--sp-5);display:flex;align-items:center;gap:var(--sp-4);position:sticky;top:0;z-index:calc(var(--z-sticky) + 1)}
 .topbar-title{font-weight:600;font-size:var(--fs-strong);color:var(--ink)}
 .page-body{padding:var(--sp-5) var(--page-gutter) var(--sp-7);flex:1;max-width:1440px;width:100%;margin:0 auto}
 .topbar-title{flex:0 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -139,7 +144,7 @@ display:none!important;
 .priority-dot{width:8px;height:8px;border-radius:var(--radius-pill);flex-shrink:0}
 .drop-zone.drag-over{background:var(--accent-soft);border:2px dashed var(--accent)}
 /* Quick-edit affordance: priority badge + assignee avatars are clickable
-   (board cards and the task detail sidebar) — nothing about a plain badge
+   (board cards and the task detail sidebar) - nothing about a plain badge
    or an avatar stack otherwise signals that, so a hover ring + pointer
    cursor stands in for the missing visual cue. */
 .priority-picker-toggle,.assignee-picker-toggle{cursor:pointer;transition:box-shadow var(--motion-fast) var(--ease)}
@@ -186,18 +191,19 @@ display:none!important;
   .sidebar.collapsed .sidebar-footer-text,
   .sidebar.collapsed .nav-link .nav-text{display:revert!important}
   .sidebar.collapsed .nav-link{justify-content:flex-start;padding:var(--sp-2)}
-  .main-wrap, .sidebar.collapsed ~ .main-wrap{margin-left:0}
+  .main-wrap, .sidebar.collapsed ~ .main-wrap{margin-left:0;max-width:100vw;overflow-x:clip;overflow-y:visible}
   .sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:var(--z-backdrop)}
   .sidebar-backdrop.show{display:block}
-  .topbar{flex-wrap:wrap;gap:var(--sp-2);padding:var(--sp-3)}
-  .topbar-actions-wrap{width:100%;overflow-x:auto}
-  .page-body{padding:var(--sp-3)}
+  .topbar{height:auto;min-height:var(--topbar-h);flex-wrap:wrap;gap:var(--sp-2);padding:var(--sp-3);max-width:100%}
+  .topbar-actions-wrap{width:100%;overflow:visible;flex-wrap:wrap}
+  .page-body{padding:var(--sp-3);min-width:0;max-width:100%;overflow-x:hidden}
   .kanban-col{flex:0 0 82vw}
 }
 </style>
 {% block extra_css %}{% endblock %}
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
 
 <div class="sidebar">
   <div class="sidebar-brand">
@@ -205,6 +211,7 @@ display:none!important;
       <i class="bi bi-clipboard2-data text-primary icon-sm"></i>
       <div>
         <h5>LiveGrade</h5>
+        {% if current_service %}<small>{{ current_service.name }}</small>{% endif %}
       </div>
     </div>
     <button id="sidebar-toggle" class="sidebar-toggle-btn" type="button" aria-label="Toggle sidebar">
@@ -215,10 +222,10 @@ display:none!important;
   {% if only_personal %}
   {% elif my_orgs|length > 1 %}
   <div class="brand-text px-3 py-2 border-bottom">
-    <label class="text-muted d-block mb-1 u-label">Organization</label>
-    <form method="post" action="{% url 'switch_organization' %}">
+    <label class="text-muted d-block mb-1 u-label" for="organization-switcher">Organization</label>
+    <form method="post" action="{% if current_service %}{% url 'service_switch_organization' current_service.slug %}{% else %}{% url 'switch_organization' %}{% endif %}">
       {% csrf_token %}
-      <select name="organization" class="form-select form-select-sm t-body" data-autosubmit>
+      <select id="organization-switcher" name="organization" class="form-select form-select-sm t-body" data-autosubmit>
         {% for org in my_orgs %}
         <option value="{{ org.id }}"{% if active_org and org.id == active_org.id %} selected{% endif %}>{{ org.display_name }}</option>
         {% endfor %}
@@ -227,24 +234,72 @@ display:none!important;
   </div>
   {% elif active_org %}
   <div class="brand-text px-3 py-2 border-bottom">
-    <div class="text-muted u-label">Organization</div>
-    <div class="fw-semibold t-body">{{ active_org.name }}</div>
+    <div class="tenant-pill">
+      <span class="tenant-avatar" aria-hidden="true">{{ active_org.name|slice:":2" }}</span>
+      <div class="min-w-0">
+        <div class="text-muted u-label">Organization</div>
+        <div class="fw-semibold t-body text-truncate">{{ active_org.name }}</div>
+      </div>
+    </div>
   </div>
   {% endif %}
 
-  <nav class="nav-shell">
-    {% if request.user.is_authenticated %}
-    <div class="nav-section">Main</div>
-    <a href="{% url 'assessment_session_list' %}" class="nav-link {% if 'assessment' in request.resolver_match.url_name %}active{% endif %}">
-      <i class="bi bi-clipboard2-data"></i><span class="nav-text">Sessions</span>
+  <nav class="nav-shell" aria-label="Main navigation">
+    {% if request.user.is_authenticated and current_service %}
+    {% with url_name=request.resolver_match.url_name %}
+    <div class="nav-section">{{ current_service.name }} Service</div>
+    <a href="{{ service_dashboard }}" class="nav-link {% if current_service.slug == 'classroom' %}{% if url_name == 'assessment_dashboard' %}active{% endif %}{% elif current_service.slug == 'panel' %}{% if url_name == 'panel_hearing_list' %}active{% endif %}{% elif current_service.slug == 'team' %}{% if url_name == 'training_series_list' %}active{% endif %}{% elif current_service.slug == 'showcase' %}{% if url_name == 'showcase_event_list' %}active{% endif %}{% elif current_service.slug == 'competition' %}{% if url_name == 'competition_list' %}active{% endif %}{% elif current_service.slug == 'coassessment' %}{% if url_name == 'coassessment_dashboard' %}active{% endif %}{% elif url_name != 'assessment_session_create' and url_name != 'assessment_template_list' and url_name != 'combined_assessment_list' %}active{% endif %}"{% if current_service.slug == 'classroom' %}{% if url_name == 'assessment_dashboard' %} aria-current="page"{% endif %}{% elif current_service.slug == 'panel' %}{% if url_name == 'panel_hearing_list' %} aria-current="page"{% endif %}{% elif current_service.slug == 'team' %}{% if url_name == 'training_series_list' %} aria-current="page"{% endif %}{% elif current_service.slug == 'showcase' %}{% if url_name == 'showcase_event_list' %} aria-current="page"{% endif %}{% elif current_service.slug == 'competition' %}{% if url_name == 'competition_list' %} aria-current="page"{% endif %}{% elif current_service.slug == 'coassessment' %}{% if url_name == 'coassessment_dashboard' %} aria-current="page"{% endif %}{% elif request.path == service_dashboard %} aria-current="page"{% endif %}>
+      <i class="bi bi-clipboard2-data" aria-hidden="true"></i><span class="nav-text">Dashboard</span>
     </a>
+    {% if current_service.slug == 'classroom' %}
+    <a href="{% url 'assessment_session_list' %}" class="nav-link {% if url_name == 'assessment_session_list' or url_name == 'assessment_session_detail' or url_name == 'assessment_session_edit' or url_name == 'assessment_setup' or url_name == 'assessment_roster' or url_name == 'assessment_rubric' or url_name == 'assessment_groups' or url_name == 'assessment_participation' or url_name == 'assessment_results' or url_name == 'assessment_polls' %}active{% endif %}"{% if url_name == 'assessment_session_list' %} aria-current="page"{% endif %}>
+      <i class="bi bi-list-ul" aria-hidden="true"></i><span class="nav-text">Sessions</span>
+    </a>
+    <a href="{% url 'assessment_session_create' %}" class="nav-link {% if url_name == 'assessment_session_create' %}active{% endif %}"{% if url_name == 'assessment_session_create' %} aria-current="page"{% endif %}>
+      <i class="bi bi-plus-circle" aria-hidden="true"></i><span class="nav-text">New session</span>
+    </a>
+    <a href="{% url 'assessment_template_list' %}" class="nav-link {% if url_name == 'assessment_template_list' %}active{% endif %}"{% if url_name == 'assessment_template_list' %} aria-current="page"{% endif %}>
+      <i class="bi bi-journal-bookmark" aria-hidden="true"></i><span class="nav-text">Session templates</span>
+    </a>
+    {% elif current_service.slug == 'team' %}
+    <a href="{% url 'training_series_table' %}" class="nav-link {% if url_name == 'training_series_table' or url_name == 'training_series_manage' or url_name == 'training_series_trends' or url_name == 'training_series_roster_import' or url_name == 'training_series_roster_preview' %}active{% endif %}"{% if url_name == 'training_series_table' or url_name == 'training_series_manage' or url_name == 'training_series_trends' or url_name == 'training_series_roster_import' or url_name == 'training_series_roster_preview' %} aria-current="page"{% endif %}>
+      <i class="bi bi-list-ul" aria-hidden="true"></i><span class="nav-text">Training series</span>
+    </a>
+    {% elif current_service.slug == 'panel' %}
+    <a href="{% url 'panel_hearing_table' %}" class="nav-link {% if url_name == 'panel_hearing_table' or url_name == 'panel_hearing_manage' or url_name == 'panel_hearing_create' or url_name == 'panel_results_review' or url_name == 'panel_candidate_import' or url_name == 'panel_rubric_import' or url_name == 'panel_invitation_import' or url_name == 'combined_assessment_list' or url_name == 'combined_assessment_create' or url_name == 'combined_assessment_detail' %}active{% endif %}"{% if url_name == 'panel_hearing_table' or url_name == 'combined_assessment_list' %} aria-current="page"{% endif %}>
+      <i class="bi bi-list-ul" aria-hidden="true"></i><span class="nav-text">Assessments</span>
+    </a>
+    {% if can_oversee_panel %}
+    <a href="{% url 'panel_oversight_list' %}" class="nav-link {% if url_name == 'panel_oversight_list' or url_name == 'panel_oversight_detail' %}active{% endif %}"{% if url_name == 'panel_oversight_list' %} aria-current="page"{% endif %}>
+      <i class="bi bi-shield-check" aria-hidden="true"></i><span class="nav-text">Oversight results</span>
+    </a>
+    {% endif %}
+    {% elif current_service.slug == 'showcase' %}
+    <a href="{% url 'showcase_event_table' %}" class="nav-link {% if url_name == 'showcase_event_table' or url_name == 'showcase_event_manage' or url_name == 'showcase_live_monitor' or url_name == 'showcase_event_labels' or url_name == 'showcase_exhibit_import' %}active{% endif %}"{% if url_name == 'showcase_event_table' or url_name == 'showcase_event_manage' or url_name == 'showcase_live_monitor' or url_name == 'showcase_event_labels' or url_name == 'showcase_exhibit_import' %} aria-current="page"{% endif %}>
+      <i class="bi bi-list-ul" aria-hidden="true"></i><span class="nav-text">Events</span>
+    </a>
+    {% elif current_service.slug == 'competition' %}
+    <a href="{% url 'competition_table' %}" class="nav-link {% if url_name == 'competition_table' or url_name == 'competition_manage' or url_name == 'competition_entry_import' %}active{% endif %}"{% if url_name == 'competition_table' %} aria-current="page"{% endif %}>
+      <i class="bi bi-list-ul" aria-hidden="true"></i><span class="nav-text">Competitions</span>
+    </a>
+    {% elif current_service.slug == 'coassessment' %}
+    <a href="{% url 'coassessment_table' %}" class="nav-link {% if url_name == 'coassessment_table' or url_name == 'coassessment_create' or url_name == 'coassessment_setup' or url_name == 'coassessment_setup_rubric' or url_name == 'coassessment_setup_roster' or url_name == 'coassessment_setup_examiners' or url_name == 'coassessment_publish' or url_name == 'coassessment_live_console' or url_name == 'coassessment_live_chair' or url_name == 'coassessment_results' or url_name == 'coassessment_moderate' or url_name == 'coassessment_sign_off' or url_name == 'coassessment_release' or url_name == 'coassessment_export_csv' or url_name == 'coassessment_export_results_csv' or url_name == 'coassessment_roster_import' %}active{% endif %}"{% if url_name == 'coassessment_table' %} aria-current="page"{% endif %}>
+      <i class="bi bi-list-ul" aria-hidden="true"></i><span class="nav-text">Co-assessments</span>
+    </a>
+    {% endif %}
+    <div class="nav-section">Platform Services</div>
+    <a href="{% url 'home' %}#services" class="nav-link">
+      <i class="bi bi-grid-1x2" aria-hidden="true"></i><span class="nav-text">All services</span>
+    </a>
+    {% endwith %}
     {% endif %}
   </nav>
   {% if request.user.is_authenticated %}
   <div class="sidebar-footer">
-    <div class="d-flex align-items-center gap-2 flex-grow-1">
-      <div class="sidebar-footer-text">
-        <div class="t-body fw-600 text-ink">{{ request.user.display_name }}</div>
+    <div class="d-flex align-items-center gap-2 flex-grow-1 min-w-0">
+      <span class="user-avatar" aria-hidden="true">{{ request.user.display_name|slice:":2" }}</span>
+      <div class="sidebar-footer-text min-w-0">
+        <div class="t-body fw-600 text-ink text-truncate">{{ request.user.display_name }}</div>
         <div class="u-meta">Signed in with DevPerf</div>
       </div>
     </div>
@@ -282,9 +337,10 @@ display:none!important;
       {% block topbar_actions %}{% endblock %}
     </div>
   </div>
-  <div class="page-body">
+  <main id="main-content" class="page-body" tabindex="-1">
+    {% if classroom_walkthrough %}{% include 'assessments/_classroom_walkthrough.html' %}{% endif %}
     {% block content %}{% endblock %}
-  </div>
+  </main>
 </div>
 
 {% if user.is_authenticated %}
@@ -305,14 +361,16 @@ display:none!important;
   </div>
 </div>
 {% endif %}
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g" crossorigin="anonymous"></script>
+{% include 'partials/_vendor_scripts.html' %}
+<script src="{% static 'vendor/chartjs/4.4.0/dist/chart.umd.min.js' %}"></script>
 <script src="{% static 'js/design-tokens.js' %}"></script>
 <script src="{% static 'js/feedback.js' %}"></script>
 <script src="{% static 'js/density.js' %}"></script>
 <script src="{% static 'js/overlay.js' %}"></script>
 <script src="{% static 'js/chart-theme.js' %}"></script>
 <script src="{% static 'js/inline-actions.js' %}"></script>
+<script src="{% static 'js/datetime-picker.js' %}"></script>
+{% include 'partials/_custom_select.html' %}
 
 <script nonce="{{ csp_nonce }}">
 (function () {
@@ -383,8 +441,8 @@ display:none!important;
 
 <script nonce="{{ csp_nonce }}">
 // Any page with a sticky tabs/KPI header (`.tabs-sticky-header`) needs
-// other sticky elements further down the same page — a sidebar form
-// card, say — to sit *below* it, not under it. Its height varies per
+// other sticky elements further down the same page - a sidebar form
+// card, say - to sit *below* it, not under it. Its height varies per
 // page and can change at runtime (a validation banner appearing, a
 // stat updating), so it's measured rather than hard-coded, and exposed
 // as `--sticky-header-h` for any element's `top: calc(var(--topbar-h) +
@@ -397,6 +455,23 @@ display:none!important;
   apply();
   new ResizeObserver(apply).observe(header);
 })();
+</script>
+<script nonce="{{ csp_nonce }}">
+// A linked disclosure is an action: reveal its ancestors before moving focus.
+document.addEventListener('click', function(event) {
+  const link = event.target.closest('a[href^="#"]');
+  if (!link || link.hash.length < 2) return;
+  const target = document.getElementById(link.hash.slice(1));
+  if (!target) return;
+  for (let node = target; node; node = node.parentElement) {
+    if (node.tagName === 'DETAILS') node.open = true;
+  }
+  event.preventDefault();
+  if (location.hash !== link.hash) history.pushState(null, '', link.hash);
+  target.scrollIntoView({block: 'start'});
+  const focusable = target.querySelector('input:not([type="hidden"]), select, textarea') || target.querySelector('summary, button');
+  if (focusable) requestAnimationFrame(function () { focusable.focus({preventScroll: true}); });
+});
 </script>
 {% block scripts %}{% endblock %}
 </body>

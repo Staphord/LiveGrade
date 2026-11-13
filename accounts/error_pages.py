@@ -29,8 +29,10 @@ def server_error(request):
     return HttpResponseServerError(html)
 
 
-def friendly_500(request, exc_type, exc_value, tb):
-    return server_error(request)
+def friendly_500(request, exc_type, exc_value, tb, status_code=500):
+    response = server_error(request)
+    response.status_code = status_code
+    return response
 
 
 def install():

@@ -1,0 +1,7 @@
+<div class="mb-3 mt-3">
+  <label class="form-label fw-600" for="{{ field.id_for_label }}">{{ field.label }}</label>
+  {{ field }}
+  <div class="form-text" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>
+  {% for error in field.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}
+</div>
+{% if current_service.slug == 'classroom' %}<p class="form-text">Peer grading supplies 100% of the assessment score.</p>{% endif %}

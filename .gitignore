@@ -18,4 +18,18 @@ security/.tools-venv/
 security/reports/
 security/.local/
 security/.tmp/
+
+# Local agent prompts, review reports, and reusable local skills
+prompts/
+/reports/
+.codex/skills/
+.gemini/skills/
+.claude/skills/
+output/
+
+# Local analysis and test caches
+.playwright-cli/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 docs*

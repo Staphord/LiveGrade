@@ -53,6 +53,15 @@ class DevelopmentTests(SimpleTestCase):
         self.assertEqual(namespace['OIDC_OP_TOKEN_ENDPOINT'], 'https://d.example.com/o/token/')
         self.assertEqual(namespace['LIVEGRADE_BASE_URL'], 'https://l.example.com')
 
+    def test_public_base_url_is_validated_and_added_to_development_hosts(self):
+        namespace = load({'LIVEGRADE_PUBLIC_BASE_URL': 'http://192.168.2.114:8001/'})
+        self.assertEqual(namespace['LIVEGRADE_PUBLIC_BASE_URL'], 'http://192.168.2.114:8001')
+        self.assertIn('192.168.2.114', namespace['ALLOWED_HOSTS'])
+        with self.assertRaises(ImproperlyConfigured):
+            load({'LIVEGRADE_PUBLIC_BASE_URL': 'ftp://192.168.2.114'})
+        with self.assertRaises(ImproperlyConfigured):
+            load(production(LIVEGRADE_PUBLIC_BASE_URL='http://livegrade.example.test'))
+
     def test_the_session_cookie_is_hidden_from_script_in_every_environment(self):
         for env in ({}, production()):
             with self.subTest(debug=env.get('DEBUG', 'True')):
@@ -137,6 +146,117 @@ class DevelopmentTests(SimpleTestCase):
         self.assertEqual(namespace['OIDC_REDIRECT_ALLOWED_HOSTS'], namespace['ALLOWED_HOSTS'])
 
 
+class ServiceSettingsTests(SimpleTestCase):
+
+    def test_smtp_settings_are_environment_configurable(self):
+        defaults = load({})
+        self.assertEqual(defaults['EMAIL_HOST'], 'localhost')
+        self.assertEqual(defaults['EMAIL_PORT'], 25)
+        self.assertEqual(defaults['DEFAULT_FROM_EMAIL'], 'webmaster@localhost')
+        configured = load({
+            'EMAIL_HOST': 'smtp.example.test', 'EMAIL_PORT': '587',
+            'EMAIL_HOST_USER': 'mailer', 'EMAIL_HOST_PASSWORD': 'secret',
+            'EMAIL_USE_TLS': 'True', 'EMAIL_TIMEOUT': '20',
+            'DEFAULT_FROM_EMAIL': 'LiveGrade <noreply@example.test>',
+        })
+        self.assertEqual(configured['EMAIL_HOST'], 'smtp.example.test')
+        self.assertEqual(configured['EMAIL_PORT'], 587)
+        self.assertEqual(configured['EMAIL_HOST_USER'], 'mailer')
+        self.assertEqual(configured['EMAIL_HOST_PASSWORD'], 'secret')
+        self.assertTrue(configured['EMAIL_USE_TLS'])
+        self.assertEqual(configured['EMAIL_TIMEOUT'], 20)
+        self.assertEqual(configured['DEFAULT_FROM_EMAIL'], 'LiveGrade <noreply@example.test>')
+
+    def test_authenticated_production_smtp_requires_encryption(self):
+        with self.assertRaises(ImproperlyConfigured):
+            load(production(EMAIL_HOST_PASSWORD='secret'))
+        with self.assertRaises(ImproperlyConfigured):
+            load(production(EMAIL_HOST_USER='mailer'))
+        secure = load(production(EMAIL_HOST_PASSWORD='secret', EMAIL_USE_TLS='True'))
+        self.assertTrue(secure['EMAIL_USE_TLS'])
+        with self.assertRaises(ImproperlyConfigured):
+            load({'EMAIL_USE_TLS': 'True', 'EMAIL_USE_SSL': 'True'})
+
+    def test_interest_limits_have_configurable_positive_defaults(self):
+        namespace = load({})
+        self.assertEqual(namespace['LIVEGRADE_INTEREST_RATE_LIMIT'], 5)
+        self.assertEqual(namespace['LIVEGRADE_INTEREST_RATE_WINDOW'], 600)
+        self.assertEqual(load({'LIVEGRADE_INTEREST_RATE_LIMIT': '2'})['LIVEGRADE_INTEREST_RATE_LIMIT'], 2)
+        for env in ({'LIVEGRADE_INTEREST_RATE_LIMIT': '0'}, {'LIVEGRADE_INTEREST_RATE_WINDOW': '-1'}):
+            with self.subTest(env=env), self.assertRaises(ImproperlyConfigured):
+                load(env)
+
+    def test_panel_examiner_rate_limit_is_configurable_and_positive(self):
+        defaults = load({})
+        self.assertEqual(defaults['PANEL_EXAMINER_RATE_LIMIT'], 120)
+        self.assertEqual(defaults['PANEL_EXAMINER_RATE_WINDOW'], 60)
+        configured = load({'PANEL_EXAMINER_RATE_LIMIT': '12',
+                           'PANEL_EXAMINER_RATE_WINDOW': '90'})
+        self.assertEqual(configured['PANEL_EXAMINER_RATE_LIMIT'], 12)
+        self.assertEqual(configured['PANEL_EXAMINER_RATE_WINDOW'], 90)
+        for env in ({'PANEL_EXAMINER_RATE_LIMIT': '0'},
+                    {'PANEL_EXAMINER_RATE_WINDOW': '-1'}):
+            with self.subTest(env=env), self.assertRaises(ImproperlyConfigured):
+                load(env)
+
+    def test_unknown_bearer_rate_limit_is_configurable_and_positive(self):
+        defaults = load({})
+        self.assertEqual(defaults['PUBLIC_BEARER_UNKNOWN_RATE_LIMIT'], 300)
+        self.assertEqual(defaults['PUBLIC_BEARER_UNKNOWN_RATE_WINDOW'], 60)
+        configured = load({'PUBLIC_BEARER_UNKNOWN_RATE_LIMIT': '20',
+                           'PUBLIC_BEARER_UNKNOWN_RATE_WINDOW': '90'})
+        self.assertEqual(configured['PUBLIC_BEARER_UNKNOWN_RATE_LIMIT'], 20)
+        self.assertEqual(configured['PUBLIC_BEARER_UNKNOWN_RATE_WINDOW'], 90)
+        for env in ({'PUBLIC_BEARER_UNKNOWN_RATE_LIMIT': '0'},
+                    {'PUBLIC_BEARER_UNKNOWN_RATE_WINDOW': '-1'}):
+            with self.subTest(env=env), self.assertRaises(ImproperlyConfigured):
+                load(env)
+
+    def test_showcase_visitor_rate_limit_allows_configured_crowd_bursts(self):
+        defaults = load({})
+        self.assertEqual(defaults['SHOWCASE_PUBLIC_RATE_LIMIT'], 2000)
+        self.assertEqual(defaults['SHOWCASE_PUBLIC_RATE_WINDOW'], 60)
+        configured = load({'SHOWCASE_PUBLIC_RATE_LIMIT': '2400',
+                           'SHOWCASE_PUBLIC_RATE_WINDOW': '45'})
+        self.assertEqual(configured['SHOWCASE_PUBLIC_RATE_LIMIT'], 2400)
+        self.assertEqual(configured['SHOWCASE_PUBLIC_RATE_WINDOW'], 45)
+        for env in ({'SHOWCASE_PUBLIC_RATE_LIMIT': '0'},
+                    {'SHOWCASE_PUBLIC_RATE_WINDOW': '-1'}):
+            with self.subTest(env=env), self.assertRaises(ImproperlyConfigured):
+                load(env)
+
+    def test_interest_limits_use_shared_redis_and_tests_need_no_redis(self):
+        cache = load({'REDIS_URL': 'redis://cache:6379/5'})['CACHES']['default']
+        self.assertEqual(cache['BACKEND'], 'django.core.cache.backends.redis.RedisCache')
+        self.assertEqual(cache['LOCATION'], 'redis://cache:6379/5')
+        self.assertIn('locmem', load({}, argv=['manage.py', 'test'])['CACHES']['default']['BACKEND'])
+
+    def test_only_classroom_is_open_unless_told_otherwise(self):
+        self.assertEqual(load({})['LIVEGRADE_LIVE_SERVICES'], ['classroom', 'polls'])
+        self.assertEqual(load(production())['LIVEGRADE_LIVE_SERVICES'], ['classroom', 'polls'])
+
+    def test_the_open_services_come_from_the_environment(self):
+        namespace = load({'LIVEGRADE_LIVE_SERVICES': 'classroom, panel ,'})
+        self.assertEqual(namespace['LIVEGRADE_LIVE_SERVICES'], ['classroom', 'panel'])
+
+    def test_every_service_can_be_switched_off(self):
+        self.assertEqual(load({'LIVEGRADE_LIVE_SERVICES': ''})['LIVEGRADE_LIVE_SERVICES'], [])
+
+    def test_test_runner_ignores_local_service_switches(self):
+        namespace = load({'LIVEGRADE_LIVE_SERVICES': 'classroom,panel,competition,team,showcase'},
+                         argv=['manage.py', 'test'])
+        self.assertEqual(namespace['LIVEGRADE_LIVE_SERVICES'], ['classroom', 'polls'])
+
+    def test_the_portal_app_is_installed(self):
+        self.assertIn('portal', load({})['INSTALLED_APPS'])
+
+    def test_the_service_is_worked_out_after_the_person_is_known_and_before_any_view(self):
+        middleware = load({})['MIDDLEWARE']
+        position = middleware.index('portal.middleware.ServiceMiddleware')
+        self.assertGreater(position, middleware.index('django.contrib.auth.middleware.AuthenticationMiddleware'))
+        self.assertGreater(position, middleware.index('django.contrib.sessions.middleware.SessionMiddleware'))
+
+
 class TestRunnerAndInfrastructureTests(SimpleTestCase):
 
     def test_the_test_runner_gets_a_fast_hasher_and_no_redis(self):
@@ -167,6 +287,19 @@ class TestRunnerAndInfrastructureTests(SimpleTestCase):
         self.assertEqual(settings.CELERY_ACCEPT_CONTENT, ['application/json'])
         self.assertEqual(settings.CELERY_TASK_SERIALIZER, 'json')
         self.assertEqual(settings.CELERY_RESULT_SERIALIZER, 'json')
+
+    def test_static_compression_is_enabled_only_for_a_non_test_production_run(self):
+        production_namespace = load(production())
+        middleware = production_namespace['MIDDLEWARE']
+        self.assertEqual(middleware[1], 'whitenoise.middleware.WhiteNoiseMiddleware')
+        self.assertEqual(
+            production_namespace['STORAGES']['staticfiles']['BACKEND'],
+            'whitenoise.storage.CompressedManifestStaticFilesStorage',
+        )
+
+        test_namespace = load(production(), argv=['manage.py', 'test'])
+        self.assertNotIn('whitenoise.middleware.WhiteNoiseMiddleware', test_namespace['MIDDLEWARE'])
+        self.assertNotIn('STORAGES', test_namespace)
 
 
 class DevperfSourceDatabaseTests(SimpleTestCase):

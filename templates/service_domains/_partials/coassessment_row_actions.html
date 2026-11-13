@@ -1,0 +1,39 @@
+<div class="dropdown coassessment-actions">
+  <button class="dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Actions for {{ session.name }}"><i class="bi bi-three-dots" aria-hidden="true"></i></button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    {% if session.status == 'draft' %}
+      <li><a class="dropdown-item" href="{% url 'coassessment_setup' session_id=session.pk %}"><i class="bi bi-pencil me-2" aria-hidden="true"></i>Continue setup</a></li>
+    {% elif session.status == 'active' %}
+      <li><a class="dropdown-item" href="{% url 'coassessment_live_chair' session_id=session.pk %}"><i class="bi bi-broadcast me-2" aria-hidden="true"></i>Manage live stage</a></li>
+      <li><a class="dropdown-item" href="{% url 'coassessment_setup' session_id=session.pk %}"><i class="bi bi-gear me-2" aria-hidden="true"></i>Event settings</a></li>
+    {% elif session.status == 'review' %}
+      <li><a class="dropdown-item" href="{% url 'coassessment_results' session_id=session.pk %}"><i class="bi bi-check2-circle me-2" aria-hidden="true"></i>Review &amp; moderate</a></li>
+    {% else %}
+      <li><a class="dropdown-item" href="{% url 'coassessment_results' session_id=session.pk %}"><i class="bi bi-award me-2" aria-hidden="true"></i>View signed results</a></li>
+    {% endif %}
+
+    {% if session.status == 'draft' or session.status == 'active' %}
+      <li><a class="dropdown-item" href="{% url 'coassessment_roster_import' session_id=session.pk %}"><i class="bi bi-upload me-2" aria-hidden="true"></i>Import roster</a></li>
+    {% endif %}
+
+    {% if session.status == 'active' or session.status == 'review' or session.status == 'released' %}
+      <li><a class="dropdown-item" href="{% url 'coassessment_projector' session_id=session.pk %}" target="_blank" rel="noopener"><i class="bi bi-projector me-2" aria-hidden="true"></i>Auditorium projector</a></li>
+    {% endif %}
+
+    {% if session.status == 'review' or session.status == 'released' %}
+      <li><a class="dropdown-item" href="{% url 'coassessment_export_results_csv' session_id=session.pk %}"><i class="bi bi-file-earmark-spreadsheet me-2" aria-hidden="true"></i>Export results (.csv)</a></li>
+    {% endif %}
+
+    {% if session.status == 'released' and session.public_join_code %}
+      <li><a class="dropdown-item" href="{% url 'coassessment_public_results' code=session.public_join_code %}" target="_blank" rel="noopener"><i class="bi bi-bar-chart me-2" aria-hidden="true"></i>Public results</a></li>
+    {% endif %}
+
+    <li><hr class="dropdown-divider"></li>
+    <li>
+      <form method="post" action="{% url 'coassessment_delete' session_id=session.pk %}" data-confirm="Delete &quot;{{ session.name }}&quot;? This permanently removes its rubric, roster, stage turns, peer and examiner scorecards, and moderation records." data-confirm-title="Delete co-assessment?" data-confirm-label="Delete co-assessment" data-confirm-tone="danger">
+        {% csrf_token %}
+        <button type="submit" class="dropdown-item text-danger"><i class="bi bi-trash me-2" aria-hidden="true"></i>Delete co-assessment</button>
+      </form>
+    </li>
+  </ul>
+</div>

@@ -51,7 +51,7 @@
         <div class="dp-table card">
           <div class="table-responsive">
             <table class="table table-sm align-middle mb-0">
-              <thead><tr><th>Row</th><th>Category</th><th>Scope</th><th class="text-end">Weight %</th></tr></thead>
+              <thead><tr><th>Row</th><th>Category</th><th>Scope</th><th class="text-end">Weight %</th><th>Score level guidance</th></tr></thead>
               <tbody>
                 {% for row in rubric_review.rows %}
                 <tr class="{% if row.problems %}table-danger{% endif %}">
@@ -59,6 +59,7 @@
                   <td><div class="fw-600">{{ row.name }}</div>{% if row.description %}<div class="text-muted t-sm">{{ row.description }}</div>{% endif %}</td>
                   <td>{{ row.scope|default:"Group" }}</td>
                   <td class="text-end">{{ row.weight }}</td>
+                  <td>{{ row.level_descriptors|linebreaksbr }}</td>
                 </tr>
                 {% endfor %}
               </tbody>

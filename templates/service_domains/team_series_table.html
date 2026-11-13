@@ -1,0 +1,213 @@
+{% extends 'base.html' %}
+{% block title %}Training series · Team and Training{% endblock %}
+{% block page_title %}Training series{% endblock %}
+
+{% block extra_css %}
+{% include 'partials/_service_dashboard_styles.html' %}
+<style nonce="{{ csp_nonce }}">
+.team-series-list-page{max-width:1400px;margin:0 auto;display:grid;gap:var(--sp-4);min-width:0}
+.team-series-list-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--sp-3);flex-wrap:wrap}
+.team-series-list-heading h1{margin:0;font-size:var(--fs-title);font-weight:800;letter-spacing:-.025em;color:var(--ink)}
+.team-series-list-heading p{margin:0;color:var(--text-muted)}
+.team-series-filters{display:grid;grid-template-columns:minmax(220px,1fr) auto;align-items:end;gap:var(--sp-3);padding:var(--sp-4);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.team-series-filters label{display:block;margin-bottom:var(--sp-1);color:var(--text-soft);font-size:var(--fs-sm);font-weight:650}
+.team-series-filter-clear{align-self:end}
+.team-series-feedback{min-height:1px;margin:0}
+.team-series-table-card{min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.team-series-table-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);padding:var(--sp-4);border-bottom:1px solid var(--border)}
+.team-series-table-heading-group{display:flex;align-items:baseline;gap:var(--sp-3);min-width:0}
+.team-series-table-head h2{margin:0;font-size:var(--fs-heading);font-weight:750}
+.team-series-table-count{color:var(--text-muted);font-size:var(--fs-sm)}
+.team-series-table-tools{display:flex;align-items:flex-end;justify-content:flex-end;gap:var(--sp-3);flex-wrap:wrap}
+.team-series-table-tools form{margin:0}
+.team-series-table-tools [data-team-bulk-delete-trigger][hidden]{display:none!important}
+.team-series-page-size{display:grid;gap:3px;min-width:9rem;color:var(--text-muted);font-size:var(--fs-micro);font-weight:650}
+.team-series-page-size .custom-select-wrap{min-width:7rem}
+.team-series-table{margin:0;vertical-align:middle}
+.team-series-table th{padding:var(--sp-3) var(--sp-4);color:var(--text-muted);font-size:var(--fs-micro);font-weight:750;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+.team-series-table td{padding:var(--sp-3) var(--sp-4);font-size:var(--fs-sm)}
+.team-series-select-column{width:3.25rem;padding-right:0!important;text-align:center}
+.team-series-select-column .form-check-input{width:1em;height:1em;margin:0;vertical-align:middle;border:2px solid var(--text-muted);border-radius:var(--radius-xs);background-color:var(--surface);cursor:pointer}
+.team-series-select-column .form-check-input:checked{border-color:var(--accent);background-color:var(--accent)}
+.team-series-select-column .form-check-input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.team-series-table-name{color:var(--ink);font-size:var(--fs-body);font-weight:750;text-decoration:none}
+.team-series-table-name:hover{text-decoration:none;color:var(--accent)}
+.team-series-secondary{display:block;margin-top:3px;color:var(--text-muted);font-size:var(--fs-micro)}
+.team-series-stage{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.team-series-stage-dot{width:7px;height:7px;border-radius:50%;background:var(--success)}
+.team-series-empty{padding:var(--sp-6) var(--sp-4);text-align:center}
+.team-series-empty-icon{display:grid;width:3rem;height:3rem;place-items:center;margin:0 auto var(--sp-3);border-radius:var(--radius-card);background:var(--accent-soft);color:var(--accent);font-size:1.4rem}
+.team-series-empty h2{margin:0 0 var(--sp-2);font-size:var(--fs-title);font-weight:800;color:var(--ink)}
+.team-series-empty p{max-width:38rem;margin:0 auto var(--sp-4);color:var(--text-muted);line-height:1.55}
+.team-series-empty-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--sp-3);max-width:850px;margin:0 auto var(--sp-4);text-align:left}
+.team-series-empty-step{padding:var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface-hover)}
+.team-series-empty-step strong,.team-series-empty-step span{display:block}
+.team-series-empty-step strong{margin-bottom:var(--sp-1);font-size:var(--fs-sm)}
+.team-series-empty-step span{color:var(--text-muted);font-size:var(--fs-micro);line-height:1.45}
+.team-series-pagination{display:flex;align-items:center;justify-content:flex-end;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);border-top:1px solid var(--border)}
+.team-series-pagination-label{color:var(--text-muted);font-size:var(--fs-sm)}
+.team-series-pagination-links{display:flex;gap:var(--sp-2)}
+.team-series-row-clickable{cursor:pointer}
+.team-series-row-clickable .team-series-actions{cursor:default}
+@media(max-width:767.98px){.team-series-filters{grid-template-columns:minmax(0,1fr)}.team-series-empty-steps{grid-template-columns:1fr}}
+@media(max-width:575.98px){.team-series-table-head{align-items:flex-start;flex-direction:column}.team-series-table-heading-group{align-items:flex-start;flex-direction:column;gap:var(--sp-1)}.team-series-table-tools{width:100%;justify-content:space-between}.team-series-table{min-width:820px}.team-series-pagination{align-items:flex-end;flex-direction:column}}
+</style>
+{% include 'service_domains/_partials/team_series_row_actions_styles.html' %}
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'training_series_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>New series</a>
+{% endblock %}
+
+{% block content %}
+<div class="team-series-list-page">
+  <header class="team-series-list-heading"><div><h1 class="visually-hidden">Training series</h1><p>Search, filter, and manage the training series in this Team and Training workspace.</p></div></header>
+  <form class="team-series-filters" method="get" action="{% url 'training_series_table' %}" data-team-auto-filter>
+    <input type="hidden" name="per_page" value="{{ per_page }}" data-team-filter-page-size>
+    <div><label for="team-series-search">Search</label><input id="team-series-search" class="form-control" name="q" type="search" value="{{ search_query }}" placeholder="Series name" autocomplete="off" aria-describedby="team-series-search-help"><span id="team-series-search-help" class="visually-hidden">Results update after you stop typing. Press Enter to search immediately.</span></div>
+    <a class="btn btn-outline-secondary team-series-filter-clear" href="{% url 'training_series_table' %}" data-team-clear-filters>Clear filters</a>
+  </form>
+  <p id="team-series-filter-feedback" class="visually-hidden" role="status" aria-live="polite"></p>
+  {% include 'service_domains/_partials/team_series_results.html' %}
+</div>
+{% include 'service_domains/_partials/team_series_delete_flow.html' %}
+{% endblock %}
+
+{% block scripts %}
+{% include 'service_domains/_partials/team_series_clickable_rows_script.html' %}
+{% include 'service_domains/_partials/team_series_delete_flow_script.html' %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  const form = document.querySelector('[data-team-auto-filter]');
+  if (!form) return;
+  const search = form.querySelector('input[name="q"]');
+  const feedback = document.getElementById('team-series-filter-feedback');
+  let results = document.getElementById('team-results');
+  let timer;
+  let activeRequest;
+
+  function submitFilters(restorePageSizeFocus) {
+    window.clearTimeout(timer);
+    const pageSize = results.querySelector('[data-team-page-size]');
+    const hiddenSize = form.querySelector('[data-team-filter-page-size]');
+    if (pageSize && hiddenSize) hiddenSize.value = pageSize.value;
+    const url = new URL(form.action, window.location.href);
+    url.search = new URLSearchParams(new FormData(form)).toString();
+    updateResults(url, restorePageSizeFocus);
+  }
+
+  async function updateResults(url, restorePageSizeFocus) {
+    if (!results) return;
+    if (activeRequest) activeRequest.abort();
+    const controller = new AbortController();
+    activeRequest = controller;
+    results.setAttribute('aria-busy', 'true');
+    feedback.className = 'visually-hidden';
+    feedback.textContent = '';
+    try {
+      const response = await fetch(url.toString(), {
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+        credentials: 'same-origin',
+        signal: controller.signal,
+      });
+      if (response.redirected) {
+        window.location.assign(response.url);
+        return;
+      }
+      if (!response.ok) throw new Error('Series list could not be loaded');
+      const page = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const nextResults = page.getElementById('team-results');
+      if (!nextResults) throw new Error('Series results were missing from the response');
+      if (controller.signal.aborted || activeRequest !== controller) return;
+      results.replaceWith(nextResults);
+      results = nextResults;
+      if (window.initCustomSelects) window.initCustomSelects(results);
+      syncSelection();
+      if (restorePageSizeFocus) {
+        const trigger = results.querySelector('.team-series-page-size .custom-select-trigger');
+        if (trigger) trigger.focus({preventScroll: true});
+      }
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+      const count = results.querySelector('.team-series-table-count');
+      feedback.textContent = count ? count.textContent.trim() : 'Training series list updated.';
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      feedback.className = 'alert alert-warning mb-3';
+      feedback.textContent = 'Could not update the training series list. Press Enter to try again.';
+    } finally {
+      if (activeRequest === controller) {
+        results.setAttribute('aria-busy', 'false');
+        activeRequest = null;
+      }
+    }
+  }
+
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+    submitFilters();
+  });
+  search.addEventListener('input', function () {
+    window.clearTimeout(timer);
+    if (activeRequest) activeRequest.abort();
+    timer = window.setTimeout(submitFilters, 350);
+  });
+
+  function syncSelection() {
+    const rows = Array.from(results.querySelectorAll('[data-team-select]'));
+    const selected = rows.filter(function (item) { return item.checked; });
+    const selectAll = results.querySelector('[data-team-select-all]');
+    const bulkButton = results.querySelector('[data-team-bulk-delete-trigger]');
+    const count = results.querySelector('[data-team-selected-count]');
+    if (selectAll) {
+      selectAll.disabled = rows.length === 0;
+      selectAll.checked = rows.length > 0 && selected.length === rows.length;
+      selectAll.indeterminate = selected.length > 0 && selected.length < rows.length;
+    }
+    if (bulkButton) {
+      bulkButton.hidden = selected.length === 0;
+    }
+    if (count) count.textContent = String(selected.length);
+  }
+
+  syncSelection();
+  document.addEventListener('change', function (event) {
+    if (!results.contains(event.target)) return;
+    if (event.target.matches('[data-team-select-all]')) {
+      results.querySelectorAll('[data-team-select]').forEach(function (item) {
+        item.checked = event.target.checked;
+      });
+      syncSelection();
+      return;
+    }
+    if (event.target.matches('[data-team-select]')) {
+      syncSelection();
+      return;
+    }
+    if (event.target.matches('[data-team-page-size]')) {
+      const hiddenSize = form.querySelector('[data-team-filter-page-size]');
+      if (hiddenSize) hiddenSize.value = event.target.value;
+      submitFilters(true);
+    }
+  });
+
+  document.addEventListener('click', function (event) {
+    const clear = event.target.closest('[data-team-clear-filters]');
+    if (clear) {
+      event.preventDefault();
+      search.value = '';
+      const hiddenSize = form.querySelector('[data-team-filter-page-size]');
+      if (hiddenSize) hiddenSize.value = results.querySelector('[data-team-page-size]')?.value || '25';
+      search.focus({preventScroll: true});
+      submitFilters();
+      return;
+    }
+    const pageLink = event.target.closest('[data-team-page]');
+    if (pageLink) {
+      event.preventDefault();
+      const url = new URL(pageLink.href, window.location.href);
+      updateResults(url, false);
+    }
+  });
+})();
+</script>
+{% endblock %}

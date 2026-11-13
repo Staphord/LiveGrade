@@ -8,6 +8,8 @@ from io import BytesIO
 
 import openpyxl
 
+from .spreadsheet_safety import spreadsheet_safe_text
+
 PARTICIPATION_STATUS_LABELS = {
     'full': 'Fully graded', 'partial': 'Partially graded', 'none': 'Did not participate',
 }
@@ -33,10 +35,10 @@ def export_results(assessment_session, results, participation_rows):
     for row in participation_rows:
         student = row['student']
         participation_sheet.append([
-            student.full_name, student.student_id,
-            row['own_group'].name if row['own_group'] else '',
+            spreadsheet_safe_text(student.full_name), spreadsheet_safe_text(student.student_id),
+            spreadsheet_safe_text(row['own_group'].name if row['own_group'] else ''),
             'Yes' if row['joined'] else 'No',
-            PARTICIPATION_STATUS_LABELS.get(row['status'], row['status']),
+            spreadsheet_safe_text(PARTICIPATION_STATUS_LABELS.get(row['status'], row['status'])),
             row['graded_count'], row['eligible_count'], row['progress_pct'],
         ])
 
@@ -44,7 +46,7 @@ def export_results(assessment_session, results, participation_rows):
     results_sheet.append(['Student', 'Group', 'Group %', 'Individual %', 'Penalty (points)', 'Final %'])
     for row in results['student_rows']:
         results_sheet.append([
-            row['student'].full_name, row['group'].name,
+            spreadsheet_safe_text(row['student'].full_name), spreadsheet_safe_text(row['group'].name),
             float(row['group_percent']) if row['group_percent'] is not None else '',
             float(row['individual_percent']) if row['individual_percent'] is not None else '',
             float(row.get('penalty', 0)),
@@ -54,7 +56,7 @@ def export_results(assessment_session, results, participation_rows):
     group_sheet = workbook.create_sheet('Group scores')
     group_sheet.append(['Group', 'Group %'])
     for row in results['group_rows']:
-        group_sheet.append([row['group'].name,
+        group_sheet.append([spreadsheet_safe_text(row['group'].name),
                              float(row['percent']) if row['percent'] is not None else ''])
 
     buffer = BytesIO()

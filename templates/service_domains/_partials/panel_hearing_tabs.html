@@ -1,0 +1,17 @@
+<nav class="page-tabs mb-3" aria-label="Hearing workspace">
+  {% if hearing.status == 'open' %}
+    <a class="page-tab {% if active_tab == 'live' %}active{% endif %}" href="{% url 'panel_hearing_live' hearing_id=hearing.pk %}" {% if active_tab == 'live' %}aria-current="page"{% endif %}>
+      <i class="bi bi-broadcast me-1" aria-hidden="true"></i>Live chamber
+    </a>
+  {% else %}
+    <span class="page-tab is-disabled text-muted" aria-disabled="true" title="Chamber is active when assessment is open">
+      <i class="bi bi-broadcast me-1" aria-hidden="true"></i>Live chamber
+    </span>
+  {% endif %}
+  <a class="page-tab {% if active_tab == 'setup' %}active{% endif %}" href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}{% if active_tab != 'setup' %}?from={{ active_tab|default:'live' }}{% endif %}" {% if active_tab == 'setup' %}aria-current="page"{% endif %}>
+    <i class="bi bi-pencil-square me-1" aria-hidden="true"></i>Edit setup
+  </a>
+  <a class="page-tab {% if active_tab == 'results' %}active{% endif %}" href="{% url 'panel_results_review' hearing_id=hearing.pk %}" {% if active_tab == 'results' %}aria-current="page"{% endif %}>
+    <i class="bi bi-bar-chart-line me-1" aria-hidden="true"></i>Results &amp; Deliberation
+  </a>
+</nav>

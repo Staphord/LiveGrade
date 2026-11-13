@@ -1,0 +1,15 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% block title %}Your results · {{ candidate.display_name }}{% endblock %}
+{% block service_name %}Panel results{% endblock %}
+{% block content %}
+{% include 'service_domains/_panel_ui_styles.html' %}
+<main id="public-main" class="public-service-content wide">
+  <header class="panel-hero mb-4"><div class="panel-hero__copy"><p class="panel-eyebrow">Released results</p><h1>{{ candidate.display_name }}</h1><p class="panel-muted mt-2">{{ hearing.name }} · {{ hearing.released_at|date:'j M Y' }}</p></div><span class="panel-state panel-state--done">Approved</span></header>
+  {% if decision %}<section class="panel-result-highlight mb-4" aria-labelledby="decision-heading"><div><p class="panel-eyebrow">Panel decision</p><h2 class="h4" id="decision-heading">{{ decision.get_outcome_display }}</h2><p class="mb-0">{{ decision.rationale }}</p>{% if decision.conditions %}<p class="small mt-2 mb-0"><strong>Next steps:</strong> {{ decision.conditions }}</p>{% endif %}</div></section>{% endif %}
+  {% if result_rows %}<section class="panel-card" aria-labelledby="scores-heading"><div class="panel-section-heading"><div><h2 class="h4" id="scores-heading">Scores by criterion</h2><p>These are the scores approved for release.</p></div></div>
+    <div class="panel-result-list">{% for row in result_rows %}<article class="panel-result-row"><div><h3 class="h6 mb-1">{{ row.snapshot.criterion.name }}</h3><div class="panel-progress panel-result-row__bar" role="meter" aria-label="{{ row.snapshot.criterion.name }} score" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ row.effective_score }}"><span style="width:{{ row.effective_score }}%"></span></div></div><strong class="panel-result-score fs-3">{{ row.effective_score|floatformat:'-2' }}<span class="fs-6 fw-normal panel-muted"> / 100</span></strong>
+      {% if row.released_comments %}<div class="panel-result-row__bar mt-1"><p class="small fw-semibold mb-1">Feedback</p><ul class="mb-0 ps-3">{% for comment in row.released_comments %}<li>{{ comment }}</li>{% endfor %}</ul></div>{% endif %}
+    </article>{% endfor %}</div>
+  </section>{% elif decision %}<section class="panel-card"><h2 class="h5">No numeric scores</h2><p class="panel-muted mb-0">This assessment used a decision process rather than scores.</p></section>{% else %}<section class="panel-empty"><h2 class="h5">Results are not available</h2><p class="panel-muted mb-0">Contact the organizer if you think you received this link by mistake.</p></section>{% endif %}
+</main>
+{% endblock %}

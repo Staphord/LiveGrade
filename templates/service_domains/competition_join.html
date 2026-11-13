@@ -1,0 +1,20 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% block title %}Join an audience vote · Competition{% endblock %}
+{% block service_name %}Competition audience{% endblock %}
+{% block content %}
+{% include 'service_domains/_team_competition_styles.html' %}
+<main id="public-main" class="public-service-content narrow">
+  <section class="tc-public-card">
+  <header class="tc-public-head"><h1>Join an audience vote</h1><p>Enter the code shown by the event organizer.</p></header>
+  <div class="tc-public-body">
+  {% if error %}<div class="mb-3">{% include 'partials/_inline_message.html' with tone='danger' message=error %}</div>{% endif %}
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {% include 'partials/_form_fields.html' with form=form %}
+    <button class="btn btn-primary btn-lg w-100" type="submit">Continue</button>
+  </form>
+  <p class="small text-muted mt-3 mb-0">The next screen shows the event and track before you submit a ballot. A code may stop working when the round closes.</p>
+  </div>
+  </section>
+</main>
+{% endblock %}

@@ -2,7 +2,7 @@
 {% block title %}Participation - {{ session.name }}{% endblock %}
 {% block page_title %}{{ session.name }}{% endblock %}
 {% block topbar_actions %}
-<a href="{% url 'assessment_session_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>All sessions</a>
+<a href="{{ sessions_home.url }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>{{ sessions_home.label }}</a>
 {% endblock %}
 
 {% block extra_css %}
@@ -13,11 +13,11 @@
 @keyframes participation-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
 
 /* A card whose contents just changed on a silent refresh gets a brief
-   glow — same "just happened" language the Live control tab uses. */
+   glow - same "just happened" language the Live control tab uses. */
 @keyframes card-glow{0%{box-shadow:0 0 0 2px var(--accent) inset}100%{box-shadow:0 0 0 0 transparent inset}}
 .participant-card.is-new{animation:card-glow 1.8s ease-out}
 
-/* Now-presenting strip — the "lively" element: who's on, and who among the
+/* Now-presenting strip - the "lively" element: who's on, and who among the
    eligible graders has started (even before they submit). A status-dot
    rollup per the same severity language as the card badges (grey = not
    started, amber = mid-grade, green = submitted), debounced client-side
@@ -37,7 +37,7 @@
 .grader-chip .grader-pct{color:var(--text-muted);font-weight:500}
 
 /* -------------------------------------------------------------------- *
- * Card grid — replaces the old one-column-per-group matrix. A student's
+ * Card grid - replaces the old one-column-per-group matrix. A student's
  * full grading footprint (joined, overall status, progress bar, and a
  * per-group breakdown) fits in one glanceable card instead of a wide,
  * mostly-empty table scrolling off-screen once a session has more than a
@@ -62,7 +62,7 @@
 
 .participant-card-head{display:flex;align-items:center;gap:.7rem}
 
-/* Ring-wrapped avatar — the same conic-gradient "live percentage" language
+/* Ring-wrapped avatar - the same conic-gradient "live percentage" language
    already used for the turn timer and the big participation hero ring
    elsewhere in this app, scaled down so each card carries its own vivid,
    at-a-glance completion read instead of a flat bar underneath. */
@@ -87,14 +87,14 @@
 .status-pill.is-partial{background:var(--tone-warn-bg);color:var(--tone-warn-fg)}
 .status-pill.is-none{background:var(--tone-danger-bg);color:var(--tone-danger-fg)}
 
-/* The banner naming who this student presents with — visible up front,
+/* The banner naming who this student presents with - visible up front,
    no need to open "Group breakdown" just to see it. */
 .participant-team{display:flex;align-items:center;gap:.4rem;font-size:var(--fs-micro);font-weight:600;
      color:var(--text-muted);background:var(--surface-sunken);border-radius:var(--radius-control);
      padding:.3rem .55rem;width:fit-content}
 
-/* Shared "something is happening right now" pill — amber while grading,
-   accent-blue while presenting — both with a pulsing dot so the card reads
+/* Shared "something is happening right now" pill - amber while grading,
+   accent-blue while presenting - both with a pulsing dot so the card reads
    as live rather than a static snapshot. */
 .live-status-note{display:flex;align-items:center;gap:.4rem;font-size:var(--fs-micro);font-weight:700;
      border-radius:var(--radius-pill);padding:.25rem .6rem;width:fit-content}
@@ -106,7 +106,7 @@
 .live-status-note.is-submitted.is-fading{opacity:0}
 
 /* The whole card gets a soft, breathing accent ring while this student's
-   own group is the one currently presenting — the strongest "this is
+   own group is the one currently presenting - the strongest "this is
    happening right now" signal on the page, visible without expanding
    anything or scrolling to the strip above. */
 @keyframes presenting-breathe{0%,100%{box-shadow:0 0 0 2px var(--accent) inset,0 0 0 0 var(--accent-soft)}50%{box-shadow:0 0 0 2px var(--accent) inset,0 0 10px 2px var(--accent-soft)}}
@@ -127,6 +127,7 @@
 {% endblock %}
 
 {% block content %}
+<h1 class="visually-hidden">Participation - {{ session.name }}</h1>
 <div class="tabs-sticky-header">
 {% include 'assessments/_session_tabs.html' with active='participation' %}
 {% include 'assessments/_partials/participation_stats.html' %}
@@ -181,7 +182,7 @@
 {% block scripts %}
 <script nonce="{{ csp_nonce }}">
 // Delegated (survives the card grid being swapped outerHTML-style on every
-// silent refresh) — toggles one card's group breakdown open/closed.
+// silent refresh) - toggles one card's group breakdown open/closed.
 document.addEventListener('click', function (e) {
   const btn = e.target.closest('[data-details-toggle]');
   if (!btn) return;
@@ -195,7 +196,7 @@ document.addEventListener('click', function (e) {
 </script>
 {% if session.status == 'live' %}
 <script nonce="{{ csp_nonce }}">
-// Silent-patch refresh of the card grid + stat strip — same idea as the
+// Silent-patch refresh of the card grid + stat strip - same idea as the
 // Live control tab. Driven primarily by the websocket below (near-instant);
 // the interval here is only a safety net for a dropped/slow socket, so
 // it's deliberately much longer than a pure-polling version would need.
@@ -221,7 +222,7 @@ document.addEventListener('click', function (e) {
     fetch(REFRESH_URL, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
       .then(function (res) { return res.json(); })
       .then(function (data) {
-        if (data.status !== 'live') { window.location.reload(); return; } // session ended — the strip/tabs need a real reload
+        if (data.status !== 'live') { window.location.reload(); return; } // session ended - the strip/tabs need a real reload
         const oldGrid = document.getElementById('participation-cards');
         if (oldGrid && data.cards_html) {
           const oldSignatures = {};
@@ -240,25 +241,34 @@ document.addEventListener('click', function (e) {
           oldGrid.replaceWith(newGrid);
           // Freshly-rendered cards always start with the "grading now" note
           // hidden (the server has no idea about ephemeral heartbeat state)
-          // — reapply whatever this tab already knows from `gradingState`.
+          // - reapply whatever this tab already knows from `gradingState`.
           if (window.DevPerfReapplyGradingState) window.DevPerfReapplyGradingState();
         }
         const oldStats = document.getElementById('participation-stat-strip');
         if (oldStats && data.stats_html) oldStats.outerHTML = data.stats_html;
       })
-      .catch(function () { /* transient hiccup — next tick retries */ })
+      .catch(function () { /* transient hiccup - next tick retries */ })
       .finally(function () { refreshing = false; });
   }
   window.DevPerfParticipationRefresh = refresh; // markSubmitted (defined below, outside this IIFE) needs it too
 
-  setInterval(refresh, 20000); // safety net only — the socket below drives real-time updates
+  const refreshInterval = setInterval(refresh, 20000); // safety net only - the socket below drives real-time updates
 
   if (window.WebSocket) {
     const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const url = `${scheme}://${window.location.host}/ws/assessments/{{ session.uuid }}/`;
+    const url = `${scheme}://${window.location.host}/ws/assessments/{{ session.uuid }}/staff/`;
     let retryTimer = null;
+    let staffSocket = null;
     function connect() {
+      if (staffSocket) {
+        staffSocket.onmessage = null;
+        staffSocket.onclose = null;
+        staffSocket.onerror = null;
+        try { staffSocket.close(); } catch (_) {}
+        staffSocket = null;
+      }
       const socket = new WebSocket(url);
+      staffSocket = socket;
       socket.onmessage = function (event) {
         let data;
         try { data = JSON.parse(event.data); } catch (e) { return; }
@@ -266,34 +276,51 @@ document.addEventListener('click', function (e) {
         if (data.type === 'grading.progress') { applyGradingProgress(data.data); return; }
         if (data.type === 'evaluation.submitted') { markSubmitted(data.data); return; }
         if (['turn.activated', 'turn.closed', 'transition.scheduled'].includes(data.type)) {
-          // Who's presenting changed — the strip above the grid is stale
+          // Who's presenting changed - the strip above the grid is stale
           // either way, and this is rare enough mid-session that a reload
           // is simpler and safer than patching the strip in place.
           window.location.reload();
           return;
         }
-        // evaluation.submitted, participation.updated, etc. — just the
+        // evaluation.submitted, participation.updated, etc. - just the
         // grid/stat contents changed, so a silent patch is enough.
         refresh();
       };
       socket.onclose = function () {
+        socket.onmessage = null;
+        socket.onclose = null;
+        socket.onerror = null;
+        if (staffSocket === socket) staffSocket = null;
         window.clearTimeout(retryTimer);
         retryTimer = setTimeout(connect, 4000);
       };
-      socket.onerror = function () { socket.close(); };
+      socket.onerror = function () {
+        socket.close();
+      };
     }
     connect();
+    window.addEventListener('pagehide', function () {
+      clearInterval(refreshInterval);
+      clearTimeout(retryTimer);
+      if (staffSocket) {
+        staffSocket.onmessage = null;
+        staffSocket.onclose = null;
+        staffSocket.onerror = null;
+        try { staffSocket.close(); } catch (_) {}
+        staffSocket = null;
+      }
+    });
   }
 })();
 
-// The "currently grading" strip + per-card live note — purely client-side,
+// The "currently grading" strip + per-card live note - purely client-side,
 // ephemeral state from `grading.progress` heartbeats (see evaluate.html).
 // A status-dot severity rollup (grey = not started, amber = in progress,
 // green = submitted) with a short debounce before dropping someone, so a
 // single missed heartbeat doesn't flicker their indicator away.
 const gradingState = new Map(); // student_id -> {answered, total, groupId, name, lastSeen}
 const GRADING_STALE_MS = 15000;
-// student_id -> {groupId, expiresAt} — a brief "Submitted" flash right where
+// student_id -> {groupId, expiresAt} - a brief "Submitted" flash right where
 // "Grading now" was, so the transition reads as one continuous state change
 // instead of the note just vanishing the instant the vote lands.
 const submittedState = new Map();
@@ -356,13 +383,13 @@ function renderGradingState() {
 
 function markSubmitted(payload) {
   if (!payload || !payload.student_id) { window.DevPerfParticipationRefresh(); return; }
-  // The vote landed — this student is no longer "grading", they're done.
+  // The vote landed - this student is no longer "grading", they're done.
   gradingState.delete(payload.student_id);
   submittedState.set(payload.student_id, { groupId: payload.group_id, expiresAt: Date.now() + SUBMITTED_FLASH_MS });
   renderGradingState();
   showSubmittedNote(payload.student_id, payload.group_id);
-  // Everything else — the progress ring, status pill, group chip, stat
-  // strip counts — genuinely changed too, so still patch those in.
+  // Everything else - the progress ring, status pill, group chip, stat
+  // strip counts - genuinely changed too, so still patch those in.
   window.DevPerfParticipationRefresh();
   window.setTimeout(function () {
     submittedState.delete(payload.student_id);
@@ -396,7 +423,7 @@ function escapeHtml(str) {
 // a student just closed ages out of the strip within ~15-20s on its own.
 setInterval(renderGradingState, 5000);
 
-// Re-paint every still-active grading note onto the current DOM — called
+// Re-paint every still-active grading note onto the current DOM - called
 // right after a silent refresh swaps in fresh (unaware) server markup.
 window.DevPerfReapplyGradingState = function () {
   const now = Date.now();

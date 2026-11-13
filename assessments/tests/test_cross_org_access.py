@@ -16,14 +16,23 @@ A URL that takes a row id must have an entry in ``TARGETS``; the coverage test
 at the bottom fails until it does, so a new route cannot skip this check.
 """
 import re
+from datetime import timedelta
+from decimal import Decimal
+from unittest.mock import patch
 
 from django.core import serializers
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from accounts.testing import make_org, make_user, sign_in
 from assessments.models import (AssessmentSession, PresentationGroup,
-                                RubricCategory, Student)
+                                RubricCategory, SessionTemplate, Student, TemplateRubricCategory)
+from service_domains.models import (Competition, PanelCandidate, PanelCriterion, PanelHearing,
+                                    PanelInvitation, PanelResultAdjustment, PanelResultSnapshot,
+                                    PanelScore, ShowcaseEvent, ShowcaseExhibit,
+                                    CombinedPresentationAssessment, TrainingSeries)
+from portal.services import is_released
 
 from .test_access_matrix import named_patterns
 
@@ -36,7 +45,40 @@ MARKER = 'ORG-A-CONFIDENTIAL'
 #: URL name -> (method, {url kwarg: object key in ``Fixture.objects``}).
 #: A bare string stands for {every kwarg: that object}.
 TARGETS = {
+    'assessment_poll_delete': (POST, 'session'),
+    'assessment_polls': (GET, 'session'),
+    'assessment_poll_questions_sample': (GET, 'session'),
+    'assessment_leaderboard_scores': (POST, 'session'),
+    'showcase_event_labels': (GET, 'showcase_event'),
+    'competition_manage': (GET, 'competition'),
+    'competition_entry_import': (POST, {'competition_id': 'competition'}),
+    'competition_entry_import_sample': (GET, {'competition_id': 'competition'}),
+    'panel_hearing_manage': (GET, 'panel_hearing'),
+    'panel_candidate_import': (GET, 'draft_panel_hearing'),
+    'panel_candidate_import_sample': (GET, 'draft_panel_hearing'),
+    'panel_rubric_import': (GET, 'draft_panel_hearing'),
+    'panel_rubric_import_sample': (GET, 'draft_panel_hearing'),
+    'panel_invitation_import': (GET, 'draft_panel_hearing'),
+    'panel_invitation_import_sample': (GET, 'draft_panel_hearing'),
+    'panel_results_review': (GET, 'panel_hearing'),
+    'panel_recusal_export': (GET, 'panel_hearing'),
+    'panel_results_export': (GET, 'panel_hearing'),
+    'combined_assessment_detail': (GET, 'combined_assessment'),
+    'combined_assessment_delete': (POST, 'combined_assessment'),
+    'showcase_event_delete': (POST, 'showcase_event'),
+    'competition_delete': (POST, 'competition'),
+    'panel_hearing_delete': (POST, 'panel_hearing'),
+    'showcase_live_monitor': (GET, 'showcase_event'),
+    'showcase_live_activity': (GET, 'showcase_event'),
+    'training_series_roster_import': (GET, 'training_series'),
+    'training_series_roster_preview': (GET, 'training_series'),
+    'training_series_roster_sample': (GET, 'training_series'),
+    'training_series_delete_export': (GET, 'training_series'),
+    'training_series_delete': (POST, 'training_series'),
     'assessment_session_detail':   (GET,  'session'),
+    'assessment_session_duplicate': (POST, 'session'),
+    'assessment_template_save': (POST, 'session'),
+    'assessment_template_delete': (POST, 'template'),
     'assessment_session_edit':     (GET,  'session'),
     'assessment_live_state':       (GET,  'session'),
     'assessment_session_delete':   (POST, 'session'),
@@ -63,11 +105,13 @@ TARGETS = {
     'assessment_adjust_timer':     (POST, 'session'),
     'assessment_close_turn':       (POST, 'session'),
     'assessment_close_session':    (POST, 'session'),
+    'assessment_public_results':   (POST, 'session'),
     'assessment_participation':    (GET,  'session'),
     'assessment_participation_refresh': (GET, 'session'),
     'assessment_results':          (GET,  'session'),
     'assessment_results_refresh':  (GET,  'session'),
     'assessment_results_export':   (GET,  'session'),
+    'assessment_results_export_csv': (GET, 'session'),
     'assessment_qr':               (GET,  'session'),
     'assessment_transfer':         (POST, 'session'),
     'assessment_setup':            (GET,  'session'),
@@ -83,7 +127,23 @@ TARGETS = {
 
 #: Routes that take an id but are deliberately outside this check, and why.
 EXEMPT = {
+    'competition_results_export': 'scoped owner-only frozen aggregate export; foreign owner and organization denials covered by competition export tests',
+    'training_learner_report': 'digest-only revocable capability; private snapshot, foreign-owner denial and revocation tested in test_team_reports',
+    'panel_live_display': 'revocable display capability; privacy, revocation and foreign owner rejection are covered by test_panel_live_display',
+    'panel_live_display_updates': 'same display capability with aggregate-only projection; live display tests cover denial and privacy',
+    'classroom_poll': 'public UUID identifies a published poll; roster or personal-link identity is required to vote or see totals',
+    'classroom_poll_results': 'public poll UUID reveals aggregate results only; classroom poll result privacy is covered by poll tests',
+    'classroom_poll_qr': 'published poll UUID QR contains only the shared poll URL',
+    'classroom_poll_qr_screen': 'published poll UUID QR screen is a public display route',
+    'classroom_poll_invitation': 'revocable personal poll invitation; roster, token and poll binding are tested in test_classroom_polls',
+    'standalone_poll_live_results': 'public standalone poll UUID reveals aggregate results only; standalone poll tests cover publication and privacy',
+    'standalone_poll_live_state': 'public standalone poll UUID reveals aggregate state only; standalone poll tests cover result projection',
+    'standalone_poll_public': 'public standalone poll UUID is a voting page; anonymous ballot uniqueness and identity privacy are covered by poll tests',
+    'standalone_poll_qr': 'public standalone poll UUID QR contains only its shared voting URL',
+    'standalone_poll_qr_screen': 'public standalone poll UUID QR screen is a public display route',
+    'standalone_poll_state': 'owner-only standalone poll state is scoped by organization and creator; standalone poll tests cover ownership',
     'student_join': 'session link, no login',
+    'student_privacy_notice': 'session link, no login; notice version is scoped to the joined participant',
     'student_evaluate': 'session link, no login',
     'student_submitted': 'session link, no login',
     'student_check_expiry': 'session link, no login',
@@ -91,9 +151,107 @@ EXEMPT = {
     'assessment_join_screen': 'session link, no login',
     'assessment_join_screen_state': 'session link, no login',
     'assessment_join_screen_qr': 'session link, no login',
+    'showcase_rate_exhibit': 'public exhibit UUID link; event-bound HttpOnly device cookie and per-exhibit uniqueness tests',
+    'showcase_exhibit_label': 'public exhibit UUID link used to print its visitor QR label',
+    'showcase_exhibit_qr': 'public exhibit UUID link embeds only its public rating URL in a QR image',
+    'showcase_rating_state': 'public exhibit UUID link; answers only whether the asking device can rate it now',
+    'showcase_visit': 'public event UUID landing page listing only exhibit names and rating links',
+    'showcase_visit_qr': 'public event UUID QR image embedding only the public visitor page URL',
+    'showcase_judge_state': 'opaque per-event judge bearer invitation; returns only which assigned exhibits are on stage',
+    'showcase_public_results': 'public event UUID results are available only after explicit publication',
+    'showcase_certificate_verify': 'public certificate UUID verifies only the immutable award record it identifies',
+    'training_anonymous_feedback': 'high-entropy Team demo UUID with an event-bound signed HttpOnly token; feedback has no owner or learner identity field',
+    'training_certificate_verify': 'public certificate UUID verifies a minimal immutable outcome snapshot; Team certificate tests verify current versus superseded status',
+    'competition_audience_vote': 'high-entropy competition UUID plus round/track, event-bound signed HttpOnly token, one anonymous ballot per browser for the round and track',
+    'competition_judge_scorecard': 'opaque one-track bearer invitation, scoped to one active round and revoked or expired with owner controls; judge-flow tests verify it',
+    'competition_public_leaderboard': 'public competition UUID; route reveals only frozen judge scores after an owner transition, verified by Competition workspace tests',
+    'panel_examiner': 'high-entropy bearer invitation; only its own hearing/candidates are reachable and expiry/revocation/recusal are enforced by Panel examiner tests',
+    'showcase_judge_workspace': 'opaque per-event judge bearer invitation; only assigned exhibits are exposed, and expired/revoked links are denied in Showcase judge-flow tests',
+    'panel_entrant_results': 'opaque revocable bearer capability; exposes only its candidate released aggregate results and is covered by Panel entrant route tests',
+    'panel_oversight_detail': 'organization-wide read-only permission; dedicated same-organization and cross-organization oversight tests cover it',
+    'showcase_event_manage': 'unreleased service owner route; owner/org denial is exercised by service-domain tests',
+    'showcase_live_control': 'unreleased service live control route; owner/org denial is exercised by service-domain tests',
+    'showcase_live_state': 'unreleased service live state route; owner/org denial is exercised by service-domain tests',
+    'showcase_live_action': 'unreleased service live action route; owner/org denial is exercised by service-domain tests',
+    'competition_live_control': 'unreleased service live control route; owner/org denial is exercised by service-domain tests',
+    'competition_live_state': 'unreleased service live state route; owner/org denial is exercised by service-domain tests',
+    'competition_live_action': 'unreleased service live action route; owner/org denial is exercised by service-domain tests',
+    'competition_live_projector_toggle': 'unreleased service live projector toggle route; owner/org denial is exercised by service-domain tests',
+    'coassessment_activate_turn': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_advance_turn': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_delete': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_examiner_import': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_examiner_portal': 'opaque examiner bearer token digest lookup; examiner portal tests verify it',
+    'coassessment_examiner_sample': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_export_csv': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_export_results_csv': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_live_chair': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_live_console': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_live_state': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_moderate': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_pause_turn': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_peer_join': 'public session code, roster identity required; co-assessment peer tests verify it',
+    'coassessment_peer_scorecard': 'roster check-in held in the visitor session; co-assessment peer tests verify it',
+    'coassessment_peer_submit': 'roster check-in held in the visitor session; co-assessment peer tests verify it',
+    'coassessment_projector': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_public_qr': 'public session code; exposes only the join link QR',
+    'coassessment_public_results': 'public session code; frozen released results only',
+    'coassessment_public_screen': 'public session code; stage and clock only, verified by live workspace tests',
+    'coassessment_public_state': 'public session code; stage and clock only, verified by live workspace tests',
+    'coassessment_publish': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_release': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_results': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_roster_import': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_roster_sample': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_rubric_import': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_rubric_sample': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_setup': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_setup_examiners': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_setup_policy': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_setup_review': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_setup_roster': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_setup_rubric': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_sign_off': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_stage_display': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'coassessment_update_timers': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'competition_criteria_import': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'competition_criteria_import_sample': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'competition_projector': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'competition_projector_qr': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'panel_hearing_participants': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'showcase_event_results': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'showcase_projector_screen': 'public event UUID; projector tests verify what it reveals',
+    'training_competency_import': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'training_competency_import_sample': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'training_session_projector': 'owner-scoped through the service and organization filter; denial covered by the service-domain tests',
+    'panel_hearing_live': 'unreleased service live chamber route; owner/org denial is exercised by service-domain tests',
+    'panel_hearing_live_state': 'unreleased service live state route; owner/org denial is exercised by service-domain tests',
+    'panel_hearing_live_action': 'unreleased service live action route; owner/org denial is exercised by service-domain tests',
+    'panel_hearing_live_display_toggle': 'unreleased service live display toggle route; owner/org denial is exercised by service-domain tests',
+    'training_session_live': 'unreleased service live session route; owner/org denial is exercised by service-domain tests',
+    'training_session_live_state': 'unreleased service live state route; owner/org denial is exercised by service-domain tests',
+    'training_session_live_action': 'unreleased service live action route; owner/org denial is exercised by service-domain tests',
+    'training_session_feedback_qr': 'unreleased service feedback QR route; owner/org denial is exercised by service-domain tests',
+    'combined_assessment_live_state': 'unreleased service live state route; owner/org denial is exercised by service-domain tests',
+    'showcase_event_transition': 'unreleased service owner route; owner/org denial is exercised by service-domain tests',
+    'showcase_exhibit_import': 'unreleased service owner route; owner/org denial is exercised by service-domain tests',
+    'showcase_exhibit_import_sample': 'unreleased service owner route; owner/org denial is exercised by service-domain tests',
+    'showcase_rubric_import': 'unreleased service owner route; owner/org denial is exercised by service-domain tests',
+    'showcase_rubric_import_sample': 'unreleased service owner route; owner/org denial is exercised by service-domain tests',
+    'training_series_manage': 'unreleased service owner route; owner/org denial is exercised by service-domain tests',
+    'training_session_competencies': 'Team-only session outcome route; owner/org/service denial is exercised by service-domain tests',
+    'training_series_trends': 'Team-only series trend route; owner/org/service denial is exercised by service-domain tests',
+    'training_series_export': 'Team-only competency export; owner/org/service denial is exercised by service-domain tests',
+    'service_entry': 'a service slug from the registry, not a row id',
+    'service_interest': 'public notification collection keyed by registry slug, no session row; portal interest tests',
+    'service_switch_organization': 'registry slug, with DevPerf membership checked separately; portal shell tests',
+    'legacy_assessments_path': 'redirect only, no row access; destination retains all owner scopes; portal legacy tests',
 }
 
-TRACKED = (AssessmentSession, Student, PresentationGroup, RubricCategory)
+TRACKED = (AssessmentSession, Student, PresentationGroup, RubricCategory, SessionTemplate,
+           TemplateRubricCategory, PanelHearing, PanelCandidate, PanelCriterion,
+           PanelInvitation, PanelScore, PanelResultSnapshot, PanelResultAdjustment,
+           Competition, ShowcaseEvent, ShowcaseExhibit)
 
 
 def snapshot():
@@ -123,17 +281,63 @@ class RowsAreUnreachable:
             organization_id=cls.org_a.pk, name=MARKER, created_by=owner)
         cls.objects = {
             'session': session,
+            'template': SessionTemplate.objects.create(organization_id=cls.org_a.pk, service='classroom',
+                                                       created_by=owner, name=MARKER),
             'student': Student.objects.create(assessment_session=session, full_name=MARKER),
             'group': PresentationGroup.objects.create(assessment_session=session, name=MARKER),
             'category': RubricCategory.objects.create(assessment_session=session, name=MARKER),
+            'panel_hearing': PanelHearing.objects.create(organization_id=cls.org_a.pk,
+                created_by=owner, name=MARKER, status=PanelHearing.Status.REVIEW),
+            'draft_panel_hearing': PanelHearing.objects.create(organization_id=cls.org_a.pk,
+                created_by=owner, name='Draft candidate import', status=PanelHearing.Status.DRAFT),
+            'competition': Competition.objects.create(organization_id=cls.org_a.pk,
+                created_by=owner, name=MARKER),
+            'showcase_event': ShowcaseEvent.objects.create(organization_id=cls.org_a.pk,
+                created_by=owner, name=MARKER, status=ShowcaseEvent.Status.OPEN),
+            'training_series': TrainingSeries.objects.create(
+                organization_id=cls.org_a.pk, created_by=owner, name=MARKER),
         }
+        cls.objects['combined_assessment'] = CombinedPresentationAssessment.objects.create(
+            organization_id=cls.org_a.pk, created_by=owner, name=MARKER,
+            classroom_session=session, panel_hearing=cls.objects['panel_hearing'])
+        cls.objects['panel_candidate'] = PanelCandidate.objects.create(
+            organization_id=cls.org_a.pk, created_by=owner,
+            hearing=cls.objects['panel_hearing'], display_name='Panel candidate marker')
+        cls.objects['panel_criterion'] = PanelCriterion.objects.create(
+            organization_id=cls.org_a.pk, created_by=owner,
+            hearing=cls.objects['panel_hearing'], name='Panel criterion marker')
+        cls.objects['panel_snapshot'] = PanelResultSnapshot.objects.create(
+            organization_id=cls.org_a.pk, created_by=owner,
+            hearing=cls.objects['panel_hearing'], candidate=cls.objects['panel_candidate'],
+            criterion=cls.objects['panel_criterion'], score=Decimal('82.5'), rater_count=1,
+            aggregation=PanelHearing.Aggregation.MEAN)
+        first_adjustment = PanelResultAdjustment.objects.create(
+            organization_id=cls.org_a.pk, created_by=owner,
+            snapshot=cls.objects['panel_snapshot'], adjusted_score=Decimal('83'),
+            reason='Initial correction marker', revision=1, adjusted_by=owner)
+        cls.objects['panel_adjustment'] = PanelResultAdjustment.objects.create(
+            organization_id=cls.org_a.pk, created_by=owner,
+            snapshot=cls.objects['panel_snapshot'], adjusted_score=Decimal('83.5'),
+            reason='Latest correction marker', revision=2, supersedes=first_adjustment,
+            adjusted_by=owner)
+        invitation = PanelInvitation.objects.create(
+            organization_id=cls.org_a.pk, created_by=owner,
+            hearing=cls.objects['panel_hearing'], email='EXAMINER-PRIVATE@example.test',
+            expires_at=timezone.now() + timedelta(hours=1))
+        cls.objects['panel_score'] = PanelScore.objects.create(
+            organization_id=cls.org_a.pk, created_by=owner,
+            invitation=invitation, candidate=cls.objects['panel_candidate'],
+            criterion=cls.objects['panel_criterion'], score=Decimal('82.5'),
+            comment='EXAMINER-COMMENT-PRIVATE')
         cls.lecturer_b = make_user('b_lecturer')
         cls.colleague = make_user('a_colleague')
 
     def request(self, name, method, kwargs):
         self.client.logout()
         sign_in(self.client, self.intruder, self.intruder_org)
-        return getattr(self.client, method)(reverse(name, kwargs=kwargs))
+        with patch('portal.middleware.is_released',
+                   side_effect=lambda slug: slug in ('panel', 'competition', 'showcase', 'team') or is_released(slug)):
+            return getattr(self.client, method)(reverse(name, kwargs=kwargs))
 
     #: The routes that must be unreachable. All of them, unless a subclass is
     #: about somebody who is meant to reach some.
@@ -165,6 +369,16 @@ class RowsAreUnreachable:
                 problems.append(f'{method.upper()} {name}: changed {changed}')
         self.assertEqual(problems, [], f'{self.intruder.username} reached the owner\'s session')
 
+    def test_competition_advance_post_is_scoped_like_a_missing_competition(self):
+        before = snapshot()
+        real = self.request('competition_manage', POST,
+            {'competition_id': self.objects['competition'].pk})
+        after = snapshot()
+        missing = self.request('competition_manage', POST, {'competition_id': 999999})
+        self.assertEqual(shape(real), shape(missing))
+        self.assertNotIn(MARKER.encode(), real.content)
+        self.assertEqual(before, after)
+
 
 class OtherOrganizationLecturerTests(RowsAreUnreachable, TestCase):
     """A lecturer of Org B tries to reach Org A's session."""
@@ -189,8 +403,23 @@ class OtherOrganizationLecturerTests(RowsAreUnreachable, TestCase):
             self.client.logout()
             sign_in(self.client, self.owner, self.org_a)
             with self.subTest(name):
-                response = self.client.get(reverse(name, kwargs=kwargs))
+                with patch('portal.middleware.is_released',
+                           side_effect=lambda slug: slug in ('panel', 'competition', 'showcase', 'team') or is_released(slug)):
+                    response = self.client.get(reverse(name, kwargs=kwargs))
                 self.assertNotEqual(response.status_code, 404)
+
+    def test_other_organization_cannot_release_public_classroom_results(self):
+        before = snapshot()
+        self.client.logout()
+        sign_in(self.client, self.intruder, self.intruder_org)
+        real = self.client.post(reverse('assessment_public_results',
+            args=[self.objects['session'].pk]), {'action': 'release'})
+        after = snapshot()
+        missing = self.client.post(reverse('assessment_public_results', args=[999999]),
+            {'action': 'release'})
+        self.assertEqual(shape(real), shape(missing))
+        self.assertNotIn(MARKER.encode(), real.content)
+        self.assertEqual(before, after)
 
 
 class ColleagueInTheSameOrganizationTests(RowsAreUnreachable, TestCase):
@@ -205,12 +434,30 @@ class ColleagueInTheSameOrganizationTests(RowsAreUnreachable, TestCase):
     def intruder_org(self):
         return self.org_a
 
+    def test_panel_oversight_list_requires_devperf_oversight_permission(self):
+        sign_in(self.client, self.colleague, self.org_a)
+        with patch('portal.middleware.is_released',
+                   side_effect=lambda slug: slug == 'panel' or is_released(slug)):
+            response = self.client.get(reverse('panel_oversight_list'))
+            owner_workspace = self.client.get(reverse('panel_hearing_list'))
+        self.assertEqual(response.status_code, 404)
+        self.assertNotContains(owner_workspace, 'View compiled hearings for this organization')
+
+    def test_panel_oversight_detail_requires_devperf_oversight_permission(self):
+        sign_in(self.client, self.colleague, self.org_a)
+        url = reverse('panel_oversight_detail', args=[self.objects['panel_hearing'].pk])
+        with patch('portal.middleware.is_released',
+                   side_effect=lambda slug: slug == 'panel' or is_released(slug)):
+            response = self.client.get(url)
+        self.assertEqual(response.status_code, 404)
+
 
 #: What somebody with oversight is meant to reach on a session that is not theirs.
 OVERSIGHT_ROUTES = {
     'assessment_results', 'assessment_results_refresh',
     'assessment_participation', 'assessment_participation_refresh',
     'assessment_transfer',
+    'panel_oversight_detail',
 }
 
 
@@ -230,6 +477,16 @@ class OverseerOfAnotherOrganizationTests(RowsAreUnreachable, TestCase):
     def setUpTestData(cls):
         super().setUpTestData()
         cls.overseeing_b = make_org('Org B overseers', oversee=True)
+
+    def test_panel_oversight_cannot_cross_organization_boundary(self):
+        sign_in(self.client, self.lecturer_b, self.overseeing_b)
+        url = reverse('panel_oversight_detail', args=[self.objects['panel_hearing'].pk])
+        with patch('portal.middleware.is_released',
+                   side_effect=lambda slug: slug == 'panel' or is_released(slug)):
+            real = self.client.get(url)
+            missing = self.client.get(reverse('panel_oversight_detail', args=[999999]))
+        self.assertEqual(shape(real), shape(missing))
+        self.assertNotIn(b'Panel candidate marker', real.content)
 
 
 class OverseerInTheSameOrganizationTests(RowsAreUnreachable, TestCase):
@@ -262,6 +519,43 @@ class OverseerInTheSameOrganizationTests(RowsAreUnreachable, TestCase):
             with self.subTest(name):
                 self.assertEqual(
                     self.client.get(reverse(name, args=[session.pk])).status_code, 200)
+
+    def test_panel_oversight_shows_organization_aggregates_without_examiner_data(self):
+        sign_in(self.client, self.colleague, self.overseeing_a)
+        detail_url = reverse('panel_oversight_detail',
+            args=[self.objects['panel_hearing'].pk])
+        with patch('portal.middleware.is_released',
+                   side_effect=lambda slug: slug == 'panel' or is_released(slug)):
+            listing = self.client.get(reverse('panel_oversight_list'))
+            detail = self.client.get(detail_url)
+            owner_workspace = self.client.get(reverse('panel_hearing_list'))
+            denied_write = self.client.post(detail_url, {'action': 'release'})
+        self.assertEqual(listing.status_code, 200)
+        self.assertEqual(detail.status_code, 200)
+        self.assertContains(owner_workspace, reverse('panel_oversight_list'))
+        self.assertContains(detail, 'Panel candidate marker')
+        self.assertContains(detail, 'Panel criterion marker')
+        self.assertContains(detail, '82.5')
+        self.assertContains(detail, '83.5')
+        self.assertContains(detail, 'Latest correction marker')
+        self.assertContains(detail, 'Combined from 1 examiner')
+        self.assertNotContains(detail, 'EXAMINER-PRIVATE@example.test')
+        self.assertNotContains(detail, 'EXAMINER-COMMENT-PRIVATE')
+        self.assertIn('private', detail['Cache-Control'])
+        self.assertIn('no-store', detail['Cache-Control'])
+        self.assertEqual(detail['Referrer-Policy'], 'no-referrer')
+        self.assertEqual(denied_write.status_code, 405)
+
+    def test_panel_oversight_list_is_scoped_and_only_lists_compiled_records(self):
+        sign_in(self.client, self.colleague, self.overseeing_a)
+        url = reverse('panel_oversight_list')
+        with patch('portal.middleware.is_released',
+                   side_effect=lambda slug: slug == 'panel' or is_released(slug)):
+            response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, MARKER)
+        self.assertNotContains(response, 'Draft candidate import')
+        self.assertNotContains(response, 'EXAMINER-PRIVATE@example.test')
 
 
 class EveryRowRouteIsCheckedTests(TestCase):

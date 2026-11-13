@@ -1,0 +1,14 @@
+<style nonce="{{ csp_nonce }}">
+.competition-actions .dropdown-toggle{display:grid;width:2rem;height:2rem;place-items:center;padding:0;border:1px solid var(--border);border-radius:50%;background:var(--surface);color:var(--text-muted)}
+.competition-actions .dropdown-toggle::after{display:none}
+.competition-actions .dropdown-menu{min-width:12rem;padding:var(--sp-1);border:1px solid var(--border);border-radius:var(--radius-control);box-shadow:var(--elev-3);z-index:var(--z-dropdown)}
+.competition-actions .dropdown-item{padding:.5rem .65rem;border-radius:var(--radius-xs);font-size:var(--fs-sm)}
+.competition-actions .dropdown-item form{margin:calc(-1 * var(--sp-2)) calc(-1 * var(--sp-3))}
+.competition-actions .dropdown-item button{width:100%;padding:.5rem .65rem;border:0;background:transparent;text-align:left}
+.competition-actions .dropdown-item button:focus-visible{outline:0;box-shadow:var(--focus-ring)}
+.competition-actions form{margin:0}
+.competition-actions .dropdown-menu form .dropdown-item{width:100%;border:0;background:transparent;text-align:left}
+.competition-actions .dropdown-menu form .dropdown-item:focus-visible{outline:0;box-shadow:var(--focus-ring)}
+.competition-row-clickable{cursor:pointer}
+.competition-row-clickable .competition-actions{cursor:default}
+</style>

@@ -1,0 +1,8 @@
+LiveGrade
+
+You are invited to review {{ hearing_name }} as an examiner.
+
+Accept or decline this invitation by {{ expiry_label }}:
+{{ invitation_url }}
+
+The private link is for the invited examiner. If you were not expecting this invitation, you can decline it on the invitation page.

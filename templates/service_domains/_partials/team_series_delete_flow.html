@@ -1,0 +1,37 @@
+<div class="modal fade dp-modal" id="team-series-delete-modal" tabindex="-1"
+     aria-labelledby="team-series-delete-title" aria-describedby="team-series-delete-description"
+     aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title h5" id="team-series-delete-title">Delete training series</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p id="team-series-delete-description" class="mb-2" data-team-delete-summary></p>
+        <div class="team-delete-export-step">
+          <div class="team-delete-export-note">Before deletion, download and save the archive. It includes series details, team rosters, competencies, linked demo sessions and their records, learner reports, anonymous feedback, competency results, and certificates.</div>
+          <button type="button" class="btn btn-outline-primary align-self-start" data-team-export-download>
+            <i class="bi bi-download me-1" aria-hidden="true"></i>Download export
+          </button>
+          <p class="team-delete-status mb-0" role="status" aria-live="polite" data-team-delete-status></p>
+        </div>
+        <form method="post" data-team-delete-submit>
+          {% csrf_token %}
+          <input type="hidden" name="delete_export_token" data-team-delete-token>
+          <input type="hidden" name="q" value="{{ search_query }}" data-team-delete-query>
+          <input type="hidden" name="per_page" value="{{ per_page|default:25 }}" data-team-delete-page-size>
+          <div data-team-delete-id-fields></div>
+          <label class="team-delete-ack">
+            <input type="checkbox" class="form-check-input" data-team-delete-ack disabled>
+            <span>I have saved this export and understand that deleting the selected series permanently removes the series and linked Team demo sessions.</span>
+          </label>
+          <div class="d-flex justify-content-end gap-2">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-danger" data-team-delete-confirm disabled>Delete series</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>

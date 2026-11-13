@@ -25,8 +25,12 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.conf import settings
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
+from .privacy_copy import (
+    DEFAULT_PRIVACY_NOTICE_BODY, DEFAULT_PRIVACY_NOTICE_TITLE,
+    DEFAULT_PRIVACY_NOTICE_VERSION,
+)
 
 from accounts.scoping import OrganizationScopedModel, OwnedManager
 
@@ -50,6 +54,10 @@ class AssessmentSession(OrganizationScopedModel):
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False,
         help_text='Used in the public join URL instead of the numeric id, '
                   'so a student cannot guess or enumerate other sessions.')
+    service = models.CharField(max_length=20, default='classroom', db_index=True,
+        help_text='The LiveGrade service this session belongs to (a slug from portal/services.py). '
+                  'Every owner page works on one service only, so a session of one service is '
+                  'never reachable from another.')
     name = models.CharField(max_length=150)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
         related_name='assessment_sessions_created')
@@ -63,6 +71,9 @@ class AssessmentSession(OrganizationScopedModel):
         validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))],
         help_text='Points taken off a student\'s final score for every other group '
                   'they did not grade. 0 turns the penalty off.')
+    instructions = models.TextField(blank=True, default='', max_length=4000,
+        help_text='Instructions shown when students join and before they score. '
+                  'Explain how to use the rubric and how their scores count.')
     voting_paused = models.BooleanField(default=False,
         help_text='Lecturer-controlled kill switch: no evaluation can be '
                   'submitted while true, independent of which turn is active.')
@@ -71,11 +82,11 @@ class AssessmentSession(OrganizationScopedModel):
     default_presentation_seconds = models.PositiveIntegerField(null=True, blank=True,
         help_text='Optional target presentation duration (seconds) shown as a countdown '
                   'to the presenting group and on the public screen. Does not auto-advance '
-                  'the session — it is informational only, giving the lecturer a visible '
+                  'the session - it is informational only, giving the lecturer a visible '
                   'cue for when to open voting. Null means no presentation timer is set.')
     default_turn_seconds = models.PositiveIntegerField(null=True, blank=True,
         help_text='Remembered voting-timer length (seconds) from the last '
-                  'time the lecturer activated a group — prefills the '
+                  'time the lecturer activated a group - prefills the '
                   'control next time rather than resetting it. Null means '
                   '"no timer" was last chosen.')
     transition_gap_seconds = models.PositiveIntegerField(default=0,
@@ -83,11 +94,11 @@ class AssessmentSession(OrganizationScopedModel):
                   'the next group automatically starting, so an auto-'
                   'advancing session gives everyone a breather instead of '
                   'snapping straight into the next group with zero delay. '
-                  '0 means no gap — advance immediately, as before.')
+                  '0 means no gap - advance immediately, as before.')
     pending_next_group = models.ForeignKey('PresentationGroup', null=True, blank=True,
         on_delete=models.SET_NULL, related_name='+',
         help_text='Set while a timed transition gap is counting down '
-                  '(see `transition_gap_seconds`) — the group that will '
+                  '(see `transition_gap_seconds`) - the group that will '
                   'become active once `pending_transition_at` arrives.')
     pending_transition_at = models.DateTimeField(null=True, blank=True)
     designated_next_group = models.ForeignKey('PresentationGroup', null=True, blank=True,
@@ -95,6 +106,13 @@ class AssessmentSession(OrganizationScopedModel):
         help_text='Lecturer-chosen next group in line. Takes precedence over default order.')
     created_at = models.DateTimeField(auto_now_add=True)
     closed_at = models.DateTimeField(null=True, blank=True)
+    public_leaderboard_show_scores = models.BooleanField(default=False,
+        help_text='Show numeric group scores on the public leaderboard; rankings are always visible.')
+    public_results_released_at = models.DateTimeField(null=True, blank=True,
+        help_text='When the owner last enabled the aggregate group leaderboard on the public join screen.')
+    public_results_released_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='public_classroom_results_released',
+        help_text='Owner who enabled the aggregate group leaderboard.')
 
     objects = OwnedManager()
 
@@ -185,6 +203,29 @@ class RubricCategory(models.Model):
         return f'{self.name} ({self.get_scope_display()}, {self.weight}%)'
 
 
+class LevelDescriptor(models.Model):
+    """Owner-written guidance anchored to a score value on one criterion."""
+    rubric_category = models.ForeignKey(RubricCategory, on_delete=models.CASCADE,
+        related_name='level_descriptors')
+    score = models.DecimalField(max_digits=5, decimal_places=2,
+        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(TOTAL_WEIGHT)])
+    description = models.CharField(max_length=500)
+
+    class Meta:
+        ordering = ['score', 'pk']
+        constraints = [models.UniqueConstraint(fields=['rubric_category', 'score'],
+            name='unique_rubric_level_score')]
+
+    def clean(self):
+        if self.rubric_category_id and self.score is not None and self.score > self.rubric_category.weight:
+            raise ValidationError({'score': 'A descriptor score cannot exceed the criterion weight.'})
+        if not self.description or not self.description.strip():
+            raise ValidationError({'description': 'Enter guidance for this score level.'})
+
+    def __str__(self):
+        return f'{self.rubric_category.name} - {self.score}: {self.description}'
+
+
 class Student(models.Model):
     """One roster row for one assessment session. Not a Django User."""
 
@@ -202,6 +243,22 @@ class Student(models.Model):
     def __str__(self):
         return self.full_name or self.student_id
 
+    def save(self, *args, **kwargs):
+        """Keep Classroom's expanded roster identity complete on every save path."""
+        using = kwargs.get('using') or self._state.db or 'default'
+        with transaction.atomic(using=using):
+            super().save(*args, **kwargs)
+            session = self._state.fields_cache.get('assessment_session')
+            if session is None:
+                session = AssessmentSession.objects.using(using).only('service').get(
+                    pk=self.assessment_session_id)
+            if session.service == 'classroom':
+                Evaluator.objects.using(using).get_or_create(
+                    assessment_session_id=self.assessment_session_id,
+                    student_id=self.pk,
+                    defaults={'kind': Evaluator.Kind.ROSTER},
+                )
+
     def clean(self):
         if not self.assessment_session_id:
             return
@@ -216,9 +273,60 @@ class Student(models.Model):
                 'roster row needs one.')
 
 
+class Evaluator(models.Model):
+    """Session-scoped identity for roster, invited, and anonymous evaluators.
+
+    Classroom evaluations keep the legacy Student relation alongside this
+    identity. Backfill and dual-write are implemented, but reads must remain on
+    the legacy relation until parity is verified on representative data and a
+    separately reviewed read switch is approved.
+    """
+
+    class Kind(models.TextChoices):
+        ROSTER = 'roster', 'Roster participant'
+        INVITED = 'invited', 'Invited evaluator'
+        OPEN = 'open', 'Open-floor evaluator'
+
+    assessment_session = models.ForeignKey(AssessmentSession,
+        on_delete=models.CASCADE, related_name='evaluators')
+    kind = models.CharField(max_length=12, choices=Kind.choices, default=Kind.ROSTER)
+    student = models.ForeignKey(Student, null=True, blank=True,
+        on_delete=models.CASCADE, related_name='evaluator_identities')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=('assessment_session', 'student'),
+                condition=models.Q(student__isnull=False), name='evaluator_roster_once'),
+            models.CheckConstraint(
+                condition=(models.Q(kind='roster', student__isnull=False)
+                    | models.Q(kind__in=('invited', 'open'), student__isnull=True)),
+                name='evaluator_kind_student_consistent'),
+        ]
+
+    def __str__(self):
+        if self.kind == self.Kind.ROSTER and self.student_id:
+            return str(self.student)
+        return f'{self.get_kind_display()} #{self.pk or "new"}'
+
+    def clean(self):
+        if self.kind not in self.Kind.values:
+            raise ValidationError({'kind': 'Choose a supported evaluator kind.'})
+        if self.kind == self.Kind.ROSTER:
+            if self.student_id is None:
+                raise ValidationError({'student': 'Roster evaluators must link to a session student.'})
+            if self.student.assessment_session_id != self.assessment_session_id:
+                raise ValidationError({'student': 'A roster evaluator must belong to the same session.'})
+        elif self.student_id is not None:
+            raise ValidationError({'student': 'Invited and open evaluators cannot link to a roster student.'})
+
+
 class PresentationGroup(models.Model):
     assessment_session = models.ForeignKey(AssessmentSession,
         on_delete=models.CASCADE, related_name='groups')
+    is_practice = models.BooleanField(default=False,
+        help_text='A practice presentation uses the rubric but never counts towards '
+                  'results, rankings or participation penalties.')
     name = models.CharField(max_length=100)
     topic = models.CharField(max_length=200, blank=True)
     location = models.CharField(max_length=120, blank=True)
@@ -231,6 +339,13 @@ class PresentationGroup(models.Model):
 
     def __str__(self):
         return self.name
+
+    def clean(self):
+        super().clean()
+        if self.pk and self.turns.exists():
+            original = type(self).objects.filter(pk=self.pk).values_list('is_practice', flat=True).first()
+            if original != self.is_practice:
+                raise ValidationError({'is_practice': 'Practice status cannot change after this group has presented.'})
 
     def member_ids(self):
         return set(self.memberships.values_list('student_id', flat=True))
@@ -279,7 +394,7 @@ class GroupMembership(models.Model):
         existing = conflict.select_related('group').first()
         if existing:
             raise ValidationError(
-                f'{self.student} is already in "{existing.group.name}" — a '
+                f'{self.student} is already in "{existing.group.name}" - a '
                 f'student can only belong to one group per session.')
 
         if self.group.max_size is not None:
@@ -342,7 +457,38 @@ class PresentationTurn(models.Model):
         ordering = ['-opened_at', '-id']
 
     def __str__(self):
-        return f'{self.group} — {self.get_status_display()}'
+        return f'{self.group} - {self.get_status_display()}'
+
+
+class PrivacyNotice(models.Model):
+    """One published, versioned participant privacy notice for a service."""
+
+    service = models.CharField(max_length=20, default='classroom', db_index=True)
+    version = models.CharField(max_length=40, default=DEFAULT_PRIVACY_NOTICE_VERSION)
+    title = models.CharField(max_length=160, default=DEFAULT_PRIVACY_NOTICE_TITLE)
+    body = models.TextField(default=DEFAULT_PRIVACY_NOTICE_BODY)
+    is_active = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['service', '-created_at', '-pk']
+        constraints = [
+            models.UniqueConstraint(fields=['service', 'version'], name='unique_privacy_notice_version'),
+            models.UniqueConstraint(fields=['service'], condition=models.Q(is_active=True),
+                                    name='one_active_privacy_notice_per_service'),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            original = type(self).objects.get(pk=self.pk)
+            immutable = ('service', 'version', 'title', 'body')
+            if any(getattr(original, field) != getattr(self, field) for field in immutable):
+                raise ValidationError(
+                    'Published privacy notice content is versioned and cannot be edited; create a new version.')
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'{self.service} privacy notice {self.version}'
 
 
 class ParticipationRecord(models.Model):
@@ -352,6 +498,9 @@ class ParticipationRecord(models.Model):
         on_delete=models.CASCADE, related_name='participation_records')
     student = models.ForeignKey(Student, on_delete=models.CASCADE,
         related_name='participation_records')
+    privacy_notice = models.ForeignKey(PrivacyNotice, null=True, blank=True,
+        on_delete=models.PROTECT, related_name='participation_records',
+        help_text='The privacy notice version confirmed as read before this participant could score.')
     joined_at = models.DateTimeField(auto_now_add=True)
     last_seen_at = models.DateTimeField(auto_now=True)
 
@@ -374,12 +523,19 @@ class Evaluation(models.Model):
         on_delete=models.CASCADE, related_name='evaluations')
     evaluator = models.ForeignKey(Student, on_delete=models.CASCADE,
         related_name='evaluations_given')
+    evaluator_record = models.ForeignKey(Evaluator, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='evaluation_rows')
     target_student = models.ForeignKey(Student, on_delete=models.CASCADE,
         null=True, blank=True, related_name='evaluations_received')
+    submission_key = models.UUIDField(null=True, blank=True, unique=True,
+        help_text='Retry key on the group evaluation anchoring one atomic submission.')
+    submission_digest = models.CharField(max_length=64, blank=True, default='')
     submitted_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         unique_together = ('presentation_turn', 'evaluator', 'target_student')
+        constraints = [models.UniqueConstraint(fields=['presentation_turn', 'evaluator'],
+            condition=models.Q(target_student__isnull=True), name='one_group_submission_per_rater_turn')]
 
     def __str__(self):
         target = f' -> {self.target_student}' if self.target_student else ''
@@ -464,3 +620,202 @@ class SessionChange(models.Model):
 
     def __str__(self):
         return f'{self.session_id}: {self.summary}'
+
+
+class SessionTemplate(OrganizationScopedModel):
+    """An owner's reusable service configuration, with no participants or results."""
+    service = models.CharField(max_length=20, default='classroom', db_index=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, related_name='assessment_templates')
+    name = models.CharField(max_length=150)
+    description = models.CharField(max_length=500, blank=True)
+    identify_by = models.CharField(max_length=20, choices=AssessmentSession.IdentifyBy.choices,
+        default=AssessmentSession.IdentifyBy.FULL_NAME)
+    ungraded_penalty = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('1.00'),
+        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))])
+    instructions = models.TextField(blank=True, default='', max_length=4000)
+    default_presentation_seconds = models.PositiveIntegerField(null=True, blank=True)
+    default_turn_seconds = models.PositiveIntegerField(null=True, blank=True)
+    transition_gap_seconds = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = OwnedManager()
+
+    class Meta:
+        ordering = ['name', 'pk']
+
+    def __str__(self):
+        return self.name
+
+
+class TemplateRubricCategory(models.Model):
+    template = models.ForeignKey(SessionTemplate, on_delete=models.CASCADE, related_name='rubric_categories')
+    name = models.CharField(max_length=150)
+    description = models.CharField(max_length=255, blank=True)
+    scope = models.CharField(max_length=10, choices=RubricCategory.Scope.choices, default=RubricCategory.Scope.GROUP)
+    weight = models.DecimalField(max_digits=5, decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01')), MaxValueValidator(TOTAL_WEIGHT)])
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['scope', 'order', 'pk']
+
+    def __str__(self):
+        return self.name
+
+
+class TemplateLevelDescriptor(models.Model):
+    """A rubric level stored with its reusable template snapshot."""
+    rubric_category = models.ForeignKey(TemplateRubricCategory, on_delete=models.CASCADE,
+        related_name='level_descriptors')
+    score = models.DecimalField(max_digits=5, decimal_places=2,
+        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(TOTAL_WEIGHT)])
+    description = models.CharField(max_length=500)
+
+    class Meta:
+        ordering = ['score', 'pk']
+        constraints = [models.UniqueConstraint(fields=['rubric_category', 'score'],
+            name='unique_template_level_score')]
+
+    def clean(self):
+        if (self.rubric_category_id and self.score is not None
+                and self.score > self.rubric_category.weight):
+            raise ValidationError({'score': 'A descriptor score cannot exceed the criterion weight.'})
+        if not self.description or not self.description.strip():
+            raise ValidationError({'description': 'Enter guidance for this score level.'})
+
+
+class ClassroomPoll(models.Model):
+    """Shared poll definition used by Classroom and the standalone Polls service."""
+
+    class Status(models.TextChoices):
+        DRAFT = 'draft', 'Draft'
+        OPEN = 'open', 'Open'
+        CLOSED = 'closed', 'Closed'
+        CONFIRMED = 'confirmed', 'Decision confirmed'
+        CANCELLED = 'cancelled', 'Cancelled'
+
+    result_counts = models.JSONField(default=dict, blank=True, editable=False)
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    assessment_session = models.ForeignKey(AssessmentSession, on_delete=models.CASCADE,
+        related_name='polls', null=True, blank=True)
+    organization_id = models.BigIntegerField(null=True, blank=True, db_index=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='standalone_polls_created')
+    standalone = models.BooleanField(default=False, db_index=True)
+    question = models.CharField(max_length=250)
+    description = models.TextField(blank=True, max_length=4000)
+    allow_multiple = models.BooleanField(default=False)
+    personal_links_only = models.BooleanField(default=False)
+    allow_abstain = models.BooleanField(default=True)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.DRAFT)
+    deadline = models.DateTimeField(null=True, blank=True)
+    timezone_name = models.CharField(max_length=64, default='Africa/Dar_es_Salaam')
+    confirmed_option = models.ForeignKey('ClassroomPollOption', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='+')
+    decision_note = models.TextField(blank=True, max_length=2000)
+    created_at = models.DateTimeField(auto_now_add=True)
+    published_at = models.DateTimeField(null=True, blank=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
+        constraints = [models.CheckConstraint(
+            condition=(models.Q(standalone=True, assessment_session__isnull=True,
+                                organization_id__isnull=False)
+                       | models.Q(standalone=False, assessment_session__isnull=False)),
+            name='classroom_poll_session_or_standalone_scope')]
+
+    @property
+    def accepting_responses(self):
+        return self.status == self.Status.OPEN and (self.deadline is None or timezone.now() < self.deadline)
+
+    def clean(self):
+        if self.standalone:
+            if self.assessment_session_id:
+                raise ValidationError({'assessment_session': 'Standalone polls cannot belong to a Classroom session.'})
+            if not self.organization_id or not self.created_by_id:
+                raise ValidationError('Standalone polls need an organization and owner.')
+        if self.assessment_session_id and self.assessment_session.service != 'classroom':
+            raise ValidationError('Polls belong to Classroom sessions.')
+        if self.confirmed_option_id and self.confirmed_option.poll_id != self.pk:
+            raise ValidationError({'confirmed_option': 'Choose an option from this poll.'})
+
+
+class ClassroomPollQuestion(models.Model):
+    """A question within a poll; each question has its own answer options."""
+    poll = models.ForeignKey(ClassroomPoll, on_delete=models.CASCADE, related_name='questions')
+    prompt = models.CharField(max_length=250)
+    allow_multiple = models.BooleanField(default=False)
+    allow_abstain = models.BooleanField(default=True)
+    order = models.PositiveIntegerField(default=0)
+    confirmed_option = models.ForeignKey('ClassroomPollOption', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='confirmed_for_questions')
+    decision_note = models.TextField(blank=True, max_length=2000)
+
+    class Meta:
+        ordering = ['order', 'pk']
+
+
+class ClassroomPollOption(models.Model):
+    poll = models.ForeignKey(ClassroomPoll, on_delete=models.CASCADE, related_name='options')
+    question = models.ForeignKey(ClassroomPollQuestion, null=True, blank=True,
+        on_delete=models.CASCADE, related_name='options')
+    label = models.CharField(max_length=250)
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['order', 'pk']
+        constraints = [
+            models.UniqueConstraint(fields=['question', 'label'],
+                condition=models.Q(question__isnull=False),
+                name='classroom_poll_question_option_once'),
+            models.UniqueConstraint(fields=['poll', 'label'],
+                condition=models.Q(question__isnull=True),
+                name='classroom_poll_legacy_option_once'),
+        ]
+
+
+class ClassroomPollVoter(models.Model):
+    """Publication-time electorate; personal links are revocable bearer credentials."""
+    poll = models.ForeignKey(ClassroomPoll, on_delete=models.CASCADE, related_name='voters')
+    student = models.ForeignKey(Student, null=True, on_delete=models.SET_NULL, related_name='poll_invitations')
+    name = models.CharField(max_length=150)
+    identifier = models.CharField(max_length=150)
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+
+    class Meta:
+        ordering = ['name', 'pk']
+        constraints = [models.UniqueConstraint(fields=['poll', 'student'], name='classroom_poll_student_once')]
+
+
+class ClassroomPollResponse(models.Model):
+    voter = models.OneToOneField(ClassroomPollVoter, on_delete=models.CASCADE, related_name='response')
+    abstained = models.BooleanField(default=False)
+    answers = models.JSONField(default=dict, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    options = models.ManyToManyField(ClassroomPollOption, related_name='responses', blank=True)
+
+
+class AnonymousClassroomPollResponse(models.Model):
+    """One anonymous browser ballot; no roster identity or response-status roster is stored."""
+    poll = models.ForeignKey(ClassroomPoll, on_delete=models.CASCADE, related_name='anonymous_responses')
+    token = models.UUIDField(default=uuid.uuid4, editable=False)
+    answers = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=('poll', 'token'), name='anonymous_poll_browser_once')]
+
+
+class StandalonePollAudit(models.Model):
+    poll = models.ForeignKey(ClassroomPoll, on_delete=models.CASCADE, related_name='standalone_audit')
+    by_user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='+')
+    summary = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']

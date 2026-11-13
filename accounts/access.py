@@ -8,7 +8,9 @@ query LiveGrade makes is scoped to it.
 from functools import wraps
 
 from django.contrib.auth.views import redirect_to_login
-from django.shortcuts import render
+from django.shortcuts import redirect, render
+
+from portal.services import get_service
 
 ORGS_KEY = 'livegrade_orgs'
 ACTIVE_KEY = 'livegrade_active_org'
@@ -70,6 +72,9 @@ def lecturer_required(view):
     @wraps(view)
     def wrapper(request, *args, **kwargs):
         if not request.user.is_authenticated:
+            service = get_service(getattr(request, 'service', None))
+            if service:
+                return redirect('service_entry', slug=service.slug)
             return redirect_to_login(request.get_full_path())
         organization = active_organization(request)
         if organization is None:

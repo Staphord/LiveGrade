@@ -2,8 +2,10 @@ import os
 
 from django import forms
 from django.core.exceptions import ValidationError
+from django.db import transaction
 
-from .models import TOTAL_WEIGHT, AssessmentSession, PresentationGroup, RubricCategory, Student
+from .level_descriptors import MAX_DESCRIPTOR_TEXT, format_descriptors, parse_descriptors
+from .models import TOTAL_WEIGHT, AssessmentSession, LevelDescriptor, PresentationGroup, RubricCategory, Student
 
 
 def _fmt(decimal_value):
@@ -22,14 +24,62 @@ class AssessmentSessionForm(forms.ModelForm):
 
     class Meta:
         model = AssessmentSession
-        fields = ['name', 'identify_by', 'ungraded_penalty']
+        fields = ['name', 'identify_by', 'ungraded_penalty', 'instructions']
         widgets = {
-            'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Sprint Demo — Q1 2026'}),
+            'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Sprint Demo - Q1 2026'}),
             'identify_by': forms.Select(attrs={'class': 'form-select'}),
+            'instructions': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
             'ungraded_penalty': forms.NumberInput(attrs={
                 'class': 'form-control', 'step': '0.01', 'min': '0', 'max': '100'}),
         }
-        labels = {'ungraded_penalty': 'Penalty for each group not graded'}
+        labels = {'ungraded_penalty': 'Penalty for each group not graded', 'instructions': 'Evaluator notice'}
+
+
+class SaveSessionTemplateForm(forms.Form):
+    name = forms.CharField(max_length=150, label='Template name',
+                           widget=forms.TextInput(attrs={
+                               'class': 'form-control',
+                               'aria-describedby': 'id_name_inline_message',
+                           }))
+    description = forms.CharField(max_length=500, required=False, label='Description',
+        widget=forms.Textarea(attrs={
+            'class': 'form-control', 'rows': 3,
+            'aria-describedby': 'id_description_inline_message',
+        }))
+
+
+class TemplateChoiceForm(forms.Form):
+    template = forms.ChoiceField(required=False, label='Start from a template',
+                                widget=forms.Select(attrs={'class': 'form-select'}))
+
+    def __init__(self, *args, saved_templates=(), starters=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        choices = [('', 'Blank session')]
+        if starters:
+            choices.append(('Classroom starters', [('starter:' + item.key, item.name) for item in starters]))
+        if saved_templates:
+            choices.append(('Your saved templates', [('saved:' + str(item.pk), item.name) for item in saved_templates]))
+        self.fields['template'].choices = choices
+
+
+class DuplicateSessionForm(forms.Form):
+    name = forms.CharField(max_length=150, label='New session name',
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'aria-describedby': 'id_name_inline_message',
+        }))
+    include_roster = forms.BooleanField(required=False, label='Copy the student roster',
+        help_text='Copies names, IDs, emails and programmes.',
+        widget=forms.CheckboxInput(attrs={
+            'class': 'form-check-input',
+            'aria-describedby': 'id_include_roster_helptext id_include_roster_inline_message',
+        }))
+    include_groups = forms.BooleanField(required=False, label='Copy the presentation groups',
+        help_text='Group members copy only with the roster.',
+        widget=forms.CheckboxInput(attrs={
+            'class': 'form-check-input',
+            'aria-describedby': 'id_include_groups_helptext id_include_groups_inline_message',
+        }))
 
 
 class RubricCategoryForm(forms.ModelForm):
@@ -39,6 +89,12 @@ class RubricCategoryForm(forms.ModelForm):
     individual together - so a category can never be saved if it would push
     the rubric's total over 100%, rather than being allowed to save and just
     showing a red "200% of 100%" after the fact."""
+
+    level_descriptors = forms.CharField(required=False, max_length=MAX_DESCRIPTOR_TEXT,
+        label='Score level guidance',
+        help_text='Optional. Add one point anchor per line as “point value | guidance”, from 0 to this category’s weight.',
+        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 5,
+            'placeholder': '0 | Not demonstrated\n15 | Partly demonstrated\n30 | Fully demonstrated'}))
 
     class Meta:
         model = RubricCategory
@@ -60,6 +116,9 @@ class RubricCategoryForm(forms.ModelForm):
     def __init__(self, *args, assessment_session=None, **kwargs):
         self.assessment_session = assessment_session
         super().__init__(*args, **kwargs)
+        if self.instance.pk:
+            self.initial['level_descriptors'] = format_descriptors(
+                self.instance.level_descriptors.all())
         if not self.instance.pk:
             # The model's 0.00 default is not a value the lecturer chose: leave the box
             # empty so the placeholder shows and they can just start typing.
@@ -74,6 +133,20 @@ class RubricCategoryForm(forms.ModelForm):
     def clean(self):
         cleaned = super().clean()
         weight = cleaned.get('weight')
+        if self.instance.pk and 'level_descriptors' not in self.data:
+            descriptors = [
+                {'score': level.score, 'description': level.description}
+                for level in self.instance.level_descriptors.all()]
+            errors = []
+        else:
+            descriptors, errors = parse_descriptors(
+                cleaned.get('level_descriptors', ''), weight if weight is not None else TOTAL_WEIGHT)
+        self._level_descriptors = descriptors
+        for error in errors:
+            self.add_error('level_descriptors', error)
+        if weight is not None and any(level['score'] > weight for level in descriptors):
+            self.add_error('level_descriptors',
+                           'A descriptor point value cannot exceed the criterion weight.')
         if self.assessment_session is None or weight is None:
             return cleaned
         others = self.assessment_session.rubric_categories.all()
@@ -89,6 +162,20 @@ class RubricCategoryForm(forms.ModelForm):
                            f'Weights would total {_fmt(new_total)}%, over {_fmt(TOTAL_WEIGHT)}%. '
                            f'At most {_fmt(room_left)}% is available.')
         return cleaned
+
+    @transaction.atomic
+    def save(self, commit=True):
+        category = super().save(commit=False)
+        if not commit:
+            return category
+        if not category.assessment_session_id and self.assessment_session is not None:
+            category.assessment_session = self.assessment_session
+        category.save()
+        LevelDescriptor.objects.filter(rubric_category=category).delete()
+        LevelDescriptor.objects.bulk_create([
+            LevelDescriptor(rubric_category=category, **row)
+            for row in getattr(self, '_level_descriptors', [])])
+        return category
 
 
 class StudentForm(forms.ModelForm):
@@ -135,17 +222,32 @@ class RubricImportForm(forms.Form):
     mode = forms.ChoiceField(choices=MODES, initial='replace', widget=forms.RadioSelect)
 
 
+class PollQuestionImportForm(forms.Form):
+    file = forms.FileField(
+        required=False,
+        validators=[validate_workbook],
+        widget=forms.ClearableFileInput(attrs={'class': 'form-control', 'accept': '.xlsx'}),
+        help_text='Use one row per question with Question, Question Type and Answer Options columns.')
+
+    def clean_file(self):
+        uploaded_file = self.cleaned_data.get('file')
+        if uploaded_file is None:
+            raise ValidationError('Please select a file.')
+        return uploaded_file
+
+
 class PresentationGroupForm(forms.ModelForm):
     class Meta:
         model = PresentationGroup
-        fields = ['name', 'max_size', 'topic', 'location']  # see the comment on RubricCategoryForm re: 'order'
+        fields = ['name', 'max_size', 'topic', 'location', 'is_practice']  # see the comment on RubricCategoryForm re: 'order'
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Group 1'}),
             'max_size': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'e.g. 2', 'min': '1'}),
             'topic': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Smart campus map'}),
+            'is_practice': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'location': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Room 1340'}),
         }
-        labels = {'max_size': 'Group size', 'location': 'Presentation location'}
+        labels = {'max_size': 'Group size', 'location': 'Presentation location', 'is_practice': 'Practice presentation'}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -161,7 +263,7 @@ class PresentationGroupForm(forms.ModelForm):
             current = self.instance.member_count()
             if max_size < current:
                 raise forms.ValidationError(
-                    f'This group already has {current} member(s) — the size '
+                    f'This group already has {current} member(s) - the size '
                     f'limit can\'t be set below that.')
         return max_size
 
@@ -171,5 +273,5 @@ class JoinForm(forms.Form):
         max_length=150,
         widget=forms.TextInput(attrs={
             'class': 'form-control form-control-lg', 'autofocus': True,
-            'autocomplete': 'off', 'inputmode': 'text',
+            'autocomplete': 'off', 'inputmode': 'text', 'aria-describedby': 'identifier-help',
         }))

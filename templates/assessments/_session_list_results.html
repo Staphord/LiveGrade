@@ -1,0 +1,67 @@
+<div id="session-results" aria-busy="false">
+  <section class="session-table-card" aria-labelledby="session-table-heading">
+    <div class="session-table-head">
+      <div class="session-table-heading-group"><h2 id="session-table-heading">Sessions</h2><span class="session-table-count">{% if search_query or status_filter %}{{ filtered_count }} matching{% else %}{{ status_counts.total }} total{% endif %} session{{ filtered_count|pluralize }}</span></div>
+      <div class="session-table-tools">
+        <form id="session-bulk-delete" method="post" action="{% url 'assessment_session_bulk_delete' %}" data-confirm="Delete the selected sessions and all of their roster, rubric, and grade data? This cannot be undone." data-confirm-title="Delete selected sessions?" data-confirm-label="Delete selected" data-confirm-tone="danger">
+          {% csrf_token %}
+          <input type="hidden" name="q" value="{{ search_query }}">
+          <input type="hidden" name="status" value="{{ status_filter }}">
+          <input type="hidden" name="per_page" value="{{ per_page }}">
+          {% if show_all %}<input type="hidden" name="scope" value="all">{% endif %}
+          <button type="submit" class="btn btn-outline-danger btn-sm" data-bulk-delete-button hidden><i class="bi bi-trash me-1" aria-hidden="true"></i>Delete selected (<span data-selected-count>0</span>)</button>
+        </form>
+        <div class="session-page-size"><label for="session-page-size">Rows per page</label><select id="session-page-size" class="form-select form-select-sm" name="per_page" data-session-page-size>{% for size in page_sizes %}<option value="{{ size }}"{% if size == per_page %} selected{% endif %}>{{ size }}</option>{% endfor %}</select></div>
+      </div>
+    </div>
+    {% if sessions %}
+    <div class="table-responsive">
+      <table class="table table-hover session-table" data-session-row-navigation>
+        <caption class="visually-hidden">Classroom sessions and their status, roster, groups, creation date, and available actions</caption>
+        <thead><tr><th scope="col" class="session-select-column"><input class="form-check-input" type="checkbox" data-session-select-all aria-label="Select all sessions on this page"><span class="visually-hidden">Select</span></th><th scope="col">Session</th><th scope="col">Status</th><th scope="col">Students</th><th scope="col">Groups</th><th scope="col">Created</th>{% if show_all %}<th scope="col">Owner</th>{% endif %}<th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+        <tbody>
+          {% for session in sessions %}
+          {% if session.is_mine %}
+            {% if session.status == 'draft' %}{% url 'assessment_session_edit' session.pk as session_row_url %}
+            {% elif session.status == 'live' %}{% url 'assessment_session_detail' session.pk as session_row_url %}
+            {% else %}{% url 'assessment_results' session.pk as session_row_url %}{% endif %}
+          {% elif session.status == 'live' %}{% url 'assessment_participation' session.pk as session_row_url %}
+          {% else %}{% url 'assessment_results' session.pk as session_row_url %}{% endif %}
+          <tr class="session-row-clickable" data-session-row-href="{{ session_row_url }}">
+            <td class="session-select-column">{% if session.is_mine %}<input class="form-check-input" type="checkbox" name="session_ids" value="{{ session.pk }}" form="session-bulk-delete" data-session-select aria-label="Select {{ session.name }}">{% else %}<input class="form-check-input" type="checkbox" disabled aria-label="{{ session.name }} cannot be deleted because you do not own it" title="You can only delete sessions you own">{% endif %}</td>
+            <td><a class="session-table-name" href="{{ session_row_url }}">{{ session.name }}</a>{% if session.status == 'live' and session.live_active_group %}<span class="session-table-secondary">Presenting: {{ session.live_active_group.name }}</span>{% endif %}</td>
+            <td><span class="session-stage"><span class="session-stage-dot {{ session.status }}" aria-hidden="true"></span>{{ session.get_status_display }}</span></td>
+            <td>{{ session.student_count }}{% if session.status == 'live' %}<span class="session-table-secondary">{{ session.live_joined_count }} joined</span>{% endif %}</td>
+            <td>{{ session.group_count }}</td>
+            <td>{{ session.created_at|date:'d M Y' }}</td>
+            {% if show_all %}<td>{% if session.is_mine %}Yours{% elif session.created_by %}{{ session.created_by.display_name }}{% else %}No owner{% endif %}</td>{% endif %}
+            <td class="text-end">{% include 'assessments/_session_row_actions.html' with row_is_mine=session.is_mine %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if paginator.num_pages > 1 %}
+    <nav class="session-pagination" aria-label="Session pages">
+      <span class="session-pagination-label">Page {{ page_obj.number }} of {{ paginator.num_pages }} · {{ paginator.count }} sessions</span>
+      <div class="session-pagination-links">
+        {% if page_obj.has_previous %}<a class="btn btn-sm btn-outline-secondary" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page_obj.previous_page_number }}" data-session-page>Previous</a>{% endif %}
+        {% if page_obj.has_next %}<a class="btn btn-sm btn-outline-secondary" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page_obj.next_page_number }}" data-session-page>Next</a>{% endif %}
+      </div>
+    </nav>
+    {% endif %}
+    {% elif search_query or status_filter %}
+    <div class="session-empty"><div class="session-empty-icon" aria-hidden="true"><i class="bi bi-search"></i></div><h2>No matching sessions</h2><p>Try a different session name, teacher, or status filter.</p><a href="{% url 'assessment_session_list' %}{% if show_all %}?scope=all{% endif %}" class="btn btn-outline-secondary" data-session-clear-filters>Clear filters</a></div>
+    {% elif show_all %}
+    <div class="session-empty"><div class="session-empty-icon" aria-hidden="true"><i class="bi bi-people"></i></div><h2>Nobody has created a session yet</h2><p>Classroom sessions created in {{ active_org.name }} will appear here.</p></div>
+    {% else %}
+    <div class="session-empty">
+      <div class="session-empty-icon" aria-hidden="true"><i class="bi bi-clipboard2-data"></i></div>
+      <h2>No classroom sessions yet</h2>
+      <p>Start with a roster and presentation groups, choose a rubric, then open the room for live peer assessment.</p>
+      <div class="session-empty-steps" aria-label="Session setup steps"><div class="session-empty-step"><strong>1. Add students and groups</strong><span>Import a roster or create student and presentation-group records.</span></div><div class="session-empty-step"><strong>2. Set up a rubric</strong><span>Choose criteria that fit the presentations you are assessing.</span></div><div class="session-empty-step"><strong>3. Open the room</strong><span>Share the QR code so students can join and submit evaluations.</span></div></div>
+      <div class="d-flex flex-wrap justify-content-center gap-2"><a href="{% url 'assessment_session_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create a session</a><form method="post" action="{% url 'assessment_walkthrough_start' %}" class="m-0">{% csrf_token %}<button type="submit" class="btn btn-outline-primary"><i class="bi bi-signpost-split me-1" aria-hidden="true"></i>Start interactive walkthrough</button></form><a href="{% url 'assessment_group_onboarding_sample' %}" class="btn btn-outline-secondary">Roster sample</a><a href="{% url 'assessment_rubric_onboarding_sample' %}" class="btn btn-outline-secondary">Rubric sample</a></div>
+    </div>
+    {% endif %}
+  </section>
+</div>

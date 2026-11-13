@@ -1,11 +1,27 @@
 from django.urls import path
 
 from . import views
+from .views import poll_views
 
 urlpatterns = [
-    path('', views.assessment_session_list, name='assessment_session_list'),
+    path('<int:pk>/polls/', poll_views.classroom_polls, name='assessment_polls'),
+    path('<int:pk>/polls/delete/', poll_views.classroom_poll_delete, name='assessment_poll_delete'),
+    path('<int:pk>/polls/questions/sample.xlsx', poll_views.classroom_poll_import_sample,
+         name='assessment_poll_questions_sample'),
+    path('<int:pk>/leaderboard-scores/', poll_views.leaderboard_scores, name='assessment_leaderboard_scores'),
+    path('', views.assessment_dashboard, name='assessment_dashboard'),
+    path('sessions/', views.assessment_session_list, name='assessment_session_list'),
+    path('sessions/delete/', views.assessment_session_bulk_delete, name='assessment_session_bulk_delete'),
+    path('walkthrough/start/', views.assessment_walkthrough_start, name='assessment_walkthrough_start'),
+    path('walkthrough/dismiss/', views.assessment_walkthrough_dismiss, name='assessment_walkthrough_dismiss'),
+    path('templates/', views.session_template_list, name='assessment_template_list'),
+    path('templates/<int:template_pk>/delete/', views.session_template_delete, name='assessment_template_delete'),
+    path('<int:pk>/save-template/', views.session_template_save, name='assessment_template_save'),
     path('new/', views.assessment_session_create, name='assessment_session_create'),
+    path('samples/groups.xlsx', views.onboarding_sample, {'kind': 'groups'}, name='assessment_group_onboarding_sample'),
+    path('samples/rubric.xlsx', views.onboarding_sample, {'kind': 'rubric'}, name='assessment_rubric_onboarding_sample'),
     path('<int:pk>/', views.assessment_session_detail, name='assessment_session_detail'),
+    path('<int:pk>/duplicate/', views.assessment_session_duplicate, name='assessment_session_duplicate'),
     path('<int:pk>/edit/', views.assessment_session_edit, name='assessment_session_edit'),
     path('<int:pk>/setup/', views.assessment_setup, name='assessment_setup'),
     path('<int:pk>/live-state/', views.assessment_live_state, name='assessment_live_state'),
@@ -45,12 +61,15 @@ urlpatterns = [
     path('<int:pk>/adjust-timer/', views.adjust_turn_timer, name='assessment_adjust_timer'),
     path('<int:pk>/close-turn/', views.close_turn, name='assessment_close_turn'),
     path('<int:pk>/close/', views.close_session, name='assessment_close_session'),
+    path('<int:pk>/public-results/', views.toggle_public_results,
+         name='assessment_public_results'),
 
     path('<int:pk>/participation/', views.participation, name='assessment_participation'),
     path('<int:pk>/participation/refresh/', views.participation_refresh, name='assessment_participation_refresh'),
     path('<int:pk>/results/', views.results, name='assessment_results'),
     path('<int:pk>/results/refresh/', views.results_refresh, name='assessment_results_refresh'),
     path('<int:pk>/results/export/', views.results_export, name='assessment_results_export'),
+    path('<int:pk>/results/export.csv', views.results_export_csv, name='assessment_results_export_csv'),
     path('<int:pk>/qr.png', views.session_qr, name='assessment_qr'),
     path('<int:pk>/transfer/', views.session_transfer, name='assessment_transfer'),
 ]

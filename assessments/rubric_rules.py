@@ -10,6 +10,7 @@ judged as one pool of ``TOTAL_WEIGHT``.
 from decimal import Decimal, InvalidOperation
 
 from .models import TOTAL_WEIGHT, RubricCategory
+from .level_descriptors import parse_descriptors
 from .sheets import cell_text, clean, key
 
 MAX_ROWS = 50
@@ -71,8 +72,11 @@ def normalise_row(raw, row_number=None):
         errors.append(f'Weight must be more than 0 and at most {pct(TOTAL_WEIGHT)}.')
         weight = None
 
+    descriptors, descriptor_errors = parse_descriptors(
+        raw.get('level_descriptors'), weight if weight is not None else TOTAL_WEIGHT)
+    errors.extend(descriptor_errors)
     row = {'row': row_number, 'id': raw.get('id'), 'name': name, 'description': description,
-           'scope': scope, 'weight': weight}
+           'scope': scope, 'weight': weight, 'level_descriptors': descriptors}
     return row, errors
 
 

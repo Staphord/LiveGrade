@@ -16,6 +16,7 @@ from assessments.weight_pie import weight_pie
 from assessments.models import (AssessmentSession, Evaluation, EvaluationScore, PresentationGroup,
                                 PresentationTurn, RubricCategory)
 from assessments.tests.test_edges_lecturer_views import LecturerTestCase, _messages
+from assessments.tests.participant_flow import join_as
 
 
 class VotedSession(LecturerTestCase):
@@ -362,7 +363,7 @@ class StudentScoreRangeTests(VotedSession):
         PresentationTurn.objects.all().delete()
         Evaluation.objects.all().delete()
         self.active_turn(self.blue)
-        self.client.post(reverse('student_join', args=[self.session.uuid]), {'identifier': self.ann.student_id})
+        join_as(self.client, self.session.uuid, self.ann.student_id)
         page = self.client.get(reverse('student_evaluate', args=[self.session.uuid]))
         self.assertContains(page, 'max="60.000000"')
         self.assertContains(page, 'out of 60')
@@ -374,7 +375,7 @@ class StudentScoreRangeTests(VotedSession):
         PresentationTurn.objects.all().delete()
         Evaluation.objects.all().delete()
         self.active_turn(self.blue)
-        self.client.post(reverse('student_join', args=[self.session.uuid]), {'identifier': self.ann.student_id})
+        join_as(self.client, self.session.uuid, self.ann.student_id)
         page = self.client.get(reverse('student_evaluate', args=[self.session.uuid]))
         self.assertContains(page, 'out of 12.5')
 
@@ -473,6 +474,11 @@ class MigrationTests(TransactionTestCase):
 
     migrate_from = [('assessments', '0003_group_topic_location_session_change')]
     migrate_to = [('assessments', '0004_flexible_weights_penalty')]
+
+    def tearDown(self):
+        # Leave the test database at the latest schema, as every later test expects it.
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())
 
     def test_old_scores_keep_their_scale_and_old_sessions_get_the_one_point_penalty(self):
         executor = MigrationExecutor(connection)

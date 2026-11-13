@@ -1,0 +1,384 @@
+<script nonce="{{ csp_nonce }}">
+(function () {
+  const editor = document.querySelector('form[data-poll-editor]');
+  if (!editor || editor.dataset.pollEditorReady) return;
+  editor.dataset.pollEditorReady = 'true';
+
+  const storageKey = 'livegrade-poll-editor:' + window.location.pathname + ':' +
+    (editor.querySelector('[name="poll"]') || {}).value;
+  let validationMessageCounter = 0;
+  let optionInputCounter = 0;
+  function editorControls() {
+    return Array.from(editor.elements).filter(function (control) {
+      return control.name && !['action', 'leave_to', 'csrfmiddlewaretoken'].includes(control.name) &&
+        control.type !== 'file' && control.type !== 'submit' && control.type !== 'button';
+    });
+  }
+  function restoreSnapshot() {
+    let rawSnapshot;
+    try {
+      rawSnapshot = sessionStorage.getItem(storageKey);
+    } catch (error) {
+      return;
+    }
+    if (!rawSnapshot) return;
+    try {
+      const stored = JSON.parse(rawSnapshot);
+      if (!stored || typeof stored !== 'object') return;
+      const isEnvelope = stored.__pollEditorSnapshot === 1;
+      const snapshot = isEnvelope ? stored.fields : stored;
+      if (!snapshot || typeof snapshot !== 'object') return;
+      editorControls().forEach(function (control) {
+        if (!Object.prototype.hasOwnProperty.call(snapshot, control.name)) return;
+        if (control.type === 'checkbox' || control.type === 'radio') control.checked = snapshot[control.name] === true;
+        else control.value = String(snapshot[control.name]);
+      });
+      const wasDirty = isEnvelope ? stored.dirty === true : true;
+      if (wasDirty) editor.dataset.dirtyInitial = 'true';
+      else editor.dataset.pollDirty = editor.dataset.dirtyInitial === 'true' ? 'true' : 'false';
+      sessionStorage.removeItem(storageKey);
+    } catch (error) {
+      try { sessionStorage.removeItem(storageKey); } catch (storageError) { /* Storage may be unavailable. */ }
+    }
+  }
+  window.snapshotPollEditorState = function () {
+    const snapshot = {};
+    editorControls().forEach(function (control) {
+      snapshot[control.name] = control.type === 'checkbox' || control.type === 'radio' ? control.checked : control.value;
+    });
+    const payload = {
+      __pollEditorSnapshot: 1,
+      dirty: editor.dataset.pollDirty === 'true' || editor.dataset.dirtyInitial === 'true',
+      fields: snapshot,
+    };
+    try { sessionStorage.setItem(storageKey, JSON.stringify(payload)); } catch (error) { /* Storage may be unavailable. */ }
+  };
+  restoreSnapshot();
+
+  function resize(field) {
+    field.style.height = 'auto';
+    field.style.height = Math.max(field.scrollHeight, 42) + 'px';
+  }
+  function grow(field) {
+    if (field.dataset.autogrowReady) return;
+    field.dataset.autogrowReady = 'true';
+    field.addEventListener('input', function () { resize(field); });
+    resize(field);
+  }
+  function markRequired(label) {
+    const marker = document.createElement('span'); marker.className = 'text-danger';
+    marker.textContent = ' *'; marker.setAttribute('aria-hidden', 'true'); label.append(marker);
+    const assistive = document.createElement('span'); assistive.className = 'visually-hidden';
+    assistive.textContent = ' (required)'; label.append(assistive);
+  }
+  function inlineError(container, field, message) {
+    let error = container.querySelector(':scope > [data-poll-validation-error]');
+    if (!error) {
+      error = document.createElement('div'); error.className = 'field-error';
+      error.dataset.pollValidationError = ''; error.setAttribute('role', 'alert');
+      error.setAttribute('aria-live', 'assertive'); container.append(error);
+    }
+    error.textContent = message;
+    field.classList.add('poll-editor-invalid');
+    field.setAttribute('aria-invalid', 'true');
+    if (!error.id) error.id = 'poll-validation-' + (++validationMessageCounter);
+    const describedBy = (field.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+    if (!describedBy.includes(error.id)) describedBy.push(error.id);
+    field.setAttribute('aria-describedby', describedBy.join(' '));
+  }
+  function clearError(container, field) {
+    const error = container.querySelector(':scope > [data-poll-validation-error]');
+    if (error) error.remove();
+    field.classList.remove('poll-editor-invalid');
+    field.removeAttribute('aria-invalid');
+    const describedBy = (field.getAttribute('aria-describedby') || '').split(/\s+/).filter(function (id) {
+      return id && (!error || id !== error.id);
+    });
+    if (describedBy.length) field.setAttribute('aria-describedby', describedBy.join(' '));
+    else field.removeAttribute('aria-describedby');
+  }
+  function questionPromptError(prompt, name) {
+    const container = prompt.closest('.mb-3') || prompt.parentElement;
+    const message = !prompt.value.trim() ? 'Enter a question.' :
+      prompt.value.trim().length > 250 ? 'Keep the question within 250 characters.' : '';
+    if (message) inlineError(container, prompt, name + ': ' + message);
+    else clearError(container, prompt);
+    return Boolean(message);
+  }
+  function typeError(select) {
+    const wrapper = select.parentElement;
+    const trigger = wrapper.querySelector('.custom-select-trigger');
+    const container = wrapper.parentElement;
+    if (!select.value) {
+      inlineError(container, trigger || select, 'Choose an answer type.');
+      return true;
+    }
+    clearError(container, trigger || select);
+    return false;
+  }
+  function optionError(list, name) {
+    const fields = Array.from(list.querySelectorAll('[data-option-row] textarea'));
+    const values = fields.map(function (field) { return field.value.trim(); }).filter(Boolean);
+    const unique = new Set(values.map(function (value) { return value.toLocaleLowerCase(); }));
+    const message = values.length < 2 ? name + ' needs at least two answer options.' :
+      values.length > 50 ? name + ' can have no more than 50 answer options.' :
+      values.some(function (value) { return value.length > 250; }) ? 'Keep each answer option within 250 characters.' :
+      unique.size !== values.length ? name + ' answer options must be different.' : '';
+    const anchor = fields[0] || list;
+    const container = list.parentElement;
+    if (message) inlineError(container, anchor, message);
+    else clearError(container, anchor);
+    return Boolean(message);
+  }
+
+  function optionList(list, values, onChange) {
+    const initial = Array.isArray(values) ? values : String(values || '').split('\n');
+    function rows() { return Array.from(list.querySelectorAll('[data-option-row]')); }
+    function sync() {
+      const current = rows();
+      const lastFilled = current.reduce(function (last, row, index) {
+        return row.querySelector('textarea').value.trim() ? index : last;
+      }, -1);
+      const needed = Math.max(2, lastFilled + 2);
+      while (rows().length < needed) addRow('');
+      while (rows().length > needed) rows().pop().remove();
+      onChange(rows().map(function (row) { return row.querySelector('textarea').value; }));
+    }
+    function addRow(value) {
+      const row = document.createElement('div'); row.className = 'poll-option-row'; row.dataset.optionRow = '';
+      const input = document.createElement('textarea'); input.rows = 1; input.maxLength = 250;
+      input.className = 'form-control'; input.placeholder = 'Add option'; input.value = value || '';
+      input.setAttribute('aria-label', 'Answer option'); input.dataset.autogrow = '';
+      input.id = 'poll-answer-option-' + (++optionInputCounter);
+      const help = list.parentElement.querySelector('.form-text');
+      if (help) {
+        if (!help.id) help.id = 'poll-option-help-' + input.id;
+        input.setAttribute('aria-describedby', help.id);
+      }
+      grow(input); input.addEventListener('input', sync); row.append(input); list.append(row); resize(input);
+    }
+    initial.forEach(addRow); sync();
+    return {
+      getValues: function () { return rows().map(function (row) { return row.querySelector('textarea').value; }).filter(function (value) { return value.trim(); }); },
+      sync: sync
+    };
+  }
+
+  const primaryQuestion = editor.querySelector('[name="question"]');
+  const primaryType = editor.querySelector('[name="allow_multiple"]');
+  const primaryHiddenOptions = editor.querySelector('[name="option_lines"]');
+  const primaryList = editor.querySelector('[data-option-list="primary"]');
+  const extraHidden = editor.querySelector('[name="extra_questions_json"]');
+  const extraList = editor.querySelector('#poll-extra-questions');
+  const addButton = editor.querySelector('#add-poll-question');
+  const addButtonHome = addButton && addButton.parentElement;
+  const questionLabel = primaryQuestion && editor.querySelector('label[for="' + primaryQuestion.id + '"]');
+  const primaryOptionValues = primaryHiddenOptions ? primaryHiddenOptions.value.split('\n') : [];
+  let primaryOptions;
+  let nextQuestionId = 0;
+  let extras = [];
+  try { extras = JSON.parse(extraHidden && extraHidden.value || '[]'); } catch (error) { extras = []; }
+
+  function syncExtras() {
+    if (!extraHidden || !extraList) return;
+    const cards = Array.from(extraList.querySelectorAll('[data-extra-question]'));
+    extraHidden.value = JSON.stringify(cards.map(function (card) {
+      const type = card.querySelector('[data-type]').value;
+      return {prompt: card.querySelector('[data-prompt]').value,
+        allow_multiple: type === '' ? null : type === 'multiple',
+        allow_abstain: card.querySelector('[data-abstain]').checked,
+        options: card._optionList.getValues()};
+    }));
+    cards.forEach(function (card, index) {
+      card.querySelector('[data-question-number]').textContent = 'Question ' + (index + 2);
+    });
+    if (addButton) addButton.disabled = cards.length >= 99;
+    if (addButton) {
+      if (cards.length) cards[cards.length - 1].after(addButton);
+      else if (addButtonHome && !addButtonHome.contains(addButton)) addButtonHome.append(addButton);
+    }
+  }
+  function askToPublish(pollUuid) {
+    if (!window.DevPerf || typeof window.DevPerf.confirm !== 'function') return;
+    window.DevPerf.confirm({
+      title: 'Publish poll?',
+      message: 'Your draft is saved. Publish it now? Publishing locks the questions and opens voting.',
+      confirmLabel: 'Publish poll',
+      cancelLabel: 'Keep as draft',
+      tone: 'primary'
+    }).then(function (publish) {
+      if (!publish) return;
+      const csrf = editor.querySelector('[name="csrfmiddlewaretoken"]');
+      if (!csrf) return;
+      const publishForm = document.createElement('form');
+      publishForm.method = 'post';
+      publishForm.hidden = true;
+      publishForm.setAttribute('action', editor.getAttribute('action') || window.location.href);
+      [["csrfmiddlewaretoken", csrf.value], ["poll", pollUuid], ["action", "publish"]].forEach(function (entry) {
+        const input = document.createElement('input');
+        input.type = 'hidden'; input.name = entry[0]; input.value = entry[1];
+        publishForm.append(input);
+      });
+      document.body.append(publishForm);
+      publishForm.submit();
+    });
+  }
+  function addQuestion(value) {
+    value = value || {prompt: '', allow_multiple: null, allow_abstain: true, options: []};
+    const id = ++nextQuestionId;
+    const card = document.createElement('fieldset'); card.className = 'border rounded-3 p-3 mb-3'; card.dataset.extraQuestion = '';
+    const legend = document.createElement('legend'); legend.className = 'visually-hidden'; legend.textContent = 'Additional question';
+    const head = document.createElement('div'); head.className = 'd-flex justify-content-between align-items-center mb-2';
+    const title = document.createElement('span'); title.className = 'h6 mb-0'; title.dataset.questionNumber = '';
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn btn-link btn-sm text-danger'; remove.textContent = 'Remove';
+    remove.addEventListener('click', function () { card.remove(); syncExtras(); }); head.append(title, remove);
+
+    const fields = document.createElement('div'); fields.className = 'poll-extra-question-fields';
+    const promptGroup = document.createElement('div');
+    const promptLabel = document.createElement('label'); promptLabel.className = 'form-label'; promptLabel.textContent = 'Question'; markRequired(promptLabel);
+    const prompt = document.createElement('textarea'); prompt.className = 'form-control'; prompt.rows = 1; prompt.maxLength = 250;
+    prompt.id = 'poll-extra-question-' + id + '-prompt'; promptLabel.htmlFor = prompt.id; prompt.value = value.prompt || '';
+    prompt.dataset.prompt = ''; prompt.dataset.autogrow = ''; grow(prompt); prompt.addEventListener('input', syncExtras);
+    promptGroup.append(promptLabel, prompt);
+
+    const typeGroup = document.createElement('div'); typeGroup.className = 'mb-3';
+    const typeLabel = document.createElement('label'); typeLabel.className = 'form-label'; typeLabel.textContent = 'Answer type'; markRequired(typeLabel);
+    const type = document.createElement('select'); type.className = 'form-select poll-answer-type';
+    type.hidden = true;
+    type.setAttribute('hidden', '');
+    type.dataset.hideEmptyOption = '';
+    type.id = 'poll-extra-question-' + id + '-type'; typeLabel.htmlFor = type.id; type.dataset.type = '';
+    [['', 'Choose an answer type'], ['single', 'Single choice'], ['multiple', 'Multiple choice']].forEach(function (choice) {
+      const option = document.createElement('option'); option.value = choice[0]; option.textContent = choice[1]; type.append(option);
+    });
+    type.value = value.allow_multiple === true ? 'multiple' : value.allow_multiple === false ? 'single' : '';
+    type.addEventListener('change', syncExtras); typeGroup.append(typeLabel, type);
+
+    const optionGroup = document.createElement('div'); optionGroup.className = 'poll-question-options';
+    const optionLabel = document.createElement('div'); optionLabel.className = 'form-label'; optionLabel.textContent = 'Answer options'; markRequired(optionLabel);
+    const options = document.createElement('div'); options.className = 'poll-option-list'; options.dataset.options = '';
+    const help = document.createElement('div'); help.className = 'form-text'; help.textContent = 'Add at least two options.';
+    const abstainWrap = document.createElement('div'); abstainWrap.className = 'form-check mt-3';
+    const abstain = document.createElement('input'); abstain.type = 'checkbox'; abstain.className = 'form-check-input';
+    abstain.checked = value.allow_abstain !== false; abstain.dataset.abstain = ''; abstain.id = 'poll-extra-question-' + id + '-abstain';
+    const abstainLabel = document.createElement('label'); abstainLabel.className = 'form-check-label';
+    abstainLabel.htmlFor = abstain.id; abstainLabel.textContent = 'Allow “None of these options”';
+    abstain.addEventListener('change', syncExtras); abstainWrap.append(abstain, abstainLabel);
+    optionGroup.append(optionLabel, options, help, abstainWrap);
+    fields.append(promptGroup, typeGroup, optionGroup); card.append(legend, head, fields); extraList.append(card);
+    if (window.initCustomSelects) window.initCustomSelects(typeGroup);
+    let initializingOptions = true;
+    card._optionList = optionList(options, value.options || [], function () { if (!initializingOptions) syncExtras(); });
+    initializingOptions = false; syncExtras();
+  }
+
+  if (questionLabel && !questionLabel.querySelector('.text-danger')) markRequired(questionLabel);
+  editor.querySelectorAll('textarea[data-autogrow]').forEach(grow);
+  window.addEventListener('resize', function () { editor.querySelectorAll('textarea[data-autogrow]').forEach(resize); });
+  if (primaryList && primaryHiddenOptions) {
+    primaryOptions = optionList(primaryList, primaryOptionValues, function (values) { primaryHiddenOptions.value = values.join('\n'); });
+  }
+  extras.forEach(addQuestion);
+  if (addButton) addButton.addEventListener('click', function () {
+    if (extraList && extraList.children.length < 99) addQuestion();
+  });
+
+  function validate() {
+    let invalid = false;
+    let firstInvalid = null;
+    function check(condition, field) {
+      if (condition) { invalid = true; if (!firstInvalid) firstInvalid = field; }
+    }
+    if (primaryQuestion) check(questionPromptError(primaryQuestion, 'Question 1'), primaryQuestion);
+    if (primaryType) check(typeError(primaryType), primaryType.parentElement.querySelector('button'));
+    if (primaryList) check(optionError(primaryList, 'Question 1'), primaryList.querySelector('textarea'));
+    Array.from((extraList || document.createElement('div')).querySelectorAll('[data-extra-question]')).forEach(function (card, index) {
+      const name = 'Question ' + (index + 2);
+      const prompt = card.querySelector('[data-prompt]');
+      const type = card.querySelector('[data-type]');
+      const options = card.querySelector('[data-options]');
+      check(questionPromptError(prompt, name), prompt);
+      check(typeError(type), type.parentElement.querySelector('button'));
+      check(optionError(options, name), options.querySelector('textarea'));
+    });
+    if (firstInvalid && firstInvalid.focus) firstInvalid.focus();
+    return !invalid;
+  }
+  window.validatePollEditor = validate;
+  editor.addEventListener('input', function (event) {
+    if (!event.target.matches('textarea')) return;
+    if (event.target === primaryQuestion || event.target.matches('[data-prompt]')) {
+      if (event.target.getAttribute('aria-invalid') === 'true') {
+        questionPromptError(event.target, event.target === primaryQuestion ? 'Question 1' : 'Question');
+      }
+    } else if (event.target.closest('[data-option-list], [data-options]')) {
+      const options = event.target.closest('[data-option-list], [data-options]');
+      if (options.parentElement.querySelector('[data-poll-validation-error]')) {
+        optionError(options, options === primaryList ? 'Question 1' : 'Answer options');
+      }
+    }
+  });
+  editor.addEventListener('change', function (event) {
+    if (event.target.matches('select.poll-answer-type') && event.target.value) typeError(event.target);
+  });
+  editor.addEventListener('submit', function (event) {
+    if (primaryOptions) primaryHiddenOptions.value = primaryOptions.getValues().join('\n');
+    syncExtras();
+    if (!validate()) event.preventDefault();
+    else if ((!event.submitter || event.submitter.textContent.trim() === 'Save draft') && window.fetch &&
+        !editor.querySelector('[name="leave_to"]').value) {
+      event.preventDefault();
+      const submitter = event.submitter || editor.querySelector('button[type="submit"]');
+      if (submitter) submitter.disabled = true;
+      function finishSave(pollUuid) {
+        const pollField = editor.querySelector('[name="poll"]');
+        if (pollField) pollField.value = pollUuid;
+        else {
+          const input = document.createElement('input'); input.type = 'hidden'; input.name = 'poll'; input.value = pollUuid;
+          editor.append(input);
+        }
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.set('poll', pollUuid);
+        history.replaceState(null, '', nextUrl.pathname + nextUrl.search + nextUrl.hash);
+        if (window.notify) window.notify('Poll saved.', 'success');
+        editor.dataset.pollDirty = 'false';
+        editor.dataset.formDirty = 'false';
+        editor.dataset.dirtyInitial = 'false';
+        editor.dispatchEvent(new Event('poll-editor-saved'));
+        try { sessionStorage.removeItem(storageKey); } catch (error) { /* Storage may be unavailable. */ }
+        askToPublish(pollUuid);
+      }
+      fetch(editor.getAttribute('action') || window.location.href, {
+        method: 'POST', body: new FormData(editor),
+        headers: {'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json'},
+        credentials: 'same-origin'
+      }).then(function (response) {
+        if (response.redirected) {
+          const destination = new URL(response.url, window.location.href);
+          const redirectedPoll = destination.searchParams.get('poll');
+          if (destination.origin === window.location.origin &&
+              destination.pathname === window.location.pathname && redirectedPoll) {
+            finishSave(redirectedPoll);
+            return;
+          }
+          window.location.assign(destination.href);
+          return;
+        }
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          throw new Error('The server returned an unexpected response. Your changes are still in this form; please try again.');
+        }
+        return response.json().then(function (payload) {
+          if (!response.ok || !payload.ok) throw new Error(payload.error || 'Please correct the poll below.');
+          finishSave(payload.uuid);
+        });
+      }).catch(function (error) {
+        const message = error instanceof SyntaxError || /^Unexpected token/.test(error.message || '')
+          ? 'The server returned an invalid response. Your changes are still in this form.'
+          : error.message || 'Could not save the poll. Your changes are still in this form; check your connection and try again.';
+        if (window.notify) window.notify(message, 'danger');
+      }).finally(function () { if (submitter) submitter.disabled = false; });
+    }
+  }, true);
+})();
+</script>

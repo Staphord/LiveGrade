@@ -46,16 +46,16 @@ jobs:
   # Start from the seeded org A session too, so every lecturer page for it is crawled even if
   # the list page does not link to one. ORG_A_SESSION_PK is set by security/seed_session.py;
   # job parameters read ${ENV} the way the env section does (verify on the first run: the
-  # spider's "URLs found" count in the log should include /assessments/<pk>/setup/).
+  # spider's "URLs found" count in the log should include /classroom/app/<pk>/setup/).
   - type: spider
     parameters:
       context: livegrade-lecturer
-      url: ${ZAP_TARGET}/assessments/${ORG_A_SESSION_PK}/setup/
+      url: ${ZAP_TARGET}/classroom/app/${ORG_A_SESSION_PK}/setup/
       maxDuration: 10
   - type: spider
     parameters:
       context: livegrade-lecturer
-      url: ${ZAP_TARGET}/assessments/${ORG_A_SESSION_PK}/results/
+      url: ${ZAP_TARGET}/classroom/app/${ORG_A_SESSION_PK}/results/
       maxDuration: 5
   - type: passiveScan-wait
     parameters:

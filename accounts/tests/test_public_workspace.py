@@ -151,14 +151,14 @@ class LandingAndStartTests(TestCase):
     def test_a_visitor_gets_the_landing_page(self):
         response = self.client.get('/')
         self.assertContains(response, 'LiveGrade')
-        self.assertContains(response, 'Sign up free')
+        self.assertContains(response, 'Get Started')
         self.assertContains(response, 'Create your free account')
         self.assertContains(response, 'How it works')
 
-    def test_somebody_signed_in_goes_straight_to_their_sessions(self):
+    def test_somebody_signed_in_can_choose_a_different_service_from_home(self):
         org = make_org('Uni')
         sign_in(self.client, make_user('ann'), org)
-        self.assertRedirects(self.client.get('/'), reverse('assessment_session_list'), fetch_redirect_response=False)
+        self.assertContains(self.client.get('/'), 'Choose your LiveGrade service')
 
     def test_somebody_signed_in_without_any_organization_is_told_why_not(self):
         sign_in(self.client, make_user('ann'))

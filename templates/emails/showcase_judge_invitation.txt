@@ -1,0 +1,14 @@
+LiveGrade Showcase
+Judge invitation: {{ event.name }}
+
+You’re invited to judge {{ event.name }}.
+Review the exhibits assigned to you and score each one using the event’s judging criteria. Submitted scorecards cannot be changed.
+
+Assigned exhibits: {{ assignment_count }}
+Judge link expires: {{ expires_at|date:'j M Y, H:i T' }}
+Open your private judge workspace:
+{{ invitation_url }}
+
+If you have a personal or professional connection to an exhibit, declare a conflict in the workspace before scoring it.
+
+If you were not expecting this invitation, contact the event organizer. Please do not forward your private link.

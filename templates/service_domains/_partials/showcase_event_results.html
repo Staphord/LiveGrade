@@ -1,0 +1,110 @@
+<div id="showcase-results" aria-busy="false">
+  <section class="showcase-table-card" aria-labelledby="showcase-table-heading">
+    <div class="showcase-table-head">
+      <div class="showcase-table-heading-group">
+        <h2 id="showcase-table-heading">Events</h2>
+        <span class="showcase-table-count">{% if search_query or status_filter %}{{ filtered_count }} matching{% else %}{{ status_counts.total }} total{% endif %} event{{ filtered_count|pluralize }}</span>
+      </div>
+      <div class="showcase-table-tools">
+        <form id="showcase-bulk-delete" method="post" action="{% url 'showcase_event_bulk_delete' %}" data-confirm="Delete the selected events and all of their exhibits, ratings, judge scorecards, and certificates? This cannot be undone." data-confirm-title="Delete selected events?" data-confirm-label="Delete selected" data-confirm-tone="danger">
+          {% csrf_token %}
+          <input type="hidden" name="q" value="{{ search_query }}">
+          <input type="hidden" name="status" value="{{ status_filter }}">
+          <input type="hidden" name="per_page" value="{{ per_page }}">
+          <button type="submit" class="btn btn-outline-danger btn-sm" data-bulk-delete-button hidden><i class="bi bi-trash me-1" aria-hidden="true"></i>Delete selected (<span data-selected-count>0</span>)</button>
+        </form>
+        <div class="showcase-page-size">
+          <label for="showcase-page-size">Rows per page</label>
+          <select id="showcase-page-size" class="form-select form-select-sm" name="per_page" data-showcase-page-size>
+            {% for size in page_sizes %}
+            <option value="{{ size }}"{% if size == per_page %} selected{% endif %}>{{ size }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+    {% if events %}
+    <div class="table-responsive">
+      <table class="table table-hover showcase-table" data-showcase-row-navigation>
+        <caption class="visually-hidden">Showcase events with their status, exhibits, visitor ratings, judge scorecards, start date, creation date, and available actions</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="showcase-select-column">
+              <input class="form-check-input" type="checkbox" data-showcase-select-all aria-label="Select all events on this page">
+              <span class="visually-hidden">Select</span>
+            </th>
+            <th scope="col">Event</th>
+            <th scope="col">Status</th>
+            <th scope="col">Exhibits</th>
+            <th scope="col">Visitor ratings</th>
+            <th scope="col">Judge scorecards</th>
+            <th scope="col">Starts</th>
+            <th scope="col">Created</th>
+            <th scope="col"><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for event in events %}
+          {% if event.status == 'open' %}
+            {% url 'showcase_live_control' event_id=event.pk as event_row_url %}
+          {% elif event.status == 'closed' or event.status == 'published' %}
+            {% url 'showcase_public_results' public_id=event.public_id as event_row_url %}
+          {% else %}
+            {% url 'showcase_event_manage' event_id=event.pk as event_row_url %}
+          {% endif %}
+          <tr class="showcase-row-clickable" data-showcase-row-href="{{ event_row_url }}">
+            <td class="showcase-select-column">
+              <input class="form-check-input" type="checkbox" name="event_ids" value="{{ event.pk }}" form="showcase-bulk-delete" data-showcase-select aria-label="Select {{ event.name }}">
+            </td>
+            <td>
+              <a class="showcase-table-name" href="{{ event_row_url }}">{{ event.name }}</a>
+              <span class="showcase-table-secondary">Updated {{ event.updated_at|timesince }} ago</span>
+            </td>
+            <td>
+              <span class="showcase-stage"><span class="showcase-stage-dot {{ event.status }}" aria-hidden="true"></span>{{ event.get_status_display }}</span>
+            </td>
+            <td>{{ event.exhibit_count }}</td>
+            <td>{{ event.rating_count }}{% if event.average_rating %}<span class="showcase-table-secondary">{{ event.average_rating|floatformat:1 }}★</span>{% endif %}</td>
+            <td>{{ event.judge_submitted_count }} / {{ event.judge_assignment_count }}</td>
+            <td>{% if event.starts_at %}{{ event.starts_at|date:'j M Y, H:i' }}{% else %}Date not set{% endif %}</td>
+            <td>{{ event.created_at|date:'d M Y' }}</td>
+            <td class="text-end">{% include 'service_domains/_partials/showcase_row_actions.html' %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if paginator.num_pages > 1 %}
+    <nav class="showcase-pagination" aria-label="Event pages">
+      <span class="showcase-pagination-label">Page {{ page_obj.number }} of {{ paginator.num_pages }} · {{ paginator.count }} events</span>
+      <div class="showcase-pagination-links">
+        {% if page_obj.has_previous %}<a class="btn btn-sm btn-outline-secondary" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page_obj.previous_page_number }}" data-showcase-page>Previous</a>{% endif %}
+        {% if page_obj.has_next %}<a class="btn btn-sm btn-outline-secondary" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page_obj.next_page_number }}" data-showcase-page>Next</a>{% endif %}
+      </div>
+    </nav>
+    {% endif %}
+    {% elif search_query or status_filter %}
+    <div class="showcase-empty">
+      <div class="showcase-empty-icon" aria-hidden="true"><i class="bi bi-search"></i></div>
+      <h2>No matching events</h2>
+      <p>Try a different event name or status filter.</p>
+      <a href="{% url 'showcase_event_table' %}" class="btn btn-outline-secondary" data-showcase-clear-filters>Clear filters</a>
+    </div>
+    {% else %}
+    <div class="showcase-empty">
+      <div class="showcase-empty-icon" aria-hidden="true"><i class="bi bi-easel2"></i></div>
+      <h2>No Showcase events yet</h2>
+      <p>Create an event, add exhibits, then open it for visitor ratings and judge scoring.</p>
+      <div class="showcase-empty-steps" aria-label="Event setup steps">
+        <div class="showcase-empty-step"><strong>1. Create the event</strong><span>Name it and set the dates.</span></div>
+        <div class="showcase-empty-step"><strong>2. Add exhibits and labels</strong><span>Import exhibits and print QR labels.</span></div>
+        <div class="showcase-empty-step"><strong>3. Open for ratings</strong><span>Share labels with visitors and invite judges.</span></div>
+      </div>
+      <div class="d-flex flex-wrap justify-content-center gap-2">
+        <a href="{% url 'showcase_event_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create an event</a>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+</div>
+

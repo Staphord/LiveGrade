@@ -1,0 +1,27 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% block title %}{% if declined %}Invitation declined · Panel{% else %}Panel invitation · {{ hearing.name }}{% endif %}{% endblock %}
+{% block service_name %}Panel examiner invitation{% endblock %}
+{% block content %}
+{% include 'service_domains/_panel_ui_styles.html' %}
+<main id="public-main" class="public-service-content narrow">
+  <section class="panel-card" aria-labelledby="invite-heading">
+    {% if declined %}
+      <span class="panel-state panel-state--done mb-3">Declined</span>
+      <h1 class="h2" id="invite-heading">Invitation declined</h1>
+      <p class="panel-muted mt-3">You have declined the invitation to <strong>{{ hearing.name }}</strong>. The organizer will see that you cannot take part.</p>
+    {% else %}
+      <p class="panel-eyebrow">LiveGrade Panel</p>
+      <h1 class="h2" id="invite-heading">Review invitation</h1>
+      <p class="mt-3 mb-1">You are invited to review</p>
+      <p class="fs-4 fw-semibold text-break">{{ hearing.name }}</p>
+      <p class="panel-muted">Sent to {{ masked_email }}. Accept only if this invitation was meant for you. Accepting links it to this browser.</p>
+      {% if action_error %}<div class="mb-3">{% include 'partials/_inline_message.html' with tone='danger' message=action_error %}</div>{% endif %}
+      <div class="d-flex flex-wrap gap-2 mt-4">
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="bind"><button class="btn btn-primary" type="submit">Accept invitation</button></form>
+        <form method="post" data-confirm="Decline this invitation? The private link will stop working." data-confirm-title="Decline invitation" data-confirm-label="Decline invitation" data-confirm-tone="danger">{% csrf_token %}<input type="hidden" name="action" value="decline"><button class="btn btn-outline-secondary" type="submit">Decline</button></form>
+      </div>
+      <p class="small panel-muted mt-3 mb-0">Your individual scores and identity are not shown to other examiners.</p>
+    {% endif %}
+  </section>
+</main>
+{% endblock %}

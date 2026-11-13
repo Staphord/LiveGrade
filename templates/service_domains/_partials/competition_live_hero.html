@@ -1,0 +1,76 @@
+<section class="card border-0 shadow-sm mb-4" id="competition-live-hero">
+  <div class="card-body p-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+      <div>
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <span class="badge text-bg-primary text-uppercase" style="letter-spacing: .04em;">
+            {% if active_round %}Round {{ active_round.order }}: {{ active_round.name }}{% else %}No Active Round{% endif %}
+          </span>
+          {% if active_track %}
+          <span class="badge text-bg-secondary">{{ active_track.name }}</span>
+          {% endif %}
+        </div>
+        <h2 class="h4 mb-0 fw-bold">
+          {% if active_entry %}
+            {{ active_entry.name }}
+          {% else %}
+            No Entrant on Stage
+          {% endif %}
+        </h2>
+        {% if active_entry.reference %}
+        <p class="text-muted small mb-0">Ref: {{ active_entry.reference }}</p>
+        {% endif %}
+      </div>
+
+      <div class="d-flex align-items-center gap-3">
+        <!-- Countdown Circular Pitch Ring -->
+        <div class="turn-ring-wrap" title="Pitch countdown timer">
+          <div class="turn-ring{% if pitch_seconds_remaining <= 30 %} is-urgent{% endif %}"
+               id="competition-pitch-ring"
+               style="--turn-pct: {% widthratio pitch_seconds_remaining 180 100 %};">
+            <span class="turn-ring-label" id="competition-timer-label">
+              {{ pitch_seconds_remaining|default:0 }}s
+            </span>
+          </div>
+        </div>
+
+        <div class="d-flex flex-column gap-1">
+          <span class="small fw-semibold text-muted">Stage Timer</span>
+          <span class="badge {% if timer_paused %}text-bg-warning{% else %}text-bg-success{% endif %}" id="competition-timer-state-badge">
+            {% if timer_paused %}Paused{% else %}Active Pitch{% endif %}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage controls bar -->
+    <div class="d-flex flex-wrap align-items-center gap-2 pt-3 border-top">
+      <button type="button" class="btn btn-outline-secondary btn-sm" data-competition-action="adjust_pitch_timer" data-delta="30">
+        <i class="bi bi-plus-circle me-1" aria-hidden="true"></i>+30s Q&A
+      </button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" data-competition-action="adjust_pitch_timer" data-delta="60">
+        <i class="bi bi-plus-circle me-1" aria-hidden="true"></i>+1m
+      </button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" data-competition-action="adjust_pitch_timer" data-delta="-30">
+        <i class="bi bi-dash-circle me-1" aria-hidden="true"></i>-30s
+      </button>
+      <button type="button" class="btn {% if timer_paused %}btn-success{% else %}btn-outline-warning{% endif %} btn-sm" data-competition-action="toggle_pitch_pause">
+        <i class="bi {% if timer_paused %}bi-play-fill{% else %}bi-pause-fill{% endif %} me-1" aria-hidden="true"></i>
+        {% if timer_paused %}Resume{% else %}Pause{% endif %}
+      </button>
+
+      {% if round_entries %}
+      <div class="ms-auto d-flex align-items-center gap-2">
+        <label for="select-stage-entry" class="small text-muted mb-0">Call to Stage:</label>
+        <select id="select-stage-entry" class="form-select form-select-sm" style="width: auto; min-width: 180px;" data-competition-select-entry>
+          {% for re in round_entries %}
+          <option value="{{ re.entry.pk }}"{% if active_entry and re.entry.pk == active_entry.pk %} selected{% endif %}>
+            {{ forloop.counter }}. {{ re.entry.name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</section>

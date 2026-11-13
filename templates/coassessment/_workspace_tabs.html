@@ -1,0 +1,19 @@
+{% comment %}
+The one tab list for a co-assessment session. Pass `session` and `active`
+(live, setup or results).
+{% endcomment %}
+<nav class="page-tabs mb-3" aria-label="Co-assessment workspace">
+  <a href="{% url 'coassessment_live_console' session.pk %}" class="page-tab{% if active == 'live' %} active{% endif %}"{% if active == 'live' %} aria-current="page"{% endif %}>
+    <i class="bi bi-broadcast me-1" aria-hidden="true"></i>Live control
+  </a>
+  {% if session.status != 'signed_off' and session.status != 'released' %}
+  <a href="{% url 'coassessment_setup_policy' session.pk %}" class="page-tab{% if active == 'setup' %} active{% endif %}"{% if active == 'setup' %} aria-current="page"{% endif %}>
+    <i class="bi bi-pencil-square me-1" aria-hidden="true"></i>Edit setup
+  </a>
+  {% endif %}
+  {% if session.status != 'draft' %}
+  <a href="{% url 'coassessment_results' session.pk %}" class="page-tab{% if active == 'results' %} active{% endif %}"{% if active == 'results' %} aria-current="page"{% endif %}>
+    <i class="bi bi-table me-1" aria-hidden="true"></i>Results &amp; moderation
+  </a>
+  {% endif %}
+</nav>

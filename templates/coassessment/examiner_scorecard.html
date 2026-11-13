@@ -1,0 +1,214 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% load static %}
+
+{% block title %}Examiner Workspace : {{ session.name }} : LiveGrade{% endblock %}
+{% block service_name %}Co-Assessment{% endblock %}
+
+{% block content %}
+<main id="public-main" class="public-service-content" style="max-width: 880px; margin: 0 auto;">
+  {% include 'coassessment/_messages.html' %}
+  
+  <!-- Examiner Header Bar -->
+  <div class="card p-3 mb-4 bg-light border-0" style="border-radius: var(--radius-card);">
+    <div class="d-flex justify-content-between align-items-center">
+      <div>
+        <span class="small text-muted">Panel Examiner:</span>
+        <strong class="d-block">{{ examiner.display_name }}</strong>
+      </div>
+      <div>
+        {% if examiner.is_chair %}
+          <span class="badge bg-primary">Panel Chair</span>
+        {% else %}
+          <span class="badge bg-secondary">Panel Examiner</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if active_turn %}
+    <!-- Active Stage Banner -->
+    <div class="card p-4 mb-4" style="background: #0f172a; color: #fff; border-radius: var(--radius-card);">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="badge bg-danger text-uppercase fw-bold" style="font-size: var(--fs-micro);">Now Presenting on Stage</span>
+        <span class="text-info small font-monospace">Team Slot #{{ active_turn.group.order }}</span>
+      </div>
+      <h2 class="h3 fw-bold mb-1">{{ active_turn.group.name }}</h2>
+      <div class="text-muted small mb-2">{{ active_turn.group.topic|default:"No topic description provided." }}</div>
+      
+      <div class="d-flex gap-2 flex-wrap">
+        {% for member in active_turn.group.members.all %}
+          <span class="badge bg-dark border text-light font-monospace small">{{ member.full_name }}</span>
+        {% empty %}
+          <span class="text-muted small">No members listed</span>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Examiner Evaluation Form -->
+    <div class="card p-4" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card);">
+      {% if already_submitted %}
+        <div class="alert alert-success d-flex align-items-center gap-2 py-2 mb-3">
+          <i class="bi bi-check2-circle fs-5"></i>
+          <div>
+            <strong>Evaluation on record:</strong> You may adjust marks and save again while this team remains active on stage.
+          </div>
+        </div>
+      {% endif %}
+
+      <form method="post" novalidate>
+        {% csrf_token %}
+
+        <!-- Section 1: Team / Group Criteria -->
+        <div class="mb-4">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <h3 class="h6 fw-bold mb-0">1. Group Presentation Criteria</h3>
+            <span class="badge bg-secondary">Weight: {{ session.group_weight_total }}%</span>
+          </div>
+          <p class="small text-muted mb-3">Rate the overall team defense, methodology, and group delivery.</p>
+
+          {% for crit in group_criteria %}
+          <div class="mb-4 p-3 border rounded bg-white">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div>
+                <strong class="fs-6">{{ crit.name }}</strong>
+                <span class="badge bg-primary ms-1 small">{{ crit.weight }}%</span>
+              </div>
+              <span class="font-monospace fw-bold text-primary fs-5" id="exCritLabel_{{ crit.pk }}">
+                {{ crit.existing_score|floatformat:2 }}
+              </span>
+            </div>
+
+            {% if crit.description %}
+              <p class="small text-muted mb-2">{{ crit.description }}</p>
+            {% endif %}
+
+            <!-- Score slider -->
+            <input type="range" class="form-range examiner-slider mb-2" data-label-id="exCritLabel_{{ crit.pk }}" name="criterion_{{ crit.pk }}" min="0" max="100" step="0.5" value="{{ crit.existing_score|stringformat:'.1f' }}">
+          </div>
+          {% empty %}
+            <div class="small text-muted mb-3 fst-italic">No group-scoped criteria configured.</div>
+          {% endfor %}
+        </div>
+
+        <!-- Section 2: Individual Student Delivery -->
+        {% if individual_criteria %}
+        <div class="mb-4 pt-3 border-top">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <h3 class="h6 fw-bold mb-0">2. Individual Student Delivery</h3>
+            <span class="badge bg-info text-dark">Weight: {{ session.individual_weight_total }}%</span>
+          </div>
+          <p class="small text-muted mb-3">Evaluate each student presenter individually on Q&amp;A mastery, technical rigor, and contributions.</p>
+
+          {% if presenting_members %}
+            <ul class="nav nav-pills mb-3" id="examinerMemberTabs" role="tablist">
+              {% for mem_entry in member_data %}
+              <li class="nav-item" role="presentation">
+                <button class="nav-link {% if forloop.first %}active{% endif %} btn-sm py-1 px-3" id="ex-tab-btn-{{ mem_entry.member.pk }}" data-bs-toggle="pill" data-bs-target="#ex-tab-pane-{{ mem_entry.member.pk }}" type="button" role="tab" aria-controls="ex-tab-pane-{{ mem_entry.member.pk }}" aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+                  {{ mem_entry.member.full_name }}{% if mem_entry.member.student_id %} <small class="text-muted">({{ mem_entry.member.student_id }})</small>{% endif %}
+                </button>
+              </li>
+              {% endfor %}
+            </ul>
+
+            <div class="tab-content" id="examinerMemberTabContent">
+              {% for mem_entry in member_data %}
+              <div class="tab-pane fade {% if forloop.first %}show active{% endif %}" id="ex-tab-pane-{{ mem_entry.member.pk }}" role="tabpanel" aria-labelledby="ex-tab-btn-{{ mem_entry.member.pk }}">
+                <div class="p-3 border rounded bg-white mb-2">
+                  <div class="fw-bold mb-2 text-primary">{{ mem_entry.member.full_name }}'s Individual Evaluation</div>
+                  {% for item in mem_entry.criteria %}
+                  <div class="mb-3 p-2 border-bottom">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                      <div>
+                        <strong>{{ item.criterion.name }}</strong>
+                        <span class="badge bg-info text-dark ms-1 small">{{ item.criterion.weight }}%</span>
+                      </div>
+                      <span class="font-monospace fw-bold text-primary fs-5" id="exIndLabel_{{ mem_entry.member.pk }}_{{ item.criterion.pk }}">
+                        {{ item.existing_score|floatformat:2 }}
+                      </span>
+                    </div>
+                    {% if item.criterion.description %}
+                      <p class="small text-muted mb-1" style="font-size: var(--fs-xs);">{{ item.criterion.description }}</p>
+                    {% endif %}
+                    <input type="range" class="form-range examiner-slider mb-1" data-label-id="exIndLabel_{{ mem_entry.member.pk }}_{{ item.criterion.pk }}" name="individual_criterion_{{ mem_entry.member.pk }}_{{ item.criterion.pk }}" min="0" max="100" step="0.5" value="{{ item.existing_score|stringformat:'.1f' }}">
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="alert alert-light border small text-muted">
+              No individual student roster records assigned to this team yet. Group scoring applies.
+            </div>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        <div class="mb-4 pt-3 border-top">
+          <label for="confidentialFeedback" class="form-label small fw-bold">Confidential Defense Notes (Panel only):</label>
+          <textarea id="confidentialFeedback" name="qualitative_feedback" class="form-control" rows="3" placeholder="Enter notes on theoretical rigor, Q&amp;A mastery, or concerns...">{{ existing_feedback }}</textarea>
+        </div>
+
+        <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold">
+          {% if already_submitted %}&check; Update Official Examiner Mark{% else %}&check; Submit Official Examiner Mark{% endif %}
+        </button>
+      </form>
+    </div>
+
+  {% else %}
+    <div class="card p-5 text-center" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card);">
+      <i class="bi bi-pause-circle text-muted fs-1 mb-2"></i>
+      <h3 class="h5 fw-bold mb-2">No Active Presentation on Stage</h3>
+      <p class="text-muted small mb-0">
+        Please wait for the session chair to call the next presenting team to the floor. This view will update automatically.
+      </p>
+    </div>
+  {% endif %}
+</main>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  document.querySelectorAll('.examiner-slider').forEach(function (slider) {
+    const targetId = slider.getAttribute('data-label-id');
+    const label = document.getElementById(targetId);
+    if (label) {
+      slider.addEventListener('input', function () {
+        label.textContent = parseFloat(slider.value).toFixed(2);
+      });
+    }
+  });
+
+  const activeTurnId = {% if active_turn %}{{ active_turn.pk }}{% else %}null{% endif %};
+
+  function checkTurnChange(data) {
+    if (!data) return;
+    if (data.active_turn_id !== activeTurnId) {
+      window.location.reload();
+    }
+  }
+
+  // WebSocket real-time listener
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = protocol + '//' + window.location.host + '/ws/coassessment/{{ session.pk }}/live/';
+  try {
+    const socket = new WebSocket(wsUrl);
+    socket.onmessage = function (event) {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.state) {
+          checkTurnChange(payload.state);
+        }
+      } catch (e) {}
+    };
+  } catch (e) {}
+
+  // Fallback poll
+  setInterval(function () {
+    fetch("{% url 'coassessment_live_state' session.pk %}")
+      .then(function (res) { return res.json(); })
+      .then(checkTurnChange)
+      .catch(function () {});
+  }, 4000);
+})();
+</script>
+{% endblock %}

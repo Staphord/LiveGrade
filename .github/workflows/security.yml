@@ -8,9 +8,9 @@ name: Security (static)
 # every check, then the details of each. Job ids match the tool names that table expects.
 on:
   push:
-    branches: [main, ci/deploy-pipeline]
+    branches: [main, staging, ci/deploy-pipeline]
   pull_request:
-    branches: [main]
+    branches: [main, staging]
   schedule:
     - cron: '0 4 * * 1'   # weekly: new CVEs appear without any code change
 
@@ -64,7 +64,7 @@ jobs:
       # written as JSON for the summary; on failure the same scan is repeated as readable text
       # so the job log still shows the findings.
       - run: |
-          args=(-r accounts assessments config -x '*/tests/*,*/migrations/*,*/testing.py' -ll)
+          args=(-r accounts assessments config portal service_domains -x '*/tests/*,*/migrations/*,*/testing.py' -ll)
           bandit "${args[@]}" -q -f json -o bandit.json || { bandit "${args[@]}"; exit 1; }
       - name: Summary
         if: always()
@@ -92,7 +92,7 @@ jobs:
       - run: |
           # The one ignored advisory is explained in security/accepted-risks.md; a test keeps the two in step.
           ignore=(--ignore-vuln CVE-2026-106454)
-          pip-audit -r requirements.txt --desc "${ignore[@]}" -f json -o pip-audit.json || { pip-audit -r requirements.txt --desc "${ignore[@]}"; exit 1; }
+          pip-audit -r requirements.lock --desc "${ignore[@]}" -f json -o pip-audit.json || { pip-audit -r requirements.lock --desc "${ignore[@]}"; exit 1; }
       - name: Summary
         if: always()
         run: |

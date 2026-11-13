@@ -1,0 +1,4 @@
+{% comment %}Server messages for the public scorecard pages: refusals and confirmations stay visible after a redirect.{% endcomment %}
+{% for message in messages %}
+<div class="alert alert-{% if message.level >= 40 %}danger{% elif message.level >= 30 %}warning{% else %}success{% endif %} small" role="{% if message.level >= 40 %}alert{% else %}status{% endif %}">{{ message }}</div>
+{% endfor %}

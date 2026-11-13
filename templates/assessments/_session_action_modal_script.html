@@ -1,0 +1,113 @@
+<script nonce="{{ csp_nonce }}">
+(function () {
+  const dialog = document.getElementById('session-action-modal');
+  if (!dialog) return;
+  const title = document.getElementById('session-action-modal-title');
+  const content = dialog.querySelector('[data-session-action-content]');
+  let modal = null;
+
+  async function loadForm(actionUrl) {
+    content.replaceChildren();
+    const loading = document.createElement('p');
+    loading.className = 'mb-0 text-muted';
+    loading.setAttribute('role', 'status');
+    loading.textContent = 'Loading form…';
+    content.appendChild(loading);
+    try {
+      const response = await fetch(actionUrl, {
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+        credentials: 'same-origin', cache: 'no-store'
+      });
+      if (response.redirected) {
+        window.location.assign(response.url);
+        return;
+      }
+      if (!response.ok) throw new Error('Form unavailable');
+      content.innerHTML = await response.text();
+      focusFirstField();
+    } catch (_) {
+      content.replaceChildren();
+      const message = document.createElement('p');
+      message.className = 'alert alert-danger mb-3';
+      message.setAttribute('role', 'alert');
+      message.textContent = 'Could not load this form.';
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'btn btn-outline-secondary';
+      retry.textContent = 'Try again';
+      retry.addEventListener('click', function () { loadForm(actionUrl); });
+      content.append(message, retry);
+    }
+  }
+
+  function focusFirstField() {
+    const invalidFields = content.querySelectorAll('.session-action-field.has-error input, .session-action-field.has-error select, .session-action-field.has-error textarea');
+    invalidFields.forEach(function (field) { field.setAttribute('aria-invalid', 'true'); });
+    const invalid = invalidFields[0];
+    const first = invalid || content.querySelector('input:not([type="hidden"]), select, textarea');
+    if (first) first.focus({preventScroll: true});
+  }
+
+  document.addEventListener('click', async function (event) {
+    const trigger = event.target.closest('[data-session-action-modal]');
+    if (!trigger || event.button !== 0) return;
+    if (!window.bootstrap || !window.bootstrap.Modal) return;
+    event.preventDefault();
+    title.textContent = trigger.dataset.actionModalTitle || 'Session action';
+    modal = window.bootstrap.Modal.getOrCreateInstance(dialog);
+    modal.show();
+    await loadForm(trigger.dataset.actionUrl);
+  });
+
+  dialog.addEventListener('submit', async function (event) {
+    const form = event.target.closest('form[data-session-action-form]');
+    if (!form) return;
+    event.preventDefault();
+    if (form.dataset.pending === 'true') return;
+    form.dataset.pending = 'true';
+    const submit = form.querySelector('[type="submit"]');
+    if (submit) submit.disabled = true;
+    try {
+      const response = await fetch(form.action, {
+        method: 'POST', body: new FormData(form),
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+        credentials: 'same-origin', cache: 'no-store'
+      });
+      if (response.redirected) {
+        window.location.assign(response.url);
+        return;
+      }
+      if (!response.ok) throw new Error('Action failed');
+      if ((response.headers.get('content-type') || '').includes('application/json')) {
+        const result = await response.json();
+        if (result.redirect_url) {
+          window.location.assign(result.redirect_url);
+          return;
+        }
+        title.textContent = 'Template saved';
+        const message = document.createElement('p');
+        message.className = 'mb-3';
+        message.setAttribute('role', 'status');
+        message.textContent = result.message || 'Template saved.';
+        const done = document.createElement('button');
+        done.type = 'button';
+        done.className = 'btn btn-primary';
+        done.textContent = 'Done';
+        done.addEventListener('click', function () { modal.hide(); });
+        content.replaceChildren(message, done);
+        return;
+      }
+      content.innerHTML = await response.text();
+      focusFirstField();
+    } catch (_) {
+      if (submit) submit.disabled = false;
+      form.dataset.pending = 'false';
+      const message = document.createElement('p');
+      message.className = 'alert alert-danger mb-0';
+      message.setAttribute('role', 'alert');
+      message.textContent = 'We could not complete this action. Check your connection and try again.';
+      content.prepend(message);
+    }
+  });
+})();
+</script>

@@ -29,14 +29,13 @@ class BackLinkTests(TestCase):
     def links(self, response):
         return re.findall(r'href="([^"]*)"', response.content.decode())
 
-    def test_the_back_links_go_to_the_session_list_whatever_the_query_says(self):
-        expected = reverse('assessment_session_list')
+    def test_the_transfer_dialog_has_no_redirectable_back_link(self):
         for hostile in HOSTILE:
             for name in ('next', 'back', 'return_to', 'redirect'):
                 with self.subTest(name=name, value=hostile):
                     response = self.client.get(self.url, {name: hostile})
                     links = self.links(response)
-                    self.assertIn(expected, links)
+                    self.assertFalse(links)
                     self.assertNotIn('evil.example', ' '.join(links))
                     self.assertNotIn('javascript:', ' '.join(links))
 

@@ -1,0 +1,319 @@
+{% extends 'base.html' %}
+{% block title %}{{ hearing.name }} · Examiners &amp; Candidates · Panel{% endblock %}
+{% block page_title %}Examiners &amp; Candidates{% endblock %}
+
+{% block topbar_actions %}
+<div class="d-flex align-items-center gap-2">
+  {% if hearing.status == 'open' %}
+  <span class="live-badge" id="live-connection-badge">
+    <span class="dot"></span>Live
+  </span>
+  <a href="{% url 'panel_hearing_live' hearing_id=hearing.pk %}" class="btn btn-primary btn-sm">
+    <i class="bi bi-broadcast me-1" aria-hidden="true"></i>Live chamber
+  </a>
+  {% endif %}
+  <a href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}?from=participants" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-pencil-square me-1" aria-hidden="true"></i>Edit setup
+  </a>
+  <a href="{% url 'panel_hearing_table' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>All assessments
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+{% include 'service_domains/_workspace_styles.html' %}
+{% include 'service_domains/_panel_ui_styles.html' %}
+
+<div class="container-fluid py-4 service-workspace panel-page--wide">
+  {% include 'service_domains/_partials/panel_hearing_tabs.html' with active_tab='participants' %}
+
+  <header class="panel-hero mb-4">
+    <div class="panel-hero__copy">
+      <p class="panel-eyebrow">Panel assessment · {{ hearing.get_status_display }}</p>
+      <h1 class="page-title">Examiners &amp; Candidates</h1>
+      <p class="page-subtitle mt-2">Manage docket presenters and monitor examiner attendance and response coverage.</p>
+    </div>
+    {% if hearing.status == 'open' %}
+    <div class="panel-hero__actions">
+      <a href="{% url 'panel_hearing_live' hearing_id=hearing.pk %}" class="btn btn-primary">
+        <i class="bi bi-broadcast me-1" aria-hidden="true"></i>Open Chamber Console
+      </a>
+    </div>
+    {% endif %}
+  </header>
+
+  {% if action_error %}
+  <div class="alert alert-danger" role="alert">{{ action_error }}</div>
+  {% endif %}
+
+  <!-- KPI Overview -->
+  <section class="panel-kpis mb-4" aria-label="Participation summary">
+    <div class="panel-kpi">
+      <span class="panel-kpi__label">Candidates on docket</span>
+      <span class="panel-kpi__value">{{ candidates|length }}</span>
+    </div>
+    <div class="panel-kpi">
+      <span class="panel-kpi__label">Current on floor</span>
+      <span class="panel-kpi__value fs-6 mt-2 text-truncate" title="{{ active_candidate.display_name|default:'None' }}">
+        {{ active_candidate.display_name|default:'Standby' }}
+      </span>
+    </div>
+    {% if requires_examiners %}
+    <div class="panel-kpi">
+      <span class="panel-kpi__label">Examiners</span>
+      <span class="panel-kpi__value">{{ examiners|length }}</span>
+    </div>
+    {% endif %}
+    <div class="panel-kpi">
+      <span class="panel-kpi__label">Workflow</span>
+      <span class="panel-kpi__value fs-6 mt-2">{{ hearing.get_workflow_display }}</span>
+    </div>
+  </section>
+
+  <!-- Candidates Docket Section -->
+  <section class="panel-card mb-4" aria-labelledby="candidates-heading">
+    <div class="panel-section-heading">
+      <div>
+        <h2 class="h4" id="candidates-heading">Candidates on docket</h2>
+        <p>Presenters scheduled for this hearing and their current chamber status.</p>
+      </div>
+      {% if hearing.status == 'draft' %}
+      <a href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}?step=candidates&from=participants" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Add candidates
+      </a>
+      {% endif %}
+    </div>
+
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead>
+          <tr>
+            <th style="width: 60px;">Order</th>
+            <th>Candidate</th>
+            <th>Reference / Time</th>
+            <th>Evaluations</th>
+            <th>Chamber status</th>
+            <th class="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in candidates %}
+          <tr {% if row.is_active %}class="table-primary"{% endif %}>
+            <td class="fw-bold text-muted">#{{ row.candidate.order|default:forloop.counter }}</td>
+            <td>
+              <div class="fw-semibold">{{ row.candidate.display_name }}</div>
+              {% if row.candidate.notes %}
+              <div class="small text-muted">{{ row.candidate.notes|truncatechars:60 }}</div>
+              {% endif %}
+            </td>
+            <td>
+              <div>{{ row.candidate.reference|default:'-' }}</div>
+              {% if row.candidate.scheduled_time %}
+              <div class="small text-muted"><i class="bi bi-clock me-1" aria-hidden="true"></i>{{ row.candidate.scheduled_time|time:"H:i" }}</div>
+              {% endif %}
+            </td>
+            <td>
+              <span class="badge text-bg-light border">{{ row.scores_count }} evaluation{{ row.scores_count|pluralize }}</span>
+            </td>
+            <td>
+              {% if row.is_active %}
+              <span class="badge text-bg-primary"><i class="bi bi-person-check-fill me-1" aria-hidden="true"></i>On Floor</span>
+              {% elif row.has_decision %}
+              <span class="badge text-bg-success"><i class="bi bi-check-circle me-1" aria-hidden="true"></i>Decision recorded</span>
+              {% else %}
+              <span class="badge text-bg-secondary">Scheduled</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              {% if hearing.status == 'open' %}
+                {% if not row.is_active %}
+                <form method="post" class="d-inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="activate_candidate">
+                  <input type="hidden" name="candidate_id" value="{{ row.candidate.pk }}">
+                  <button type="submit" class="btn btn-outline-primary btn-sm">
+                    <i class="bi bi-arrow-up-right-circle me-1" aria-hidden="true"></i>Activate to floor
+                  </button>
+                </form>
+                {% else %}
+                <a href="{% url 'panel_hearing_live' hearing_id=hearing.pk %}" class="btn btn-primary btn-sm">
+                  <i class="bi bi-broadcast me-1" aria-hidden="true"></i>View in chamber
+                </a>
+                {% endif %}
+              {% else %}
+                <a href="{% url 'panel_hearing_manage' hearing_id=hearing.pk %}?step=candidates&from=participants" class="btn btn-link btn-sm px-0">
+                  Edit in setup
+                </a>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="6" class="text-center py-4 text-muted">No candidates added yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Examiners Section -->
+  {% if requires_examiners %}
+  <section class="panel-card mb-4" aria-labelledby="examiners-heading">
+    <div class="panel-section-heading">
+      <div>
+        <h2 class="h4" id="examiners-heading">Examiners and invitations</h2>
+        <p>Panel members with access to assess candidates and submit scores.</p>
+      </div>
+      {% if hearing.status == 'draft' or hearing.status == 'open' %}
+      <button class="btn btn-outline-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#invite-examiner-collapse" aria-expanded="false" aria-controls="invite-examiner-collapse">
+        <i class="bi bi-person-plus me-1" aria-hidden="true"></i>Invite examiner
+      </button>
+      {% endif %}
+    </div>
+
+    {% if hearing.status == 'draft' or hearing.status == 'open' %}
+    <div class="collapse mb-3" id="invite-examiner-collapse">
+      <div class="card card-body bg-light border p-3">
+        <h3 class="h6 mb-2">Send an examiner invitation</h3>
+        <form method="post" class="row g-2 align-items-end">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="invite">
+          <div class="col-12 col-md-5">
+            <label class="form-label small fw-semibold" for="invitation_email">Examiner email</label>
+            <input type="email" name="email" id="invitation_email" class="form-control form-control-sm" required placeholder="examiner@example.org">
+          </div>
+          {% if hearing.panels.count > 1 %}
+          <div class="col-12 col-md-4">
+            <label class="form-label small fw-semibold" for="invitation_panel">Scoring panel</label>
+            <select name="panel" id="invitation_panel" class="form-select form-select-sm">
+              {% for p in hearing.panels.all %}
+              <option value="{{ p.pk }}">{{ p.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endif %}
+          <div class="col-12 col-md-auto">
+            <button type="submit" class="btn btn-primary btn-sm">Send invitation</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead>
+          <tr>
+            <th>Examiner</th>
+            <th>Scoring panel</th>
+            <th>Connection status</th>
+            <th>Evaluations recorded</th>
+            <th class="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in examiners %}
+          <tr>
+            <td>
+              <div class="fw-semibold">{{ row.invitation.email }}</div>
+              <div class="small text-muted">Invited {{ row.invitation.created_at|date:"j M Y, H:i" }}</div>
+            </td>
+            <td>
+              <span class="badge text-bg-light border">{{ row.panel_name }}</span>
+            </td>
+            <td>
+              {% if row.invitation.declined_at %}
+                <span class="badge text-bg-warning">Declined</span>
+              {% elif row.invitation.delivery_error %}
+                <span class="badge text-bg-danger">Delivery failed</span>
+              {% elif row.is_bound %}
+                <span class="badge text-bg-success"><i class="bi bi-phone me-1" aria-hidden="true"></i>Device connected</span>
+              {% else %}
+                <span class="badge text-bg-secondary">{{ row.invitation.get_delivery_status_display }}</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="fw-semibold">{{ row.total_evaluations }}</span> recorded
+              {% if row.is_conflicted %}
+              <span class="badge text-bg-warning ms-1">Conflicted for floor</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <div class="d-flex justify-content-end gap-2">
+                {% if row.invitation.can_resend %}
+                <form method="post" class="d-inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="resend">
+                  <input type="hidden" name="invitation_id" value="{{ row.invitation.pk }}">
+                  <button class="btn btn-outline-secondary btn-sm" type="submit">Resend</button>
+                </form>
+                {% endif %}
+                {% if not row.invitation.revoked_at and not row.invitation.declined_at %}
+                <form method="post" class="d-inline"
+                      data-confirm="Revoke invitation for {{ row.invitation.email }}? They will lose access immediately."
+                      data-confirm-title="Revoke examiner access"
+                      data-confirm-label="Revoke"
+                      data-confirm-tone="danger">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="revoke">
+                  <input type="hidden" name="invitation_id" value="{{ row.invitation.pk }}">
+                  <input type="hidden" name="reason" value="Organizer revoked from participant console">
+                  <button class="btn btn-outline-danger btn-sm" type="submit">Revoke</button>
+                </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="5" class="text-center py-4 text-muted">No examiners invited yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- Recusal / Conflict Declarations Section -->
+  {% if conflicts %}
+  <section class="panel-card mb-4" aria-labelledby="conflicts-heading">
+    <div class="panel-section-heading">
+      <div>
+        <h2 class="h4" id="conflicts-heading">Recusals &amp; Conflict declarations</h2>
+        <p>Examiners who declared conflicts of interest for specific candidates.</p>
+      </div>
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'panel_recusal_export' hearing_id=hearing.pk %}">
+        <i class="bi bi-download me-1" aria-hidden="true"></i>Download CSV report
+      </a>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead>
+          <tr>
+            <th>Examiner</th>
+            <th>Candidate</th>
+            <th>Reason given</th>
+            <th>Declared at</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for conf in conflicts %}
+          <tr>
+            <td class="fw-semibold">{{ conf.invitation.email }}</td>
+            <td>{{ conf.candidate.display_name }}</td>
+            <td class="text-muted">{{ conf.reason|default:'No reason stated' }}</td>
+            <td class="small text-muted">{{ conf.created_at|date:"j M Y, H:i" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}
+

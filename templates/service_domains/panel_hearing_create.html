@@ -1,0 +1,182 @@
+{% extends 'base.html' %}
+{% block title %}New assessment · Panel · LiveGrade{% endblock %}
+{% block page_title %}Panel assessment setup{% endblock %}
+
+{% block content %}
+{% include 'service_domains/_workspace_styles.html' %}
+{% include 'service_domains/_panel_ui_styles.html' %}
+{% include 'assessments/_partials/import_dropzone_styles.html' %}
+<div class="container-fluid py-4 service-workspace panel-page--wide panel-setup">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <a href="{% url 'panel_hearing_table' %}" class="btn btn-link px-0"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i>Panel assessments</a>
+  </div>
+
+  <header class="panel-hero mb-4">
+    <div class="panel-hero__copy">
+      <p class="panel-eyebrow">Panel assessment · New</p>
+      <h1 class="page-title">New assessment</h1>
+      <p class="page-subtitle mt-2 mb-0" data-hearing-workflow-subtitle>Independent rubric scoring</p>
+    </div>
+  </header>
+
+  {% if messages %}
+    <div aria-live="polite">
+      {% for message in messages %}
+        <div class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'warning' %}alert-warning{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %}" role="status">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <section class="panel-step-layout" aria-label="Hearing setup">
+    {% include 'partials/_stepper.html' with steps=stepper_steps %}
+
+    <section class="panel-step panel-step-card service-section" aria-labelledby="details-heading">
+      <div class="card-icon-head mb-3">
+        <div class="head-left">
+          <span class="icon-badge"><i class="bi bi-pencil-square" aria-hidden="true"></i></span>
+          <div>
+            <div class="title" id="details-heading">Name and schedule</div>
+            <div class="sub">Set the basic details and choose how the panel will reach its decision</div>
+          </div>
+        </div>
+      </div>
+
+      <form method="post" novalidate data-panel-form>{% csrf_token %}
+        {% for field in form %}
+          <div class="panel-field mb-3">
+            {% if field.name == 'workflow' %}
+              <div class="panel-field-label-row">
+                {{ field.label_tag }}
+                <button class="panel-inline-info" type="button" aria-expanded="false" aria-controls="workflow-info" aria-label="More about decision process">i</button>
+              </div>
+              <div id="workflow-info" class="panel-info-copy">Choose the closest process. Scoring uses criteria; written review collects reports; voting gathers private ballots. Some processes combine these with a chair’s decision.</div>
+            {% else %}
+              <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>
+            {% endif %}
+            {{ field }}
+            {% if field.help_text and field.name != 'workflow' %}
+              <div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>
+            {% endif %}
+            {% for error in field.errors %}
+              <div class="field-error" role="alert" id="{{ field.auto_id }}_inline_message" data-server-error>{{ error }}</div>
+            {% endfor %}
+          </div>
+        {% endfor %}
+        {% for error in form.non_field_errors %}
+          <div class="alert alert-danger">{{ error }}</div>
+        {% endfor %}
+
+        <div class="panel-step-actions d-flex flex-wrap justify-content-between align-items-center gap-2 mt-4">
+          <div class="d-flex align-items-center gap-2">
+            <button class="btn btn-outline-primary btn-sm" type="submit" name="advance" value="0"><i class="bi bi-check-circle me-1" aria-hidden="true"></i>Save details</button>
+            <a class="btn btn-link btn-sm text-secondary" href="{% url 'panel_hearing_table' %}">Cancel</a>
+          </div>
+          <button class="btn btn-primary btn-sm" type="submit" name="advance" value="1">Next: Candidates<i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button>
+        </div>
+      </form>
+    </section>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+(function(){
+  document.querySelectorAll('.panel-inline-info').forEach(function(b){
+    b.addEventListener('click', function(){
+      const targetId = b.getAttribute('aria-controls');
+      const copy = document.getElementById(targetId);
+      if (copy) {
+        const visible = copy.classList.toggle('is-visible');
+        b.setAttribute('aria-expanded', String(visible));
+      }
+    });
+  });
+
+  const workflowSelect = document.getElementById('hearing_workflow');
+  const subtitle = document.querySelector('[data-hearing-workflow-subtitle]');
+  if (workflowSelect && subtitle) {
+    const updateSubtitle = function() {
+      const opt = workflowSelect.options[workflowSelect.selectedIndex];
+      if (opt && opt.text) subtitle.textContent = opt.text;
+    };
+    workflowSelect.addEventListener('change', updateSubtitle);
+    updateSubtitle();
+  }
+
+  function inlineError(container, field, message) {
+    let error = container.querySelector('.field-error');
+    if (!error) {
+      error = document.createElement('div');
+      error.className = 'field-error';
+      error.setAttribute('role', 'alert');
+      error.setAttribute('aria-live', 'assertive');
+      container.appendChild(error);
+    }
+    error.textContent = message;
+    field.classList.add('is-invalid');
+    field.setAttribute('aria-invalid', 'true');
+    if (!error.id) error.id = (field.id || 'control') + '_inline_message';
+    field.setAttribute('aria-describedby', error.id);
+  }
+
+  function clearError(container, field) {
+    const error = container.querySelector('.field-error');
+    if (error && !error.dataset.serverError) {
+      error.remove();
+    }
+    field.classList.remove('is-invalid');
+    field.removeAttribute('aria-invalid');
+    const describedBy = (field.getAttribute('aria-describedby') || '').split(/\s+/).filter(function (id) {
+      return id && (!error || id !== error.id);
+    });
+    if (describedBy.length) field.setAttribute('aria-describedby', describedBy.join(' '));
+    else field.removeAttribute('aria-describedby');
+  }
+
+  document.querySelectorAll('form[data-panel-form]').forEach(function(form) {
+    form.addEventListener('submit', function(event) {
+      let hasError = false;
+      let firstInvalid = null;
+      const requiredControls = form.querySelectorAll('input[required], select[required], textarea[required]');
+      requiredControls.forEach(function(control) {
+        const val = control.value ? control.value.trim() : '';
+        const container = control.closest('.panel-field') || control.parentElement;
+        if (!val) {
+          hasError = true;
+          inlineError(container, control, 'This field is required.');
+          if (!firstInvalid) firstInvalid = control;
+        } else {
+          clearError(container, control);
+        }
+      });
+      if (hasError) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (firstInvalid) firstInvalid.focus();
+      }
+    });
+
+    form.addEventListener('input', function(event) {
+      const control = event.target;
+      if (control.matches('input, select, textarea')) {
+        const container = control.closest('.panel-field') || control.parentElement;
+        if (control.value && control.value.trim()) {
+          clearError(container, control);
+        }
+      }
+    });
+
+    form.addEventListener('change', function(event) {
+      const control = event.target;
+      if (control.matches('select, input[type="file"]')) {
+        const container = control.closest('.panel-field') || control.parentElement;
+        if (control.value && control.value.trim()) {
+          clearError(container, control);
+        }
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}

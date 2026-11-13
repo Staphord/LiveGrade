@@ -1,0 +1,43 @@
+<section class="card border-0 shadow-sm h-100" id="competition-live-audience">
+  <div class="card-header bg-transparent border-0 pt-3 pb-0 d-flex justify-content-between align-items-center">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-phone text-success" aria-hidden="true"></i>
+      <h3 class="h6 mb-0 fw-bold">Audience Voting Gate</h3>
+    </div>
+    <span class="badge {% if audience_voting_open %}text-bg-success{% else %}text-bg-warning{% endif %}">
+      {% if audience_voting_open %}Voting Open{% else %}Ballots Locked{% endif %}
+    </span>
+  </div>
+  <div class="card-body p-3 d-flex flex-column justify-content-between">
+    <div>
+      <div class="d-flex align-items-center justify-content-between p-3 rounded mb-3" style="background: var(--surface-sunken);">
+        <div>
+          <span class="small text-muted d-block">Public Join Code</span>
+          <span class="h4 mb-0 fw-mono fw-bold" style="letter-spacing: .08em;">
+            {{ join_code|default:"JOIN" }}
+          </span>
+        </div>
+        <div class="text-end">
+          <span class="small text-muted d-block">Ballots Cast</span>
+          <span class="h4 mb-0 fw-bold text-primary">{{ ballots_count }}</span>
+        </div>
+      </div>
+
+      <div class="progress mb-3" style="height: 6px;" role="progressbar" aria-valuenow="{{ ballots_count }}" aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-bar bg-success" style="width: {% if ballots_count > 100 %}100{% else %}{{ ballots_count }}{% endif %}%;"></div>
+      </div>
+    </div>
+
+    <div>
+      <button type="button"
+              class="btn w-100 {% if audience_voting_open %}btn-outline-warning{% else %}btn-success{% endif %}"
+              data-competition-action="toggle_audience_voting">
+        <i class="bi {% if audience_voting_open %}bi-lock-fill{% else %}bi-unlock-fill{% endif %} me-1" aria-hidden="true"></i>
+        {% if audience_voting_open %}Lock Audience Ballots{% else %}Open Audience Ballots{% endif %}
+      </button>
+      <p class="small text-muted text-center mt-2 mb-0" style="font-size: var(--fs-micro);">
+        Attendee voting updates immediately across mobile devices.
+      </p>
+    </div>
+  </div>
+</section>

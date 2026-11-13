@@ -1,0 +1,163 @@
+<div id="panel-results" aria-busy="false">
+  <section class="panel-table-card" aria-labelledby="combined-table-heading">
+    <div class="panel-table-head">
+      <div class="panel-table-heading-group">
+        <h2 id="combined-table-heading">Combined assessments</h2>
+        <span class="panel-table-count">{% if search_query or status_filter or policy_filter %}{{ filtered_count }} matching{% else %}{{ status_counts.total }} total{% endif %} combined assessment{{ filtered_count|pluralize }}</span>
+      </div>
+      <div class="panel-table-tools">
+        <form id="combined-bulk-delete" method="post" action="{% url 'combined_assessment_bulk_delete' %}" data-confirm="Delete the selected draft combined assessments? This will disconnect the linked Classroom sessions and Panel hearings. This cannot be undone." data-confirm-title="Delete selected combined assessments?" data-confirm-label="Delete selected" data-confirm-tone="danger">
+          {% csrf_token %}
+          <input type="hidden" name="q" value="{{ search_query }}">
+          <input type="hidden" name="status" value="{{ status_filter }}">
+          <input type="hidden" name="policy" value="{{ policy_filter }}">
+          <input type="hidden" name="per_page" value="{{ per_page }}">
+          <button type="submit" class="btn btn-outline-danger btn-sm" data-bulk-delete-button hidden><i class="bi bi-trash me-1" aria-hidden="true"></i>Delete selected (<span data-selected-count>0</span>)</button>
+        </form>
+        <div class="panel-page-size">
+          <label for="panel-page-size">Rows per page</label>
+          <select id="panel-page-size" class="form-select form-select-sm" name="per_page" data-panel-page-size>
+            {% for size in page_sizes %}
+            <option value="{{ size }}"{% if size == per_page %} selected{% endif %}>{{ size }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+    {% if page_obj.object_list %}
+    <div class="table-responsive">
+      <table class="table table-hover panel-table" data-panel-row-navigation>
+        <caption class="visually-hidden">Combined assessments linking Classroom peer sessions with Panel hearings, showing status, scoring policy, linked pairs, and creation date.</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="panel-select-column">
+              <input class="form-check-input" type="checkbox" data-panel-select-all aria-label="Select all combined assessments on this page">
+              <span class="visually-hidden">Select</span>
+            </th>
+            <th scope="col">Combined assessment</th>
+            <th scope="col">Status</th>
+            <th scope="col">Scoring policy</th>
+            <th scope="col">Linked pairs</th>
+            <th scope="col">Created</th>
+            <th scope="col" class="text-end"><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for assessment in page_obj %}
+          <tr class="panel-row-clickable" data-panel-row-href="{% url 'combined_assessment_detail' assessment.pk %}">
+            <td class="panel-select-column">
+              <input class="form-check-input" type="checkbox" name="assessment_ids" value="{{ assessment.pk }}" form="combined-bulk-delete" data-panel-select aria-label="Select {{ assessment.name }}" {% if assessment.status != 'draft' %}disabled title="Active and closed combined assessments cannot be deleted"{% endif %}>
+            </td>
+            <td>
+              <a class="panel-table-name" href="{% url 'combined_assessment_detail' assessment.pk %}">{{ assessment.name }}</a>
+              <span class="panel-table-secondary">
+                <i class="bi bi-mortarboard me-1" aria-hidden="true"></i>{{ assessment.classroom_session.name }}
+                <span class="mx-1 text-muted" aria-hidden="true">↔</span>
+                <i class="bi bi-people me-1" aria-hidden="true"></i>{{ assessment.panel_hearing.name }}
+              </span>
+            </td>
+            <td>
+              <span class="panel-stage"><span class="panel-stage-dot {{ assessment.status }}" aria-hidden="true"></span>{{ assessment.get_status_display }}</span>
+            </td>
+            <td>
+              {% if assessment.result_policy == 'weighted' %}
+                <span class="badge text-bg-light border">Weighted ({{ assessment.peer_weight|floatformat:0 }}% peer · {{ assessment.panel_weight|floatformat:0 }}% panel)</span>
+                {% if assessment.moderation_threshold %}
+                  <span class="panel-table-secondary">±{{ assessment.moderation_threshold|floatformat:0 }} pt review threshold</span>
+                {% endif %}
+              {% else %}
+                <span class="badge text-bg-light border">Separate reporting</span>
+                <span class="panel-table-secondary">Independent peer &amp; panel marks</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="fw-semibold">{{ assessment.mappings_count }}</span> <span class="text-muted small">pair{{ assessment.mappings_count|pluralize }}</span>
+            </td>
+            <td>{{ assessment.created_at|date:'d M Y' }}</td>
+            <td class="text-end">
+              <div class="dropdown panel-actions">
+                <button class="dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Actions for {{ assessment.name }}">
+                  <i class="bi bi-three-dots" aria-hidden="true"></i>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                  <li>
+                    <a class="dropdown-item" href="{% url 'combined_assessment_detail' assessment.pk %}">
+                      <i class="bi bi-arrow-right-circle me-2" aria-hidden="true"></i>Open combined assessment
+                    </a>
+                  </li>
+                  <li>
+                    <a class="dropdown-item" href="{% url 'assessment_session_detail' assessment.classroom_session_id %}">
+                      <i class="bi bi-mortarboard me-2" aria-hidden="true"></i>View Classroom session
+                    </a>
+                  </li>
+                  <li>
+                    <a class="dropdown-item" href="{% url 'panel_hearing_manage' assessment.panel_hearing_id %}">
+                      <i class="bi bi-people me-2" aria-hidden="true"></i>View Panel hearing
+                    </a>
+                  </li>
+                  {% if assessment.status == 'draft' %}
+                  <li><hr class="dropdown-divider"></li>
+                  <li>
+                    <form method="post" action="{% url 'combined_assessment_delete' assessment.pk %}" data-confirm="Delete combined assessment &quot;{{ assessment.name }}&quot;? This will disconnect the Classroom session and Panel hearing." data-confirm-title="Delete combined assessment?" data-confirm-label="Delete combined assessment" data-confirm-tone="danger">
+                      {% csrf_token %}
+                      <button class="dropdown-item text-danger" type="submit">
+                        <i class="bi bi-trash me-2" aria-hidden="true"></i>Delete combined assessment
+                      </button>
+                    </form>
+                  </li>
+                  {% endif %}
+                </ul>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if paginator.num_pages > 1 %}
+    <nav class="panel-pagination" aria-label="Combined assessment pages">
+      <span class="panel-pagination-label">Page {{ page_obj.number }} of {{ paginator.num_pages }} · {{ paginator.count }} combined assessments</span>
+      <div class="panel-pagination-links">
+        {% if page_obj.has_previous %}
+        <a class="btn btn-sm btn-outline-secondary" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page_obj.previous_page_number }}" data-panel-page>Previous</a>
+        {% endif %}
+        {% if page_obj.has_next %}
+        <a class="btn btn-sm btn-outline-secondary" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page_obj.next_page_number }}" data-panel-page>Next</a>
+        {% endif %}
+      </div>
+    </nav>
+    {% endif %}
+    {% elif search_query or status_filter or policy_filter %}
+    <div class="panel-empty">
+      <div class="panel-empty-icon" aria-hidden="true"><i class="bi bi-search"></i></div>
+      <h2>No matching combined assessments</h2>
+      <p>Try a different assessment name, status, or policy filter.</p>
+      <a href="{% url 'combined_assessment_list' %}" class="btn btn-outline-secondary" data-panel-clear-filters>Clear filters</a>
+    </div>
+    {% else %}
+    <div class="panel-empty">
+      <div class="panel-empty-icon" aria-hidden="true"><i class="bi bi-link-45deg"></i></div>
+      <h2>No combined assessments yet</h2>
+      <p>Connect a Classroom peer presentation session with a Panel examiner hearing to combine results for the same candidates.</p>
+      <div class="panel-empty-steps" aria-label="Combined assessment setup steps">
+        <div class="panel-empty-step">
+          <strong>1. Select Classroom session</strong>
+          <span>Choose a session where student groups deliver presentations.</span>
+        </div>
+        <div class="panel-empty-step">
+          <strong>2. Select Panel hearing</strong>
+          <span>Choose a panel assessment where examiners evaluate candidates.</span>
+        </div>
+        <div class="panel-empty-step">
+          <strong>3. Map candidate pairs</strong>
+          <span>Match student groups to panel candidates and choose weighted or separate scoring.</span>
+        </div>
+      </div>
+      <div class="d-flex flex-wrap justify-content-center gap-2">
+        <a href="{% url 'combined_assessment_create' %}" class="btn btn-primary"><i class="bi bi-link-45deg me-1" aria-hidden="true"></i>Link assessments</a>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+</div>
+

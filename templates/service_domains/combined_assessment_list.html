@@ -1,0 +1,271 @@
+{% extends 'base.html' %}
+{% block title %}Assessments - Combined · LiveGrade{% endblock %}
+{% block page_title %}Combined assessments{% endblock %}
+
+{% block extra_css %}
+{% include 'partials/_service_dashboard_styles.html' %}
+<style nonce="{{ csp_nonce }}">
+.panel-list-page{max-width:1400px;margin:0 auto;display:grid;gap:var(--sp-4);min-width:0}
+.panel-list-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--sp-3);flex-wrap:wrap}
+.panel-list-heading h1{margin:0;font-size:var(--fs-title);font-weight:800;letter-spacing:-.025em;color:var(--ink)}
+.panel-list-heading p{margin:0;color:var(--text-muted)}
+.panel-filters{display:grid;grid-template-columns:minmax(220px,1.5fr) minmax(160px,.8fr) minmax(160px,.8fr) auto;align-items:end;gap:var(--sp-3);padding:var(--sp-4);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.panel-filters label{display:block;margin-bottom:var(--sp-1);color:var(--text-soft);font-size:var(--fs-sm);font-weight:650}
+.panel-filter-clear{align-self:end}
+.panel-table-card{min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.panel-table-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);padding:var(--sp-4);border-bottom:1px solid var(--border)}
+.panel-table-heading-group{display:flex;align-items:baseline;gap:var(--sp-3);min-width:0}
+.panel-table-head h2{margin:0;font-size:var(--fs-heading);font-weight:750}
+.panel-table-count{color:var(--text-muted);font-size:var(--fs-sm)}
+.panel-table-tools{display:flex;align-items:flex-end;justify-content:flex-end;gap:var(--sp-3);flex-wrap:wrap}
+.panel-table-tools form{margin:0}
+.panel-table-tools [data-bulk-delete-button][hidden]{display:none}
+.panel-page-size{display:grid;gap:3px;min-width:9rem;color:var(--text-muted);font-size:var(--fs-micro);font-weight:650}
+.panel-page-size .custom-select-wrap{min-width:7rem}
+.panel-table{margin:0;vertical-align:middle}
+.panel-table th{padding:var(--sp-3) var(--sp-4);color:var(--text-muted);font-size:var(--fs-micro);font-weight:750;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+.panel-table td{padding:var(--sp-3) var(--sp-4);font-size:var(--fs-sm)}
+.panel-table .panel-select-column{width:3.25rem;padding-right:0;text-align:center}
+.panel-select-column .form-check-input{width:1em;height:1em;margin:0;vertical-align:middle;border:2px solid var(--text-muted);border-radius:var(--radius-xs);background-color:var(--surface);cursor:pointer}
+.panel-select-column .form-check-input:checked{border-color:var(--accent);background-color:var(--accent)}
+.panel-select-column .form-check-input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.panel-select-column .form-check-input:disabled{cursor:not-allowed}
+.panel-table-name{color:var(--ink);font-size:var(--fs-body);font-weight:750;text-decoration:none}
+.panel-table-name:hover{text-decoration:none}
+.panel-table-secondary{display:block;margin-top:3px;color:var(--text-muted);font-size:var(--fs-micro)}
+.panel-stage{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.panel-stage-dot{width:7px;height:7px;border-radius:50%;background:var(--text-subtle)}
+.panel-stage-dot.active{background:var(--success)}
+.panel-stage-dot.draft{background:#d28a08}
+.panel-empty{padding:var(--sp-6) var(--sp-4);text-align:center}
+.panel-empty-icon{display:grid;width:3rem;height:3rem;place-items:center;margin:0 auto var(--sp-3);border-radius:var(--radius-card);background:var(--accent-soft);color:var(--accent);font-size:1.4rem}
+.panel-empty h2{margin:0 0 var(--sp-2);font-size:var(--fs-title);font-weight:800;color:var(--ink)}
+.panel-empty p{max-width:38rem;margin:0 auto var(--sp-4);color:var(--text-muted);line-height:1.55}
+.panel-empty-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--sp-3);max-width:850px;margin:0 auto var(--sp-4);text-align:left}
+.panel-empty-step{padding:var(--sp-3);border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface-hover)}
+.panel-empty-step strong,.panel-empty-step span{display:block}
+.panel-empty-step strong{margin-bottom:var(--sp-1);font-size:var(--fs-sm)}
+.panel-empty-step span{color:var(--text-muted);font-size:var(--fs-micro);line-height:1.45}
+.panel-pagination{display:flex;align-items:center;justify-content:flex-end;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);border-top:1px solid var(--border)}
+.panel-pagination-label{color:var(--text-muted);font-size:var(--fs-sm)}
+.panel-pagination-links{display:flex;gap:var(--sp-2)}
+@media(max-width:991.98px){.panel-filters{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.panel-empty-steps{grid-template-columns:1fr}}
+@media(max-width:575.98px){.panel-filters{grid-template-columns:1fr}.panel-table-head{align-items:flex-start;flex-direction:column}.panel-table-heading-group{align-items:flex-start;flex-direction:column;gap:var(--sp-1)}.panel-table-tools{width:100%;justify-content:space-between}.panel-table{min-width:760px}.panel-pagination{align-items:flex-end;flex-direction:column}}
+</style>
+{% include 'service_domains/_panel_ui_styles.html' %}
+{% include 'service_domains/_partials/panel_row_actions_styles.html' %}
+{% endblock %}
+
+{% block topbar_actions %}
+{% if can_oversee_panel %}
+<a href="{% url 'panel_oversight_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-shield-check me-1" aria-hidden="true"></i>Oversight results</a>
+{% endif %}
+<a href="{% url 'combined_assessment_create' %}" class="btn btn-primary btn-sm"><i class="bi bi-link-45deg me-1" aria-hidden="true"></i>Link assessments</a>
+{% endblock %}
+
+{% block content %}
+<div class="panel-list-page stage-content">
+  <header class="panel-list-heading">
+    <div>
+      <h1 class="page-title mb-1">Assessments</h1>
+      <p class="text-muted mb-0">Search, filter, and manage Panel hearings and linked Combined assessments.</p>
+    </div>
+  </header>
+
+  <nav class="panel-view-tabs" aria-label="Assessment views">
+    <a href="{% url 'panel_hearing_table' %}" class="panel-view-tab {% if active_tab == 'hearings' %}active{% endif %}" {% if active_tab == 'hearings' %}aria-current="page"{% endif %}>
+      <i class="bi bi-list-ul" aria-hidden="true"></i>
+      <span>Panel assessments</span>
+      <span class="panel-view-tab__count">{{ hearing_count }}</span>
+    </a>
+    <a href="{% url 'combined_assessment_list' %}" class="panel-view-tab {% if active_tab == 'combined' %}active{% endif %}" {% if active_tab == 'combined' %}aria-current="page"{% endif %}>
+      <i class="bi bi-diagram-3" aria-hidden="true"></i>
+      <span>Combined assessments</span>
+      <span class="panel-view-tab__count">{{ combined_count }}</span>
+    </a>
+  </nav>
+
+  {% if messages %}
+    <div aria-live="polite">
+      {% for message in messages %}
+        <div class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'warning' %}alert-warning{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %}" role="status">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <form class="panel-filters" method="get" action="{% url 'combined_assessment_list' %}" data-panel-auto-filter>
+    <input type="hidden" name="per_page" value="{{ per_page }}" data-panel-filter-page-size>
+    <div>
+      <label for="combined-search">Search combined assessments</label>
+      <input id="combined-search" class="form-control" name="q" type="search" value="{{ search_query }}" placeholder="Assessment, session, or hearing name" autocomplete="off" aria-describedby="combined-search-help">
+      <span id="combined-search-help" class="visually-hidden">Results update after you stop typing. Press Enter to search immediately.</span>
+    </div>
+    <div>
+      <label for="combined-status">Status</label>
+      <select id="combined-status" class="form-select" name="status" aria-describedby="combined-filter-help">
+        <option value="">All statuses ({{ status_counts.total }})</option>
+        <option value="draft" {% if status_filter == 'draft' %}selected{% endif %}>In setup ({{ status_counts.draft }})</option>
+        <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active ({{ status_counts.active }})</option>
+        <option value="closed" {% if status_filter == 'closed' %}selected{% endif %}>Closed ({{ status_counts.closed }})</option>
+      </select>
+      <span id="combined-filter-help" class="visually-hidden">The list filters as soon as you choose a status.</span>
+    </div>
+    <div>
+      <label for="combined-policy">Scoring policy</label>
+      <select id="combined-policy" class="form-select" name="policy">
+        <option value="">All policies</option>
+        <option value="separate" {% if policy_filter == 'separate' %}selected{% endif %}>Separate reporting</option>
+        <option value="weighted" {% if policy_filter == 'weighted' %}selected{% endif %}>Weighted numeric mark</option>
+      </select>
+    </div>
+    <a class="btn btn-outline-secondary panel-filter-clear" href="{% url 'combined_assessment_list' %}" data-panel-clear-filters>Clear filters</a>
+  </form>
+
+  <p id="panel-filter-feedback" class="visually-hidden" role="status" aria-live="polite"></p>
+  {% include 'service_domains/_partials/combined_assessment_results.html' %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% include 'service_domains/_partials/panel_clickable_rows_script.html' %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  const form = document.querySelector('[data-panel-auto-filter]');
+  if (!form) return;
+  const search = form.querySelector('input[name="q"]');
+  const selects = form.querySelectorAll('select');
+  const feedback = document.getElementById('panel-filter-feedback');
+  let results = document.getElementById('panel-results');
+  let searchTimer;
+  let activeRequest;
+
+  function syncSelection() {
+    if (!results) return;
+    const selectable = Array.from(results.querySelectorAll('[data-panel-select]:not(:disabled)'));
+    const selected = selectable.filter(function (checkbox) { return checkbox.checked; });
+    const selectAll = results.querySelector('[data-panel-select-all]');
+    const deleteButton = results.querySelector('[data-bulk-delete-button]');
+    const count = results.querySelector('[data-selected-count]');
+    if (selectAll) {
+      selectAll.disabled = selectable.length === 0;
+      selectAll.checked = selectable.length > 0 && selected.length === selectable.length;
+      selectAll.indeterminate = selected.length > 0 && selected.length < selectable.length;
+    }
+    if (deleteButton) deleteButton.hidden = selected.length === 0;
+    if (count) count.textContent = String(selected.length);
+  }
+
+  function submitFilters(restorePageSizeFocus) {
+    window.clearTimeout(searchTimer);
+    const pageSize = results ? results.querySelector('[data-panel-page-size]') : null;
+    const pageSizeInput = form.querySelector('[data-panel-filter-page-size]');
+    if (pageSize && pageSizeInput) pageSizeInput.value = pageSize.value;
+    const url = new URL(form.action, window.location.href);
+    url.search = new URLSearchParams(new FormData(form)).toString();
+    updateResults(url, restorePageSizeFocus);
+  }
+
+  async function updateResults(url, restorePageSizeFocus) {
+    if (!results) return;
+    if (activeRequest) activeRequest.abort();
+    const controller = new AbortController();
+    activeRequest = controller;
+    results.setAttribute('aria-busy', 'true');
+    feedback.className = 'visually-hidden';
+    feedback.textContent = '';
+    try {
+      const response = await fetch(url.toString(), {
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+        credentials: 'same-origin',
+        signal: controller.signal
+      });
+      if (response.redirected) {
+        window.location.assign(response.url);
+        return;
+      }
+      if (!response.ok) throw new Error('Combined assessments could not be loaded');
+      const responsePage = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const nextResults = responsePage.getElementById('panel-results');
+      if (!nextResults) throw new Error('Results were missing from response');
+      if (controller.signal.aborted || activeRequest !== controller) return;
+
+      results.replaceWith(nextResults);
+      results = nextResults;
+      if (window.initCustomSelects) window.initCustomSelects(results);
+      syncSelection();
+      if (restorePageSizeFocus) {
+        const pageSizeTrigger = results.querySelector('.panel-page-size .custom-select-trigger');
+        if (pageSizeTrigger) pageSizeTrigger.focus({preventScroll: true});
+      }
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+      const count = results.querySelector('.panel-table-count');
+      feedback.textContent = count ? count.textContent.trim() : 'List updated.';
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      feedback.className = 'alert alert-danger';
+      feedback.textContent = 'Unable to update combined assessments right now. Please refresh the page.';
+    } finally {
+      if (activeRequest === controller) {
+        activeRequest = null;
+        results.removeAttribute('aria-busy');
+      }
+    }
+  }
+
+  syncSelection();
+
+  if (search) {
+    search.addEventListener('input', function () {
+      window.clearTimeout(searchTimer);
+      searchTimer = window.setTimeout(submitFilters, 250);
+    });
+    search.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        submitFilters();
+      }
+    });
+  }
+
+  selects.forEach(function (sel) {
+    sel.addEventListener('change', function () { submitFilters(); });
+  });
+
+  document.addEventListener('change', function (event) {
+    if (!results || !results.contains(event.target)) return;
+    if (event.target.matches('[data-panel-select-all]')) {
+      results.querySelectorAll('[data-panel-select]:not(:disabled)').forEach(function (checkbox) {
+        checkbox.checked = event.target.checked;
+      });
+      syncSelection();
+      return;
+    }
+    if (event.target.matches('[data-panel-select]')) {
+      syncSelection();
+      return;
+    }
+    if (event.target.matches('[data-panel-page-size]')) {
+      const pageSizeInput = form.querySelector('[data-panel-filter-page-size]');
+      if (pageSizeInput) pageSizeInput.value = event.target.value;
+      submitFilters(true);
+    }
+  });
+
+  document.addEventListener('click', function (event) {
+    const pageLink = event.target.closest('[data-panel-page]');
+    if (pageLink && results && results.contains(pageLink)) {
+      event.preventDefault();
+      updateResults(new URL(pageLink.href, window.location.href));
+      return;
+    }
+    const clearLink = event.target.closest('[data-panel-clear-filters]');
+    if (clearLink) {
+      event.preventDefault();
+      if (search) search.value = '';
+      selects.forEach(function (sel) { sel.value = ''; });
+      submitFilters();
+    }
+  });
+})();
+</script>
+{% endblock %}

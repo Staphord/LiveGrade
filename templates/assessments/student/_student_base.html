@@ -1,18 +1,17 @@
 {% load static %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-livegrade-participant>
 <head>
 <meta charset="UTF-8">
 <meta name="csrf-token" content="{{ csrf_token }}">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{% block title %}Peer Assessment{% endblock %}</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" integrity="sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM" crossorigin="anonymous" rel="stylesheet">
-<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" integrity="sha384-QuGBSgV5Im3DzL2z+8Ko9/hqNy/N0O7zwvXAtfd1MvPKWa/UbeLV65cfm4BV5Wgq" crossorigin="anonymous" rel="stylesheet">
+{% include 'partials/_vendor_styles.html' %}
 <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
 {% include 'partials/_design_system.html' %}
 <style nonce="{{ csp_nonce }}">
-/* This is a standalone, unauthenticated mobile surface — no sidebar/topbar
-   chrome — but it shares the same token palette as the rest of DevPerf
+/* This is a standalone, unauthenticated mobile surface - no sidebar/topbar
+   chrome - but it shares the same token palette as the rest of DevPerf
    (pulled in via _design_system.html above) so colours stay one system. */
 body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var(--ink);min-height:100vh;
      padding-bottom:2rem}
@@ -22,7 +21,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var
 .student-hero .sub{opacity:.92;font-size:var(--fs-sm);margin-top:3px;display:flex;align-items:center;gap:5px}
 .hero-extra{margin-top:.85rem}
 
-/* Top row of the hero — the session identity on the left, the live/checked-in
+/* Top row of the hero - the session identity on the left, the live/checked-in
    pills stacked on the right. Both sit inline inside the hero itself (not
    floating fixed over the page below it), so they scroll away with the hero
    instead of hovering as an overlay on top of the content underneath. */
@@ -37,7 +36,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var
    top of a mostly-empty page. */
 .s-center-viewport{min-height:65vh;display:flex;align-items:center}
 .s-center-viewport > *{width:100%}
-.student-shell{max-width:560px;margin:-1.75rem auto 0;padding:0 1rem}
+.student-shell{max-width:560px;margin:.75rem auto 0;padding:0 1rem}
 .s-card{background:var(--surface);border-radius:18px;box-shadow:var(--elev-3);
      padding:1.25rem;margin-bottom:1rem;border:1px solid var(--border)}
 .s-card + .s-card{margin-top:1rem}
@@ -57,14 +56,14 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var
 .status-live{background:var(--tone-success-bg);color:var(--tone-success-fg)}
 .status-wait{background:var(--tone-warn-bg);color:var(--tone-warn-fg)}
 .status-closed{background:var(--surface-sunken);color:var(--text-soft)}
-.status-badge.on-hero{background:rgba(255,255,255,.22);color:#fff;transition:background .2s ease,color .2s ease}
+.status-badge.on-hero{background:#1e293b;color:#fff;transition:background .2s ease,color .2s ease}
 .status-badge.on-hero.is-urgent{background:var(--tone-danger-bg);color:var(--tone-danger-fg)}
-.big-btn{border-radius:14px;font-weight:700;padding:.85rem;font-size:var(--fs-strong)}
+.big-btn{border-radius:14px;font-weight:700;padding:.85rem;font-size:var(--fs-strong);min-height:44px}
 .waiting-anim{width:64px;height:64px;border-radius:50%;border:4px solid var(--border);
      border-top-color:var(--accent);animation:spin 1s linear infinite;margin:0 auto}
 @keyframes spin{to{transform:rotate(360deg)}}
 
-/* Waiting-room illustration — replaces a plain loading spinner (which
+/* Waiting-room illustration - replaces a plain loading spinner (which
    wrongly implies something is actively loading, when really nothing is
    happening until the lecturer acts) with a calmer, more engaging "you're
    in the right place, hang tight" moment: a gently floating icon plus a
@@ -86,7 +85,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var
 @keyframes wait-bounce{0%,80%,100%{opacity:.35;transform:translateY(0)}40%{opacity:1;transform:translateY(-4px)}}
 .wait-tip{transition:opacity .3s ease;min-height:1.2em}
 .wait-tip.is-fading{opacity:0}
-/* Local type scale for sizes the shared t-* utilities don't cover exactly —
+/* Local type scale for sizes the shared t-* utilities don't cover exactly -
    avoids inline font-size on individual elements (see test_design_system). */
 .s-icon-xl{font-size:2.8rem}
 .s-icon-xxl{font-size:3rem}
@@ -98,7 +97,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var
 .s-text-sm{font-size:.78rem}
 .s-text-xs{font-size:var(--fs-micro)}
 
-/* Pill stack — the connection pill and, below it, who's checked in. Fixed
+/* Pill stack - the connection pill and, below it, who's checked in. Fixed
    to the viewport so it stays visible no matter how far the page is
    scrolled, not just while the hero is on screen. A flex column with its
    own gap, rather than each pill separately hand-positioned, so the two
@@ -108,7 +107,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var
 
 /* Both pills use a solid-enough dark tint (not a near-transparent white
    wash) so their white text stays readable regardless of what's behind
-   them — the hero's gradient, or plain white page background once the
+   them - the hero's gradient, or plain white page background once the
    hero has scrolled out of view. */
 .conn-pill{display:inline-flex;align-items:center;
      gap:5px;font-size:var(--fs-micro);font-weight:700;padding:.3rem .6rem;border-radius:999px;
@@ -119,7 +118,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var
 .conn-pill.is-offline .conn-dot{background:var(--warn);animation:pulse 1s ease-in-out infinite}
 .conn-pill.is-live .conn-dot{animation:pulse 1.6s ease-in-out infinite}
 
-/* Checked-in-as pill — quiet confirmation of who this device is acting as,
+/* Checked-in-as pill - quiet confirmation of who this device is acting as,
    right where a student would glance to check the connection is fine.
    Same visual language as .conn-pill rather than a new style, so the stack
    reads as one family of small badges. */
@@ -128,7 +127,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var
      backdrop-filter:blur(6px);box-shadow:var(--elev-2);max-width:min(46vw,220px)}
 .student-pill span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-/* Skeleton loading — shown while a page's real content is still being
+/* Skeleton loading - shown while a page's real content is still being
    determined (e.g. waiting-room state before the first render settles). */
 @keyframes skeleton-shine{0%{background-position:-120% 0}100%{background-position:120% 0}}
 .sk{background:linear-gradient(90deg,var(--surface-sunken) 25%,var(--surface-hover) 50%,var(--surface-sunken) 75%);
@@ -140,7 +139,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var
 .sk-row{display:flex;align-items:center;gap:.6rem;margin-bottom:.9rem}
 .sk-avatar{width:34px;height:34px;border-radius:50%;flex-shrink:0}
 
-/* Progress — how much of the current form is answered, matching this
+/* Progress - how much of the current form is answered, matching this
    codebase's .score-bar look-and-feel rather than inventing a new one.
    Styled as its own card (same radius/shadow/border as .s-card) rather than
    a bare full-bleed strip, so it floats up under the hero the same clean
@@ -158,14 +157,17 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var
 
 /* Paired numeric + slider score control */
 .score-input-row{display:flex;align-items:center;gap:.75rem}
-.score-input-row input[type=range]{width:100%;accent-color:var(--accent)}
-.score-num{width:3.6rem;flex-shrink:0;text-align:center;font-weight:800;font-size:var(--fs-strong);
-     border:1.5px solid var(--border);border-radius:10px;padding:.3rem;color:var(--accent)}
+.score-input-row input[type=range]{width:100%;min-height:44px;accent-color:var(--accent);scroll-margin-top:5rem}
+.score-level-guidance{list-style:none;margin:.4rem 0 .25rem;padding:0;border-left:2px solid var(--border);color:var(--text-muted);font-size:var(--fs-xs)}
+.score-level-guidance li{display:flex;gap:.5rem;padding:.12rem .5rem}
+.score-level-guidance strong{flex:0 0 5.5rem;color:var(--ink);font-weight:700}
+.score-num{width:3.6rem;min-width:44px;min-height:44px;flex-shrink:0;text-align:center;font-weight:800;font-size:var(--fs-strong);
+     background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:.3rem;color:var(--accent)}
 .score-num:focus{outline:none;border-color:var(--accent);box-shadow:var(--focus-ring)}
 .category-check{color:var(--success);opacity:0;transform:scale(.6);transition:all .2s var(--ease,ease)}
 .category-block.is-answered .category-check{opacity:1;transform:scale(1)}
 
-/* Success check — drawn, not a static glyph, for the submit confirmation */
+/* Success check - drawn, not a static glyph, for the submit confirmation */
 .success-check{width:76px;height:76px;margin:0 auto}
 .success-check circle{fill:none;stroke:var(--success);stroke-width:3;stroke-dasharray:170;
      stroke-dashoffset:170;animation:draw-circle .5s ease-out forwards}
@@ -175,7 +177,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var
 @keyframes draw-check{to{stroke-dashoffset:0}}
 
 /* Staggered entrance for cards that arrive as a group */
-.stagger-in{opacity:0;transform:translateY(10px);animation:fade-in .4s var(--ease,ease) forwards}
+.stagger-in{animation:fade-in .4s var(--ease,ease) both}
 .stagger-in:nth-child(1){animation-delay:.03s}
 .stagger-in:nth-child(2){animation-delay:.09s}
 .stagger-in:nth-child(3){animation-delay:.15s}
@@ -186,10 +188,16 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var
 .btn-loading::after{content:"";position:absolute;top:50%;left:50%;width:1.1rem;height:1.1rem;
      margin:-.55rem 0 0 -.55rem;border:2.5px solid rgba(255,255,255,.5);border-top-color:#fff;
      border-radius:50%;animation:spin .7s linear infinite}
+.student-shell :is(.btn,button,input.form-control,select.form-select){min-height:44px}
+.student-shell :focus{scroll-margin-top:5rem}
+.participant-skip-link{position:absolute;top:.5rem;left:.5rem;z-index:1000;padding:.65rem 1rem;
+     border-radius:.5rem;background:var(--surface);color:var(--ink);transform:translateY(-160%)}
+.participant-skip-link:focus{transform:translateY(0)}
 </style>
 {% block extra_css %}{% endblock %}
 </head>
 <body>
+<a class="participant-skip-link" href="#participant-main">Skip to main content</a>
 <div class="hero-pills" id="hero-pills">
   <span class="conn-pill" id="conn-pill" hidden><span class="conn-dot"></span><span id="conn-pill-text">Live</span></span>
   {% if student %}
@@ -204,7 +212,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var
       <div class="hero-title-group">
         <div class="hero-icon"><i class="bi bi-clipboard2-data-fill"></i></div>
         <div>
-          <h1>{{ session.name|default:"Peer Assessment" }}</h1>
+          <h1>{% block hero_title %}{% if session %}{{ session.name }}{% elif poll %}{% if poll.standalone %}Anonymous Poll{% else %}Classroom Poll{% endif %}{% else %}Peer Assessment{% endif %}{% endblock %}</h1>
           <div class="sub">
             {% block hero_sub %}<span class="pulse-dot"></span>Live presentation grading{% endblock %}
           </div>
@@ -214,12 +222,13 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--canvas);color:var
     {% block hero_extra %}{% endblock %}
   </div>
 </div>
-<div class="student-shell">
+<main class="student-shell{% block main_class %}{% endblock %}" id="participant-main" tabindex="-1">
   {% block content %}{% endblock %}
-</div>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz" crossorigin="anonymous"></script>
+</main>
+<div id="participant-live-status" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+{% include 'partials/_vendor_scripts.html' %}
 <script nonce="{{ csp_nonce }}">
-// Shared, reconnecting WebSocket helper with a visible liveness indicator —
+// Shared, reconnecting WebSocket helper with a visible liveness indicator -
 // used by any student page that wants to react to lecturer-driven events
 // instead of each page hand-rolling its own socket + reconnect loop.
 window.DevPerfAssessSocket = function (path, onMessage) {
@@ -240,7 +249,7 @@ window.DevPerfAssessSocket = function (path, onMessage) {
 
   function connect() {
     const socket = new WebSocket(url);
-    socket.onopen = function () { setStatus(true); };
+    socket.onopen = function () { setStatus(true); window.dispatchEvent(new Event('livegrade:reconnected')); };
     socket.onmessage = function (event) {
       let data;
       try { data = JSON.parse(event.data); } catch (e) { return; }
@@ -257,6 +266,7 @@ window.DevPerfAssessSocket = function (path, onMessage) {
   return connect();
 };
 </script>
+{% if student %}<script src="{% static 'js/assessment_submission.js' %}"></script>{% endif %}
 {% block scripts %}{% endblock %}
 </body>
 </html>

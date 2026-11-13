@@ -1,4 +1,4 @@
-Django>=5.2.17,<5.3
+Django>=5.2.19,<5.3
 mozilla-django-oidc>=4.0
 python-dotenv>=1.0
 psycopg2-binary>=2.9
@@ -8,8 +8,12 @@ daphne>=4.0
 celery>=5.3
 redis>=5.0
 qrcode>=8.0
-Pillow>=10.0
+Pillow>=13.0,<14
 openpyxl>=3.1
-# Required by autobahn (daphne). 5.9.0+ fixes PYSEC-2025-90, PYSEC-2025-238 and PYSEC-2026-2123.
-# Stay below 6: those releases ship no wheel for macOS Intel and need a Rust compiler to build.
-cbor2>=5.9.0,<6
+# Security floors for the HTTP/WebSocket stack. On macOS Intel, cbor2 6.x
+# builds from source and requires Rust; Linux releases should use binary wheels.
+autobahn>=26.10.1,<27
+Twisted>=26.10.0,<27
+certifi>=2026.10.23
+cbor2>=6.2.0.post2,<7
+whitenoise>=6.12,<7

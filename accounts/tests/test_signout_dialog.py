@@ -47,4 +47,4 @@ class SignOutDialogTests(TestCase):
         response = self.client.post(reverse('oidc_logout'))
         self.assertIn('post_logout_redirect_uri=http%3A%2F%2Flocalhost%3A8001%2F', response['Location'])
         landing = self.client.get('/')
-        self.assertContains(landing, 'Grade presentations')
+        self.assertContains(landing, 'Run live peer assessment for class presentations')

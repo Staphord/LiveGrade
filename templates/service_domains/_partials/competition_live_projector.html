@@ -1,0 +1,40 @@
+<section class="card border-0 shadow-sm" id="competition-live-projector">
+  <div class="card-header bg-transparent border-0 pt-3 pb-0 d-flex justify-content-between align-items-center">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-projector text-primary" aria-hidden="true"></i>
+      <h3 class="h6 mb-0 fw-bold">Public Projector Display Mode</h3>
+    </div>
+    <a href="{% url 'competition_projector' competition_id=competition.pk %}" target="_blank" rel="noopener" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i>Open Arena Screen
+    </a>
+  </div>
+  <div class="card-body p-3">
+    <p class="text-muted small mb-3">Select the active layout broadcast to the main venue projector screen.</p>
+    <div class="row g-2">
+      <div class="col-6 col-md-3">
+        <button type="button" class="btn w-100 py-2 {% if projector_mode == 'stage' %}btn-primary{% else %}btn-outline-secondary{% endif %}" data-competition-projector="stage">
+          <i class="bi bi-mic d-block fs-5 mb-1" aria-hidden="true"></i>
+          <span class="small fw-semibold">Stage Pitch</span>
+        </button>
+      </div>
+      <div class="col-6 col-md-3">
+        <button type="button" class="btn w-100 py-2 {% if projector_mode == 'voting' %}btn-primary{% else %}btn-outline-secondary{% endif %}" data-competition-projector="voting">
+          <i class="bi bi-qr-code-scan d-block fs-5 mb-1" aria-hidden="true"></i>
+          <span class="small fw-semibold">Voting QR</span>
+        </button>
+      </div>
+      <div class="col-6 col-md-3">
+        <button type="button" class="btn w-100 py-2 {% if projector_mode == 'standings' %}btn-primary{% else %}btn-outline-secondary{% endif %}" data-competition-projector="standings">
+          <i class="bi bi-bar-chart-steps d-block fs-5 mb-1" aria-hidden="true"></i>
+          <span class="small fw-semibold">Live Standings</span>
+        </button>
+      </div>
+      <div class="col-6 col-md-3">
+        <button type="button" class="btn w-100 py-2 {% if projector_mode == 'winner' %}btn-primary{% else %}btn-outline-secondary{% endif %}" data-competition-projector="winner">
+          <i class="bi bi-trophy d-block fs-5 mb-1" aria-hidden="true"></i>
+          <span class="small fw-semibold">Winner Reveal</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</section>

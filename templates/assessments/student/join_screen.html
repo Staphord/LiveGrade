@@ -1,13 +1,12 @@
 {% load static %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-livegrade-participant>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex, nofollow">
   <title>{{ session.name }} - Join &amp; grade live</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" integrity="sha384-4LISF5TTJX/fLmGSxO53rV4miRxdg84mZsxmO8Rx5jGtp/LbrixFETvWa5a6sESd" crossorigin="anonymous">
+{% include 'partials/_vendor_styles.html' %}
   <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
   {% include 'partials/_design_system.html' %}
   <style nonce="{{ csp_nonce }}">
@@ -23,7 +22,10 @@
                     linear-gradient(135deg,var(--brand-deep) 0%,var(--brand-bright) 100%);
          display:flex;align-items:center;justify-content:center;padding:2rem 1rem}
     .join-shell{width:100%;max-width:30rem}
-    .join-eyebrow{color:rgba(255,255,255,.85);font-size:.78rem;font-weight:700;letter-spacing:.08em;
+    .join-skip-link{position:absolute;top:.5rem;left:.5rem;z-index:1000;padding:.65rem 1rem;
+         border-radius:.5rem;background:var(--surface);color:var(--ink);transform:translateY(-160%)}
+    .join-skip-link:focus{transform:translateY(0)}
+    .join-eyebrow{color:#fff;font-size:.78rem;font-weight:700;letter-spacing:.08em;
          text-transform:uppercase;text-align:center;margin-bottom:.4rem;display:flex;align-items:center;
          justify-content:center;gap:.4rem}
     .join-eyebrow .pulse-dot{width:8px;height:8px;border-radius:50%;background:var(--success);display:inline-block;
@@ -46,7 +48,7 @@
     .join-step .step-icon{width:38px;height:38px;border-radius:50%;background:var(--accent-soft);
          color:var(--accent);display:flex;align-items:center;justify-content:center;margin:0 auto .5rem;font-size:1.05rem}
     .join-step .step-txt{font-size:.78rem;color:var(--text-muted);font-weight:600;line-height:1.3}
-    .join-footer{text-align:center;color:rgba(255,255,255,.75);font-size:.8rem;font-weight:600;margin-top:1.5rem}
+    .join-footer{text-align:center;color:#fff;font-size:.8rem;font-weight:600;margin-top:1.5rem}
 
     .status-pill{display:inline-flex;align-items:center;gap:.4rem;font-weight:700;font-size:.85rem;
          padding:.4rem .9rem;border-radius:999px;background:var(--accent-soft);color:var(--accent);margin-top:.5rem}
@@ -62,6 +64,11 @@
     .room-timer{font-variant-numeric:tabular-nums;color:var(--accent);font-weight:800}
     .room-progress.is-complete{background:linear-gradient(145deg,var(--surface),var(--accent-soft));border:1px solid color-mix(in srgb,var(--success) 28%,var(--border));border-radius:16px;padding:1.25rem}
     .room-progress.is-complete .room-stage{color:var(--tone-success-fg)}
+    .room-leaderboard{margin:1rem auto 0;padding:1.5rem;background:var(--surface);border-radius:1.25rem;
+         box-shadow:0 18px 48px rgba(15,23,42,.2);width:100%;max-width:76rem;color:var(--ink)}
+    .room-leaderboard h2{font-size:clamp(1.25rem,2.2vw,2rem);font-weight:800}
+    .room-leaderboard table{font-size:clamp(1rem,1.5vw,1.35rem);margin-bottom:0}
+    .room-leaderboard td,.room-leaderboard th{padding:.75rem}
     .join-card.is-complete .join-qr-frame{grid-row:auto!important;width:86px!important;height:86px!important;aspect-ratio:auto!important;padding:0;margin:1.25rem auto .4rem;border-radius:24px;background:var(--accent-soft)!important;border:0;color:var(--accent)!important}
     .join-card.is-complete .join-qr-frame i{font-size:2rem!important;color:var(--accent)!important}
     .join-card.is-complete .join-headline{margin:.7rem 0 .35rem;font-size:clamp(1.35rem,3vw,2rem)}
@@ -84,10 +91,31 @@
       .join-card:has(#room-progress) .room-progress{margin-top:.5rem;padding-top:1.5rem}
       .join-card:has(#room-progress) .room-group{font-size:1.6rem}
     }
+    /* Keep the standings beside the QR on a projector so they stay in view. */
+    @media (min-width:1100px){
+      body{padding:1.5rem 3vw;align-items:flex-start}
+      .join-shell:has(#public-leaderboard:not([hidden])){display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:.75rem 1.25rem;max-width:100rem}
+      .join-shell:has(#public-leaderboard:not([hidden]))>.join-eyebrow,
+      .join-shell:has(#public-leaderboard:not([hidden]))>.join-session-name,
+      .join-shell:has(#public-leaderboard:not([hidden]))>.join-footer{grid-column:1 / -1;margin-bottom:0}
+      .join-shell:has(#public-leaderboard:not([hidden]))>.join-session-name{font-size:2rem;margin-bottom:.5rem}
+      .join-shell:has(#public-leaderboard:not([hidden]))>.join-card{display:block;padding:1.5rem;text-align:center;align-self:start;min-width:0}
+      .join-shell:has(#public-leaderboard:not([hidden])) .join-qr-frame{width:min(100%,30vh);height:auto;aspect-ratio:1;margin:0 auto;padding:.7rem}
+      .join-shell:has(#public-leaderboard:not([hidden])) .join-headline{font-size:1.35rem;margin:.75rem 0 .35rem}
+      .join-shell:has(#public-leaderboard:not([hidden])) .join-sub{font-size:.85rem;margin:0 auto;max-width:30rem}
+      .join-shell:has(#public-leaderboard:not([hidden])) .join-steps{display:none}
+      .join-shell:has(#public-leaderboard:not([hidden])) .room-progress{text-align:left;margin-top:1rem;padding-top:1rem}
+      .room-leaderboard{margin:0;min-width:0;align-self:stretch}
+      .room-leaderboard h2{font-size:1.65rem}
+      .room-leaderboard .table-responsive{max-height:calc(100vh - 19rem);overflow-y:auto}
+      .room-leaderboard thead{position:sticky;top:0;background:var(--surface)}
+      .room-leaderboard th{overflow-wrap:anywhere}
+    }
   </style>
 </head>
 <body>
-  <div class="join-shell">
+  <a class="join-skip-link" href="#public-room-main">Skip to main content</a>
+  <main class="join-shell" id="public-room-main" tabindex="-1">
     <div class="join-eyebrow">
       {% if session.status == 'live' %}<span class="pulse-dot"></span>Grading is live right now{% else %}<i class="bi bi-clipboard2-data"></i>DevPerf LiveGrade{% endif %}
     </div>
@@ -146,24 +174,26 @@
       <div class="room-progress" id="room-progress"
            data-ends-at="{{ public_ends_at }}"
            data-started-at="{{ public_started_at }}"
+           data-all-groups-complete="{{ public_all_groups_complete|yesno:'true,false' }}"
            data-presentation-ends-at="{{ public_presentation_ends_at }}"
            data-transition-ends-at="{{ public_transition_ends_at }}">
         <div class="d-flex justify-content-between align-items-center mb-1">
-          <div class="room-stage"><span class="stage-dot"></span><span id="public-stage">{% if public_group_name %}{{ public_stage }}{% else %}Awaiting first presentation{% endif %}</span></div>
+          <div class="room-stage"><span class="stage-dot"></span><span id="public-stage">{% if public_all_groups_complete %}All presentations complete{% elif public_group_name %}{{ public_stage }}{% else %}Awaiting first presentation{% endif %}</span></div>
           <span class="badge bg-light text-dark fw-bold text-nowrap" id="public-groups-progress">{% if public_group_name %}Group {{ public_current_index }} of {{ public_total_groups }} · {{ public_completed_groups }} completed{% else %}0 of {{ public_total_groups }} completed{% endif %}</span>
         </div>
         <div class="text-muted small text-uppercase fw-bold mt-2" id="public-group-label">{% if public_group_name %}Now presenting{% else %}Session status{% endif %}</div>
-        <div class="room-group"><span id="public-group">{% if public_group_name %}{{ public_group_name }}{% else %}Ready to begin{% endif %}</span><span class="room-topic" id="public-group-topic">{% if public_group_name and public_group_topic %} - {{ public_group_topic }}{% endif %}</span></div>
+        <div class="room-group"><span id="public-group">{% if public_all_groups_complete %}All presentations are complete{% elif public_group_name %}{{ public_group_name }}{% else %}Ready to begin{% endif %}</span><span class="room-topic" id="public-group-topic">{% if public_group_name and public_group_topic %} - {{ public_group_topic }}{% endif %}</span></div>
         <div class="room-next-up mb-2 p-2 rounded" style="background:var(--surface-hover);font-size:0.9rem;border-left:3px solid var(--accent)">
           <div class="text-muted small text-uppercase fw-bold"><i class="bi bi-arrow-right-circle me-1"></i>Up Next</div>
-          <strong id="public-next-group">{% if public_next_group_name %}{{ public_next_group_name }}{% else %}To be determined{% endif %}</strong>
+          <strong id="public-next-group">{% if public_all_groups_complete %}No groups remaining{% elif public_next_group_name %}{{ public_next_group_name }}{% else %}To be determined{% endif %}</strong>
         </div>
         <div class="room-metrics">
           <div class="room-metric"><strong id="public-joined">{{ public_joined_count }}/{{ public_student_count }}</strong><span>students joined</span></div>
-          <div class="room-metric"><strong id="public-submitted">{{ public_submitted_count }}/{{ public_joined_count }}</strong><span>submitted this round</span></div>
+          <div class="room-metric"><strong id="public-submitted">{% if public_is_practice %}Practice{% elif public_all_groups_complete %}{{ public_submitted_count }}{% else %}{{ public_submitted_count }}/{{ public_joined_count }}{% endif %}</strong><span id="public-submitted-label">{% if public_all_groups_complete %}{% if public_submitted_count == 1 %}peer rating submitted{% else %}peer ratings submitted{% endif %}{% else %}submitted this round{% endif %}</span></div>
           <div class="room-metric room-metric-live"><strong id="public-grading-now">{{ public_grading_now_count }}</strong><span><i class="bi bi-broadcast-pin me-1"></i>grading now</span></div>
         </div>
-        <div class="text-muted t-sm mt-2"><i class="bi bi-hourglass-split me-1"></i><span id="public-countdown" class="room-timer">Waiting for timer</span></div>
+        <div class="text-muted t-sm mt-2"><i class="bi bi-hourglass-split me-1"></i><span id="public-countdown" class="room-timer" role="timer" aria-label="Class progress timer" aria-live="off">{% if public_all_groups_complete %}All presentations are complete{% else %}Waiting for timer{% endif %}</span></div>
+        <span id="room-timer-live-status" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></span>
       </div>
       {% elif session.status == 'closed' %}
       <div class="room-progress is-complete" id="room-progress">
@@ -174,13 +204,27 @@
       {% endif %}
     </div>
 
+    <section id="public-leaderboard" class="room-leaderboard" aria-labelledby="public-leaderboard-heading"
+             {% if not public_leaderboard_released %}hidden{% endif %}>
+      <h2 id="public-leaderboard-heading">Presentation group leaderboard</h2>
+      <p class="text-muted" id="public-leaderboard-description">{% if public_leaderboard_provisional %}Provisional rankings update after each group finishes voting.{% else %}Final group rankings.{% endif %} </p>
+      <p id="public-screen-connection" class="small text-muted" role="status">Updates automatically.</p>
+      <div class="table-responsive">
+        <table class="table table-lg">
+          <thead><tr><th scope="col">Rank</th><th scope="col">Presentation group</th><th scope="col" id="public-score-heading" {% if not public_show_scores %}hidden{% endif %}>Group points (out of {{ public_group_points_max }})</th></tr></thead>
+          <tbody id="public-leaderboard-rows">
+            {% for row in public_leaderboard %}
+            <tr><td>{{ row.rank|default_if_none:'-' }}</td><th scope="row">{{ row.group_name }}{% if row.rank is None %}<small class="d-block text-muted">Awaiting completed scoring</small>{% endif %}</th>{% if public_show_scores %}<td>{{ row.score|default_if_none:'-' }}</td>{% endif %}</tr>
+            {% empty %}<tr><td colspan="3">Rankings appear here as groups finish voting.</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
   <div class="join-footer">Powered by DevPerf LiveGrade</div>
-  </div>
+  </main>
   <script nonce="{{ csp_nonce }}">
   (function () {
-    if (!window.WebSocket) return;
-    const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-    const url = scheme + '://' + location.host + '/ws/assessments/{{ session.uuid }}/';
     const liveContent = document.getElementById('join-live-content');
     const lockedState = document.getElementById('join-locked-state');
     function applyLocked(locked) {
@@ -192,48 +236,118 @@
       lockedState.hidden = !locked;
     }
     function connect() {
+      if (!window.WebSocket) return;
+      const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+      const url = scheme + '://' + location.host + '/ws/assessments/{{ session.uuid }}/';
       const socket = new WebSocket(url);
       socket.onmessage = function (event) {
         try { const data = JSON.parse(event.data); if (data.type === 'joining.locked') applyLocked(!!data.data.locked); refreshState(); } catch (e) {}
       };
       socket.onclose = function () { setTimeout(connect, 3000); };
     }
+    function updateLeaderboard(state) {
+      const section = document.getElementById('public-leaderboard');
+      const rows = document.getElementById('public-leaderboard-rows');
+      if (!section || !rows) return;
+      section.hidden = !state.public_leaderboard_released;
+      if (!state.public_leaderboard_released) {
+        rows.replaceChildren();
+        return;
+      }
+      const fragment = document.createDocumentFragment();
+      const heading = document.getElementById('public-score-heading');
+      heading.hidden = !state.public_show_scores;
+      heading.textContent = 'Group points (out of ' + state.public_group_points_max + ')';
+      document.getElementById('public-leaderboard-description').textContent = (state.public_leaderboard_provisional ? 'Provisional rankings update after each group finishes voting.' : 'Final group rankings.') + ' ';
+      if (!state.public_leaderboard.length) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = state.public_show_scores ? 3 : 2;
+        cell.textContent = 'Rankings appear here as groups finish voting.';
+        row.appendChild(cell); fragment.appendChild(row);
+      }
+      state.public_leaderboard.forEach(function (item) {
+        const row = document.createElement('tr');
+        const rank = document.createElement('td');
+        rank.textContent = item.rank == null ? '-' : String(item.rank);
+        const group = document.createElement('th');
+        group.scope = 'row';
+        group.textContent = item.group_name;
+        if (item.rank == null) {
+          const pending = document.createElement('small');
+          pending.className = 'd-block text-muted';
+          pending.textContent = 'Awaiting completed scoring';
+          group.appendChild(pending);
+        }
+        row.append(rank, group);
+        if (state.public_show_scores) {
+          const score = document.createElement('td');
+          score.textContent = item.score == null ? '-' : item.score;
+          row.appendChild(score);
+        }
+        fragment.appendChild(row);
+      });
+      rows.replaceChildren(fragment);
+    }
+    let refreshing = false;
     function refreshState() {
+      if (refreshing) return;
+      refreshing = true;
       fetch('{% url "assessment_join_screen_state" session.uuid %}')
-        .then(function (response) { return response.json(); })
+        .then(function (response) { if (!response.ok) throw new Error('Refresh failed'); return response.json(); })
         .then(function (state) {
+          document.getElementById('public-screen-connection').textContent = 'Updates automatically.';
+          if (state.public_session_status !== '{{ session.status|escapejs }}') { location.reload(); return; }
+          updateLeaderboard(state);
           const stage = document.getElementById('public-stage');
           const group = document.getElementById('public-group');
           const nextGroup = document.getElementById('public-next-group');
           const groupsProgress = document.getElementById('public-groups-progress');
           const joined = document.getElementById('public-joined');
           const submitted = document.getElementById('public-submitted');
+          const submittedLabel = document.getElementById('public-submitted-label');
           const gradingNow = document.getElementById('public-grading-now');
-          if (stage) stage.textContent = state.public_group_name ? state.public_stage : 'Awaiting first presentation';
+          if (stage) stage.textContent = state.public_stage;
           const groupLabel = document.getElementById('public-group-label');
           if (groupLabel) groupLabel.textContent = state.public_group_name ? 'Now presenting' : 'Session status';
-          if (group) group.textContent = state.public_group_name || 'Ready to begin';
+          if (group) group.textContent = state.public_group_name || (state.public_all_groups_complete ? 'All presentations are complete' : 'Ready to begin');
           const groupTopic = document.getElementById('public-group-topic');
           if (groupTopic) groupTopic.textContent = state.public_group_name && state.public_group_topic ? ' - ' + state.public_group_topic : '';
-          if (nextGroup) nextGroup.textContent = state.public_next_group_name || 'To be determined';
+          if (nextGroup) nextGroup.textContent = state.public_all_groups_complete ? 'No groups remaining' : (state.public_next_group_name || 'To be determined');
           if (groupsProgress) groupsProgress.textContent = state.public_group_name
             ? 'Group ' + state.public_current_index + ' of ' + state.public_total_groups + ' · ' + state.public_completed_groups + ' completed'
             : state.public_completed_groups + ' of ' + state.public_total_groups + ' completed';
           if (joined) joined.textContent = state.public_joined_count + '/' + state.public_student_count;
-          if (submitted) submitted.textContent = state.public_submitted_count + '/' + state.public_joined_count;
+          if (submitted) submitted.textContent = state.public_is_practice ? 'Practice'
+            : state.public_all_groups_complete ? state.public_submitted_count
+            : state.public_submitted_count + '/' + state.public_joined_count;
+          if (submittedLabel) submittedLabel.textContent = state.public_all_groups_complete
+            ? (state.public_submitted_count === 1 ? 'peer rating submitted' : 'peer ratings submitted')
+            : 'submitted this round';
           if (gradingNow) gradingNow.textContent = state.public_grading_now_count;
           const progress = document.getElementById('room-progress');
           if (progress) {
             progress.dataset.endsAt = state.public_ends_at || '';
             progress.dataset.startedAt = state.public_started_at || '';
+            progress.dataset.allGroupsComplete = state.public_all_groups_complete ? 'true' : 'false';
             progress.dataset.presentationEndsAt = state.public_presentation_ends_at || '';
             progress.dataset.transitionEndsAt = state.public_transition_ends_at || '';
           }
           applyLocked(state.public_joining_locked);
-        }).catch(function () {});
+        }).catch(function () { document.getElementById('public-screen-connection').textContent = 'Connection interrupted. Display may be out of date; retrying…'; }).finally(function () { refreshing = false; });
     }
     refreshState();
     setInterval(refreshState, 5000);
+    function announceRoomTimer(label, remaining) {
+      if (![60, 30, 10, 0].includes(remaining)) return;
+      const status = document.getElementById('room-timer-live-status');
+      if (!status) return;
+      const message = remaining ? `${label} in ${remaining} seconds.` : `${label} now.`;
+      if (status.dataset.lastMessage !== message) {
+        status.dataset.lastMessage = message;
+        status.textContent = message;
+      }
+    }
     setInterval(function () {
       const progress = document.getElementById('room-progress');
       const timer = document.getElementById('public-countdown');
@@ -243,21 +357,29 @@
       const startedAt = progress.dataset.startedAt;
       const presentationEndsAt = progress.dataset.presentationEndsAt;
 
+      if (progress.dataset.allGroupsComplete === 'true') {
+        timer.textContent = 'All presentations are complete';
+        return;
+      }
+
       if (startedAt && presentationEndsAt && !endsAt) {
         const openAt = new Date(startedAt).getTime() + (new Date(presentationEndsAt).getTime() - new Date(startedAt).getTime()) * .4;
         const remaining = Math.max(0, Math.ceil((openAt - Date.now()) / 1000));
+        announceRoomTimer('Voting opens', remaining);
         timer.textContent = remaining ? 'Voting opens in ' + Math.floor(remaining / 60) + ':' + String(remaining % 60).padStart(2, '0') : 'Opening voting...';
         return;
       }
 
       if (transEnds) {
         const remaining = Math.max(0, Math.round((new Date(transEnds).getTime() - Date.now()) / 1000));
+        announceRoomTimer('The next group starts', remaining);
         timer.textContent = remaining ? 'Next group starts in ' + Math.floor(remaining / 60) + ':' + String(remaining % 60).padStart(2, '0') : 'Starting next presentation...';
         return;
       }
 
       if (endsAt) {
         const remaining = Math.max(0, Math.round((new Date(endsAt).getTime() - Date.now()) / 1000));
+        announceRoomTimer('Voting closes', remaining);
         timer.textContent = remaining ? 'Voting closes in ' + Math.floor(remaining / 60) + ':' + String(remaining % 60).padStart(2, '0') : 'Voting window closing...';
         return;
       }
@@ -270,7 +392,7 @@
 
       timer.textContent = 'Waiting for the session to start';
     }, 1000);
-    connect();
+    if (window.WebSocket) connect();
   })();
   </script>
 </body>

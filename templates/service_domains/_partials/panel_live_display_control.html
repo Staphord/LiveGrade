@@ -1,0 +1,73 @@
+<section id="panel-live-display-control" class="card shadow-sm mb-4" aria-labelledby="display-head">
+  <div class="card-header bg-surface d-flex justify-content-between align-items-center py-3">
+    <div class="d-flex align-items-center gap-2">
+      <div class="icon-badge bg-primary-subtle text-primary rounded-circle p-2 d-inline-flex">
+        <i class="bi bi-projector" aria-hidden="true"></i>
+      </div>
+      <h2 id="display-head" class="h6 mb-0 fw-bold">Waiting Room &amp; Public Screen</h2>
+    </div>
+    {% if display_link %}
+      <span class="badge bg-success-subtle text-success-emphasis">
+        <span class="pulse-dot bg-success d-inline-block rounded-circle me-1" style="width: 6px; height: 6px;"></span>Screen Active
+      </span>
+    {% else %}
+      <span class="badge bg-secondary-subtle text-secondary-emphasis">Screen Disabled</span>
+    {% endif %}
+  </div>
+
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+      <div>
+        <p class="small text-muted mb-0">
+          Control what is displayed on the chamber screen or waiting room projector.
+        </p>
+      </div>
+      <div class="d-flex gap-2">
+        {% if display_link %}
+          <a href="{% url 'panel_live_display' token=display_link.token_digest %}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i>Open Display
+          </a>
+        {% endif %}
+        <button type="button" class="btn btn-sm {% if display_link %}btn-outline-danger{% else %}btn-primary{% endif %}"
+                id="toggle-panel-display-link-btn"
+                data-display-toggle-url="{% url 'panel_hearing_live_display_toggle' hearing_id=hearing.pk %}">
+          {% if display_link %}
+            <i class="bi bi-stop-circle me-1" aria-hidden="true"></i>Revoke Display Link
+          {% else %}
+            <i class="bi bi-broadcast me-1" aria-hidden="true"></i>Issue Display Link
+          {% endif %}
+        </button>
+      </div>
+    </div>
+
+    <div class="bg-surface-sunken p-3 rounded-3">
+      <div class="small fw-bold text-uppercase text-muted mb-2" style="font-size: var(--fs-micro); letter-spacing: 0.05em;">Display Mode</div>
+      <div class="d-flex flex-wrap gap-3">
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="display_mode_choice" id="disp-mode-welcome" value="welcome"
+                 {% if display_mode == 'welcome' %}checked{% endif %} data-panel-live-action="set_display_mode" data-mode="welcome">
+          <label class="form-check-label small" for="disp-mode-welcome">
+            <strong>Welcome &amp; Next Up</strong>
+            <span class="d-block text-muted">Displays hearing banner and upcoming scheduled presenter.</span>
+          </label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="display_mode_choice" id="disp-mode-session" value="in_session"
+                 {% if display_mode == 'in_session' %}checked{% endif %} data-panel-live-action="set_display_mode" data-mode="in_session">
+          <label class="form-check-label small" for="disp-mode-session">
+            <strong>In Session</strong>
+            <span class="d-block text-muted">Displays active presenter and presentation countdown timer.</span>
+          </label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="display_mode_choice" id="disp-mode-deliberation" value="deliberation_private"
+                 {% if display_mode == 'deliberation_private' %}checked{% endif %} data-panel-live-action="set_display_mode" data-mode="deliberation_private">
+          <label class="form-check-label small" for="disp-mode-deliberation">
+            <strong>Private Deliberation</strong>
+            <span class="d-block text-muted">Blanks the screen with a confidential panel deliberation notice.</span>
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
