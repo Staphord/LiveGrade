@@ -33,38 +33,59 @@ class PanelCandidateForm(StyledFormMixin, forms.ModelForm):
 
     class Meta:
         model = PanelCandidate
-        fields = ('display_name', 'reference', 'order', 'scheduled_time')
+        fields = ('display_name', 'reference', 'scheduled_time')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['display_name'].label = 'Presenter, team, or entry name'
-        self.fields['reference'].label = 'Reference (optional)'
-        self.fields['order'].label = 'Presentation order'
+        self.fields['reference'].label = 'External reference (optional)'
         self.fields['scheduled_time'].label = 'Start time (optional)'
+
+
+PANEL_CRITERION_DESCRIPTION_WORD_LIMIT = 50
 
 
 class PanelCriterionForm(StyledFormMixin, forms.ModelForm):
     level_descriptors = forms.CharField(required=False, max_length=MAX_DESCRIPTOR_TEXT,
-        label='Score level guidance',
-        help_text='Optional. One continuous-score anchor per line: “point value | guidance”, from 0 to 100.',
-        widget=forms.Textarea(attrs={'rows': 4,
+        label='Score guidance',
+        help_text='Optional anchors for examiners.',
+        widget=forms.Textarea(attrs={'rows': 3,
             'placeholder': '0 | Not demonstrated\n50 | Partly demonstrated\n100 | Fully demonstrated'}))
     panels = forms.ModelMultipleChoiceField(queryset=PanelScoringPanel.objects.none(),
         required=False, widget=forms.CheckboxSelectMultiple,
-        help_text=('Leave all panels unchecked to assign this criterion to every panel. If only '
-            'some panels score it, their configured shares are normalized across those assigned panels.'))
+        label='Apply to panels',
+        help_text='Leave unchecked to apply this criterion to every panel.')
 
     class Meta:
         model = PanelCriterion
-        fields = ('name', 'description', 'weight', 'order')
+        fields = ('name', 'description', 'weight')
+        widgets = {'description': forms.Textarea(attrs={
+            'rows': 1,
+            'maxlength': '1000',
+            'data-panel-autogrow': 'true',
+            'data-word-limit': str(PANEL_CRITERION_DESCRIPTION_WORD_LIMIT),
+            'class': 'panel-autogrow-textarea',
+            'placeholder': 'What should examiners focus on?',
+        })}
 
     def __init__(self, *args, panels=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['panels'].queryset = panels if panels is not None else PanelScoringPanel.objects.none()
+        self.fields['description'].label = 'Description (optional)'
+        self.fields['description'].help_text = (
+            f'Up to {PANEL_CRITERION_DESCRIPTION_WORD_LIMIT} words. Shown to examiners under this criterion.')
+        self.fields['weight'].label = 'Relative weight (optional)'
         self.fields['weight'].required = False
-        self.fields['weight'].help_text = 'Relative importance: use 40, 35 and 25 for a 40/35/25 rubric. Equal weights count equally.'
+        self.fields['weight'].help_text = 'Leave at 1 for equal weighting. Larger values give this criterion more influence.'
         if self.instance.pk:
             self.initial['level_descriptors'] = format_descriptors(self.instance.levels.all())
+
+    def clean_description(self):
+        description = self.cleaned_data.get('description', '')
+        if len(description.split()) > PANEL_CRITERION_DESCRIPTION_WORD_LIMIT:
+            raise forms.ValidationError(
+                f'Keep the description to {PANEL_CRITERION_DESCRIPTION_WORD_LIMIT} words or fewer.')
+        return description
 
     def clean_weight(self):
         return self.cleaned_data.get('weight') or (self.instance.weight if self.instance.pk else Decimal('1'))
@@ -402,8 +423,8 @@ class ShowcaseJudgeCriterionForm(StyledFormMixin, forms.Form):
         label='Maximum points (points scale only)')
     checklist_items_text = forms.CharField(required=False, max_length=5000,
         widget=forms.Textarea(attrs={'rows': 3}),
-        label='Checklist items (one per line)')
-    DELETE = forms.BooleanField(required=False, label='Remove this criterion')
+        label='Checklist items',
+        help_text='Add up to 20 items for judges to tick. A new box appears as you fill the last one.')
 
     def clean_checklist_items_text(self):
         value = self.cleaned_data.get('checklist_items_text', '')
@@ -422,28 +443,6 @@ class ShowcaseJudgeCriterionForm(StyledFormMixin, forms.Form):
             'checklist_items': (self.cleaned_data['checklist_items_text']
                 if self.cleaned_data['scale'] == ShowcaseJudgeCriterion.Scale.CHECKLIST else []),
         }
-
-
-class BaseShowcaseJudgeCriterionFormSet(forms.BaseFormSet):
-    def clean(self):
-        super().clean()
-        if any(form.errors for form in self.forms):
-            return
-        active = [form for form in self.forms
-                  if form.cleaned_data and not form.cleaned_data.get('DELETE')]
-        if not active:
-            raise forms.ValidationError('Add at least one judge criterion.')
-        weights = [form.cleaned_data['weight'] for form in active]
-        if sum(weights) != 100:
-            raise forms.ValidationError('Judge criterion weights must total exactly 100%.')
-        names = [form.cleaned_data['name'].strip().casefold() for form in active]
-        if len(names) != len(set(names)):
-            raise forms.ValidationError('Judge criterion names must be unique.')
-
-
-ShowcaseJudgeCriterionFormSet = formset_factory(ShowcaseJudgeCriterionForm,
-    formset=BaseShowcaseJudgeCriterionFormSet, extra=1, can_delete=True, max_num=50,
-    validate_max=True)
 
 
 class ShowcaseJudgeScorecardForm(StyledFormMixin, forms.Form):
@@ -501,8 +500,19 @@ class ShowcaseImportForm(StyledFormMixin, forms.Form):
         return uploaded
 
 
+class ShowcaseRubricImportForm(ShowcaseImportForm):
+    file = forms.FileField(label='Rubric spreadsheet (.xlsx)')
+
+
 class ShowcaseImportApplyForm(StyledFormMixin, forms.Form):
     preview_token = forms.CharField(widget=forms.HiddenInput)
+
+
+ApplyPreviewForm = ShowcaseImportApplyForm
+
+
+class SpreadsheetImportForm(ShowcaseImportForm):
+    file = forms.FileField(label='Spreadsheet (.xlsx)')
 
 
 class CompetitionAudienceBallotForm(StyledFormMixin, forms.Form):

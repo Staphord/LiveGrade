@@ -33,7 +33,16 @@ class StyledFormMixin:
 
     def __getitem__(self, name):
         bound = super().__getitem__(name)
+        described_by = [identifier for identifier in
+            bound.field.widget.attrs.get('aria-describedby', '').split()
+            if identifier != f'id_{name}_helptext']
         if bound.help_text and bound.auto_id:
-            bound.field.widget.attrs['aria-describedby'] = f'{bound.auto_id}_helptext'
+            described_by.append(f'{bound.auto_id}_helptext')
+        field_name = self.add_prefix(name)
+        if (self._errors is not None and self._errors.get(field_name)
+                and bound.auto_id):
+            described_by.append(f'{bound.auto_id}_inline_message')
+        if described_by:
+            bound.field.widget.attrs['aria-describedby'] = ' '.join(dict.fromkeys(described_by))
         return bound
 

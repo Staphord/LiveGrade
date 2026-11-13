@@ -1,0 +1,176 @@
+{% comment %}
+Saves without a visible reload for a setup step that lives on its own page.
+Wrap the step body in an element with data-inline-region. Every POST form in
+it submits in the background; the response replaces the region and the
+stepper, and the flash messages show as toasts. Links marked
+data-inline-nav load the same way (edit and cancel). Open details keep their
+state when they have an id, unless marked data-server-open. Textareas marked
+data-autogrow start on one line, grow as the text grows and stop at
+data-word-limit words. Anything the script cannot handle falls back to a
+normal page load.
+{% endcomment %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  const regionOf = function (node) { return node.closest && node.closest('[data-inline-region]'); };
+  if (!document.querySelector('[data-inline-region]') || window.__inlineSaveReady) return;
+  window.__inlineSaveReady = true;
+
+  function toast(doc) {
+    const flash = doc.getElementById('flash-region');
+    if (!flash || typeof window.notify !== 'function') return;
+    flash.querySelectorAll(':scope > .alert').forEach(function (alert) {
+      const text = alert.textContent.trim();
+      if (!text) return;
+      const tone = alert.classList.contains('alert-danger') ? 'danger'
+        : alert.classList.contains('alert-warning') ? 'warn'
+        : alert.classList.contains('alert-success') ? 'success' : 'info';
+      window.notify(text, tone);
+    });
+  }
+
+  function words(text) {
+    return text.trim() ? text.trim().split(/\s+/u) : [];
+  }
+
+  function grow(field) {
+    const limit = Number(field.dataset.wordLimit) || 0;
+    if (limit) {
+      const list = words(field.value);
+      if (list.length > limit) field.value = list.slice(0, limit).join(' ');
+      const counter = field.parentElement.querySelector('[data-word-count]');
+      if (counter) counter.textContent = Math.min(list.length, limit) + ' of ' + limit + ' words';
+    }
+    field.style.height = 'auto';
+    field.style.height = field.scrollHeight + 'px';
+  }
+
+  function prepare(root) {
+    root.querySelectorAll('textarea[data-autogrow]').forEach(function (field) {
+      field.rows = 1;
+      grow(field);
+    });
+    root.querySelectorAll('[data-import-dropzone]').forEach(function (zone) {
+      if (zone.dataset.importDropzoneReady) return;
+      zone.dataset.importDropzoneReady = 'true';
+      const input = zone.querySelector('input[type="file"]');
+      const name = zone.querySelector('[data-import-filename]');
+      if (!input) return;
+      const show = function () { if (name) name.textContent = input.files && input.files.length ? input.files[0].name : ''; };
+      input.addEventListener('change', show);
+      ['dragenter', 'dragover'].forEach(function (type) { zone.addEventListener(type, function (e) { e.preventDefault(); zone.classList.add('is-dragover'); }); });
+      ['dragleave', 'drop'].forEach(function (type) { zone.addEventListener(type, function (e) { e.preventDefault(); zone.classList.remove('is-dragover'); }); });
+      zone.addEventListener('drop', function (e) { if (e.dataTransfer && e.dataTransfer.files.length) { input.files = e.dataTransfer.files; show(); } });
+    });
+  }
+
+  function openIds() {
+    return Array.from(document.querySelectorAll('[data-inline-region] details[id][open]:not([data-server-open])')).map(function (d) { return d.id; });
+  }
+
+  function swap(doc, url, push, background) {
+    const regions = Array.from(document.querySelectorAll('[data-inline-region]'));
+    const incoming = regions.map(function (current) {
+      return doc.querySelector('[data-inline-region="' + current.dataset.inlineRegion + '"]');
+    });
+    if (!incoming.some(Boolean)) return false;
+    const keep = openIds();
+    const scroll = window.scrollY;
+    regions.forEach(function (current, index) {
+      if (!incoming[index]) return;
+      // A background refresh never replaces a field somebody is typing in.
+      const typing = document.activeElement && current.contains(document.activeElement)
+        && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+      if (background && typing) return;
+      current.innerHTML = incoming[index].innerHTML;
+    });
+    keep.forEach(function (id) {
+      const d = document.getElementById(id);
+      if (d && !d.hasAttribute('data-server-open')) d.open = true;
+    });
+    const nav = document.querySelector('.stepper-nav');
+    const nextNav = doc.querySelector('.stepper-nav');
+    if (nav && nextNav) nav.innerHTML = nextNav.innerHTML;
+    if (doc.title) document.title = doc.title;
+    try {
+      const path = new URL(url, location.href);
+      history[push ? 'pushState' : 'replaceState']({}, '', path.pathname + path.search);
+    } catch (error) { /* keep the current address */ }
+    regions.forEach(prepare);
+    window.scrollTo(0, scroll);
+    document.dispatchEvent(new CustomEvent('inline-region-updated'));
+    return true;
+  }
+
+  async function load(url, options, push, background) {
+    const response = await fetch(url, Object.assign({
+      credentials: 'same-origin',
+      headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'text/html' },
+    }, options));
+    const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+    const final = new URL(response.url, location.href);
+    if (final.pathname !== location.pathname) {
+      window.location.assign(final.href);
+      return;
+    }
+    if (!background) toast(doc);
+    if (!swap(doc, final.href, push, background)) window.location.assign(final.href);
+  }
+
+  // Lets a live screen refetch its own regions when the server says something changed.
+  window.InlineRegions = {
+    refresh: function () {
+      return load(location.pathname + location.search, { method: 'GET' }, false, true).catch(function () {});
+    },
+  };
+
+  document.addEventListener('submit', async function (event) {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !regionOf(form) || form.method.toUpperCase() !== 'POST'
+        || form.hasAttribute('data-no-inline') || event.defaultPrevented) return;
+    const file = form.querySelector('input[type="file"]');
+    if (file && (!file.files || !file.files.length)) {
+      event.preventDefault();
+      const box = form.querySelector('[data-inline-message]');
+      const text = box && box.querySelector('[data-inline-message-text]');
+      if (box && text) { text.textContent = 'Choose a spreadsheet file (.xlsx) first.'; box.hidden = false; box.classList.remove('d-none'); }
+      else if (typeof window.notify === 'function') window.notify('Choose a spreadsheet file (.xlsx) first.', 'warn');
+      const zone = form.querySelector('[data-import-dropzone]');
+      if (zone) zone.focus();
+      return;
+    }
+    event.preventDefault();
+    if (form.dataset.submitting) return;
+    form.dataset.submitting = 'true';
+    const button = event.submitter || form.querySelector('button[type="submit"]');
+    if (button) { button.disabled = true; button.setAttribute('aria-busy', 'true'); }
+    try {
+      const body = new FormData(form);
+      if (event.submitter && event.submitter.name) body.append(event.submitter.name, event.submitter.value);
+      await load(form.getAttribute('action') || location.href, { method: 'POST', body: body }, false);
+    } catch (error) {
+      delete form.dataset.submitting;
+      if (button) { button.disabled = false; button.removeAttribute('aria-busy'); }
+      if (typeof window.notify === 'function') window.notify('That could not be saved. Check your connection and try again.', 'danger');
+    }
+  });
+
+  document.addEventListener('click', async function (event) {
+    const link = event.target.closest('a[data-inline-nav]');
+    if (!link || !regionOf(link) || event.metaKey || event.ctrlKey || event.shiftKey || event.button) return;
+    event.preventDefault();
+    try { await load(link.href, { method: 'GET' }, true); } catch (error) { window.location.assign(link.href); }
+  });
+
+  if (!document.querySelector('[data-panel-steps]')) window.addEventListener('popstate', function () { window.location.reload(); });
+
+  document.addEventListener('input', function (event) {
+    if (event.target.matches('textarea[data-autogrow]')) grow(event.target);
+  });
+  document.addEventListener('change', function (event) {
+    const box = event.target.closest('form') && event.target.closest('form').querySelector('[data-inline-message]');
+    if (box && event.target.type === 'file' && event.target.files.length) box.hidden = true;
+  });
+
+  document.querySelectorAll('[data-inline-region]').forEach(prepare);
+})();
+</script>

@@ -9,6 +9,7 @@
   <title>{% block title %}LiveGrade{% endblock %}</title>
   {% include 'partials/_vendor_styles.html' %}
   {% include 'partials/_design_system.html' %}
+  {% include 'partials/_design_kit.html' %}
   <style nonce="{{ csp_nonce }}">
     body{min-height:100vh;display:flex;flex-direction:column;background:var(--canvas);color:var(--text)}
     .public-skip-link{position:absolute;z-index:1000;top:.5rem;left:.5rem;padding:.65rem 1rem;border-radius:var(--radius-control);background:var(--surface);color:var(--ink);transform:translateY(-160%)}
@@ -41,6 +42,7 @@
   {% block content %}{% endblock %}
   <footer class="public-service-footer">LiveGrade</footer>
   {% include 'partials/_vendor_scripts.html' %}
+  <script src="{% static 'js/overlay.js' %}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -357,4 +357,32 @@ a.stat-link:hover{border-color:var(--accent);box-shadow:var(--elev-1);color:inhe
 .chart-tooltip .ct-row strong{margin-left:auto;padding-left:var(--sp-4);color:var(--ink);font-weight:700}
 .chart-tooltip .ct-key{display:inline-block;width:10px;height:2px;border-radius:1px;background:var(--swatch,var(--accent));flex-shrink:0}
 .chart-tooltip .ct-key-dashed{background:none;border-top:2px dashed var(--swatch,var(--text-subtle));height:0}
+
+/* Stepper - the one setup stepper used by every service's setup flow.
+   Markup: partials/_stepper.html. State classes: is-current, is-done,
+   is-locked, is-final; aria-current="step" marks the current step. */
+.stepper-nav{position:sticky;top:calc(var(--topbar-h) + var(--sp-3));align-self:start;min-width:0}
+.stepper-list{list-style:none;margin:0;padding:0}
+.stepper-list>li{position:relative;min-width:0}
+.stepper-item{position:relative;display:flex;align-items:flex-start;gap:.75rem;width:100%;padding:0 0 1.5rem 0;
+     border:0;background:transparent;font:inherit;text-align:left;text-decoration:none;color:inherit;cursor:pointer}
+.stepper-list>li:last-child .stepper-item{padding-bottom:0}
+.stepper-list>li:not(:last-child)::before{content:"";position:absolute;left:15px;top:32px;bottom:-.2rem;width:2px;background:var(--border)}
+.stepper-dot{width:32px;height:32px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+     background:var(--surface-hover);border:2px solid var(--border);color:var(--text-muted);font-weight:700;font-size:var(--fs-sm);
+     transition:background .15s ease,border-color .15s ease,color .15s ease}
+.stepper-label{padding-top:3px;min-width:0}
+.stepper-title{display:block;font-weight:700;font-size:var(--fs-body);color:var(--ink)}
+.stepper-optional{font-weight:500;font-size:var(--fs-micro);color:var(--text-muted)}
+.stepper-desc{display:block;font-size:var(--fs-micro);color:var(--text-muted)}
+.stepper-item.is-done .stepper-dot,.stepper-item.is-final .stepper-dot{background:var(--tone-success-bg);border-color:var(--success);color:var(--tone-success-fg)}
+.stepper-item.is-current .stepper-dot{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.stepper-item.is-current:not(.is-done):not(.is-final) .stepper-dot{background:var(--accent-soft);color:var(--accent)}
+.stepper-item.is-current .stepper-title{color:var(--accent)}
+.stepper-item.is-locked{opacity:.5}
+.stepper-item.is-locked .stepper-dot{background:var(--surface-hover);border-color:var(--border);color:var(--text-muted)}
+.stepper-item:disabled{cursor:not-allowed}
+.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
+.stepper-item:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:var(--radius-control)}
+@media(max-width:991.98px){.stepper-nav{position:static}}
 </style>

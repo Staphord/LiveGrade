@@ -1,0 +1,10 @@
+{% comment %}One step of the shared stepper; rendered by partials/_stepper.html.{% endcomment %}
+{% if step.href and not step.disabled %}<a href="{{ step.href }}"{% else %}<button type="button"{% if step.disabled %} disabled title="{{ step.hint }}"{% endif %}{% endif %}
+   class="stepper-item{% if step.done %} is-done{% endif %}{% if step.current %} is-current{% endif %}{% if step.locked %} is-locked{% endif %}{% if step.final %} is-final{% endif %}"
+   data-step="{{ step.key }}" data-panel-step="{{ step.key }}"{% if step.current %} aria-current="step"{% endif %}>
+  <span class="stepper-dot" aria-hidden="true">{% if step.done %}<i class="bi bi-check-lg"></i>{% elif step.icon %}<i class="bi {{ step.icon }}"></i>{% else %}{{ step.number }}{% endif %}</span>
+  <span class="stepper-label">
+    <span class="stepper-title">{% if step.done %}<span class="visually-hidden">Complete: </span>{% endif %}{{ step.label }}{% if step.optional %} <span class="stepper-optional">(optional)</span>{% endif %}</span>
+    {% if step.desc %}<span class="stepper-desc">{{ step.desc }}</span>{% endif %}
+  </span>
+{% if step.href and not step.disabled %}</a>{% else %}</button>{% endif %}

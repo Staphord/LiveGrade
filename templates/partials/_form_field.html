@@ -1,9 +1,23 @@
-{% if field.field.widget.input_type == 'checkbox' %}
+{% if field.field.widget.allow_multiple_selected or field.field.widget.input_type == 'radio' %}
+  <fieldset class="mb-3">
+    <legend class="form-label d-block fw-semibold mb-2" id="{{ field.auto_id }}_legend">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</legend>
+    <div class="d-flex flex-column gap-2 mb-2">
+      {% for choice in field %}
+        <div class="form-check">
+          {{ choice.tag }}
+          <label class="form-check-label" for="{{ choice.id_for_label }}">{{ choice.choice_label }}</label>
+        </div>
+      {% endfor %}
+    </div>
+    {% if field.help_text %}<div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}
+    {% include 'partials/_inline_message.html' with messages=field.errors tone='danger' message_id=field.auto_id|add:'_inline_message' plain=plain %}
+  </fieldset>
+{% elif field.field.widget.input_type == 'checkbox' %}
   <div class="form-check mb-3">
     {{ field }}
     <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>
     {% if field.help_text %}<div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}
-    {% include 'partials/_inline_message.html' with messages=field.errors tone='danger' message_id=field.auto_id|add:'_inline_message' %}
+    {% include 'partials/_inline_message.html' with messages=field.errors tone='danger' message_id=field.auto_id|add:'_inline_message' plain=plain %}
   </div>
 {% elif field.field.widget.attrs.type == 'date' or field.field.widget.attrs.type == 'time' or field.field.widget.attrs.type == 'datetime-local' or field.field.widget.input_type == 'date' or field.field.widget.input_type == 'time' or field.field.widget.input_type == 'datetime-local' %}
   <div class="mb-3">
@@ -31,14 +45,14 @@
       </div>
     {% endif %}
     {% if field.help_text %}<div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}
-    {% include 'partials/_inline_message.html' with messages=field.errors tone='danger' message_id=field.auto_id|add:'_inline_message' %}
+    {% include 'partials/_inline_message.html' with messages=field.errors tone='danger' message_id=field.auto_id|add:'_inline_message' plain=plain %}
   </div>
 {% else %}
   <div class="mb-3">
     <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</label>
     {{ field }}
+    {% if 'data-word-limit' in field.field.widget.attrs %}<div class="form-text text-end" data-word-count aria-live="polite"></div>{% endif %}
     {% if field.help_text %}<div class="form-text text-muted" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}
-    {% include 'partials/_inline_message.html' with messages=field.errors tone='danger' message_id=field.auto_id|add:'_inline_message' %}
+    {% include 'partials/_inline_message.html' with messages=field.errors tone='danger' message_id=field.auto_id|add:'_inline_message' plain=plain %}
   </div>
 {% endif %}
-

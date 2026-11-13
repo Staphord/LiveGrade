@@ -1,10 +1,10 @@
 <div{% if message_id %} id="{{ message_id }}"{% endif %}
-     class="alert alert-{% if tone %}{{ tone }}{% else %}info{% endif %} inline-message"
+     class="{% if plain %}inline-message inline-message--plain{% else %}alert alert-{% if tone %}{{ tone }}{% else %}info{% endif %} inline-message{% endif %}"
      data-inline-message
      role="{% if tone == 'danger' or tone == 'warning' %}alert{% else %}status{% endif %}"
      aria-live="{% if tone == 'danger' %}assertive{% else %}polite{% endif %}"
      {% if not message and not messages %}hidden{% endif %}>
-  <i class="inline-message-icon bi {% if tone == 'warning' %}bi-exclamation-triangle-fill{% elif tone == 'danger' %}bi-exclamation-circle-fill{% elif tone == 'success' %}bi-check-circle-fill{% else %}bi-info-circle-fill{% endif %}" aria-hidden="true"></i>
+  {% if not plain %}<i class="inline-message-icon bi {% if tone == 'warning' %}bi-exclamation-triangle-fill{% elif tone == 'danger' %}bi-exclamation-circle-fill{% elif tone == 'success' %}bi-check-circle-fill{% else %}bi-info-circle-fill{% endif %}" aria-hidden="true"></i>{% endif %}
   <div class="inline-message-content">
     {% if message %}<span data-inline-message-text>{{ message }}</span>{% endif %}
     {% if messages %}{% for item in messages %}{% if not item.tags %}<div data-inline-message-text>{{ item }}</div>{% endif %}{% endfor %}{% endif %}

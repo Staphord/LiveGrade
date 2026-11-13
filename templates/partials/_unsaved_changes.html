@@ -23,6 +23,7 @@
     {% if form_dirty_attr %}editor.dataset.{{ form_dirty_attr }} = String(dirty);{% endif %}
     let saving = false;
     let destination = '';
+    let guardedUrl = window.location.href;
     let pendingStep = '';
     let navigationKind = 'link';
     let historyGuardAdded = false;
@@ -35,6 +36,7 @@
       editor.dataset.formDirty = 'true';
       {% if form_dirty_attr %}editor.dataset.{{ form_dirty_attr }} = 'true';{% endif %}
       if (!historyGuardAdded) {
+        guardedUrl = window.location.href;
         history.pushState({...history.state, unsavedGuard: true}, '', window.location.href);
         historyGuardAdded = true;
       }
@@ -43,11 +45,14 @@
     if (dirty) markDirty();
     editor.addEventListener('input', markDirty);
     editor.addEventListener('change', markDirty);
-    editor.addEventListener('click', function (event) {
-      if (event.target.closest('button[type="button"]')) markDirty();
-    });
+    if (!editor.hasAttribute('data-unsaved-input-change-only')) {
+      editor.addEventListener('click', function (event) {
+        if (event.target.closest('button[type="button"]')) markDirty();
+      });
+    }
     editor.addEventListener('submit', function (event) {
       if (event.defaultPrevented) return;
+      if (editor.hasAttribute('data-unsaved-async-save')) return;
       saving = true;
       dirty = false;
       editor.dataset.formDirty = 'false';
@@ -62,13 +67,13 @@
 
     window.addEventListener('popstate', function () {
       if (!dirty) { historyGuardAdded = false; return; }
-      history.pushState({...history.state, unsavedGuard: true}, '', window.location.href);
+      const attemptedUrl = window.location.href;
+      history.pushState({...history.state, unsavedGuard: true}, '', guardedUrl);
       historyGuardAdded = true;
       navigationKind = 'back';
       pendingForm = null;
       pendingSubmitter = null;
-      const referrer = document.referrer && new URL(document.referrer, window.location.href);
-      destination = referrer && referrer.origin === window.location.origin ? referrer.href : '';
+      destination = attemptedUrl !== guardedUrl ? attemptedUrl : '';
       discardWhenClosed = false;
       modal.show();
     });
@@ -87,22 +92,21 @@
     });
 
     {% if step_selector %}
-    document.querySelectorAll('{{ step_selector }}').forEach(function (button) {
-      button.addEventListener('click', function (event) {
-        if (!dirty) return;
-        const targetStep = button.dataset.panelStep || button.dataset.step || '';
-        const currentActive = document.querySelector('[data-panel-step][aria-current="step"], [data-step].is-current');
-        const currentStep = currentActive ? (currentActive.dataset.panelStep || currentActive.dataset.step) : '';
-        if (targetStep === currentStep) return;
-        event.preventDefault();
-        event.stopPropagation();
-        navigationKind = 'step';
-        pendingStep = targetStep;
-        destination = '';
-        discardWhenClosed = false;
-        modal.show();
-      }, true);
-    });
+    document.addEventListener('click', function (event) {
+      const button = event.target.closest && event.target.closest('{{ step_selector }}');
+      if (!dirty || !button) return;
+      const targetStep = button.dataset.panelStep || button.dataset.panelNext || button.dataset.step || '';
+      const currentActive = document.querySelector('[data-panel-step][aria-current="step"], [data-step].is-current');
+      const currentStep = currentActive ? (currentActive.dataset.panelStep || currentActive.dataset.step) : '';
+      if (targetStep === currentStep) return;
+      event.preventDefault();
+      event.stopPropagation();
+      navigationKind = 'step';
+      pendingStep = targetStep;
+      destination = '';
+      discardWhenClosed = false;
+      modal.show();
+    }, true);
     {% endif %}
 
     document.addEventListener('click', function (event) {
@@ -206,6 +210,18 @@
         }
         {% endif %}
         if (leaveTo) leaveTo.value = destination;
+        {% if step_return_field %}
+        if (navigationKind === 'step' && pendingStep) {
+          let stepField = editor.querySelector('[name="{{ step_return_field }}"]');
+          if (!stepField) {
+            stepField = document.createElement('input');
+            stepField.type = 'hidden';
+            stepField.name = '{{ step_return_field }}';
+            editor.appendChild(stepField);
+          }
+          stepField.value = pendingStep;
+        }
+        {% endif %}
         pendingForm = null;
         pendingSubmitter = null;
         modal.hide();

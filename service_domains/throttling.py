@@ -34,6 +34,26 @@ def allow_panel_examiner_request(invitation):
         return None
 
 
+def allow_panel_examiner_state_request(invitation):
+    """Rate-limit lightweight state queries using a separate key to preserve submission quotas."""
+    digest = salted_hmac(
+        'livegrade-panel-examiner-state-throttle', invitation.token_digest).hexdigest()
+    key = f'panel-examiner-state:{digest}'
+    window = settings.PANEL_EXAMINER_RATE_WINDOW
+    limit = max(settings.PANEL_EXAMINER_RATE_LIMIT * 5, 300)
+    try:
+        if cache.add(key, 1, timeout=window):
+            return True
+        try:
+            count = cache.incr(key)
+        except ValueError:
+            return cache.add(key, 1, timeout=window)
+        return count <= limit
+    except Exception:
+        return None
+
+
+
 def allow_showcase_judge_request(invitation):
     """Rate-limit a resolved Showcase judge bearer without exposing its token."""
     digest = salted_hmac(
