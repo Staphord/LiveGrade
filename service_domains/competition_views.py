@@ -13,6 +13,7 @@ from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 from django.http import Http404, HttpResponse, JsonResponse, QueryDict
+from .safe_redirects import safe_redirect, user_message
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -600,7 +601,7 @@ def competition_manage(request, competition_id):
                     return_step = request.POST.get('return_step', '')
                     if return_step in COMPETITION_SETUP_STEPS:
                         messages.success(request, 'Competition details saved.')
-                        return redirect(f'{manage_url}?step={return_step}{from_query}')
+                        return safe_redirect(f'{manage_url}?step={return_step}{from_query}')
                     leave_to = request.POST.get('leave_to', '')
                     if leave_to and url_has_allowed_host_and_scheme(
                             leave_to, allowed_hosts={request.get_host()},
@@ -610,7 +611,7 @@ def competition_manage(request, competition_id):
                     current_step = request.POST.get('setup_step', 'details')
                     if current_step not in COMPETITION_SETUP_STEPS:
                         current_step = 'details'
-                    return redirect(f'{manage_url}?step={current_step}&saved=1{from_query}')
+                    return safe_redirect(f'{manage_url}?step={current_step}&saved=1{from_query}')
         elif action == 'criterion':
             criterion = CompetitionCriterion(organization_id=competition.organization_id,
                 created_by=request.user)
@@ -633,7 +634,7 @@ def competition_manage(request, competition_id):
                     else:
                         messages.success(request, 'Judging criterion added.')
                         if request.POST.get('setup_step'):
-                            return redirect(f"{manage_url}?step={request.POST['setup_step']}")
+                            return safe_redirect(f"{manage_url}?step={request.POST['setup_step']}")
                         return redirect('competition_manage', competition_id=competition.pk)
         elif action == 'delete_criterion':
             criterion = (CompetitionCriterion.objects.for_organization(request.organization)
@@ -644,7 +645,7 @@ def competition_manage(request, competition_id):
             criterion.delete()
             messages.success(request, 'Judging criterion removed.')
             if request.POST.get('setup_step'):
-                return redirect(f"{manage_url}?step={request.POST['setup_step']}")
+                return safe_redirect(f"{manage_url}?step={request.POST['setup_step']}")
             return redirect('competition_manage', competition_id=competition.pk)
         elif action == 'track':
             track_form = CompetitionTrackForm(request.POST, auto_id='track_%s')
@@ -666,7 +667,7 @@ def competition_manage(request, competition_id):
                     else:
                         messages.success(request, 'Track added.')
                         if request.POST.get('setup_step'):
-                            return redirect(f"{manage_url}?step={request.POST['setup_step']}")
+                            return safe_redirect(f"{manage_url}?step={request.POST['setup_step']}")
                         return redirect('competition_manage', competition_id=competition.pk)
         elif action == 'remove_track':
             track = get_object_or_404(
@@ -675,7 +676,7 @@ def competition_manage(request, competition_id):
             track.delete()
             messages.success(request, 'Track removed.')
             if request.POST.get('setup_step'):
-                return redirect(f"{manage_url}?step={request.POST['setup_step']}")
+                return safe_redirect(f"{manage_url}?step={request.POST['setup_step']}")
             return redirect('competition_manage', competition_id=competition.pk)
         elif action == 'entry':
             entry = CompetitionEntry(organization_id=competition.organization_id,
@@ -699,7 +700,7 @@ def competition_manage(request, competition_id):
                     else:
                         messages.success(request, 'Entry added.')
                         if request.POST.get('setup_step'):
-                            return redirect(f"{manage_url}?step={request.POST['setup_step']}")
+                            return safe_redirect(f"{manage_url}?step={request.POST['setup_step']}")
                         return redirect('competition_manage', competition_id=competition.pk)
         elif action == 'remove_entry':
             entry = get_object_or_404(
@@ -708,7 +709,7 @@ def competition_manage(request, competition_id):
             entry.delete()
             messages.success(request, 'Entry removed.')
             if request.POST.get('setup_step'):
-                return redirect(f"{manage_url}?step={request.POST['setup_step']}")
+                return safe_redirect(f"{manage_url}?step={request.POST['setup_step']}")
             return redirect('competition_manage', competition_id=competition.pk)
         elif action == 'first_round':
             first_round_form = CompetitionFirstRoundForm(request.POST, auto_id='first_round_%s')
@@ -721,7 +722,7 @@ def competition_manage(request, competition_id):
                 else:
                     messages.success(request, 'Initial round created.')
                     if request.POST.get('setup_step'):
-                        return redirect(f"{manage_url}?step={request.POST['setup_step']}")
+                        return safe_redirect(f"{manage_url}?step={request.POST['setup_step']}")
                     return redirect('competition_manage', competition_id=competition.pk)
         elif action == 'start':
             try:
@@ -1303,7 +1304,7 @@ def competition_live_action(request, competition_id):
                 return redirect('competition_live_control', competition_id=competition.pk)
             return JsonResponse({'error': f'Unknown action: {action}'}, status=400)
     except (ValidationError, PermissionDenied) as exc:
-        msg = '; '.join(getattr(exc, 'messages', [])) or str(exc)
+        msg = user_message(exc)
         if not is_ajax:
             messages.error(request, msg)
             return redirect('competition_live_control', competition_id=competition.pk)

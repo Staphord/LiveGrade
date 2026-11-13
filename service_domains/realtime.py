@@ -10,6 +10,11 @@ from django.db import transaction
 logger = logging.getLogger(__name__)
 
 
+def _loggable(value):
+    """A value that cannot start a new log line."""
+    return str(value).replace('\r', ' ').replace('\n', ' ')[:80]
+
+
 def broadcast_competition_leaderboard_state(public_id, available):
     """Send a minimal availability signal; clients fetch the public projection."""
     channel_layer = get_channel_layer()
@@ -53,7 +58,7 @@ def broadcast_panel_hearing_event(hearing, event_type, data=None):
             f'panel_hearing_display_{hearing_id}', payload
         )
     except Exception:
-        logger.warning('Panel hearing event could not be broadcast: %s', event_type)
+        logger.warning('Panel hearing event could not be broadcast: %s', _loggable(event_type))
 
 
 SHOWCASE_GROUPS = ('showcase_event_staff_{}', 'showcase_event_judges_{}', 'showcase_event_display_{}')
@@ -77,7 +82,7 @@ def broadcast_showcase_event(showcase_event, event_type, data=None):
         try:
             async_to_sync(channel_layer.group_send)(group.format(event_id), payload)
         except Exception:
-            logger.warning('Showcase event could not be broadcast: %s', event_type)
+            logger.warning('Showcase event could not be broadcast: %s', _loggable(event_type))
 
 
 
@@ -92,4 +97,4 @@ def broadcast_training_session_event(series_session_id, event_type):
             {'type': 'training_update', 'event_type': event_type},
         )
     except Exception:
-        logger.warning('Training session event could not be broadcast: %s', event_type)
+        logger.warning('Training session event could not be broadcast: %s', _loggable(event_type))
