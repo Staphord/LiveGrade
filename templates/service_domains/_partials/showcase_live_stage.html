@@ -13,7 +13,7 @@
 
   <div class="card-body">
     {% if not active_exhibit %}
-      <p class="text-muted text-center py-3 mb-0">No exhibit is presenting on stage. Choose an exhibit from the floor table below.</p>
+      <p class="text-muted text-center py-3 mb-0">Nobody is on stage. Choose Stage on an exhibit in the floor table below to start its pitch. Judges can score an exhibit only while it is on stage.</p>
     {% else %}
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
         <div>
@@ -27,16 +27,20 @@
 
         <div class="d-flex align-items-center gap-4">
           <div class="turn-ring-wrap" title="Stage pitch time remaining">
-            <div class="turn-ring {% if pitch_seconds_remaining < 30 and not timer_paused %}is-urgent{% endif %}"
+            <div class="turn-ring {% if pitch_state == 'running' and pitch_seconds_remaining < 30 %}is-urgent{% endif %}"
                  id="showcase-pitch-ring"
-                 style="--turn-pct:{% if pitch_seconds_remaining %}{% widthratio pitch_seconds_remaining 180 100 %}{% else %}0{% endif %};">
-              <span class="turn-ring-label font-monospace" id="showcase-pitch-timer-display" data-seconds="{{ pitch_seconds_remaining }}">
+                 style="--turn-pct:{% if pitch_seconds_remaining %}{% widthratio pitch_seconds_remaining pitch_duration 100 %}{% else %}0{% endif %};">
+              <span class="turn-ring-label font-monospace" id="showcase-pitch-timer-display"
+                    data-state="{{ pitch_state }}" data-seconds="{{ pitch_seconds_remaining }}"
+                    data-duration="{{ pitch_duration }}" data-ends-at="{{ pitch_ends_at|default_if_none:''|stringformat:'s' }}"
+                    data-server-now="{{ server_now|stringformat:'f' }}">
                 {{ pitch_seconds_remaining|default:0|stringformat:"d" }}s
               </span>
             </div>
           </div>
 
           <div class="d-flex flex-column gap-2">
+            <button type="button" class="btn btn-sm btn-outline-danger" data-showcase-live-action="stage_clear"><i class="bi bi-mic-mute me-1" aria-hidden="true"></i>End pitch</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" data-showcase-live-action="stage_toggle_pause">
               <i class="bi {% if timer_paused %}bi-play-fill{% else %}bi-pause-fill{% endif %} me-1" aria-hidden="true"></i>
               {% if timer_paused %}Resume{% else %}Pause{% endif %}

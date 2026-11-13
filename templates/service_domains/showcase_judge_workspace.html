@@ -20,16 +20,15 @@
     </header>
     {% if waiting_for_open %}<p class="alert alert-info judge-alert mt-3" role="status">Your assignment is ready. Scoring will be available when the organizer opens the event.</p>{% endif %}
     {% if not criteria %}<p class="alert alert-warning judge-alert mt-3" role="status">The organizer has not set up the judging criteria yet. This page will update when they are ready.</p>{% endif %}
-    {% if error %}<p class="alert alert-danger judge-alert mt-3" role="alert">{{ error }}</p>{% endif %}
-    <div id="judge-live-change" class="alert alert-info judge-alert mt-3" role="status" hidden>New event information is available. Your unsent scorecard is still on this page. Finish it or choose to discard your unsent changes and update.<button class="btn btn-sm btn-outline-primary d-block mt-2" id="judge-discard-and-update" type="button">Discard my unsent changes and update</button></div>
+    {% if error %}<div class="mt-3">{% include 'partials/_inline_message.html' with tone='danger' message=error %}</div>{% endif %}
     {% if cards %}<p class="judge-queue-help mb-1">Choose an exhibit to focus on one scorecard at a time. Any unsent changes will be confirmed before you leave that scorecard.</p><nav class="judge-nav" aria-label="Your assigned exhibits">{% for card in cards %}<a href="#judge-exhibit-{{ card.assignment.exhibit.public_id }}">{{ forloop.counter }}. {{ card.assignment.exhibit.name }}{% if card.evaluation %} · Submitted{% elif card.conflict %} · Conflict{% else %} · To review{% endif %}</a>{% endfor %}</nav>{% else %}<section class="judge-card" role="status"><h2>No exhibits assigned</h2><p class="mb-0">There are no active exhibits on this judge link. The page will check for assignment changes automatically.</p></section>{% endif %}
     <div id="judge-cards">
-      {% for card in cards %}<section class="judge-card" data-judge-card id="judge-exhibit-{{ card.assignment.exhibit.public_id }}" aria-labelledby="heading-{{ card.assignment.exhibit.public_id }}">
-        <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap"><div><p class="small text-uppercase text-muted fw-bold mb-1">Exhibit {{ forloop.counter }} of {{ cards|length }}{% if card.assignment.exhibit.category %} · {{ card.assignment.exhibit.category.name }}{% endif %}</p><h2 id="heading-{{ card.assignment.exhibit.public_id }}">{{ card.assignment.exhibit.name }}</h2></div>{% if card.evaluation %}<span class="badge text-bg-success">Submitted</span>{% elif card.conflict %}<span class="badge text-bg-warning">Conflict declared</span>{% else %}<span class="badge text-bg-light border">To review</span>{% endif %}</div>
+      {% for card in cards %}<section class="judge-card" data-judge-card data-exhibit-public-id="{{ card.assignment.exhibit.public_id }}" data-stage-gated="{% if invitation.event.status == 'open' %}true{% else %}false{% endif %}" data-on-stage="{{ card.on_stage|yesno:'true,false' }}" id="judge-exhibit-{{ card.assignment.exhibit.public_id }}" aria-labelledby="heading-{{ card.assignment.exhibit.public_id }}">
+        <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap"><div><p class="small text-uppercase text-muted fw-bold mb-1">Exhibit {{ forloop.counter }} of {{ cards|length }}{% if card.assignment.exhibit.category %} · {{ card.assignment.exhibit.category.name }}{% endif %}</p><h2 id="heading-{{ card.assignment.exhibit.public_id }}">{{ card.assignment.exhibit.name }}</h2><span class="badge text-bg-primary ms-2 align-middle" data-stage-badge {% if not card.on_stage %}hidden{% endif %}><i class="bi bi-mic-fill me-1" aria-hidden="true"></i>On stage now</span></div>{% if card.evaluation %}<span class="badge text-bg-success">Submitted</span>{% elif card.conflict %}<span class="badge text-bg-warning">Conflict declared</span>{% else %}<span class="badge text-bg-light border">To review</span>{% endif %}</div>
         {% if card.assignment.exhibit.description %}<p>{{ card.assignment.exhibit.description }}</p>{% endif %}
         {% if card.evaluation %}<div class="alert alert-success judge-alert" role="status"><strong>Scorecard submitted.</strong> Your score was {{ card.evaluation.score }} out of 100. It cannot be changed.</div>
         {% elif card.conflict %}<div class="alert alert-warning judge-alert" role="status"><strong>You declared a conflict for this exhibit.</strong> You cannot score it. The organizer was notified and needs to assign another judge.</div>
-        {% elif card.form %}<form method="post" class="judge-score-form" novalidate data-confirm="Submit this scorecard? You cannot change it after submission.">{% csrf_token %}<input type="hidden" name="exhibit_id" value="{{ card.assignment.exhibit.public_id }}">{% if card.form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ card.form.non_field_errors }}</div>{% endif %}<fieldset class="judge-scale" {% if waiting_for_open %}disabled{% endif %}><legend>Score this exhibit</legend><p class="text-muted">Choose one score for each judging criterion. Review your choices before submitting; a submitted scorecard cannot be changed.</p>{% include 'partials/_form_fields.html' with form=card.form %}<button class="btn btn-primary" type="submit">Submit this exhibit scorecard</button></fieldset></form>
+        {% elif card.form %}<form method="post" class="judge-score-form" novalidate data-confirm="Submit this scorecard? You cannot change it after submission." data-confirm-title="Submit scorecard?" data-confirm-label="Submit scorecard" data-confirm-tone="primary">{% csrf_token %}<input type="hidden" name="exhibit_id" value="{{ card.assignment.exhibit.public_id }}">{% if card.form.non_field_errors %}<div class="mb-3">{% include 'partials/_inline_message.html' with tone='danger' messages=card.form.non_field_errors %}</div>{% endif %}<p class="alert alert-info judge-alert" role="status" data-stage-note {% if not card.stage_locked %}hidden{% endif %}><i class="bi bi-hourglass-split me-1" aria-hidden="true"></i><strong>Waiting for the stage.</strong> You can score this exhibit as soon as the organizer puts it on stage. This page updates by itself.</p><fieldset class="judge-scale" data-score-fieldset {% if waiting_for_open or card.stage_locked %}disabled{% endif %}><legend>Score this exhibit</legend><p class="text-muted">Choose one score for each judging criterion. Review your choices before submitting; a submitted scorecard cannot be changed.</p>{% include 'partials/_form_fields.html' with form=card.form %}<button class="btn btn-primary" type="submit" data-stage-submit>Submit this exhibit scorecard</button></fieldset></form>
         {% else %}<p class="alert alert-secondary judge-alert">Scoring is unavailable because the event has not opened or its criteria are not ready.</p>{% endif %}
         {% if card.conflict_form %}<details class="mt-3"><summary class="fw-semibold">I need to declare a conflict</summary><p class="text-muted mt-2">If a personal, professional, or other relationship could affect your fairness, tell the organizer here before scoring this exhibit.</p><form method="post" novalidate>{% csrf_token %}<input type="hidden" name="action" value="declare_conflict"><input type="hidden" name="exhibit_id" value="{{ card.assignment.exhibit.public_id }}">{% include 'partials/_form_fields.html' with form=card.conflict_form %}<button class="btn btn-outline-secondary" type="submit">Declare conflict and skip</button></form></details>{% endif %}
       </section>{% endfor %}
@@ -47,7 +46,22 @@
     const cards=[...main.querySelectorAll('[data-judge-card]')],links=[...main.querySelectorAll('.judge-nav a')];
     const next=cards.find(card=>card.id===id);if(!next)return;
     const current=cards.find(card=>!card.hidden);
-    if(current&&current!==next&&current.querySelector('form[data-judge-edited="true"]')&&!window.confirm('Leave this scorecard? Your unsent answers will be lost.'))return false;
+    if(current&&current!==next&&current.querySelector('form[data-judge-edited="true"]')){
+      if (window.DevPerf && window.DevPerf.confirm) {
+        window.DevPerf.confirm({
+          title: 'Leave this scorecard?',
+          message: 'Your unsent answers will be lost. Do you want to proceed?',
+          confirmLabel: 'Discard and leave',
+          tone: 'danger'
+        }).then(ok => {
+          if (ok) {
+            current.querySelector('form[data-judge-edited="true"]')?.removeAttribute('data-judge-edited');
+            selectCard(id, scroll);
+          }
+        });
+        return false;
+      }
+    }
     selectedId=id;cards.forEach(card=>card.hidden=card!==next);links.forEach(link=>{if(link.hash==='#'+id)link.setAttribute('aria-current','location');else link.removeAttribute('aria-current')});
     if(scroll){next.scrollIntoView({block:'start',behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});const heading=next.querySelector('h2');if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true})}}
     return true;
@@ -65,11 +79,53 @@
       if(response.status===404){main.innerHTML='<div class="alert alert-warning" role="status">This private judge link is no longer available. Contact the event organizer if you need help.</div>';main.removeAttribute('data-judge-live-url');return}
       if(!response.ok)throw new Error('refresh failed');
       const html=await response.text();const freshDoc=new DOMParser().parseFromString(html,'text/html');const fresh=freshDoc.querySelector('[data-judge-live-content]');const current=main.querySelector('[data-judge-live-content]');if(!fresh||!current)return;
-      if(fresh.innerHTML!==current.innerHTML){const active=document.activeElement;const editing=isEdited(main)||(active&&current.contains(active)&&active.closest('form'));if(editing&&!force){const banner=document.getElementById('judge-live-change');if(banner)banner.hidden=false;return}current.replaceWith(document.importNode(fresh,true));selectCard(selectedId,false);}
+      if(fresh.innerHTML!==current.innerHTML){
+        const active=document.activeElement;
+        const editing=isEdited(main)||(active&&current.contains(active)&&active.closest('form'));
+        if(editing&&!force)return;
+        current.replaceWith(document.importNode(fresh,true));
+        selectCard(selectedId,false);
+      }
       const currentStatus=document.getElementById('judge-live-updated');if(currentStatus)currentStatus.textContent=`Updated ${new Date().toLocaleTimeString()}`;
     }catch(_){const currentStatus=document.getElementById('judge-live-updated');if(currentStatus)currentStatus.textContent='Connection interrupted. We’ll try again shortly.'}finally{refreshing=false}
   };
-  document.addEventListener('click',event=>{if(event.target.closest('#judge-discard-and-update')&&window.confirm('Discard the unsent scorecard changes on this page and load the latest event information?'))refresh(true)});
-  window.setInterval(refresh,20000);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refresh()});document.addEventListener('focusout',event=>{if(event.target.closest('form'))window.setTimeout(refresh,250)});
+  // Stage gate: only the exhibit on stage can be scored. The server enforces it;
+  // this keeps the page honest without touching anything a judge has typed.
+  const applyStage=state=>{
+    const onStage=new Set(state.on_stage||[]);
+    document.querySelectorAll('[data-judge-card]').forEach(card=>{
+      const gated=card.dataset.stageGated==='true'&&!state.closed;
+      const live=onStage.has(card.dataset.exhibitPublicId);
+      card.dataset.onStage=live?'true':'false';
+      const badge=card.querySelector('[data-stage-badge]');if(badge)badge.hidden=!live;
+      const note=card.querySelector('[data-stage-note]');if(note)note.hidden=!(gated&&!live);
+      const fieldset=card.querySelector('[data-score-fieldset]');if(fieldset)fieldset.disabled=(gated&&!live);
+    });
+  };
+  const stageUrl=`${location.pathname.replace(/\/$/,'')}/state/`;
+  const syncStage=async()=>{
+    try{
+      const response=await fetch(stageUrl,{credentials:'same-origin',headers:{'Accept':'application/json'},cache:'no-store'});
+      if(!response.ok)return;
+      const state=await response.json();
+      applyStage({on_stage:state.on_stage,closed:state.status!=='open'});
+    }catch(_){}
+  };
+  let socket=null,retries=0;
+  const connect=()=>{
+    if(!window.WebSocket)return;
+    const token=location.pathname.split('/').filter(Boolean).pop();
+    try{
+      socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws/showcase/judge/${token}/`);
+      socket.onopen=()=>{retries=0;syncStage();};
+      socket.onmessage=()=>{syncStage();refresh();};
+      socket.onclose=()=>{window.setTimeout(connect,Math.min(30000,2000*Math.pow(1.5,retries++)));};
+      socket.onerror=()=>socket.close();
+    }catch(_){}
+  };
+  connect();
+  // Safety net when the socket is down: poll, but never while it is healthy.
+  window.setInterval(()=>{if(!socket||socket.readyState!==WebSocket.OPEN){syncStage();refresh();}},20000);
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){syncStage();refresh();}});
 })();
-</script><script nonce="{{ csp_nonce }}">document.addEventListener('submit', function(event) {const message=event.target.dataset.confirm;if(message&&!window.confirm(message))event.preventDefault();});</script>{% endblock %}
+</script>{% endblock %}

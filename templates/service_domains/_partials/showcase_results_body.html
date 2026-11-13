@@ -1,0 +1,182 @@
+{% comment %}Live body of the results page; also served alone to the page's socket refresh.{% endcomment %}
+<header class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
+  <div>
+    <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+      <span class="badge {% if is_published %}text-bg-success{% elif event.status == 'open' %}text-bg-info{% else %}text-bg-warning{% endif %}">{{ event.get_status_display }}</span>
+      {% if not is_published %}<span class="badge text-bg-secondary">Private organizer review</span>{% endif %}
+      {% if event.status == 'open' %}<span class="results-live-badge" id="results-live-badge"><span class="dot"></span>Live</span>{% endif %}
+    </div>
+    <h2 class="h3 fw-bold mb-1">{{ event.name }}</h2>
+    <p class="text-muted mb-0">
+      {% if is_published %}The official results are published and visible to the public.{% elif event.status == 'open' %}Standings update as ratings and scorecards come in.{% else %}Review the standings and awards, then publish when you are ready.{% endif %}
+    </p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    {% if not is_published and event.status == 'closed' %}
+      <form method="post" action="{% url 'showcase_event_results' event_id=event.pk %}"
+            data-confirm="Publish official results now? This creates immutable award certificates and publishes the results page."
+            data-confirm-title="Publish showcase results?" data-confirm-label="Publish results" data-confirm-tone="primary">
+        {% csrf_token %}<input type="hidden" name="action" value="publish_results">
+        <button type="submit" class="btn btn-primary"><i class="bi bi-award me-1" aria-hidden="true"></i>Publish official results</button>
+      </form>
+    {% elif not is_published and event.status == 'open' %}
+      <a href="{% url 'showcase_live_control' event_id=event.pk %}" class="btn btn-outline-warning"><i class="bi bi-broadcast me-1" aria-hidden="true"></i>Event is live · Close ratings to publish</a>
+    {% endif %}
+    {% if is_published %}
+      <a href="{{ public_results_url }}" target="_blank" rel="noopener" class="btn btn-outline-success"><i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i>Public results page</a>
+      <form method="post" action="{% url 'showcase_event_results' event_id=event.pk %}"
+            data-confirm="Return the results to review? The public results page will be hidden until you publish again."
+            data-confirm-title="Return results to review?" data-confirm-label="Return to review" data-confirm-tone="primary">
+        {% csrf_token %}<input type="hidden" name="action" value="revoke_results">
+        <button type="submit" class="btn btn-outline-secondary"><i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i>Return results to review</button>
+      </form>
+    {% endif %}
+  </div>
+</header>
+
+<div class="results-kpi">
+  <div class="card"><div class="card-body"><div class="kpi-label">Exhibits</div><div class="kpi-value">{{ exhibit_count }}</div></div></div>
+  <div class="card"><div class="card-body"><div class="kpi-label">Visitor ratings</div><div class="kpi-value">{{ total_ratings }}</div><div class="kpi-label">{% if avg_stars_all %}Average {{ avg_stars_all }} of 5 stars{% else %}None yet{% endif %}</div></div></div>
+  <div class="card"><div class="card-body"><div class="kpi-label">Judge scorecards</div><div class="kpi-value">{{ submitted_scorecards }} <span class="kpi-label">of {{ assigned_scorecards }}</span></div><div class="results-bar mt-1" role="img" aria-label="{{ scorecard_percent }} percent of scorecards submitted"><span style="width:{{ scorecard_percent }}%"></span></div></div></div>
+  <div class="card"><div class="card-body"><div class="kpi-label">Awards decided</div><div class="kpi-value">{{ awards_decided }} <span class="kpi-label">of {{ awards_total }}</span></div></div></div>
+</div>
+
+<section class="card mb-4" aria-labelledby="standings-heading">
+  <div class="card-body p-0">
+    <div class="px-3 py-2 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <h2 class="h6 fw-bold mb-0" id="standings-heading">Standings</h2>
+      <span class="text-muted small">Ranked by judge score, then visitor rating</span>
+    </div>
+    {% if standings %}
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <caption class="visually-hidden">Exhibit standings</caption>
+        <thead class="table-light"><tr><th scope="col" class="ps-3">#</th><th scope="col">Exhibit</th><th scope="col">Visitor rating</th><th scope="col">Judge score</th><th scope="col" class="pe-3">Scorecards</th></tr></thead>
+        <tbody>
+          {% for item in standings %}
+          <tr>
+            <th scope="row" class="ps-3">{{ item.rank }}</th>
+            <td><span class="fw-semibold">{{ item.row.exhibit.name }}</span>{% if item.is_winner %} <span class="badge text-bg-warning"><i class="bi bi-trophy-fill me-1" aria-hidden="true"></i>Winner</span>{% endif %}{% if item.row.exhibit.category %}<div class="small text-muted">{{ item.row.exhibit.category.name }}</div>{% endif %}</td>
+            <td>{% if item.row.audience_mean is not None %}<strong>{{ item.row.audience_mean }}</strong> <span class="small text-muted">of 5 · {{ item.row.audience_count }} rating{{ item.row.audience_count|pluralize }}</span>{% else %}<span class="text-muted">No ratings</span>{% endif %}</td>
+            <td>{% if item.row.judge_mean is not None %}<strong>{{ item.row.judge_mean }}</strong> <span class="small text-muted">of 100</span>{% else %}<span class="text-muted">Not scored</span>{% endif %}</td>
+            <td class="pe-3">{{ item.row.judge_submitted_count }} / {{ item.row.judge_assigned_count }}{% if item.row.pending_scores and item.row.judge_assigned_count %} <span class="badge text-bg-light border">Pending</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<p class="text-muted p-3 mb-0">No exhibits have been added yet.</p>{% endif %}
+  </div>
+</section>
+
+
+  <section class="card shadow-sm mb-4" aria-labelledby="audience-favorite-heading">
+    <div class="card-header bg-surface d-flex justify-content-between align-items-center py-3">
+      <div class="d-flex align-items-center gap-2">
+        <div class="icon-badge bg-primary-subtle text-primary rounded-circle p-2 d-inline-flex">
+          <i class="bi bi-people" aria-hidden="true"></i>
+        </div>
+        <div>
+          <span class="text-uppercase small fw-bold text-primary d-block">Visitor award</span>
+          <h2 id="audience-favorite-heading" class="h6 mb-0 fw-bold">Audience Favorite</h2>
+        </div>
+      </div>
+      <span class="badge text-bg-light border">Public 5-star ratings</span>
+    </div>
+    <div class="card-body p-4">
+      {% if results.audience_favorite %}
+        <div class="p-3 border rounded-3 bg-accent-soft d-flex align-items-center gap-3">
+          <div class="bg-surface rounded-circle p-3 d-flex align-items-center justify-content-center text-primary fs-3" style="width: 3.5rem; height: 3.5rem;">
+            ★
+          </div>
+          <div>
+            <span class="text-muted small text-uppercase fw-bold">Audience Favorite Winner</span>
+            <h3 class="h4 fw-bold text-dark mb-1">{{ results.audience_favorite }}</h3>
+            <p class="mb-0 text-muted small">
+              Average rating: <strong>{{ results.audience_favorite_mean }} / 5 stars</strong> across <strong>{{ results.audience_favorite_rating_count }} visitor rating{{ results.audience_favorite_rating_count|pluralize }}</strong>.
+            </p>
+          </div>
+        </div>
+        {% if results.audience_favorite_certificate_url %}
+          <p class="mt-3 mb-0">
+            <a href="{{ results.audience_favorite_certificate_url }}" class="btn btn-outline-secondary btn-sm" target="_blank">
+              <i class="bi bi-patch-check me-1" aria-hidden="true"></i>View Audience Favorite Certificate
+            </a>
+          </p>
+        {% endif %}
+      {% elif results.audience_favorite_tied %}
+        <div class="alert alert-warning mb-0">
+          <h3 class="h6 fw-bold mb-2">Audience Favorite is currently tied</h3>
+          <ul class="mb-0 ps-3">
+            {% for item in results.audience_favorite_tied_details %}
+              <li><strong>{{ item.exhibit }}</strong>: Average {{ item.mean }} / 5 stars from {{ item.rating_count }} visitor ratings</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% else %}
+        <p class="text-muted mb-0">No visitor ratings have been recorded yet.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <!-- Judge Category Awards Grid -->
+  <section aria-labelledby="category-awards-heading">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div>
+        <span class="text-uppercase small fw-bold text-primary d-block">Official rubric</span>
+        <h2 id="category-awards-heading" class="h4 mb-0 fw-bold">Awards by Category</h2>
+      </div>
+      <span class="text-muted small">Based on submitted judge scorecards</span>
+    </div>
+
+    <div class="row g-3">
+      {% for award in results.categories %}
+        <div class="col-12 col-md-6">
+          <div class="card h-100 shadow-sm">
+            <div class="card-header bg-surface py-3">
+              <h3 class="h6 mb-0 fw-bold">{{ award.category }}</h3>
+            </div>
+            <div class="card-body">
+              {% if award.winner %}
+                <div class="p-3 border rounded-3 bg-accent-soft d-flex align-items-center gap-3">
+                  <div class="bg-surface rounded-circle p-2 d-flex align-items-center justify-content-center text-primary fs-4" style="width: 3rem; height: 3rem;">
+                    ★
+                  </div>
+                  <div>
+                    <span class="text-muted small text-uppercase fw-bold">Category Winner</span>
+                    <h4 class="h5 fw-bold text-dark mb-1">{{ award.winner }}</h4>
+                    <p class="mb-0 text-muted small">
+                      Average judge score: <strong>{{ award.mean }} / 100</strong> from <strong>{{ award.judge_count }} scorecard{{ award.judge_count|pluralize }}</strong>.
+                    </p>
+                  </div>
+                </div>
+                {% if award.certificate_url %}
+                  <p class="mt-3 mb-0">
+                    <a href="{{ award.certificate_url }}" class="btn btn-outline-secondary btn-sm" target="_blank">
+                      <i class="bi bi-patch-check me-1" aria-hidden="true"></i>View Category Certificate
+                    </a>
+                  </p>
+                {% endif %}
+              {% elif award.tied %}
+                <div class="alert alert-warning mb-0">
+                  <h4 class="h6 fw-bold mb-2">Category award is currently tied</h4>
+                  <ul class="mb-0 ps-3">
+                    {% for item in award.tied_details %}
+                      <li><strong>{{ item.exhibit }}</strong>: Average {{ item.mean }} / 100 from {{ item.judge_count }} scorecard{{ item.judge_count|pluralize }}</li>
+                    {% endfor %}
+                  </ul>
+                </div>
+              {% else %}
+                <p class="text-muted mb-0">No judge scorecards submitted for this category.</p>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      {% empty %}
+        <div class="col-12">
+          <div class="alert alert-light border">No categories have been configured for this event.</div>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+

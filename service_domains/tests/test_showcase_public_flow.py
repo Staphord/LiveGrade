@@ -19,6 +19,7 @@ from service_domains.operations import (transition_showcase_event,
     replace_showcase_judge_criteria, submit_showcase_judge_evaluation)
 from service_domains.operations import showcase_awards
 
+from service_domains.tests.stage_helpers import put_on_stage
 
 class ShowcasePublicRatingFlowTests(TestCase):
     def setUp(self):
@@ -38,6 +39,7 @@ class ShowcasePublicRatingFlowTests(TestCase):
         self.other_url = reverse('showcase_rate_exhibit', args=(self.other_exhibit.public_id,))
         self.label_url = reverse('showcase_exhibit_label', args=(self.exhibit.public_id,))
         self.qr_url = reverse('showcase_exhibit_qr', args=(self.exhibit.public_id,))
+        put_on_stage(self.event, self.exhibit)
 
     @property
     def device_cookie_name(self):
@@ -131,6 +133,7 @@ class ShowcasePublicRatingFlowTests(TestCase):
         self.assertContains(duplicate, 'already rated this exhibit', status_code=400)
         self.assertEqual(ShowcaseRating.objects.count(), 1)
 
+        put_on_stage(self.event, self.other_exhibit)
         other_exhibit_rating = self.client.post(self.other_url, {'stars': '4', 'comment': ''})
         self.assertContains(other_exhibit_rating, 'Your rating has been recorded.')
         self.assertEqual(ShowcaseRating.objects.count(), 2)
@@ -146,29 +149,61 @@ class ShowcasePublicRatingFlowTests(TestCase):
         self.assertNotEqual(fresh_token, old_token)
         self.assertEqual(ShowcaseRating.objects.count(), 0)
 
-    def test_minor_consent_and_event_window_are_checked_on_every_request(self):
+    def test_minor_consent_and_the_stage_are_checked_on_every_request(self):
         self.event.includes_minors = True
         self.event.consent_confirmed_at = None
         self.event.save(update_fields=('includes_minors', 'consent_confirmed_at'))
-        self.assertEqual(self.client.get(self.url).status_code, 404)
+        consent = self.client.get(self.url)
+        self.assertContains(consent, 'finishing setup')
+        self.assertNotContains(consent, 'class="showcase-stars"')
 
         self.event.consent_confirmed_at = timezone.now()
-        self.event.starts_at = timezone.now() + timedelta(minutes=1)
-        self.event.save(update_fields=('consent_confirmed_at', 'starts_at'))
-        self.assertEqual(self.client.get(self.url).status_code, 404)
+        self.event.save(update_fields=('consent_confirmed_at',))
+        self.assertContains(self.client.get(self.url), 'class="showcase-stars"')
 
-        self.event.starts_at = None
-        self.event.ends_at = timezone.now() - timedelta(seconds=1)
+        off_stage = self.client.get(self.other_url)
+        self.assertContains(off_stage, 'Solar oven is not on stage right now')
+        self.assertContains(off_stage, 'Now on stage: <strong>Water filter</strong>')
+        self.assertContains(off_stage, f'href="{self.url}"')
+        self.assertNotContains(off_stage, 'class="showcase-stars"')
+        self.assertEqual(self.client.post(self.other_url, {'stars': '5'}).status_code, 403)
+        self.assertEqual(ShowcaseRating.objects.count(), 0)
+
+    def test_the_planned_dates_play_no_part_in_whether_ratings_are_open(self):
+        self.event.starts_at = timezone.now() + timedelta(days=2)
+        self.event.ends_at = timezone.now() + timedelta(days=3)
         self.event.save(update_fields=('starts_at', 'ends_at'))
-        self.assertEqual(self.client.get(self.url).status_code, 404)
-        self.assertEqual(self.client.post(self.url, {'stars': '5'}).status_code, 404)
+        self.assertContains(self.client.get(self.url), 'class="showcase-stars"')
+        self.assertContains(self.client.post(self.url, {'stars': '4'}), 'Your rating has been recorded.')
+
+        self.event.starts_at = timezone.now() - timedelta(days=3)
+        self.event.ends_at = timezone.now() - timedelta(days=2)
+        self.event.save(update_fields=('starts_at', 'ends_at'))
+        self.assertContains(self.client.get(self.url), 'You have already rated this exhibit')
+
+    def test_moving_the_stage_moves_where_ratings_are_accepted(self):
+        self.client.get(self.url)
+        put_on_stage(self.event, self.other_exhibit)
+        refused = self.client.post(self.url, {'stars': '5'})
+        self.assertEqual(refused.status_code, 403)
+        self.assertContains(refused, 'Water filter is not on stage right now', status_code=403)
+        accepted = self.client.post(self.other_url, {'stars': '5'})
+        self.assertContains(accepted, 'Your rating has been recorded.')
+        self.assertEqual(ShowcaseRating.objects.get().exhibit, self.other_exhibit)
+
+    def test_operation_refuses_an_exhibit_that_is_not_on_stage(self):
+        from service_domains.operations import SHOWCASE_RATING_NOT_ON_STAGE, submit_showcase_rating
+        token = ShowcaseRating.issue_device_token(self.event)
+        with self.assertRaisesMessage(ValidationError, SHOWCASE_RATING_NOT_ON_STAGE):
+            submit_showcase_rating(self.event, self.other_exhibit, token, 5)
 
     def test_event_closed_after_page_load_is_rechecked_before_saving(self):
         self.client.get(self.url)
         self.event.status = ShowcaseEvent.Status.CLOSED
         self.event.save(update_fields=('status',))
         response = self.client.post(self.url, {'stars': '5', 'comment': ''})
-        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.status_code, 403)
+        self.assertContains(response, 'Ratings for this showcase are closed', status_code=403)
         self.assertEqual(ShowcaseRating.objects.count(), 0)
 
     def test_csrf_and_form_validation_apply_to_public_ratings(self):
@@ -194,6 +229,7 @@ class ShowcasePublicRatingFlowTests(TestCase):
         self.client.get(self.url)
         first_rating = self.client.post(self.url, {'stars': '5', 'comment': 'Private note'})
         self.assertContains(first_rating, 'Your rating has been recorded.')
+        put_on_stage(self.event, self.other_exhibit)
         self.client.get(self.other_url)
         second_rating = self.client.post(self.other_url, {'stars': '3', 'comment': 'Another note'})
         self.assertContains(second_rating, 'Your rating has been recorded.')
@@ -221,6 +257,7 @@ class ShowcasePublicRatingFlowTests(TestCase):
     def test_public_results_disclose_ties_and_empty_award_state(self):
         self.client.get(self.url)
         self.client.post(self.url, {'stars': '5', 'comment': ''})
+        put_on_stage(self.event, self.other_exhibit)
         self.client.get(self.other_url)
         self.client.post(self.other_url, {'stars': '5', 'comment': ''})
         self.event.status = ShowcaseEvent.Status.PUBLISHED
@@ -304,6 +341,7 @@ class ShowcasePublicRatingFlowTests(TestCase):
         self.event.status = ShowcaseEvent.Status.OPEN
         self.event.save(update_fields=('status', 'updated_at'))
         for token, exhibit, score in tokens:
+            put_on_stage(self.event, exhibit)
             submit_showcase_judge_evaluation(token, exhibit.public_id,
                 {str(criteria[0].pk): str(score)})
 
@@ -335,6 +373,7 @@ class ShowcasePublicRatingFlowTests(TestCase):
         self.event.save(update_fields=('branding',))
         self.client.get(self.url)
         self.client.post(self.url, {'stars': '5', 'comment': ''})
+        put_on_stage(self.event, self.other_exhibit)
         self.client.get(self.other_url)
         self.client.post(self.other_url, {'stars': '3', 'comment': ''})
 
@@ -382,6 +421,7 @@ class ShowcasePublicRatingFlowTests(TestCase):
         self.event.save(update_fields=('minimum_judges_per_exhibit',))
         self.client.get(self.url)
         self.client.post(self.url, {'stars': '5', 'comment': ''})
+        put_on_stage(self.event, self.other_exhibit)
         self.client.get(self.other_url)
         self.client.post(self.other_url, {'stars': '5', 'comment': ''})
         transition_showcase_event(self.event, ShowcaseEvent.Status.CLOSED,

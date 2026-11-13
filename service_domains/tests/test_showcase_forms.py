@@ -3,7 +3,7 @@ from django.test import TestCase
 from accounts.testing import make_org, make_user
 from service_domains.forms import (
     ShowcaseJudgeAssignmentsForm, ShowcaseJudgeCriterionForm,
-    ShowcaseJudgeCriterionFormSet, ShowcaseJudgeScorecardForm,
+    ShowcaseJudgeScorecardForm,
 )
 from service_domains.models import (
     ShowcaseEvent, ShowcaseExhibit, ShowcaseJudgeAssignment,
@@ -21,28 +21,6 @@ class ShowcaseJudgeFormTests(TestCase):
         self.exhibit = ShowcaseExhibit.objects.create(
             organization_id=self.organization.id, created_by=self.owner,
             event=self.event, name='Solar prototype')
-
-    def formset_data(self, rows):
-        data = {
-            'criteria-TOTAL_FORMS': str(len(rows)),
-            'criteria-INITIAL_FORMS': '0',
-            'criteria-MIN_NUM_FORMS': '0',
-            'criteria-MAX_NUM_FORMS': '50',
-        }
-        for index, row in enumerate(rows):
-            for field, value in row.items():
-                data[f'criteria-{index}-{field}'] = value
-        return data
-
-    def criterion_row(self, index, *, name='Evidence', weight='100', delete=False):
-        row = {
-            'name': name, 'description': 'Evidence quality', 'weight': weight,
-            'scale': ShowcaseJudgeCriterion.Scale.POINTS, 'max_points': '100',
-            'checklist_items_text': '',
-        }
-        if delete:
-            row['DELETE'] = 'on'
-        return row
 
     def test_owner_assignments_form_loads_current_state_and_returns_clean_labels(self):
         ShowcaseJudgeAssignment.objects.create(
@@ -92,55 +70,6 @@ class ShowcaseJudgeFormTests(TestCase):
             })
             self.assertFalse(form.is_valid())
             self.assertIn('checklist_items_text', form.errors)
-
-    def test_criterion_formset_requires_an_active_criterion(self):
-        formset = ShowcaseJudgeCriterionFormSet(data=self.formset_data([]), prefix='criteria')
-        self.assertFalse(formset.is_valid())
-        self.assertIn('Add at least one judge criterion.', formset.non_form_errors())
-
-    def test_criterion_formset_accepts_valid_total_and_stops_on_field_errors(self):
-        valid = ShowcaseJudgeCriterionFormSet(data=self.formset_data([
-            self.criterion_row(0, name='Evidence', weight='60'),
-            self.criterion_row(1, name='Clarity', weight='40'),
-        ]), prefix='criteria')
-        self.assertTrue(valid.is_valid(), valid.errors)
-        self.assertEqual(valid.non_form_errors(), [])
-
-        invalid_field = self.criterion_row(0, name='', weight='100')
-        invalid = ShowcaseJudgeCriterionFormSet(
-            data=self.formset_data([invalid_field]), prefix='criteria')
-        self.assertFalse(invalid.is_valid())
-        self.assertTrue(invalid.forms[0].errors)
-        self.assertEqual(invalid.non_form_errors(), [])
-
-    def test_criterion_formset_requires_exact_weight_and_unique_names(self):
-        bad_weight = ShowcaseJudgeCriterionFormSet(data=self.formset_data([
-            self.criterion_row(0, name='Evidence', weight='40'),
-            self.criterion_row(1, name='Clarity', weight='50'),
-        ]), prefix='criteria')
-        self.assertFalse(bad_weight.is_valid())
-        self.assertIn('Judge criterion weights must total exactly 100%.',
-                      bad_weight.non_form_errors())
-
-        duplicate_names = ShowcaseJudgeCriterionFormSet(data=self.formset_data([
-            self.criterion_row(0, name='Evidence', weight='50'),
-            self.criterion_row(1, name=' evidence ', weight='50'),
-        ]), prefix='criteria')
-        self.assertFalse(duplicate_names.is_valid())
-        self.assertIn('Judge criterion names must be unique.', duplicate_names.non_form_errors())
-
-    def test_criterion_formset_rejects_deleting_every_criterion_and_over_fifty(self):
-        deleted = ShowcaseJudgeCriterionFormSet(data=self.formset_data([
-            self.criterion_row(0, delete=True),
-        ]), prefix='criteria')
-        self.assertFalse(deleted.is_valid())
-        self.assertIn('Add at least one judge criterion.', deleted.non_form_errors())
-
-        rows = [self.criterion_row(index, name=f'Criterion {index}',
-            weight='100' if index == 0 else '0') for index in range(51)]
-        too_many = ShowcaseJudgeCriterionFormSet(data=self.formset_data(rows), prefix='criteria')
-        self.assertFalse(too_many.is_valid())
-        self.assertIn('Please submit at most 50 forms.', too_many.non_form_errors())
 
     def test_scorecard_builds_fields_and_payload_for_each_scale(self):
         criteria = [

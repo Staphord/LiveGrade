@@ -17,6 +17,7 @@ from service_domains.operations import (
 )
 from service_domains.showcase_monitor import showcase_live_activity
 
+from service_domains.tests.stage_helpers import put_on_stage
 
 class ShowcaseLiveMonitorTests(TestCase):
     def setUp(self):
@@ -52,6 +53,7 @@ class ShowcaseLiveMonitorTests(TestCase):
         }], organization=self.org.as_claim(), user=self.owner)
         self.event.status = ShowcaseEvent.Status.OPEN
         self.event.save(update_fields=('status', 'updated_at'))
+        put_on_stage(self.event, self.exhibit)
         evaluation = submit_showcase_judge_evaluation(token, self.exhibit.public_id,
             {str(ShowcaseJudgeCriterion.objects.get().pk): '86'})
         self.assertEqual(evaluation.score, Decimal('86.00'))
@@ -76,11 +78,8 @@ class ShowcaseLiveMonitorTests(TestCase):
         with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'showcase'):
             page = self.client.get(page_url)
             data = self.client.get(data_url)
-        self.assertEqual(page.status_code, 200)
-        self.assertContains(page, 'not published awards')
-        self.assertContains(page, 'Visitor feedback')
-        self.assertContains(page, 'Judge average')
-        self.assertContains(page, 'Close ratings in event control')
+        self.assertRedirects(page, reverse('showcase_live_control', args=(self.event.pk,)),
+                             fetch_redirect_response=False)
         self.assertIn('no-store', page['Cache-Control'])
         self.assertEqual(data.status_code, 200)
         self.assertEqual(data.json()['rows'][0]['exhibit'], 'Solar pump')

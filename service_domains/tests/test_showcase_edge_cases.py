@@ -19,6 +19,7 @@ from service_domains.operations import (
     revoke_showcase_judge_invitation, showcase_judge_progress,
     submit_showcase_judge_evaluation,
 )
+from service_domains.tests.stage_helpers import put_on_stage
 from service_domains.throttling import (
     allow_showcase_judge_request, allow_unknown_bearer_request,
 )
@@ -261,6 +262,7 @@ class ShowcaseOperationBoundaryTests(TestCase):
             organization=self.org.as_claim(), user=self.owner)
         self.event.status = ShowcaseEvent.Status.OPEN
         self.event.save(update_fields=('status', 'updated_at'))
+        put_on_stage(self.event, self.exhibits[0])
         with patch.object(ShowcaseJudgeEvaluation, 'save', side_effect=IntegrityError):
             with self.assertRaisesMessage(ValidationError, 'already submitted'):
                 submit_showcase_judge_evaluation(token, self.exhibits[0].public_id,

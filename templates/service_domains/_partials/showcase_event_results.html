@@ -45,12 +45,19 @@
         </thead>
         <tbody>
           {% for event in events %}
-          <tr class="showcase-row-clickable" data-showcase-row-href="{% url 'showcase_event_manage' event_id=event.pk %}">
+          {% if event.status == 'open' %}
+            {% url 'showcase_live_control' event_id=event.pk as event_row_url %}
+          {% elif event.status == 'closed' or event.status == 'published' %}
+            {% url 'showcase_public_results' public_id=event.public_id as event_row_url %}
+          {% else %}
+            {% url 'showcase_event_manage' event_id=event.pk as event_row_url %}
+          {% endif %}
+          <tr class="showcase-row-clickable" data-showcase-row-href="{{ event_row_url }}">
             <td class="showcase-select-column">
               <input class="form-check-input" type="checkbox" name="event_ids" value="{{ event.pk }}" form="showcase-bulk-delete" data-showcase-select aria-label="Select {{ event.name }}">
             </td>
             <td>
-              <a class="showcase-table-name" href="{% url 'showcase_event_manage' event_id=event.pk %}">{{ event.name }}</a>
+              <a class="showcase-table-name" href="{{ event_row_url }}">{{ event.name }}</a>
               <span class="showcase-table-secondary">Updated {{ event.updated_at|timesince }} ago</span>
             </td>
             <td>

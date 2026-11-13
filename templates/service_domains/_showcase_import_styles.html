@@ -1,0 +1,31 @@
+{% include 'assessments/_partials/import_dropzone_styles.html' %}
+<style nonce="{{ csp_nonce }}">
+main.page-body .showcase-import-preview-button{
+  display:flex;
+  width:100%;
+  min-height:3.4rem;
+  align-items:center;
+  justify-content:center;
+  gap:.4rem;
+  margin-top:1rem;
+  font-size:var(--fs-md, 1rem);
+}
+main.page-body .showcase-import-file-meta{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:.75rem 1.25rem;
+  flex-wrap:wrap;
+  margin-top:.85rem;
+  color:var(--text-muted);
+}
+main.page-body .showcase-import-file-meta a{
+  color:var(--accent);
+  text-decoration:underline;
+  text-underline-offset:.15em;
+}
+main.page-body .showcase-import-file-meta a:hover{
+  color:var(--ink);
+}
+@media(max-width:575.98px){
+  </style>

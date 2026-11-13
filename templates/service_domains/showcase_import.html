@@ -3,19 +3,92 @@
 {% block page_title %}Import exhibits{% endblock %}
 {% block content %}
 {% include 'service_domains/_workspace_styles.html' %}
-<style nonce="{{ csp_nonce }}">.showcase-import{max-width:1200px}.import-step{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:1rem 0}.import-step span{padding:.55rem .8rem;border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface);color:var(--text-soft)}.import-step .active{border-color:var(--accent);background:var(--accent-soft);color:var(--ink);font-weight:700}.import-summary{display:flex;gap:.6rem;flex-wrap:wrap}.import-row-error{background:var(--tone-danger-bg)!important}.import-controls{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}.import-table th{white-space:nowrap}@media(max-width:575px){.import-card{padding:1rem!important}}</style>
+{% include 'service_domains/_showcase_import_styles.html' %}
+<style nonce="{{ csp_nonce }}">
+.showcase-import{max-width:1200px}
+.import-step{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:1rem 0}
+.import-step span{padding:.55rem .8rem;border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface);color:var(--text-soft)}
+.import-step [aria-current=step]{border-color:var(--accent);background:var(--accent-soft);color:var(--ink);font-weight:700}
+.import-summary{display:flex;gap:.6rem;flex-wrap:wrap}
+tbody tr.import-row-error{background:var(--tone-danger-bg)}
+.import-controls{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
+.import-table th{white-space:nowrap}
+@media(max-width:575px){.showcase-import .import-card{padding:1rem}}
+</style>
 <div class="container-fluid py-4 service-workspace showcase-import">
-  <p><a href="{% url 'showcase_event_manage' event.pk %}">← {{ event.name }}</a></p>
+  <p><a href="{% url 'showcase_event_manage' event.pk %}?step=exhibits">← {{ event.name }}</a></p>
   <header class="page-header"><div class="page-header-main"><p class="text-uppercase small fw-bold text-primary mb-1">Exhibits</p><h1 class="page-title">Import exhibits</h1><p class="page-subtitle">Choose an Excel file, check its rows, then add the exhibits to this event.</p></div></header>
-  <div class="import-step" aria-label="Import steps"><span class="{% if not plan %}active{% endif %}">1 · Upload file</span><span class="{% if plan %}active{% endif %}">2 · Review rows</span><span>3 · Add exhibits</span></div>
-  <section class="service-section import-card" id="upload-exhibits"><div class="d-flex justify-content-between align-items-start flex-wrap gap-3"><div><h2 class="h4">Upload your exhibit list</h2><p class="text-muted mb-0">Include an <strong>Exhibit</strong> column. Category and Description are optional. Your file is checked before anything is saved.</p></div><a class="btn btn-outline-secondary" href="{% url 'showcase_exhibit_import_sample' event.pk %}">Download sample file</a></div>
-    <form method="post" enctype="multipart/form-data" class="service-flow-form mt-3" novalidate>{% csrf_token %}{% include 'partials/_form_fields.html' with form=form %}{% if apply_attempt %}<a class="btn btn-outline-secondary" href="{% url 'showcase_exhibit_import' event.pk %}">Choose a new file</a>{% elif preview_token %}<a class="btn btn-outline-secondary" href="{% url 'showcase_exhibit_import' event.pk %}">Upload a different file</a>{% else %}<button class="btn btn-primary" type="submit" name="action" value="preview">Review file</button>{% endif %}</form>
+  <div class="import-step" aria-label="Import steps">
+    <span {% if not plan %}aria-current="step"{% endif %}>1 · Upload file</span>
+    <span {% if plan %}aria-current="step"{% endif %}>2 · Review and confirm</span>
+  </div>
+  <section class="service-section import-card showcase-import-ui" id="upload-exhibits" aria-labelledby="upload-exhibits-heading">
+    <div><h2 class="h4" id="upload-exhibits-heading">Upload your exhibit list</h2><p class="text-muted">Include an <strong>Exhibit</strong> column. Category and Description are optional. Your file is checked before anything is saved.</p></div>
+    <form id="showcase-import-upload" method="post" enctype="multipart/form-data" class="service-flow-form mt-3" novalidate>
+      {% csrf_token %}
+      <input type="hidden" name="setup_step" value="exhibits">
+      <div>
+        {% include 'assessments/_partials/import_dropzone.html' with dropzone_id='showcase-standalone-dropzone' filename_id='showcase-standalone-filename' file_field=form.file file_required=True %}
+        {% if form.file.errors %}{% include 'partials/_inline_message.html' with tone='danger' messages=form.file.errors %}{% endif %}
+        {% include 'partials/_inline_message.html' with message_id='showcase-standalone-import-error' tone='warning' %}
+      </div>
+      <button class="btn btn-outline-primary showcase-import-preview-button" type="submit" name="action" value="preview"><i class="bi bi-eye" aria-hidden="true"></i>Preview exhibit list</button>
+      <div class="showcase-import-file-meta">
+        <span>One row per exhibit (.xlsx)</span>
+        <a href="{% url 'showcase_exhibit_import_sample' event.pk %}" download><i class="bi bi-download me-1" aria-hidden="true"></i>Download sample file</a>
+      </div>
+    </form>
+    {% if apply_errors %}<div class="mt-3">{% include 'partials/_inline_message.html' with tone='danger' messages=apply_errors %}</div>{% endif %}
   </section>
-    {% if plan %}<section id="exhibit-preview" class="service-section mt-4" aria-labelledby="preview-heading"><div class="d-flex justify-content-between align-items-start gap-3 flex-wrap"><div><h2 class="h4" id="preview-heading">Review the rows</h2><p class="text-muted">Check the exhibit names and categories before adding them.</p></div><div class="import-summary">{% if plan.ok %}<span class="badge text-bg-success">{{ plan.exhibits_to_create }} ready</span><span class="badge text-bg-light border">{{ plan.categories_to_create|length }} categories</span><span class="small text-muted align-self-center">Nothing has been saved yet.</span>{% else %}<span class="badge text-bg-danger">{{ plan.errors|length }} issue{{ plan.errors|length|pluralize }}</span><span class="small text-muted align-self-center">Fix the spreadsheet and upload it again.</span>{% endif %}</div></div>
-    {% if plan.errors %}<div class="alert alert-danger" role="alert"><h3 class="h6">Check these issues</h3><ul class="mb-0">{% for row_number,message in plan.errors %}<li>{% if row_number %}Row {{ row_number }}: {% endif %}{{ message }}</li>{% endfor %}</ul></div>{% endif %}
-    {% if plan.rows %}<div class="import-controls mb-2"><button class="btn btn-sm btn-outline-secondary" type="button" data-import-filter="all" aria-pressed="true">All rows</button><button class="btn btn-sm btn-outline-secondary" type="button" data-import-filter="issues" aria-pressed="false">Rows with issues</button><span class="small text-muted">{{ plan.rows|length }} rows checked</span></div><div class="table-responsive"><table class="table table-striped align-middle import-table"><caption>Spreadsheet rows and checks</caption><thead><tr><th scope="col">Row</th><th scope="col">Category</th><th scope="col">Exhibit</th><th scope="col">Description</th><th scope="col">Check</th></tr></thead><tbody>{% for row in plan.rows %}<tr data-import-issue="{% if row.errors %}true{% else %}false{% endif %}" class="{% if row.errors %}import-row-error{% endif %}"><th scope="row">{{ row.row }}</th><td>{{ row.category|default:'—' }}</td><td>{{ row.name|default:'—' }}</td><td>{{ row.description|default:'—' }}</td><td>{% for issue in row.errors %}<span class="d-block">{{ issue }}</span>{% empty %}<span class="text-success fw-semibold">Ready</span>{% endfor %}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
-    {% if plan.ok and preview_token %}<div class="d-flex justify-content-end mt-3"><button class="btn btn-primary" type="submit" form="showcase-import-apply">Add {{ plan.exhibits_to_create }} exhibits</button></div><form id="showcase-import-apply" method="post">{% csrf_token %}<input type="hidden" name="action" value="apply"><input type="hidden" name="preview_token" value="{{ preview_token }}"></form>{% endif %}
-  </section>{% endif %}
+  {% if plan %}
+    <section id="exhibit-preview" class="service-section mt-4" aria-labelledby="preview-heading">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+        <div><h2 class="h4" id="preview-heading">Review the rows</h2><p class="text-muted">Check the exhibit names and categories before adding them.</p></div>
+        <div class="import-summary">{% if plan.ok %}<span class="badge text-bg-success">{{ plan.exhibits_to_create }} ready</span><span class="badge text-bg-light border">{{ plan.categories_to_create|length }} categories</span><span class="small text-muted align-self-center">Nothing has been saved yet.</span>{% else %}<span class="badge text-bg-danger">{{ plan.errors|length }} issue{{ plan.errors|length|pluralize }}</span><span class="small text-muted align-self-center">Fix the spreadsheet and upload it again.</span>{% endif %}</div>
+      </div>
+      {% if plan.errors %}
+        {% include 'partials/_inline_message.html' with tone='danger' message='Resolve the spreadsheet issues listed below before importing.' %}
+        <ul class="small mb-3 ps-4">{% for row_number,message in plan.errors %}<li>{% if row_number %}Row {{ row_number }}: {% endif %}{{ message }}</li>{% endfor %}</ul>
+      {% endif %}
+      {% if plan.rows %}
+        <div class="import-controls mb-2"><button class="btn btn-sm btn-outline-secondary" type="button" data-import-filter="all" aria-pressed="true">All rows</button><button class="btn btn-sm btn-outline-secondary" type="button" data-import-filter="issues" aria-pressed="false">Rows with issues</button><span class="small text-muted">{{ plan.rows|length }} rows checked</span></div>
+        <div class="table-responsive"><table class="table table-striped align-middle import-table"><caption>Spreadsheet rows and checks</caption><thead><tr><th scope="col">Row</th><th scope="col">Category</th><th scope="col">Exhibit</th><th scope="col">Description</th><th scope="col">Check</th></tr></thead><tbody>
+          {% for row in plan.rows %}<tr data-import-issue="{% if row.errors %}true{% else %}false{% endif %}" class="{% if row.errors %}import-row-error{% endif %}"><th scope="row">{{ row.row }}</th><td>{{ row.category|default:'-' }}</td><td>{{ row.name|default:'-' }}</td><td>{{ row.description|default:'-' }}</td><td>{% for issue in row.errors %}<span class="d-block">{{ issue }}</span>{% empty %}<span class="text-success fw-semibold">Ready</span>{% endfor %}</td></tr>{% endfor %}
+        </tbody></table></div>
+      {% endif %}
+      <div class="d-flex flex-wrap gap-2 justify-content-end mt-3">
+        {% if plan.ok and preview_token %}
+          <form id="showcase-import-apply" method="post">{% csrf_token %}<input type="hidden" name="action" value="apply"><input type="hidden" name="preview_token" value="{{ preview_token }}"><input type="hidden" name="setup_step" value="exhibits"><button class="btn btn-primary" type="submit">Add {{ plan.exhibits_to_create }} exhibits</button></form>
+        {% endif %}
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="cancel"><input type="hidden" name="setup_step" value="exhibits"><button class="btn btn-outline-secondary" type="submit">Cancel preview</button></form>
+      </div>
+    </section>
+  {% endif %}
 </div>
-{% if plan.rows %}<script nonce="{{ csp_nonce }}">(()=>{const rows=[...document.querySelectorAll('[data-import-issue]')],buttons=[...document.querySelectorAll('[data-import-filter]')];buttons.forEach(button=>button.addEventListener('click',()=>{const filter=button.dataset.importFilter;buttons.forEach(item=>item.setAttribute('aria-pressed',String(item===button)));rows.forEach(row=>row.hidden=filter==='issues'&&row.dataset.importIssue!=='true')}))})();</script>{% endif %}
+<script nonce="{{ csp_nonce }}">
+(()=>{
+  const form=document.getElementById('showcase-import-upload');
+  if(form){
+    const input=form.querySelector('input[type="file"]');
+    const message=document.getElementById('showcase-standalone-import-error');
+    const messageText=message&&message.querySelector('[data-inline-message-text]');
+    form.addEventListener('submit',event=>{
+      if(input&&(!input.files||input.files.length===0)){
+        event.preventDefault();
+        if(messageText)messageText.textContent='Please choose an Excel .xlsx file first.';
+        if(message)message.hidden=false;
+        input.focus();
+      }
+    });
+    if(input&&message)input.addEventListener('change',()=>{if(input.files&&input.files.length)message.hidden=true;});
+  }
+  const rows=[...document.querySelectorAll('[data-import-issue]')];
+  const buttons=[...document.querySelectorAll('[data-import-filter]')];
+  buttons.forEach(button=>button.addEventListener('click',()=>{
+    const filter=button.dataset.importFilter;
+    buttons.forEach(item=>item.setAttribute('aria-pressed',String(item===button)));
+    rows.forEach(row=>row.hidden=filter==='issues'&&row.dataset.importIssue!=='true');
+  }));
+})();
+</script>
 {% endblock %}

@@ -23,6 +23,7 @@ from service_domains.operations import (confirm_showcase_minor_consent,
     replace_showcase_judge_criteria, replace_showcase_judge_assignments,
     transition_showcase_event, submit_showcase_judge_evaluation)
 from service_domains.views import SHOWCASE_IMPORT_TOKEN_SALT
+from service_domains.tests.stage_helpers import put_on_stage
 
 
 class ShowcaseOwnerWorkspaceTests(TestCase):
@@ -87,7 +88,7 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
         })
         new_event = ShowcaseEvent.objects.get(name='Community fair')
         self.assertEqual(created.status_code, 302)
-        self.assertEqual(created['Location'], reverse('showcase_event_manage', args=(new_event.pk,)))
+        self.assertEqual(created['Location'], f"{reverse('showcase_event_manage', args=(new_event.pk,))}?step=exhibits")
         self.assertTrue(new_event.includes_minors)
         self.assertIsNone(new_event.consent_confirmed_at)
         self.assertEqual(new_event.branding, {'tagline': 'A greener future', 'accent': 'green'})
@@ -95,8 +96,12 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
         self.assertContains(self.request('get', reverse('showcase_event_list')), 'Draft expo')
         event_workspace = self.request('get', self.event_url)
         self.assertContains(event_workspace, 'Exhibits')
-        self.assertContains(event_workspace, 'Prepare this event')
-        self.assertContains(event_workspace, 'assign judges to each exhibit')
+        self.assertContains(event_workspace, 'aria-label="Setup steps"')
+        self.assertContains(event_workspace, 'data-panel-step="details" aria-current="step"')
+        self.assertContains(event_workspace, 'name="setup_step" value="details"', html=False)
+        self.assertContains(event_workspace, 'button.dataset.panelStep || button.dataset.panelNext')
+        self.assertContains(event_workspace, "stepField.name = 'return_step'")
+        self.assertNotContains(event_workspace, 'Prepare this event')
 
         self.sign_in(self.other_owner, self.org)
         self.assertEqual(self.request('get', self.event_url).status_code, 404)
@@ -210,20 +215,54 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
     def test_import_preview_is_read_only_and_signed_apply_creates_expected_rows(self):
         self.sign_in()
         import_url = reverse('showcase_exhibit_import', args=(self.event.pk,))
-        self.assertEqual(self.request('get', import_url).status_code, 200)
+        import_page = self.request('get', import_url)
+        self.assertEqual(import_page.status_code, 200)
+        self.assertContains(import_page, 'data-import-dropzone')
+        self.assertContains(import_page, 'showcase-import-ui')
+        self.assertContains(import_page, 'showcase-import-preview-button')
+        self.assertContains(import_page, 'Preview exhibit list')
+        self.assertContains(import_page, 'One row per exhibit (.xlsx)')
+        self.assertContains(import_page, '.import-dropzone{border:1.5px dashed')
+        self.assertContains(import_page, 'position:relative')
+        self.assertNotContains(import_page, 'main.page-body .showcase-import-ui .import-dropzone')
+        self.assertContains(import_page, 'Download sample file')
+        self.assertContains(import_page, 'aria-current="step"')
+        self.assertContains(import_page, 'name="setup_step" value="exhibits"')
+        self.assertContains(import_page, 'Please choose an Excel .xlsx file first.')
+        self.assertContains(import_page, 'input.focus()')
         before = (ShowcaseCategory.objects.count(), ShowcaseExhibit.objects.count())
-        preview = self.request('post', import_url, {'file': self.upload(), 'action': 'preview'})
+        preview = self.request('post', import_url, {
+            'file': self.upload(), 'action': 'preview', 'setup_step': 'exhibits',
+        })
         self.assertEqual(preview.status_code, 200)
         self.assertContains(preview, 'Nothing has been saved yet.')
         self.assertEqual((ShowcaseCategory.objects.count(), ShowcaseExhibit.objects.count()), before)
         token = preview.context['preview_token']
         self.assertTrue(token)
 
-        applied = self.request('post', import_url, {'action': 'apply', 'preview_token': token})
+        applied = self.request('post', import_url, {
+            'action': 'apply', 'preview_token': token, 'setup_step': 'exhibits',
+        })
         self.assertEqual(applied.status_code, 302)
+        self.assertEqual(applied['Location'], f'{reverse("showcase_event_manage", args=(self.event.pk,))}?step=exhibits')
         exhibit = ShowcaseExhibit.objects.get(event=self.event, name='Solar pump')
         self.assertEqual(exhibit.description, 'A water irrigation prototype')
         self.assertEqual(exhibit.category.name, 'Engineering')
+
+    def test_standalone_import_cancel_returns_to_exhibits_without_writing(self):
+        self.sign_in()
+        import_url = reverse('showcase_exhibit_import', args=(self.event.pk,))
+        preview = self.request('post', import_url, {
+            'file': self.upload(), 'action': 'preview', 'setup_step': 'exhibits',
+        })
+        self.assertEqual(preview.status_code, 200)
+        self.assertContains(preview, '2 · Review and confirm')
+        canceled = self.request('post', import_url, {
+            'action': 'cancel', 'setup_step': 'exhibits',
+        })
+        self.assertEqual(canceled.status_code, 302)
+        self.assertEqual(canceled['Location'], f'{self.event_url}?step=exhibits')
+        self.assertFalse(ShowcaseExhibit.objects.filter(event=self.event, name='Solar pump').exists())
 
     def test_tampered_preview_and_invalid_file_do_not_write(self):
         self.sign_in()
@@ -327,6 +366,17 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
         self.assertContains(response, 'must be after the start')
         self.event.status = ShowcaseEvent.Status.OPEN
         self.event.save(update_fields=('status',))
+        response = self.request('post', self.event_url, {
+            'action': 'edit', 'name': 'Open Expo Updated', 'starts_at': '', 'ends_at': '',
+            'includes_minors': '', 'minimum_judges_per_exhibit': '1',
+            'branding_tagline': 'Live updates', 'branding_accent': 'purple',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.event.refresh_from_db()
+        self.assertEqual(self.event.name, 'Open Expo Updated')
+
+        self.event.status = ShowcaseEvent.Status.PUBLISHED
+        self.event.save(update_fields=('status',))
         self.assertEqual(self.request('post', self.event_url, {
             'action': 'edit', 'name': 'Not editable',
         }).status_code, 404)
@@ -422,40 +472,6 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
         self.assertContains(response, 'assignment plan unavailable', status_code=400)
         self.assertEqual(ShowcaseJudgeInvitation.objects.filter(event=self.event).count(), 0)
 
-    def test_judge_criteria_view_saves_valid_form_and_renders_validation_errors(self):
-        self.sign_in()
-        payload = {'action': 'judge_criteria', 'criteria-TOTAL_FORMS': '1',
-            'criteria-INITIAL_FORMS': '0', 'criteria-MIN_NUM_FORMS': '0',
-            'criteria-MAX_NUM_FORMS': '50', 'criteria-0-name': 'Quality',
-            'criteria-0-description': 'Evidence quality', 'criteria-0-weight': '100',
-            'criteria-0-scale': 'points', 'criteria-0-max_points': '100',
-            'criteria-0-checklist_items_text': ''}
-        saved = self.request('post', self.event_url, payload)
-        self.assertEqual(saved.status_code, 302)
-        self.assertEqual(self.event.judge_criteria.get().name, 'Quality')
-
-        with patch('service_domains.views.replace_showcase_judge_criteria',
-                   side_effect=ValidationError('criterion update rejected')):
-            rejected = self.request('post', self.event_url, payload)
-        self.assertEqual(rejected.status_code, 400)
-        self.assertContains(rejected, 'criterion update rejected', status_code=400)
-
-        with patch('service_domains.views.replace_showcase_judge_criteria',
-                   side_effect=PermissionDenied):
-            denied = self.request('post', self.event_url, payload)
-        self.assertEqual(denied.status_code, 404)
-
-        payload['criteria-0-weight'] = 'not-a-weight'
-        invalid = self.request('post', self.event_url, payload)
-        self.assertEqual(invalid.status_code, 400)
-
-        self.event.status = ShowcaseEvent.Status.OPEN
-        self.event.save(update_fields=('status', 'updated_at'))
-        locked = self.request('post', self.event_url, payload)
-        self.assertEqual(locked.status_code, 400)
-        self.assertIn('Judge criteria are locked after the event opens.',
-            str(locked.context['criteria_formset'].non_form_errors()))
-
     def test_judge_invitation_mail_exception_fallback_and_revoke_responses(self):
         self.sign_in()
         exhibit = ShowcaseExhibit.objects.create(organization_id=self.org.id,
@@ -473,19 +489,36 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
                    side_effect=ValidationError('revocation reason required')):
             rejected = self.request('post', self.event_url, {
                 'action': 'revoke_judge', 'invitation_id': str(invitation.pk),
+                'setup_step': 'judges-consent',
             })
         self.assertEqual(rejected.status_code, 302)
+        self.assertEqual(rejected['Location'], f'{self.event_url}?step=judges-consent')
 
         revoked = self.request('post', self.event_url, {
             'action': 'revoke_judge', 'invitation_id': str(invitation.pk),
+            'setup_step': 'judges-consent',
         })
         self.assertEqual(revoked.status_code, 302)
+        self.assertEqual(revoked['Location'], f'{self.event_url}?step=judges-consent')
         with patch('service_domains.views.revoke_showcase_judge_invitation',
                    side_effect=PermissionDenied):
             denied = self.request('post', self.event_url, {
                 'action': 'revoke_judge', 'invitation_id': str(invitation.pk),
             })
         self.assertEqual(denied.status_code, 404)
+
+    def test_successful_judge_invitation_keeps_setup_step(self):
+        self.sign_in()
+        exhibit = ShowcaseExhibit.objects.create(organization_id=self.org.id,
+            created_by=self.owner, event=self.event, name='Solar pump')
+        with patch('service_domains.views.send_mail', return_value=1):
+            response = self.request('post', self.event_url, {
+                'action': 'invite_judge', 'email': 'judge@example.org',
+                'expires_at': '2030-05-01T10:00', 'exhibits': [str(exhibit.pk)],
+                'setup_step': 'judges-consent',
+            })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response['Location'], f'{self.event_url}?step=judges-consent')
 
     def test_judge_invitation_permission_race_rolls_back_token_and_assignment(self):
         self.sign_in()
@@ -548,6 +581,7 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
             self.event.refresh_from_db()
             self.assertEqual(self.event.status, target)
             if target == ShowcaseEvent.Status.OPEN:
+                put_on_stage(self.event, exhibit)
                 submit_showcase_judge_evaluation(judge_token, exhibit.public_id,
                     {str(criteria[0].pk): '90'})
                 self.assertEqual(self.request('get', self.event_url).status_code, 200)
@@ -591,8 +625,12 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
         blocked = self.request('post', transition_url, {
             'target_status': ShowcaseEvent.Status.OPEN, 'reason': 'Attempt open',
         })
-        self.assertEqual(blocked.status_code, 400)
-        self.assertContains(blocked, 'consent', status_code=400)
+        live_url = reverse('showcase_live_control', args=(self.event.pk,))
+        self.assertRedirects(blocked, live_url, fetch_redirect_response=False)
+        console = self.request('get', live_url)
+        self.assertContains(console, 'Confirm participant consent before opening this Showcase event.')
+        self.assertFalse(console.context['event_ready'])
+        self.assertEqual(len(console.context['setup_steps']), 5)
         self.event.refresh_from_db()
         self.assertEqual(self.event.status, ShowcaseEvent.Status.DRAFT)
         self.assertEqual(ShowcaseEventAudit.objects.filter(event=self.event).count(), 0)
@@ -610,7 +648,7 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
             {'target_status': 'invalid', 'reason': 'Invalid target'},
         ):
             response = self.request('post', transition_url, data)
-            self.assertEqual(response.status_code, 400)
+            self.assertRedirects(response, live_url, fetch_redirect_response=False)
         self.assertEqual(ShowcaseEventAudit.objects.filter(event=self.event).count(), 0)
         self.sign_in(self.other_owner, self.org)
         self.assertEqual(self.request('post', transition_url, {
@@ -652,8 +690,10 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
         confirmed = self.request('post', self.event_url, {
             'action': 'confirm_consent', 'confirmation': 'on',
             'reason': 'Required guardian permissions collected by event organizers.',
+            'setup_step': 'judges-consent',
         })
         self.assertEqual(confirmed.status_code, 302)
+        self.assertEqual(confirmed['Location'], f'{self.event_url}?step=judges-consent')
         self.event.refresh_from_db()
         self.assertIsNotNone(self.event.consent_confirmed_at)
         record = ShowcaseConsentAudit.objects.get(event=self.event)
@@ -738,8 +778,9 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
         })
         message = 'Add at least one exhibit before opening this Showcase event.'
 
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.content.decode().count(message), 1)
+        live_url = reverse('showcase_live_control', args=(self.event.pk,))
+        self.assertRedirects(response, live_url, fetch_redirect_response=False)
+        self.assertEqual(self.request('get', live_url).content.decode().count(message), 1)
         self.event.refresh_from_db()
         self.assertEqual(self.event.status, ShowcaseEvent.Status.DRAFT)
         self.assertEqual(ShowcaseEventAudit.objects.filter(event=self.event).count(), 0)
@@ -796,16 +837,22 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
         self.event.includes_minors = True
         self.event.save(update_fields=('includes_minors',))
 
-        response = self.request('get', self.event_url)
+        response = self.request('get', f'{self.event_url}?step=criteria')
 
         self.assertEqual(len(response.context['setup_steps']), 5)
+        self.assertEqual(response.context['active_step'], 'criteria')
         self.assertEqual([step['label'] for step in response.context['setup_steps']], [
             'Event details', 'Exhibits', 'Rubric',
             'Judge assignments and consent', 'Open Showcase',
         ])
+        self.assertEqual(response.content.decode().count('aria-label="Setup steps"'), 1)
+        self.assertContains(response, 'data-panel-step="criteria" aria-current="step"')
+        self.assertNotContains(response, 'Guided event setup')
+        self.assertNotContains(response, 'Prepare this event')
+        self.assertNotContains(response, 'aria-label="Event sections"')
         combined = response.context['setup_steps'][3]
         self.assertFalse(combined['complete'])
-        self.assertEqual(combined['href'], '#minor-consent-heading')
+        self.assertEqual(combined['key'], 'judges-consent')
 
     def test_event_cannot_open_without_rubric_or_full_active_invited_judge_coverage(self):
         exhibit = ShowcaseExhibit.objects.create(organization_id=self.org.id,
@@ -892,6 +939,12 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
 
     def test_showcase_event_delete_draft_safeguards(self):
         self.sign_in()
+        delete_page = self.request('get', self.event_url)
+        self.assertContains(delete_page, 'data-confirm="Delete this draft Showcase event permanently?"')
+        self.assertContains(delete_page, 'data-unsaved-ignore')
+        self.assertContains(delete_page,
+            'name="action" value="delete_event"><input type="hidden" name="setup_step" value="details"')
+        self.assertNotContains(delete_page, 'window.confirm(')
         res = self.request('post', self.event_url, {'action': 'delete_event'})
         self.assertEqual(res.status_code, 302)
         self.assertTrue(ShowcaseEvent.objects.filter(pk=self.event.pk).exists())
@@ -930,25 +983,80 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
         self.assertEqual(res['Content-Type'], 'application/json')
 
     def test_showcase_exhibit_import_cancel_and_embedded_flow(self):
+        from service_domains.views import SHOWCASE_IMPORT_ERRORS_SESSION_KEY
+
         self.sign_in()
         import_url = reverse('showcase_exhibit_import', args=(self.event.pk,))
+        manage_page = self.request('get', f'{self.event_url}?step=exhibits')
+        self.assertEqual(manage_page.status_code, 200)
+        self.assertContains(manage_page, 'showcase-import-ui')
+        self.assertContains(manage_page, 'showcase-import-preview-button')
+        self.assertContains(manage_page, 'Preview exhibit list')
+        self.assertContains(manage_page, 'One row per exhibit (.xlsx)')
+        self.assertContains(manage_page, 'Download sample file')
+        self.assertContains(manage_page, '.import-dropzone input[type=file]{position:absolute')
+        self.assertNotContains(manage_page, 'main.page-body .showcase-import-ui .import-dropzone')
+        self.assertNotContains(manage_page, 'Import exhibit list')
 
-        res = self.request('post', import_url, {'action': 'cancel'})
+        res = self.request('post', f'{import_url}?embedded=1', {
+            'action': 'cancel', 'setup_step': 'exhibits',
+        })
         self.assertEqual(res.status_code, 302)
-        self.assertEqual(res['Location'], self.event_url)
+        self.assertEqual(res['Location'], f'{self.event_url}?step=exhibits')
+
+        missing_file = self.request('post', f'{import_url}?embedded=1', {
+            'action': 'preview', 'setup_step': 'exhibits',
+        })
+        self.assertEqual(missing_file.status_code, 302)
+        missing_file_page = self.request('get', f'{self.event_url}?step=exhibits')
+        self.assertEqual(missing_file_page.context['active_step'], 'exhibits')
+        self.assertTrue(any('required' in error.lower()
+            for error in missing_file_page.context['exhibit_import_errors']))
+        self.assertContains(missing_file_page, 'role="alert"')
+        self.assertNotIn(SHOWCASE_IMPORT_ERRORS_SESSION_KEY, self.client.session)
+        self.assertEqual(self.request('get', f'{self.event_url}?step=exhibits')
+            .context['exhibit_import_errors'], [])
+
+        wrong_type = self.request('post', f'{import_url}?embedded=1', {
+            'file': SimpleUploadedFile('exhibits.csv', b'not excel'),
+            'setup_step': 'exhibits',
+        })
+        self.assertEqual(wrong_type.status_code, 302)
+        wrong_type_page = self.request('get', f'{self.event_url}?step=exhibits')
+        self.assertTrue(any('.xlsx' in error
+            for error in wrong_type_page.context['exhibit_import_errors']))
 
         wb_file = self.upload()
-        res = self.request('post', f'{import_url}?embedded=1', {'file': wb_file})
+        res = self.request('post', f'{import_url}?embedded=1', {
+            'file': wb_file, 'setup_step': 'exhibits',
+        })
         self.assertEqual(res.status_code, 302)
-        self.assertEqual(res['Location'], self.event_url)
+        self.assertEqual(res['Location'], f'{self.event_url}?step=exhibits')
 
-        res = self.request('post', f'{import_url}?embedded=1', {'action': 'apply', 'preview_token': 'bad'})
+        preview = self.request('get', f'{self.event_url}?step=exhibits')
+        self.assertEqual(preview.context['active_step'], 'exhibits')
+        res = self.request('post', f'{import_url}?embedded=1', {
+            'action': 'apply', 'preview_token': preview.context['exhibit_import_token'],
+            'setup_step': 'exhibits',
+        })
         self.assertEqual(res.status_code, 302)
-        self.assertEqual(res['Location'], self.event_url)
+        self.assertEqual(res['Location'], f'{self.event_url}?step=exhibits')
+        self.assertTrue(ShowcaseExhibit.objects.filter(event=self.event, name='Solar pump').exists())
 
-        res = self.request('post', f'{import_url}?embedded=1', {'file': ''})
+        res = self.request('post', f'{import_url}?embedded=1', {
+            'action': 'apply', 'preview_token': 'bad', 'setup_step': 'exhibits',
+        })
         self.assertEqual(res.status_code, 302)
-        self.assertEqual(res['Location'], self.event_url)
+        self.assertEqual(res['Location'], f'{self.event_url}?step=exhibits')
+        bad_apply_page = self.request('get', f'{self.event_url}?step=exhibits')
+        self.assertTrue(any('preview' in error.lower() or 'invalid' in error.lower()
+            for error in bad_apply_page.context['exhibit_import_errors']))
+
+        res = self.request('post', f'{import_url}?embedded=1', {
+            'file': '', 'setup_step': 'exhibits',
+        })
+        self.assertEqual(res.status_code, 302)
+        self.assertEqual(res['Location'], f'{self.event_url}?step=exhibits')
 
     def test_showcase_judge_workspace_conflict_branches(self):
         exhibit = ShowcaseExhibit.objects.create(organization_id=self.org.id,
@@ -1003,6 +1111,26 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
         self.assertContains(details_page, 'Event details saved successfully.')
         self.assertContains(details_page, 'id="showcase-unsaved-dialog"')
         self.assertContains(details_page, 'data-panel-details-form')
+        self.assertContains(details_page, 'name="leave_to" value=""')
+
+        save_before_step_change = self.request('post', self.event_url, {
+            'action': 'edit', 'name': 'Spring Showcase Before Step Change',
+            'starts_at': '', 'ends_at': '', 'includes_minors': '',
+            'minimum_judges_per_exhibit': '1', 'branding_tagline': 'Great projects',
+            'branding_accent': 'blue', 'setup_step': 'details', 'return_step': 'criteria',
+        })
+        self.assertEqual(save_before_step_change.status_code, 302)
+        self.assertEqual(save_before_step_change['Location'], f'{self.event_url}?step=criteria')
+
+        save_before_navigation = self.request('post', self.event_url, {
+            'action': 'edit', 'name': 'Spring Showcase Before Navigation',
+            'starts_at': '', 'ends_at': '', 'includes_minors': '',
+            'minimum_judges_per_exhibit': '1', 'branding_tagline': 'Great projects',
+            'branding_accent': 'blue', 'setup_step': 'details',
+            'leave_to': reverse('showcase_event_list'),
+        })
+        self.assertEqual(save_before_navigation.status_code, 302)
+        self.assertEqual(save_before_navigation['Location'], reverse('showcase_event_list'))
 
         advance_res = self.request('post', self.event_url, {
             'action': 'edit',

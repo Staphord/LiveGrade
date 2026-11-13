@@ -1,21 +1,12 @@
 {% extends 'base.html' %}
-{% block title %}{{ event.name }} — Exhibition Live Command · LiveGrade{% endblock %}
+{% block title %}{{ event.name }} · Exhibition Live Command · LiveGrade{% endblock %}
 {% block page_title %}{{ event.name }}{% endblock %}
 
 {% block topbar_actions %}
 <div class="d-flex align-items-center gap-2">
-  <span class="live-badge" id="showcase-conn-badge">
+  {% if event.status == 'draft' %}<span class="badge bg-warning-subtle text-warning-emphasis">Not open yet</span>{% else %}<span class="live-badge" id="showcase-conn-badge">
     <span class="dot"></span>Live
-  </span>
-  <a href="{% url 'showcase_event_manage' event_id=event.pk %}" class="btn btn-outline-secondary btn-sm">
-    <i class="bi bi-gear me-1" aria-hidden="true"></i>Event setup
-  </a>
-  <button type="button" class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#showcase-close-modal">
-    <i class="bi bi-door-closed me-1" aria-hidden="true"></i>Close ratings
-  </button>
-  <a href="{% url 'showcase_event_table' %}" class="btn btn-outline-secondary btn-sm">
-    <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>All events
-  </a>
+  </span>{% endif %}
 </div>
 {% endblock %}
 
@@ -40,8 +31,24 @@
 
 {% block content %}
 <div class="container-fluid py-4" style="max-width: 1400px;">
+  <div class="mb-3">
+    <a href="{% url 'showcase_event_table' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>All events
+    </a>
+  </div>
+
+  {% include 'service_domains/_partials/showcase_event_tabs.html' with active='console' from_param='live' %}
+
+  <div class="mb-3">
+    {% include 'partials/_inline_message.html' with tone='danger' message_id='showcase-live-inline-error' %}
+  </div>
+
   <!-- Telemetry Hero Banner -->
   {% include 'service_domains/_partials/showcase_live_hero.html' %}
+
+  {% if event.status == 'open' %}
+  <!-- Projector & Venue Display Controller -->
+  {% include 'service_domains/_partials/showcase_live_projector_control.html' %}
 
   <!-- Spotlight Pitch Stage Runner -->
   {% include 'service_domains/_partials/showcase_live_stage.html' %}
@@ -49,28 +56,7 @@
   <!-- Floor Radar Table -->
   {% include 'service_domains/_partials/showcase_live_table.html' %}
 
-  <!-- Projector & Venue Display Controller -->
-  {% include 'service_domains/_partials/showcase_live_projector_control.html' %}
-</div>
-
-<!-- Modal: Close Ratings Confirmation -->
-<div class="modal fade" id="showcase-close-modal" tabindex="-1" aria-labelledby="showcase-close-title" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2 class="modal-title h5" id="showcase-close-title">Close visitor ratings?</h2>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <p>This will close mobile attendee rating submissions and advance the showcase into the <strong>Closed / Review</strong> stage.</p>
-        <p class="text-muted small mb-0">Judges can finalize their remaining assigned evaluations before official award publication.</p>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Keep ratings open</button>
-        <button type="button" class="btn btn-warning" id="confirm-showcase-close-ratings-btn">Close ratings</button>
-      </div>
-    </div>
-  </div>
+  {% endif %}
 </div>
 
 <script nonce="{{ csp_nonce }}">
@@ -79,12 +65,50 @@
   const LIVE_ACTION_URL = "{% url 'showcase_live_action' event_id=event.pk %}";
 
   let refreshing = false;
-  let remainingSeconds = parseInt(document.getElementById('showcase-pitch-timer-display')?.dataset.seconds || '180', 10);
-  let timerPaused = false;
+  const IS_DRAFT = {% if event.status == 'draft' %}true{% else %}false{% endif %};
+  // The pitch clock belongs to the server: every sync carries state, duration and
+  // the stored deadline, and the browser only draws what the deadline implies.
+  const clock = { state: 'idle', seconds: 0, duration: 180, endsAt: null, offset: 0 };
+
+  function readClock(source) {
+    clock.state = source.state;
+    clock.seconds = Number(source.seconds);
+    clock.duration = Number(source.duration) || 180;
+    clock.endsAt = source.endsAt === '' || source.endsAt == null ? null : Number(source.endsAt);
+    clock.offset = Number(source.serverNow) - Date.now() / 1000;
+  }
+
+  function clockFromDom() {
+    const el = document.getElementById('showcase-pitch-timer-display');
+    if (!el) return;
+    readClock({ state: el.dataset.state, seconds: el.dataset.seconds, duration: el.dataset.duration,
+                endsAt: el.dataset.endsAt, serverNow: el.dataset.serverNow });
+  }
+
+  function clockRemaining() {
+    if (clock.state === 'running' && clock.endsAt !== null) {
+      return Math.max(0, Math.ceil(clock.endsAt - (Date.now() / 1000 + clock.offset)));
+    }
+    return clock.seconds;
+  }
 
   function csrfHeaders() {
     const el = document.querySelector('[name=csrfmiddlewaretoken]');
     return el ? { 'X-CSRFToken': el.value } : {};
+  }
+
+  function showInlineError(message) {
+    const box = document.getElementById('showcase-live-inline-error');
+    if (!box) return;
+    const textEl = box.querySelector('[data-inline-message-text]');
+    if (textEl) textEl.textContent = message;
+    box.hidden = false;
+    box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function clearInlineError() {
+    const box = document.getElementById('showcase-live-inline-error');
+    if (box) box.hidden = true;
   }
 
   function postAction(data) {
@@ -102,12 +126,34 @@
         return;
       }
       if (payload.error) {
-        alert(payload.error);
+        showInlineError(payload.error);
         return;
       }
+      clearInlineError();
       patchFragments(payload);
     })
     .catch(() => {});
+  }
+
+  let activeRadarFilter = 'all';
+
+  function applyRadarFilter(filter) {
+    activeRadarFilter = filter || 'all';
+    document.querySelectorAll('[data-showcase-filter]').forEach(b => {
+      if (b.dataset.showcaseFilter === activeRadarFilter) b.classList.add('active');
+      else b.classList.remove('active');
+    });
+    document.querySelectorAll('#showcase-exhibit-radar-table tbody tr').forEach(row => {
+      if (activeRadarFilter === 'all') {
+        row.hidden = false;
+      } else if (activeRadarFilter === 'attention') {
+        row.hidden = row.dataset.rowAttention !== 'true';
+      } else if (activeRadarFilter === 'missing-judge') {
+        row.hidden = row.dataset.rowMissingJudge !== 'true';
+      } else if (activeRadarFilter === 'zero-ratings') {
+        row.hidden = row.dataset.rowZeroRatings !== 'true';
+      }
+    });
   }
 
   function patchFragments(data) {
@@ -122,8 +168,8 @@
       const html = FRAGMENTS[id];
       if (el && html !== undefined) el.outerHTML = html;
     });
-    remainingSeconds = data.pitch_seconds_remaining || 0;
-    timerPaused = !!data.timer_paused;
+    applyRadarFilter(activeRadarFilter);
+    clockFromDom();
     updateTimerDisplay();
   }
 
@@ -158,34 +204,55 @@
     const display = document.getElementById('showcase-pitch-timer-display');
     const ring = document.getElementById('showcase-pitch-ring');
     if (!display || !ring) return;
-    const mins = Math.floor(remainingSeconds / 60);
-    const secs = remainingSeconds % 60;
+    const remaining = clockRemaining();
+    const mins = Math.floor(remaining / 60);
+    const secs = remaining % 60;
     display.textContent = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-    const pct = Math.min(100, Math.max(0, Math.round((remainingSeconds / 180) * 100)));
+    const pct = Math.min(100, Math.max(0, Math.round((remaining / clock.duration) * 100)));
     ring.style.setProperty('--turn-pct', pct);
-    if (remainingSeconds < 30 && !timerPaused) {
-      ring.classList.add('is-urgent');
-    } else {
-      ring.classList.remove('is-urgent');
-    }
+    ring.classList.toggle('is-urgent', clock.state === 'running' && remaining < 30);
   }
 
-  // Timer interval tick
-  setInterval(() => {
-    if (!timerPaused && remainingSeconds > 0) {
-      remainingSeconds--;
-      updateTimerDisplay();
-    }
-  }, 1000);
+  // Redraw from the server deadline, so throttled or backgrounded tabs never drift.
+  setInterval(updateTimerDisplay, 500);
 
-  // Periodic polling interval
-  setInterval(refreshState, 8000);
+  // WebSocket connection for real-time showcase updates
+  const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const wsUrl = `${scheme}://${window.location.host}/ws/showcase/event/{{ event.pk }}/live/`;
+  let socket = null;
+  let wsReconnectTimer = null;
+  let wsRetryCount = 0;
+
+  function connectSocket() {
+    if (!window.WebSocket) return;
+    try {
+      socket = new WebSocket(wsUrl);
+      socket.onopen = () => { wsRetryCount = 0; };
+      socket.onmessage = () => { refreshState(); };
+      socket.onclose = () => {
+        window.clearTimeout(wsReconnectTimer);
+        const delay = Math.min(30000, 2000 * Math.pow(1.5, wsRetryCount++));
+        wsReconnectTimer = window.setTimeout(connectSocket, delay);
+      };
+      socket.onerror = () => { socket.close(); };
+    } catch (_err) {}
+  }
+  if (!IS_DRAFT) connectSocket();
+
+  // Safety net fallback check if socket is disconnected
+  setInterval(() => {
+    if (!IS_DRAFT && (!socket || socket.readyState !== WebSocket.OPEN)) {
+      refreshState();
+    }
+  }, 30000);
 
   // Delegated click handler for showcase live actions
   document.addEventListener('click', e => {
     const actionBtn = e.target.closest('[data-showcase-live-action]');
     if (actionBtn) {
-      e.preventDefault();
+      if (actionBtn.tagName !== 'INPUT') {
+        e.preventDefault();
+      }
       const action = actionBtn.dataset.showcaseLiveAction;
       const data = { action };
       if (actionBtn.dataset.delta) data.delta = actionBtn.dataset.delta;
@@ -212,34 +279,25 @@
       return;
     }
 
-    const closeBtn = e.target.closest('#confirm-showcase-close-ratings-btn');
-    if (closeBtn) {
+    const lifecycleBtn = e.target.closest('[data-showcase-lifecycle]');
+    if (lifecycleBtn) {
+      if (lifecycleBtn.dataset.confirm && !lifecycleBtn.dataset.confirmed) {
+        return;
+      }
       e.preventDefault();
-      closeBtn.disabled = true;
-      postAction({ action: 'close_ratings' });
+      lifecycleBtn.disabled = true;
+      postAction({ action: lifecycleBtn.dataset.showcaseLifecycle }).finally(() => { lifecycleBtn.disabled = false; });
       return;
     }
 
     const filterBtn = e.target.closest('[data-showcase-filter]');
     if (filterBtn) {
       e.preventDefault();
-      const filter = filterBtn.dataset.showcaseFilter;
-      document.querySelectorAll('[data-showcase-filter]').forEach(b => b.classList.remove('active'));
-      filterBtn.classList.add('active');
-      document.querySelectorAll('#showcase-exhibit-radar-table tbody tr').forEach(row => {
-        if (filter === 'all') {
-          row.hidden = false;
-        } else if (filter === 'attention') {
-          row.hidden = row.dataset.rowAttention !== 'true';
-        } else if (filter === 'missing-judge') {
-          row.hidden = row.dataset.rowMissingJudge !== 'true';
-        } else if (filter === 'zero-ratings') {
-          row.hidden = row.dataset.rowZeroRatings !== 'true';
-        }
-      });
+      applyRadarFilter(filterBtn.dataset.showcaseFilter);
     }
   });
 
+  clockFromDom();
   updateTimerDisplay();
 })();
 </script>

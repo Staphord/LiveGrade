@@ -209,9 +209,8 @@ class ShowcaseWorkspaceUiTests(TestCase):
         response = self.request('get', reverse('showcase_event_table'))
         self.assertEqual(response.status_code, 200)
 
-        for event in (e_draft, e_open):
-            manage_url = reverse('showcase_event_manage', args=(event.pk,))
-            self.assertContains(response, f'data-showcase-row-href="{manage_url}"')
+        self.assertContains(response, f'data-showcase-row-href="{reverse("showcase_event_manage", args=(e_draft.pk,))}"')
+        self.assertContains(response, f'data-showcase-row-href="{reverse("showcase_live_control", args=(e_open.pk,))}"')
 
         self.assertContains(response, 'Updated')
         self.assertContains(response, 'Showcase events with their status, exhibits, visitor ratings')
@@ -294,7 +293,7 @@ class ShowcaseWorkspaceUiTests(TestCase):
         created = ShowcaseEvent.objects.get(name='Green Tech Showcase')
         self.assertEqual(created.created_by, self.owner)
         self.assertEqual(created.organization_id, self.org.id)
-        self.assertEqual(valid_response['Location'], reverse('showcase_event_manage', args=(created.pk,)))
+        self.assertEqual(valid_response['Location'], f"{reverse('showcase_event_manage', args=(created.pk,))}?step=exhibits")
 
     def test_row_delete_and_permissions(self):
         event = self.create_event('Event To Delete')
@@ -474,7 +473,7 @@ class ShowcaseWorkspaceUiTests(TestCase):
         event.status = ShowcaseEvent.Status.OPEN
         event.save(update_fields=('status',))
         res_monitor = self.request('get', monitor_url)
-        self.assertContains(res_monitor, f'href="{table_url}" class="nav-link active" aria-current="page"')
+        self.assertEqual(res_monitor.status_code, 302)
 
         # Active state on import
         res_import = self.request('get', import_url)
@@ -595,7 +594,10 @@ class ShowcaseWorkspaceUiTests(TestCase):
         res_action = self.client.post(action_url, {'action': 'stage_adjust_timer', 'delta': 60})
         self.assertEqual(res_action.status_code, 200)
         event.refresh_from_db()
-        self.assertGreaterEqual(event.workflow_snapshot['stage_state']['pitch_seconds_remaining'], 240)
+        from service_domains.operations import showcase_pitch_timer
+        pitch = showcase_pitch_timer(event.workflow_snapshot['stage_state'], timezone.now().timestamp())
+        self.assertGreaterEqual(pitch['remaining'], 239)
+        self.assertEqual(pitch['state'], 'running')
 
         # Action: stage_toggle_pause
         res_action = self.client.post(action_url, {'action': 'stage_toggle_pause'})
@@ -627,3 +629,121 @@ class ShowcaseWorkspaceUiTests(TestCase):
         sign_in(other_client, self.other, self.other_org)
         res_other = other_client.get(url)
         self.assertEqual(res_other.status_code, 404)
+
+    def test_setup_stepper_uses_the_shared_partial_for_create_and_manage(self):
+        created = self.client.get(reverse('showcase_event_create'))
+        steps = created.context['stepper_steps']
+        self.assertEqual(len(steps), 6)
+        self.assertTrue(steps[0]['current'])
+        self.assertEqual(steps[1]['desc'], 'Import your exhibit list')
+        self.assertTrue(all(s['disabled'] for s in steps[1:]))
+        self.assertContains(created, 'aria-label="Event setup steps"')
+        self.assertNotContains(created, 'sc-stepper')
+
+        event = self.create_event('Stepper Expo')
+        manage = self.client.get(reverse('showcase_event_manage', kwargs={'event_id': event.pk}))
+        steps = manage.context['stepper_steps']
+        self.assertEqual([s['key'] for s in steps][0], 'details')
+        self.assertTrue(steps[0]['current'])
+        self.assertContains(manage, 'DevPerfStepper.setCurrent(root,active)')
+
+    def test_showcase_event_manage_stepper_edit_mode_and_back_routing(self):
+        # Open event setup edit view
+        event = self.create_event('Open Innovation Showcase', ShowcaseEvent.Status.OPEN)
+        manage_url = reverse('showcase_event_manage', kwargs={'event_id': event.pk})
+
+        # Verify open event lands on vertical stepper in edit mode
+        res = self.client.get(manage_url)
+        self.assertEqual(res.status_code, 200)
+        content = res.content.decode('utf-8')
+        self.assertIn('panel-step-layout', content)
+        self.assertIn('stepper-nav', content)
+        self.assertIn('name="name"', content)
+        self.assertNotIn('class="showcase-nav"', content)
+        self.assertNotIn('Exhibition Live Command', content)
+
+        # Default back link for open event points to live control
+        live_control_url = reverse('showcase_live_control', kwargs={'event_id': event.pk})
+        self.assertIn(live_control_url, content)
+        self.assertIn('Back to live control', content)
+
+        # Origin query parameter routing: from table
+        res_table = self.client.get(f'{manage_url}?from=table')
+        self.assertEqual(res_table.status_code, 200)
+        table_content = res_table.content.decode('utf-8')
+        self.assertIn(reverse('showcase_event_table'), table_content)
+        self.assertIn('All events', table_content)
+
+        # Origin query parameter routing: from live
+        res_live = self.client.get(f'{manage_url}?from=live')
+        self.assertEqual(res_live.status_code, 200)
+        live_content = res_live.content.decode('utf-8')
+        self.assertIn(live_control_url, live_content)
+        self.assertIn('Back to live control', live_content)
+
+        # Draft event default back link points to showcases dashboard
+        draft_event = self.create_event('Draft Expo', ShowcaseEvent.Status.DRAFT)
+        draft_manage_url = reverse('showcase_event_manage', kwargs={'event_id': draft_event.pk})
+        res_draft = self.client.get(draft_manage_url)
+        self.assertEqual(res_draft.status_code, 200)
+        draft_content = res_draft.content.decode('utf-8')
+        self.assertIn(reverse('showcase_event_list'), draft_content)
+        self.assertIn('All showcases', draft_content)
+
+        # Save details on open event in edit mode
+        post_res = self.client.post(manage_url, {
+            'action': 'edit',
+            'name': 'Updated Showcase Name',
+            'branding_tagline': 'New tagline for event',
+            'from': 'live',
+        })
+        self.assertEqual(post_res.status_code, 302)
+        event.refresh_from_db()
+        self.assertEqual(event.name, 'Updated Showcase Name')
+        self.assertEqual(event.branding.get('tagline'), 'New tagline for event')
+
+    def test_showcase_live_control_backend_timer_and_silent_state(self):
+        event = self.create_event('Live Pitch Event', ShowcaseEvent.Status.OPEN)
+        category = ShowcaseCategory.objects.create(
+            organization_id=self.org.id, created_by=self.owner, event=event, name='AI & Data', order=1
+        )
+        exhibit = ShowcaseExhibit.objects.create(
+            organization_id=self.org.id, created_by=self.owner, event=event, category=category,
+            name='Autonomous Assistant', order=1
+        )
+        action_url = reverse('showcase_live_action', kwargs={'event_id': event.pk})
+        state_url = reverse('showcase_live_state', kwargs={'event_id': event.pk})
+
+        # Set exhibit on main stage
+        set_res = self.client.post(action_url, {'action': 'stage_set_exhibit', 'exhibit_id': str(exhibit.pk)})
+        self.assertEqual(set_res.status_code, 200)
+
+        # Poll live state silently
+        state_res = self.client.get(state_url, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(state_res.status_code, 200)
+        data = state_res.json()
+        self.assertTrue(data['ok'])
+        self.assertIn('hero_html', data)
+        self.assertIn('stage_html', data)
+        self.assertIn('table_html', data)
+        self.assertIn('projector_html', data)
+        self.assertFalse(data['timer_paused'])
+        self.assertGreaterEqual(data['pitch_seconds_remaining'], 179)
+
+        # Pause countdown
+        pause_res = self.client.post(action_url, {'action': 'stage_toggle_pause'})
+        self.assertEqual(pause_res.status_code, 200)
+        pause_data = pause_res.json()
+        self.assertTrue(pause_data['timer_paused'])
+
+        # Adjust paused timer
+        adj_res = self.client.post(action_url, {'action': 'stage_adjust_timer', 'delta': 30})
+        self.assertEqual(adj_res.status_code, 200)
+        adj_data = adj_res.json()
+        self.assertGreaterEqual(adj_data['pitch_seconds_remaining'], 209)
+
+        # Resume countdown
+        resume_res = self.client.post(action_url, {'action': 'stage_toggle_pause'})
+        self.assertEqual(resume_res.status_code, 200)
+        resume_data = resume_res.json()
+        self.assertFalse(resume_data['timer_paused'])

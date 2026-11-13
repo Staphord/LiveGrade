@@ -4,41 +4,40 @@
 {% block content %}
 {% include 'service_domains/_workspace_styles.html' %}
 {% include 'service_domains/_panel_ui_styles.html' %}
+{% include 'service_domains/_showcase_import_styles.html' %}
 <style nonce="{{ csp_nonce }}">
 .showcase-manage{max-width:1440px}.showcase-head{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap}
 .showcase-state{display:inline-flex;align-items:center;gap:.4rem;padding:.35rem .7rem;border-radius:999px;background:var(--tone-neutral-bg);color:var(--tone-neutral-fg);font-size:var(--fs-sm);font-weight:700}
 .showcase-state[data-state="open"]{background:var(--tone-success-bg);color:var(--tone-success-fg)}.showcase-state[data-state="draft"]{background:var(--tone-warn-bg);color:var(--tone-warn-fg)}
 .showcase-nav{position:sticky;top:calc(var(--topbar-h) + .25rem);z-index:5;display:flex;gap:.35rem;overflow-x:auto;margin:1rem 0;padding:.5rem;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);box-shadow:var(--elev-1)}
 .showcase-nav a{white-space:nowrap;padding:.5rem .75rem;border-radius:7px;color:var(--text-soft);text-decoration:none;font-weight:650;font-size:var(--fs-sm)}.showcase-nav a:hover,.showcase-nav a:focus-visible{background:var(--accent-soft);color:var(--accent)}
-.showcase-panel{padding:1.25rem;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);margin:1rem 0;scroll-margin-top:6rem}
-.showcase-panel>header{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;margin-bottom:1rem}.showcase-panel h2{font-size:var(--fs-title);margin:0}.showcase-stat{padding:1rem;border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface-hover);height:100%}.showcase-stat strong{display:block;color:var(--ink);font-size:1.3rem}.showcase-task{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.75rem 0;border-bottom:1px solid var(--border)}.showcase-task:last-child{border-bottom:0}.showcase-table th{white-space:nowrap}.showcase-divider{border-top:1px solid var(--border);margin:1.25rem 0}.setup-progress{height:.6rem;border-radius:99px;background:var(--surface-hover);overflow:hidden}.setup-progress>span{display:block;height:100%;background:var(--success);border-radius:99px}.setup-flow-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem;margin:1rem 0;padding:0;list-style:none}.setup-flow-grid li{min-width:0}.setup-flow-step{display:flex;gap:.75rem;align-items:flex-start;min-height:92px;padding:.85rem;border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface);text-decoration:none}.setup-flow-step:hover{border-color:var(--accent)}.setup-flow-step.is-current{border-color:var(--accent);background:var(--accent-soft)}.setup-flow-step.is-done .setup-flow-number{background:var(--tone-success-bg);color:var(--tone-success-fg);border-color:var(--tone-success-fg)}.setup-flow-number{display:grid;place-items:center;flex:0 0 28px;height:28px;border:1px solid var(--border-strong);border-radius:50%;font-weight:700}.setup-flow-step strong{display:block;color:var(--ink)}.setup-flow-step small{display:block;color:var(--text-muted);margin-top:.2rem}.danger-zone{border-color:color-mix(in srgb,var(--danger) 40%,var(--border));background:color-mix(in srgb,var(--tone-danger-bg) 25%,var(--surface))}
-@media(max-width:850px){.setup-flow-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.setup-flow-grid{grid-template-columns:1fr}}
-@media(max-width:767px){.showcase-nav{top:.25rem}.showcase-panel{padding:1rem}.showcase-task{align-items:flex-start;flex-direction:column}}
+.showcase-panel{padding:1.25rem;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface);margin:0 0 1.25rem;scroll-margin-top:6rem}
+.showcase-panel>header{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;flex-wrap:wrap;margin-bottom:1rem}.showcase-panel h2{font-size:var(--fs-title);margin:0}.showcase-table th{white-space:nowrap}.showcase-divider{border-top:1px solid var(--border);margin:1.25rem 0}.danger-zone{border-color:color-mix(in srgb,var(--danger) 40%,var(--border));background:color-mix(in srgb,var(--tone-danger-bg) 25%,var(--surface))}
+@media(max-width:767px){.showcase-nav{top:.25rem}.showcase-panel{padding:1rem}}
 </style>
 <div class="container-fluid py-4 service-workspace showcase-manage">
-  <p class="small mb-2"><a href="{% url 'showcase_event_list' %}">← All showcases</a></p>
-  <header class="showcase-head">
-    <div><p class="text-uppercase text-primary small fw-bold mb-1">Showcase event</p><h1 class="page-title mb-2">{{ event.name }}</h1><p class="text-muted mb-0">{% if event.starts_at %}{{ event.starts_at|date:'l, j F Y · H:i' }}{% else %}Date not set{% endif %}{% if event.ends_at %} – {{ event.ends_at|date:'H:i' }}{% endif %}</p></div>
-    <div class="d-flex gap-2 align-items-center flex-wrap"><span class="showcase-state" data-state="{{ event.status }}">{{ event.get_status_display }}</span>{% if event.status == 'draft' %}<a class="btn btn-outline-secondary" href="#overview">Edit event details</a>{% endif %}{% if event.status == 'open' or event.status == 'closed' %}<a class="btn btn-primary" href="{% url 'showcase_live_control' event.pk %}"><i class="bi bi-broadcast me-1" aria-hidden="true"></i>Live control</a><a class="btn btn-outline-secondary" href="{% url 'showcase_live_monitor' event.pk %}">Live monitor</a>{% endif %}{% if event.status == 'published' and event.public_results %}<a class="btn btn-outline-primary" href="{% url 'showcase_public_results' event.public_id %}">View public results</a>{% endif %}</div>
-  </header>
-  <section class="showcase-panel" aria-labelledby="showcase-next-steps-heading">
-    <header><div><p class="text-uppercase small text-primary fw-bold mb-1">Guided event setup</p><h2 id="showcase-next-steps-heading">Prepare this event</h2><p class="text-muted mb-0">Your workflow · {{ setup_completed_count }} of {{ setup_steps|length }} steps complete. Finish each required step before opening.</p></div>{% if next_setup_step %}<a class="btn btn-primary" href="{{ next_setup_step.href }}">{% if next_setup_step.key == 'open' %}Review and open{% else %}Continue: {{ next_setup_step.label }}{% endif %}<i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></a>{% elif event.status == 'open' %}<span class="badge text-bg-success">Setup complete · Event open</span>{% endif %}</header><div class="setup-progress" role="progressbar" aria-label="Event setup progress" aria-valuemin="0" aria-valuemax="{{ setup_steps|length }}" aria-valuenow="{{ setup_completed_count }}"><span style="width:{% widthratio setup_completed_count setup_steps|length 100 %}%"></span></div><nav aria-label="Event setup checklist"><ol class="setup-flow-grid">{% for step in setup_steps %}<li><a href="{{ step.href }}" class="setup-flow-step{% if step.complete %} is-done{% endif %}{% if step.current %} is-current{% endif %}"{% if step.current %} aria-current="step"{% endif %}><span class="setup-flow-number">{% if step.complete %}<i class="bi bi-check-lg" aria-hidden="true"></i><span class="visually-hidden">{% if step.optional %}Optional{% else %}Complete{% endif %}</span>{% else %}{{ forloop.counter }}{% endif %}</span><span><strong>{{ step.label }}</strong><small>{% if step.optional %}Optional · {% endif %}{{ step.description }}</small></span></a></li>{% endfor %}</ol></nav>
-    <div class="row g-3"><div class="col-6 col-xl-3"><div class="showcase-stat"><span class="small text-muted">Exhibits</span><strong>{{ exhibits|length }}</strong><span class="small">{% if exhibits %}Ready to review{% else %}Add the exhibit list{% endif %}</span></div></div><div class="col-6 col-xl-3"><div class="showcase-stat"><span class="small text-muted">Judge coverage</span><strong>{% if judge_coverage.required_judges == 0 %}Optional{% else %}{{ judge_coverage.covered_exhibit_count }} / {{ judge_coverage.exhibit_count }}{% endif %}</strong><span class="small">{% if judge_coverage.required_judges == 0 %}Judge scoring is optional{% else %}Exhibits meeting the assignment target{% endif %}</span></div></div><div class="col-6 col-xl-3"><div class="showcase-stat"><span class="small text-muted">Scorecards</span><strong>{{ judge_progress.submitted_count }} / {{ judge_progress.assigned_count }}</strong><span class="small">{{ judge_progress.pending_count }} waiting · {{ judge_progress.conflict_count }} conflicts</span></div></div><div class="col-6 col-xl-3"><div class="showcase-stat"><span class="small text-muted">Consent</span><strong>{% if not event.includes_minors %}Not required{% elif event.consent_confirmed_at %}Confirmed{% else %}Required{% endif %}</strong><span class="small">{% if event.includes_minors and not event.consent_confirmed_at %}Confirm before opening{% else %}Event safety check{% endif %}</span></div></div></div>
-    <div class="mt-3"><p class="fw-semibold mb-1">Your workflow</p><ol class="mb-0 ps-3"><li><a href="#exhibits-heading">Add and check exhibits</a>, then print one QR label for each exhibit.</li><li>{% if event.minimum_judges_per_exhibit == 0 %}Judge scoring is optional for this event.{% else %}<a href="#judge-criteria-heading">Set the judge criteria</a> and <a href="#judge-coverage-heading">assign judges to each exhibit</a>.{% endif %}</li><li>Confirm required consent, then open the event.</li><li>Close ratings, finish or reassign scorecards, review both result channels, and publish when ready.</li></ol></div>
-  </section>
-  <nav class="showcase-nav" aria-label="Event sections"><a href="#overview">Overview</a><a href="#exhibits-heading">Exhibits</a>{% if event.status == 'draft' or event.minimum_judges_per_exhibit > 0 %}<a href="#judge-criteria-heading">Judges and criteria</a>{% endif %}{% if event.includes_minors %}<a href="#minor-consent-heading">Consent</a>{% endif %}{% if event.status == 'open' or event.status == 'closed' %}<a href="#live-monitor-heading">Live activity</a>{% endif %}<a href="#lifecycle-heading">Event status</a></nav>
-
-  {% if event.status == 'draft' %}
-  <div class="panel-step-layout mt-3" data-panel-steps data-initial-step="{{ active_step|default:'details' }}">
-    <ol class="panel-step-nav" aria-label="Setup steps">
-      {% for step in setup_steps %}
-      <li><button type="button" data-panel-step="{{ step.key }}" {% if active_step == step.key or not active_step and forloop.first %}aria-current="step"{% endif %}><span class="step-index">{{ forloop.counter }}</span><span>{{ step.label }}{% if step.complete %} · ✓{% endif %}</span></button></li>
-      {% endfor %}
-    </ol>
+  <p class="small mb-2"><a href="{{ back_url }}" class="back-link"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i>{{ back_label }}</a></p>
+  <header class="showcase-head mb-4">
     <div>
-  {% endif %}
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span class="text-uppercase text-primary small fw-bold">Showcase event</span>
+        <span class="showcase-state" data-state="{{ event.status }}">{{ event.get_status_display }}</span>
+      </div>
+      <h1 class="page-title mb-2">{{ event.name }}</h1>
+      <p class="text-muted mb-0">{% if event.starts_at %}{{ event.starts_at|date:'l, j F Y · H:i' }}{% else %}Date not set{% endif %}{% if event.ends_at %} - {{ event.ends_at|date:'H:i' }}{% endif %}</p>
+    </div>
+    {% if event.status == 'published' and event.public_results %}
+      <div class="d-flex gap-2 align-items-center flex-wrap">
+        <a class="btn btn-outline-primary" href="{% url 'showcase_public_results' event.public_id %}">View public results</a>
+      </div>
+    {% endif %}
+  </header>
 
-  {% if event.status == 'draft' %}<div class="panel-step" data-panel-panel="details">{% endif %}
+  <div class="panel-step-layout mt-3" data-panel-steps data-initial-step="{{ active_step|default:'details' }}">
+    {% include 'partials/_stepper.html' with steps=stepper_steps %}
+    <div>
+
+  <div class="panel-step" data-panel-panel="details">
   <section id="overview" class="showcase-panel" aria-labelledby="event-overview-heading"><header><div><h2 id="event-overview-heading">Event details</h2><p class="text-muted mb-0">{% if event.status == 'draft' %}Check the event name, dates, and judging setup before you open it.{% else %}Event details and the current scoring status.{% endif %}</p></div></header>
     {% if request.GET.saved == '1' %}
       <div class="alert alert-success d-flex align-items-center gap-2 mb-3" role="status">
@@ -47,31 +46,31 @@
       </div>
     {% endif %}
     {% if event.includes_minors %}{% if event.consent_confirmed_at %}<p class="alert alert-success">Consent was confirmed {{ event.consent_confirmed_at|date:'j M Y, H:i' }}.</p>{% else %}<p class="alert alert-warning">This event includes minors. Confirm that required consent has been collected before opening the event.</p>{% endif %}{% endif %}
-    {% if event_form %}<form method="post" action="{% url 'showcase_event_manage' event.pk %}" data-panel-form data-panel-details-form novalidate>{% csrf_token %}<input type="hidden" name="action" value="edit"><input type="hidden" name="setup_step" value="details">{% include 'partials/_form_fields.html' with form=event_form %}<div class="d-flex justify-content-end gap-2 mt-3"><button class="btn btn-outline-primary btn-sm" type="submit"><i class="bi bi-check-circle me-1" aria-hidden="true"></i>Save details</button><button class="btn btn-primary btn-sm" type="submit" name="advance" value="1">Next: Exhibits <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button></div></form>{% else %}<div class="row g-3"><div class="col-md-6"><span class="small text-muted">Event name</span><div class="fw-semibold">{{ event.name }}</div></div><div class="col-md-6"><span class="small text-muted">Event dates</span><div class="fw-semibold">{% if event.starts_at %}{{ event.starts_at|date:'j M Y, H:i' }}{% else %}Not set{% endif %}{% if event.ends_at %} – {{ event.ends_at|date:'j M Y, H:i' }}{% endif %}</div></div><div class="col-md-6"><span class="small text-muted">Judge scoring</span><div class="fw-semibold">{% if event.minimum_judges_per_exhibit %}At least {{ event.minimum_judges_per_exhibit }} judge{{ event.minimum_judges_per_exhibit|pluralize }} per exhibit{% else %}Optional{% endif %}</div></div></div>{% endif %}
+    {% if event_form %}<form method="post" action="{% url 'showcase_event_manage' event.pk %}" data-panel-form data-panel-details-form novalidate>{% csrf_token %}<input type="hidden" name="action" value="edit"><input type="hidden" name="setup_step" value="details"><input type="hidden" name="leave_to" value="">{% if from_param %}<input type="hidden" name="from" value="{{ from_param }}">{% endif %}{% include 'partials/_form_fields.html' with form=event_form plain=True %}<div class="d-flex justify-content-end gap-2 mt-3"><button class="btn btn-outline-primary btn-sm" type="submit"><i class="bi bi-check-circle me-1" aria-hidden="true"></i>Save details</button><button class="btn btn-primary btn-sm" type="submit" name="advance" value="1">Next: Exhibits <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button></div></form>{% else %}<div class="row g-3"><div class="col-md-6"><span class="small text-muted">Event name</span><div class="fw-semibold">{{ event.name }}</div></div><div class="col-md-6"><span class="small text-muted">Event dates</span><div class="fw-semibold">{% if event.starts_at %}{{ event.starts_at|date:'j M Y, H:i' }}{% else %}Not set{% endif %}{% if event.ends_at %} - {{ event.ends_at|date:'j M Y, H:i' }}{% endif %}</div></div><div class="col-md-6"><span class="small text-muted">Judge scoring</span><div class="fw-semibold">{% if event.minimum_judges_per_exhibit %}At least {{ event.minimum_judges_per_exhibit }} judge{{ event.minimum_judges_per_exhibit|pluralize }} per exhibit{% else %}Optional{% endif %}</div></div></div>{% endif %}
   </section>
-  {% if event.status == 'draft' %}<section class="showcase-panel danger-zone" aria-labelledby="delete-event-heading"><header><div><h2 id="delete-event-heading">Delete this draft</h2><p class="text-muted mb-0">Delete is available only before participant activity or an audit record exists. Removing the draft also disables any judge invitations.</p></div></header>{% if event_can_be_deleted %}<form method="post" action="{% url 'showcase_event_manage' event.pk %}" data-confirm="Delete this draft Showcase event permanently?">{% csrf_token %}<input type="hidden" name="action" value="delete_event"><div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="confirm_delete" value="yes" id="confirm-delete-showcase" required><label class="form-check-label" for="confirm-delete-showcase">I understand this permanently removes the draft and its setup data.</label></div><button class="btn btn-outline-danger" type="submit">Delete draft event</button></form>{% else %}<p class="mb-0"><span class="badge text-bg-secondary">Deletion unavailable</span> This draft contains activity or history that must be kept.</p>{% endif %}</section></div>{% endif %}
+  {% if event.status == 'draft' %}<section class="showcase-panel danger-zone" aria-labelledby="delete-event-heading"><header><div><h2 id="delete-event-heading">Delete this draft</h2><p class="text-muted mb-0">Delete is available only before participant activity or an audit record exists. Removing the draft also disables any judge invitations.</p></div></header>{% if event_can_be_deleted %}<form method="post" action="{% url 'showcase_event_manage' event.pk %}" data-confirm="Delete this draft Showcase event permanently?" data-unsaved-ignore>{% csrf_token %}<input type="hidden" name="action" value="delete_event"><input type="hidden" name="setup_step" value="details">{% if from_param %}<input type="hidden" name="from" value="{{ from_param }}">{% endif %}<div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="confirm_delete" value="yes" id="confirm-delete-showcase" required><label class="form-check-label" for="confirm-delete-showcase">I understand this permanently removes the draft and its setup data.</label></div><button class="btn btn-outline-danger" type="submit">Delete draft event</button></form>{% else %}<p class="mb-0"><span class="badge text-bg-secondary">Deletion unavailable</span> This draft contains activity or history that must be kept.</p>{% endif %}</section>{% endif %}</div>
 
-  {% if event.status == 'open' or event.status == 'closed' %}<section class="showcase-panel" aria-labelledby="live-monitor-heading"><header><div><h2 id="live-monitor-heading">Live event activity</h2><p class="text-muted mb-0">Visitor ratings and judge scorecards stay separate here. These figures track activity; they are not the published awards.</p></div><div class="d-flex gap-2"><a class="btn btn-primary" href="{% url 'showcase_live_control' event.pk %}"><i class="bi bi-broadcast me-1" aria-hidden="true"></i>Live control console</a><a class="btn btn-outline-secondary" href="{% url 'showcase_live_monitor' event.pk %}">Live monitor</a></div></header></section>{% endif %}
-
-  {% if event.status == 'draft' %}<div class="panel-step" data-panel-panel="exhibits">{% endif %}
+  <div class="panel-step" data-panel-panel="exhibits">
   <section class="showcase-panel" aria-labelledby="exhibits-heading"><header><div><p class="text-uppercase small text-primary fw-bold mb-1">Setup step 2</p><h2 id="exhibits-heading">Exhibits</h2><p class="text-muted mb-0">Add the projects visitors and judges will review. Import the list and check every row before saving.</p></div>{% if exhibits %}<a class="btn btn-outline-primary" href="{% url 'showcase_event_labels' event.pk %}">Print all QR labels</a>{% endif %}</header>
     {% if event.status == 'draft' and exhibit_import_form %}
-      <div class="panel-sub-card mb-3">
+      <div class="panel-sub-card mb-3 showcase-import-ui">
         <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
           <div>
             <h3 class="h5 mb-1">Import exhibit spreadsheet</h3>
             <p class="text-muted small mb-0">The spreadsheet needs an <strong>Exhibit</strong> column. Category and Description are optional.</p>
           </div>
-          <a class="btn btn-outline-secondary btn-sm" href="{% url 'showcase_exhibit_import' event.pk %}">Import exhibit list</a>
         </div>
         <form method="post" action="{% url 'showcase_exhibit_import' event.pk %}?embedded=1" enctype="multipart/form-data" data-panel-form data-panel-import-form novalidate>
           {% csrf_token %}
           <input type="hidden" name="setup_step" value="exhibits">
+          {% if from_param %}<input type="hidden" name="from" value="{{ from_param }}">{% endif %}
           {% include 'assessments/_partials/import_dropzone.html' with dropzone_id='showcase-exhibit-dropzone' filename_id='showcase-exhibit-filename' file_field=exhibit_import_form.file file_required=True %}
-          {% include 'partials/_inline_message.html' with message_id='showcase-exhibit-import-error' tone='warning' %}
-          <div class="d-flex flex-wrap gap-2 mt-3">
-            <button class="btn btn-primary btn-sm" type="submit" name="action" value="preview"><i class="bi bi-eye me-1" aria-hidden="true"></i>Upload &amp; preview</button>
-            <a class="btn btn-outline-secondary btn-sm" href="{% url 'showcase_exhibit_import_sample' event.pk %}"><i class="bi bi-download me-1" aria-hidden="true"></i>Download sample file</a>
+          {% include 'partials/_inline_message.html' with message_id='showcase-exhibit-import-error' tone='warning' plain=True %}
+          {% if exhibit_import_errors %}{% include 'partials/_inline_message.html' with tone='danger' messages=exhibit_import_errors plain=True %}{% endif %}
+          <button class="btn btn-outline-primary showcase-import-preview-button" type="submit" name="action" value="preview"><i class="bi bi-eye" aria-hidden="true"></i>Preview exhibit list</button>
+          <div class="showcase-import-file-meta">
+            <span>One row per exhibit (.xlsx)</span>
+            <a href="{% url 'showcase_exhibit_import_sample' event.pk %}" download><i class="bi bi-download me-1" aria-hidden="true"></i>Download sample file</a>
           </div>
         </form>
         {% if exhibit_import_plan %}
@@ -81,9 +80,8 @@
               {% if exhibit_import_plan.ok %}<span class="badge text-bg-success">Ready to import</span>{% else %}<span class="badge text-bg-danger">Needs attention</span>{% endif %}
             </div>
             {% if exhibit_import_plan.errors %}
-              <div class="alert alert-danger py-2 px-3 small mb-2" role="alert">
-                <ul class="mb-0 ps-3">{% for row_num, message in exhibit_import_plan.errors %}<li>{% if row_num %}Row {{ row_num }}: {% endif %}{{ message }}</li>{% endfor %}</ul>
-              </div>
+              {% include 'partials/_inline_message.html' with tone='danger' message='Resolve the spreadsheet issues listed below before importing.' plain=True %}
+              <ul class="small mb-2 ps-4">{% for row_num, message in exhibit_import_plan.errors %}<li>{% if row_num %}Row {{ row_num }}: {% endif %}{{ message }}</li>{% endfor %}</ul>
             {% endif %}
             {% if exhibit_import_plan.rows %}
               <div class="table-responsive mb-2" style="max-height:16rem;overflow-y:auto;">
@@ -93,9 +91,9 @@
                     {% for row in exhibit_import_plan.rows %}
                     <tr>
                       <th scope="row">{{ row.row }}</th>
-                      <td>{{ row.category|default:'—' }}</td>
-                      <td class="fw-semibold">{{ row.name|default:'—' }}</td>
-                      <td>{{ row.description|default:'—' }}</td>
+                      <td>{{ row.category|default:'-' }}</td>
+                      <td class="fw-semibold">{{ row.name|default:'-' }}</td>
+                      <td>{{ row.description|default:'-' }}</td>
                       <td>{% if row.errors %}<span class="badge text-bg-danger">{{ row.errors|join:'; ' }}</span>{% else %}<span class="badge text-bg-success">Ready</span>{% endif %}</td>
                     </tr>
                     {% endfor %}
@@ -110,6 +108,7 @@
                   <input type="hidden" name="action" value="apply">
                   <input type="hidden" name="preview_token" value="{{ exhibit_import_token }}">
                   <input type="hidden" name="setup_step" value="exhibits">
+                  {% if from_param %}<input type="hidden" name="from" value="{{ from_param }}">{% endif %}
                   <button class="btn btn-primary btn-sm" type="submit"><i class="bi bi-check2-circle me-1" aria-hidden="true"></i>Import {{ exhibit_import_plan.exhibits_to_create }} exhibit{{ exhibit_import_plan.exhibits_to_create|pluralize }}</button>
                 </form>
               {% endif %}
@@ -117,6 +116,7 @@
                 {% csrf_token %}
                 <input type="hidden" name="action" value="cancel">
                 <input type="hidden" name="setup_step" value="exhibits">
+                {% if from_param %}<input type="hidden" name="from" value="{{ from_param }}">{% endif %}
                 <button class="btn btn-outline-secondary btn-sm" type="submit">Cancel preview</button>
               </form>
             </div>
@@ -124,46 +124,221 @@
         {% endif %}
       </div>
     {% endif %}
-    {% if exhibits %}<div class="list-group mt-3">{% for exhibit in exhibits %}<div class="list-group-item d-flex justify-content-between align-items-center gap-3 flex-wrap"><span><strong>{{ exhibit.name }}</strong>{% if exhibit.category %}<span class="text-muted"> · {{ exhibit.category.name }}</span>{% endif %}</span><div class="d-flex align-items-center gap-2"><a href="{% url 'showcase_exhibit_label' exhibit.public_id %}">Print this label</a>{% if event.status == 'draft' %}<form method="post" action="{% url 'showcase_event_manage' event.pk %}" data-panel-form data-confirm="Remove this exhibit from the draft event?">{% csrf_token %}<input type="hidden" name="action" value="remove_exhibit"><input type="hidden" name="exhibit_id" value="{{ exhibit.pk }}"><input type="hidden" name="setup_step" value="exhibits"><button class="btn btn-sm btn-outline-danger" type="submit">Remove</button></form>{% endif %}</div></div>{% endfor %}</div>{% else %}<div class="alert alert-light border" role="status"><strong>No exhibits yet.</strong> Import your spreadsheet to continue with judging setup.</div>{% endif %}
-    {% if event.status == 'draft' %}<div class="d-flex justify-content-end mt-3"><button class="btn btn-primary btn-sm" type="button" data-panel-next="criteria">Next: Rubric <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button></div>{% endif %}
+    {% if event.status == 'draft' %}
+      <details class="card card-body mb-3 bg-surface-sunken border" id="quick-add-exhibit-details">
+        <summary class="fw-semibold text-primary" style="cursor: pointer;">
+          <i class="bi bi-plus-circle me-1" aria-hidden="true"></i>Add an individual exhibit manually
+        </summary>
+        <form method="post" action="{% url 'showcase_event_manage' event.pk %}" class="mt-3" data-panel-form novalidate>
+          {% csrf_token %}
+          <input type="hidden" name="action" value="add_exhibit">
+          <input type="hidden" name="setup_step" value="exhibits">
+          {% if from_param %}<input type="hidden" name="from" value="{{ from_param }}">{% endif %}
+          <div class="row g-2">
+            <div class="col-md-5">
+              <label class="form-label small fw-bold" for="quick-exhibit-name">Exhibit name <span class="text-danger">*</span></label>
+              <input type="text" class="form-control form-control-sm" id="quick-exhibit-name" name="name" required placeholder="e.g. Solar Water Purifier">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small fw-bold" for="quick-exhibit-category">Category (optional)</label>
+              <input type="text" class="form-control form-control-sm" id="quick-exhibit-category" name="category" placeholder="e.g. Clean Energy">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold" for="quick-exhibit-desc">Description (optional)</label>
+              <input type="text" class="form-control form-control-sm" id="quick-exhibit-desc" name="description" placeholder="Brief project summary">
+            </div>
+          </div>
+          <div class="d-flex justify-content-end mt-2">
+            <button class="btn btn-primary btn-sm" type="submit">
+              <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Add exhibit
+            </button>
+          </div>
+        </form>
+      </details>
+    {% endif %}
+    {% if exhibits %}<div class="list-group mt-3">{% for exhibit in exhibits %}<div class="list-group-item d-flex justify-content-between align-items-center gap-3 flex-wrap"><span><strong>{{ exhibit.name }}</strong>{% if exhibit.category %}<span class="text-muted"> · {{ exhibit.category.name }}</span>{% endif %}</span><div class="d-flex align-items-center gap-2"><a href="{% url 'showcase_exhibit_label' exhibit.public_id %}">Print this label</a>{% if event.status == 'draft' %}<form method="post" action="{% url 'showcase_event_manage' event.pk %}" data-panel-form data-confirm="Remove this exhibit from the draft event?" data-unsaved-ignore>{% csrf_token %}<input type="hidden" name="action" value="remove_exhibit"><input type="hidden" name="exhibit_id" value="{{ exhibit.pk }}"><input type="hidden" name="setup_step" value="exhibits">{% if from_param %}<input type="hidden" name="from" value="{{ from_param }}">{% endif %}<button class="btn btn-sm btn-outline-danger" type="submit">Remove</button></form>{% endif %}</div></div>{% endfor %}</div>{% else %}<div class="alert alert-light border" role="status"><strong>No exhibits yet.</strong> Import your spreadsheet to continue with judging setup.</div>{% endif %}
+    <div class="d-flex justify-content-end mt-3"><button class="btn btn-primary btn-sm" type="button" data-panel-next="criteria">Next: Rubric <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button></div>
   </section>
-  {% if event.status == 'draft' %}</div>{% endif %}
+  </div>
 
-  {% if event.status == 'draft' %}<div class="panel-step" data-panel-panel="criteria">{% endif %}
-  {% if criteria_formset %}<section class="showcase-panel" aria-labelledby="judge-criteria-heading"><header><div><h2 id="judge-criteria-heading">Judge criteria</h2><p class="text-muted mb-0">Set the full rubric before opening. Criteria weights must total 100%.</p></div></header><form method="post" action="{% url 'showcase_event_manage' event.pk %}" data-panel-form novalidate>{% csrf_token %}<input type="hidden" name="action" value="judge_criteria"><input type="hidden" name="setup_step" value="criteria">{{ criteria_formset.management_form }}{% if criteria_formset.non_form_errors %}<div class="alert alert-danger" role="alert">{{ criteria_formset.non_form_errors }}</div>{% endif %}<div id="showcase-judge-criteria-forms">{% for criterion_form in criteria_formset %}<fieldset class="card card-body mb-3"><legend class="h5">Criterion {{ forloop.counter }}</legend>{% include 'partials/_form_fields.html' with form=criterion_form %}</fieldset>{% endfor %}</div><template id="showcase-judge-criterion-empty">{% include 'partials/_form_fields.html' with form=criteria_formset.empty_form %}</template><div class="d-flex justify-content-between align-items-center flex-wrap gap-2"><div class="d-flex gap-2"><button class="btn btn-outline-secondary" type="button" id="showcase-add-judge-criterion">Add a criterion</button> <button class="btn btn-primary" type="submit">Save criteria</button></div>{% if event.status == 'draft' %}<button class="btn btn-primary btn-sm" type="button" data-panel-next="judges-consent">Next: Judge assignments and consent <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button>{% endif %}</div></form></section>
-  <script nonce="{{ csp_nonce }}">(()=>{const button=document.getElementById('showcase-add-judge-criterion'),formset=document.getElementById('showcase-judge-criteria-forms'),total=document.getElementById('id_criteria-TOTAL_FORMS'),empty=document.getElementById('showcase-judge-criterion-empty');if(!button||!formset||!total||!empty)return;button.addEventListener('click',()=>{const count=Number(total.value);if(count>=50)return;const wrapper=document.createElement('fieldset');wrapper.className='card card-body mb-3';wrapper.innerHTML=`<legend class="h5">Criterion ${count+1}</legend>${empty.innerHTML.replaceAll('__prefix__',String(count))}`;formset.appendChild(wrapper);total.value=String(count+1)})})();</script>{% endif %}
-  {% if event.status == 'draft' %}</div>{% endif %}
+  <div class="panel-step" data-panel-panel="criteria">
+  <section class="showcase-panel" aria-labelledby="judge-criteria-heading">
+    <header><div><h2 id="judge-criteria-heading">Judge criteria</h2><p class="text-muted mb-0">Build the rubric judges will use. Criteria weights must total 100%.</p></div></header>
+  <div class="panel-sub-card mb-3 showcase-import-ui">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2"><div>
+      <h3 class="h5 mb-1">Import rubric spreadsheet</h3>
+      <p class="text-muted small mb-0">One criterion per row with a <strong>Criterion</strong> and <strong>Weight</strong> column. Weights must total 100%. Importing replaces the rubric below.</p>
+    </div></div>
+    <form method="post" action="{% url 'showcase_rubric_import' event.pk %}" enctype="multipart/form-data" data-panel-import-form novalidate>
+      {% csrf_token %}
+      {% if from_param %}<input type="hidden" name="from" value="{{ from_param }}">{% endif %}
+      {% include 'assessments/_partials/import_dropzone.html' with dropzone_id='showcase-rubric-dropzone' filename_id='showcase-rubric-filename' file_field=rubric_import_form.file file_required=True %}
+      {% include 'partials/_inline_message.html' with message_id='showcase-rubric-import-error' tone='warning' plain=True %}
+      {% if rubric_import_errors %}{% include 'partials/_inline_message.html' with tone='danger' messages=rubric_import_errors plain=True %}{% endif %}
+      <button class="btn btn-outline-primary showcase-import-preview-button" type="submit"><i class="bi bi-eye" aria-hidden="true"></i>Preview rubric</button>
+      <div class="showcase-import-file-meta">
+        <span>One criterion per row (.xlsx)</span>
+        <a href="{% url 'showcase_rubric_import_sample' event.pk %}" download><i class="bi bi-download me-1" aria-hidden="true"></i>Download sample file</a>
+      </div>
+    </form>
+    {% if rubric_import_plan %}
+    <div class="mt-3 pt-3 border-top" id="rubric-inline-preview" aria-live="polite">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+        <strong class="small">Rubric preview ({{ rubric_import_plan.criteria_to_create }} criteri{{ rubric_import_plan.criteria_to_create|pluralize:'on,a' }}, {{ rubric_import_plan.total_weight }}% total)</strong>
+        {% if rubric_import_plan.ok %}<span class="badge text-bg-success">Ready to import</span>{% else %}<span class="badge text-bg-danger">Needs attention</span>{% endif %}
+      </div>
+      {% if rubric_import_plan.ok and rubric_import_plan.replaces %}<p class="small text-muted mb-2">This replaces the {{ rubric_import_plan.replaces }} saved criteri{{ rubric_import_plan.replaces|pluralize:'on,a' }}.</p>{% endif %}
+      {% if rubric_import_plan.errors %}
+        {% include 'partials/_inline_message.html' with tone='danger' message='Resolve the spreadsheet issues listed below before importing.' plain=True %}
+        <ul class="small mb-2 ps-4">{% for row_num, message in rubric_import_plan.errors %}<li>{% if row_num %}Row {{ row_num }}: {% endif %}{{ message }}</li>{% endfor %}</ul>
+      {% endif %}
+      {% if rubric_import_plan.rows %}
+      <div class="table-responsive mb-2" style="max-height:16rem;overflow-y:auto;"><table class="table table-sm align-middle mb-0">
+        <thead><tr><th scope="col">Row</th><th scope="col">Criterion</th><th scope="col">Weight</th><th scope="col">Scale</th><th scope="col">Status</th></tr></thead>
+        <tbody>{% for row in rubric_import_plan.rows %}<tr><th scope="row">{{ row.row }}</th><td class="fw-semibold">{{ row.name|default:'-' }}</td><td>{{ row.weight }}%</td><td>{{ row.scale }}</td><td>{% if row.errors %}<span class="badge text-bg-danger">{{ row.errors|join:'; ' }}</span>{% else %}<span class="badge text-bg-success">Ready</span>{% endif %}</td></tr>{% endfor %}</tbody>
+      </table></div>
+      {% endif %}
+      <div class="d-flex flex-wrap gap-2">
+        {% if rubric_import_plan.ok and rubric_import_token %}
+        <form method="post" action="{% url 'showcase_rubric_import' event.pk %}">{% csrf_token %}<input type="hidden" name="action" value="apply"><input type="hidden" name="preview_token" value="{{ rubric_import_token }}">{% if from_param %}<input type="hidden" name="from" value="{{ from_param }}">{% endif %}<button class="btn btn-primary btn-sm" type="submit"><i class="bi bi-check2-circle me-1" aria-hidden="true"></i>Import {{ rubric_import_plan.criteria_to_create }} criteri{{ rubric_import_plan.criteria_to_create|pluralize:'on,a' }}</button></form>
+        {% endif %}
+        <form method="post" action="{% url 'showcase_rubric_import' event.pk %}">{% csrf_token %}<input type="hidden" name="action" value="cancel">{% if from_param %}<input type="hidden" name="from" value="{{ from_param }}">{% endif %}<button class="btn btn-outline-secondary btn-sm" type="submit">Cancel preview</button></form>
+      </div>
+    </div>
+    {% endif %}
+  </div>
 
-  {% if event.status == 'draft' %}<div class="panel-step" data-panel-panel="judges-consent">{% endif %}
-  <section class="showcase-panel" aria-labelledby="judge-coverage-heading"><header><div><h2 id="judge-coverage-heading">Judge assignments <span class="visually-hidden">Invited judge assignment coverage</span></h2><p class="text-muted mb-0">{% if judge_coverage.required_judges == 0 %}Judge scoring is optional. Any category award uses the judge scorecards that are submitted.{% else %}{{ judge_coverage.covered_exhibit_count }} of {{ judge_coverage.exhibit_count }} exhibits meet the minimum of {{ judge_coverage.required_judges }} assigned judge{{ judge_coverage.required_judges|pluralize }}. {% if judge_coverage.uncovered_exhibit_count == 1 %}1 exhibit has a coverage gap.{% elif judge_coverage.uncovered_exhibit_count %}{{ judge_coverage.uncovered_exhibit_count }} exhibits have coverage gaps.{% endif %} Add more judges to fill those gaps.{% endif %}</p></div></header>
-    {% if judge_coverage.exhibits %}<div class="table-responsive"><table class="table align-middle showcase-table"><caption>Judge assignment progress by exhibit</caption><thead><tr><th scope="col">Exhibit</th><th scope="col">Assigned judges</th><th scope="col">Progress</th></tr></thead><tbody>{% for row in judge_coverage.exhibits %}<tr><th scope="row">{{ row.exhibit }}</th><td>{% if row.assigned_judges %}{{ row.assigned_judges|join:', ' }}{% else %}No judges assigned{% endif %}</td><td>{% if row.covered %}<span class="badge text-bg-success">Covered · {{ row.assigned_count }} / {{ row.required_count }}</span>{% else %}<span class="badge text-bg-warning">Needs {{ row.gap }} · {{ row.assigned_count }} / {{ row.required_count }}</span>{% endif %}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p>Add exhibits before inviting judges.</p>{% endif %}
-    <div class="showcase-divider"></div><h3 class="h5">Invite a judge</h3>{% if invite_form %}{% if invite_form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ invite_form.non_field_errors }}</div>{% endif %}{% if judge_invitation_notice %}<div class="alert alert-warning" role="alert">{{ judge_invitation_notice }} <a href="{{ manual_judge_url }}">Copy private judge link</a></div>{% endif %}<form method="post" action="{% url 'showcase_event_manage' event.pk %}" data-panel-form novalidate>{% csrf_token %}<input type="hidden" name="action" value="invite_judge"><input type="hidden" name="setup_step" value="judges-consent">{% include 'partials/_form_fields.html' with form=invite_form %}<button class="btn btn-primary" type="submit">Send judge invitation</button></form>{% endif %}
-    {% if judge_invitations %}<h3 class="h5 mt-4">Invited judges</h3><div class="list-group">{% for invitation in judge_invitations %}<article class="list-group-item"><div class="d-flex justify-content-between align-items-start flex-wrap gap-2"><div><strong>{{ invitation.email }}</strong><div class="small text-muted">{{ invitation.submitted_count }} submitted · expires {{ invitation.expires_at|date:'j M Y, H:i' }}</div></div>{% if not invitation.revoked_at and invitation.usable_at %}<form method="post" action="{% url 'showcase_event_manage' event.pk %}" data-panel-form data-confirm="Revoke this judge link? The judge will lose access.">{% csrf_token %}<input type="hidden" name="action" value="revoke_judge"><input type="hidden" name="invitation_id" value="{{ invitation.pk }}"><input type="hidden" name="setup_step" value="judges-consent"><button class="btn btn-sm btn-outline-danger" type="submit">Revoke link</button></form>{% elif invitation.revoked_at %}<span class="badge text-bg-secondary">Revoked</span>{% else %}<span class="badge text-bg-secondary">Expired</span>{% endif %}</div><p class="small mb-0 mt-2">Assigned exhibits: {% for assignment in invitation.assigned_exhibits %}{% if not forloop.first %}, {% endif %}{{ assignment.exhibit.name }}{% empty %}None{% endfor %}</p></article>{% endfor %}</div>{% endif %}
-    {% if judge_conflicts %}<div class="alert alert-warning mt-3"><h3 class="h6">Judge conflicts to resolve <span class="visually-hidden">Conflict declarations needing reassignment</span></h3><ul class="mb-0">{% for conflict in judge_conflicts %}<li><strong>{{ conflict.assignment.exhibit.name }}</strong> — {{ conflict.assignment.invitation.email }}: {{ conflict.reason }}. Assign another judge to this exhibit.</li>{% endfor %}</ul></div>{% endif %}
-    {% if event.status == 'draft' %}<div class="d-flex justify-content-end mt-3"><button class="btn btn-primary btn-sm" type="button" data-panel-next="open">Next: Open Showcase <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button></div>{% endif %}
-  </section>
-  {% if consent_form %}<section id="consent" class="showcase-panel" aria-labelledby="minor-consent-heading"><header><div><h2 id="minor-consent-heading">Consent for participants under 18</h2><p class="text-muted mb-0">Confirm only after the required consent has been collected. Do not enter participants’ names or contact details.</p></div></header>{% if consent_form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ consent_form.non_field_errors }}</div>{% endif %}<form method="post" action="{% url 'showcase_event_manage' event.pk %}" data-panel-form novalidate>{% csrf_token %}<input type="hidden" name="action" value="confirm_consent"><input type="hidden" name="setup_step" value="judges-consent">{% include 'partials/_form_fields.html' with form=consent_form %}<button class="btn btn-outline-primary" type="submit">Record consent confirmation</button></form></section>{% endif %}
-  {% if consent_audit_events %}<section class="showcase-panel"><h2 class="h5">Consent confirmation history</h2><ul class="mb-0">{% for record in consent_audit_events %}<li>{{ record.confirmed_at|date:'j M Y, H:i' }}{% if record.actor_user %} by {{ record.actor_user.get_full_name|default:record.actor_user.username }}{% endif %} — {{ record.reason }}</li>{% endfor %}</ul></section>{% endif %}
-  {% if event.status == 'draft' %}</div>{% endif %}
-
-  {% if event.status == 'draft' %}<div class="panel-step" data-panel-panel="open">{% endif %}
-  {% if transition_choices %}<section id="lifecycle" class="showcase-panel" aria-labelledby="lifecycle-heading"><header><div><p class="text-uppercase small text-primary fw-bold mb-1">Event control</p><h2 id="lifecycle-heading">{% if event.status == 'draft' %}Review and open{% elif event.status == 'open' %}Close visitor ratings{% elif event.status == 'closed' %}Publish results{% else %}Results are published{% endif %}</h2><p class="text-muted mb-0">{% if event.status == 'draft' %}Opening allows visitors to rate exhibits and judges to submit scorecards.{% elif event.status == 'open' %}Closing stops new visitor ratings. Judges can finish assigned scorecards afterward.{% elif event.status == 'closed' %}Publishing makes the event awards public and creates award certificates.{% else %}You can return published results to review if a correction is needed.{% endif %}</p></div></header>{% if event.status == 'draft' and not event_ready %}<div class="alert alert-warning"><strong>Finish the required setup before opening.</strong><ul class="mb-0 mt-2">{% for step in setup_steps %}{% if not step.complete and not step.optional and step.key != 'open' %}<li><a href="{{ step.href }}">{{ step.label }}</a> — {{ step.description }}</li>{% endif %}{% endfor %}</ul></div>{% endif %}<form method="post" action="{% url 'showcase_event_transition' event.pk %}" data-panel-form novalidate>{% csrf_token %}<input type="hidden" name="setup_step" value="open">{% include 'partials/_form_fields.html' with form=transition_form %}{% if event.includes_minors and not event.consent_confirmed_at %}<p class="text-warning">Consent must be confirmed before visitor ratings can open.</p>{% endif %}<button class="btn btn-primary" type="submit"{% if event.status == 'draft' and not event_ready %} disabled{% endif %}>{% if event.status == 'draft' %}Open Showcase event{% elif event.status == 'open' %}Close ratings{% elif event.status == 'closed' %}Publish results{% else %}Return results to review{% endif %}</button></form></section>{% endif %}
-  {% if event.status == 'draft' %}</div>{% endif %}
+  <div class="panel-sub-card mb-3" id="showcase-criteria-list">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+      <h3 class="h5 mb-0">Rubric criteria</h3>
+      <span class="badge {% if criteria_total == 100 %}text-bg-success{% elif criteria_total > 100 %}text-bg-danger{% else %}text-bg-warning{% endif %}" id="showcase-criteria-total">{{ criteria_total|floatformat:"-2" }}% of 100%</span>
+    </div>
+    {% if criteria %}
+    <div class="table-responsive"><table class="table table-sm align-middle showcase-table mb-2">
+      <caption class="visually-hidden">Judge criteria in this rubric</caption>
+      <thead><tr><th scope="col">#</th><th scope="col">Criterion</th><th scope="col">What to assess</th><th scope="col" class="text-end">Weight</th><th scope="col">Scale</th>{% if event.status == 'draft' %}<th scope="col" class="text-end">Actions</th>{% endif %}</tr></thead>
+      <tbody>{% for criterion in criteria %}
+        <tr{% if editing_criterion and editing_criterion.pk == criterion.pk %} class="table-active" aria-current="true"{% endif %}>
+          <th scope="row">{{ forloop.counter }}</th>
+          <td class="fw-semibold">{{ criterion.name }}</td>
+          <td>{{ criterion.description|default:'-' }}</td>
+          <td class="text-end">{{ criterion.weight|floatformat:"-2" }}%</td>
+          <td>{{ criterion.get_scale_display }}{% if criterion.scale == 'points' %} <span class="small text-muted">(max {{ criterion.max_points|floatformat:"-2" }})</span>{% elif criterion.scale == 'checklist' %} <span class="small text-muted">({{ criterion.checklist_items|length }} item{{ criterion.checklist_items|length|pluralize }})</span>{% endif %}</td>
+          {% if event.status == 'draft' %}<td class="text-end text-nowrap">
+            <a class="btn btn-outline-primary btn-sm" href="{% url 'showcase_event_manage' event.pk %}?step=criteria&amp;edit_criterion={{ criterion.pk }}{% if from_param %}&amp;from={{ from_param }}{% endif %}#showcase-criterion-form" aria-label="Edit {{ criterion.name }}"><i class="bi bi-pencil me-1" aria-hidden="true"></i>Edit</a>
+            <form method="post" action="{% url 'showcase_event_manage' event.pk %}" class="d-inline" data-panel-form data-unsaved-ignore data-confirm="Delete the criterion {{ criterion.name }}? This cannot be undone." data-confirm-title="Delete criterion?" data-confirm-label="Delete" data-confirm-tone="danger">{% csrf_token %}<input type="hidden" name="action" value="remove_criterion"><input type="hidden" name="criterion_id" value="{{ criterion.pk }}"><input type="hidden" name="setup_step" value="criteria">{% if from_param %}<input type="hidden" name="from" value="{{ from_param }}">{% endif %}<button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Delete {{ criterion.name }}"><i class="bi bi-trash me-1" aria-hidden="true"></i>Delete</button></form>
+          </td>{% endif %}
+        </tr>{% endfor %}</tbody>
+      <tfoot><tr><th scope="row" colspan="3">Total weight</th><td class="text-end fw-semibold">{{ criteria_total|floatformat:"-2" }}%</td><td colspan="{% if event.status == 'draft' %}2{% else %}1{% endif %}" class="small text-muted">{% if criteria_total == 100 %}Rubric is complete.{% elif criteria_total > 100 %}Over by {{ criteria_remaining|floatformat:"-2"|cut:"-" }}%.{% else %}{{ criteria_remaining|floatformat:"-2" }}% still to assign.{% endif %}</td></tr></tfoot>
+    </table></div>
+    {% else %}<p class="text-muted mb-0">No criteria yet. Import a spreadsheet above or add the first one below.</p>{% endif %}
+  </div>
 
   {% if event.status == 'draft' %}
+  <style nonce="{{ csp_nonce }}">.checklist-option-list{display:grid;gap:.5rem}.checklist-option-row .form-control{min-width:0}</style>
+  <div class="panel-sub-card" id="showcase-criterion-form">
+    <h3 class="h5 mb-3">{% if editing_criterion %}Edit criterion: {{ editing_criterion.name }}{% else %}Add a criterion{% endif %}</h3>
+    <form method="post" action="{% url 'showcase_event_manage' event.pk %}" data-panel-form novalidate>{% csrf_token %}
+      <input type="hidden" name="action" value="save_criterion"><input type="hidden" name="setup_step" value="criteria">
+      {% if editing_criterion %}<input type="hidden" name="criterion_id" value="{{ editing_criterion.pk }}">{% endif %}
+      {% if from_param %}<input type="hidden" name="from" value="{{ from_param }}">{% endif %}
+      {% if criterion_form.non_field_errors %}<div class="mb-3">{% include 'partials/_inline_message.html' with tone='danger' messages=criterion_form.non_field_errors plain=True %}</div>{% endif %}
+      {% include 'partials/_form_fields.html' with form=criterion_form plain=True %}
+      <div class="d-flex flex-wrap gap-2 mt-3">
+        <button class="btn btn-primary" type="submit"><i class="bi {% if editing_criterion %}bi-check2{% else %}bi-plus-lg{% endif %} me-1" aria-hidden="true"></i>{% if editing_criterion %}Update criterion{% else %}Add criterion{% endif %}</button>
+        {% if editing_criterion %}<a class="btn btn-outline-secondary" href="{% url 'showcase_event_manage' event.pk %}?step=criteria{% if from_param %}&amp;from={{ from_param }}{% endif %}">Cancel edit</a>{% endif %}
+      </div>
+    </form>
+  </div>
+  <script nonce="{{ csp_nonce }}">(()=>{
+    const form=document.getElementById('showcase-criterion-form');
+    if(!form)return;
+    const scale=form.querySelector('select[name="scale"]');
+    const points=form.querySelector('input[name="max_points"]')?.closest('.mb-3, .form-group, p');
+    const checklist=form.querySelector('textarea[name="checklist_items_text"]')?.closest('.mb-3, .form-group, p');
+    function sync(){if(!scale)return;if(points)points.hidden=scale.value!=='points';if(checklist)checklist.hidden=scale.value!=='checklist';}
+    if(scale){scale.addEventListener('change',sync);sync();}
+    // Checklist items: one box per item, two to start, growing and shrinking
+    // with the last filled box (same behaviour as poll answer options). The
+    // textarea stays the submitted value, and the only control without scripting.
+    const itemsField=form.querySelector('textarea[name="checklist_items_text"]');
+    if(itemsField){
+      const MAX_ITEMS=20,list=document.createElement('div');
+      list.className='checklist-option-list';list.dataset.checklistList='';
+      itemsField.after(list);itemsField.hidden=true;
+      const rows=()=>Array.from(list.querySelectorAll('[data-checklist-row] input'));
+      function addRow(value){
+        const row=document.createElement('div');row.className='checklist-option-row';row.dataset.checklistRow='';
+        const input=document.createElement('input');input.type='text';input.maxLength=240;
+        input.className='form-control';input.placeholder='Add checklist item';input.value=value||'';
+        input.setAttribute('aria-label','Checklist item '+(rows().length+1));
+        input.addEventListener('input',update);row.append(input);list.append(row);
+      }
+      function update(){
+        const fields=rows();
+        const lastFilled=fields.reduce((last,field,index)=>field.value.trim()?index:last,-1);
+        const needed=Math.min(MAX_ITEMS,Math.max(2,lastFilled+2));
+        while(rows().length<needed)addRow('');
+        while(rows().length>needed)rows().pop().closest('[data-checklist-row]').remove();
+        itemsField.value=rows().map(field=>field.value.trim()).filter(Boolean).join('\n');
+      }
+      itemsField.value.split('\n').filter(line=>line.trim()).forEach(addRow);
+      update();
+    }
+    {% if editing_criterion %}form.scrollIntoView({block:'nearest'});{% endif %}
+  })();</script>
+  {% else %}<p class="text-muted">Judge criteria are locked after the event opens.</p>{% endif %}
+    <div class="d-flex justify-content-end mt-3"><button class="btn btn-primary btn-sm" type="button" data-panel-next="judges-consent">Next: Judge assignments and consent <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button></div>
+  </section>
+  </div>
+
+  <div class="panel-step" data-panel-panel="judges-consent">
+  <section class="showcase-panel" aria-labelledby="judge-coverage-heading"><header><div><h2 id="judge-coverage-heading">Judge assignments <span class="visually-hidden">Invited judge assignment coverage</span></h2><p class="text-muted mb-0">{% if judge_coverage.required_judges == 0 %}Judge scoring is optional. Any category award uses the judge scorecards that are submitted.{% else %}{{ judge_coverage.covered_exhibit_count }} of {{ judge_coverage.exhibit_count }} exhibits meet the minimum of {{ judge_coverage.required_judges }} assigned judge{{ judge_coverage.required_judges|pluralize }}. {% if judge_coverage.uncovered_exhibit_count == 1 %}1 exhibit has a coverage gap.{% elif judge_coverage.uncovered_exhibit_count %}{{ judge_coverage.uncovered_exhibit_count }} exhibits have coverage gaps.{% endif %} Add more judges to fill those gaps.{% endif %}</p></div></header>
+    {% if judge_coverage.exhibits %}<div class="table-responsive"><table class="table align-middle showcase-table"><caption class="visually-hidden">Judge assignment progress by exhibit</caption><thead><tr><th scope="col">Exhibit</th><th scope="col">Assigned judges</th><th scope="col">Progress</th></tr></thead><tbody>{% for row in judge_coverage.exhibits %}<tr><th scope="row">{{ row.exhibit }}</th><td>{% if row.assigned_judges %}{{ row.assigned_judges|join:', ' }}{% else %}No judges assigned{% endif %}</td><td>{% if row.covered %}<span class="badge text-bg-success">Covered · {{ row.assigned_count }} / {{ row.required_count }}</span>{% else %}<span class="badge text-bg-warning">Needs {{ row.gap }} · {{ row.assigned_count }} / {{ row.required_count }}</span>{% endif %}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p>Add exhibits before inviting judges.</p>{% endif %}
+    <div class="showcase-divider"></div><h3 class="h5 mb-3">Invite a judge</h3>{% if invite_form %}{% if invite_form.non_field_errors %}<div class="mb-3">{% include 'partials/_inline_message.html' with tone='danger' messages=invite_form.non_field_errors plain=True %}</div>{% endif %}{% if judge_invitation_notice %}<div class="alert alert-warning mb-3" role="alert">{{ judge_invitation_notice }} <a href="{{ manual_judge_url }}">Copy private judge link</a></div>{% endif %}<form method="post" action="{% url 'showcase_event_manage' event.pk %}" data-panel-form novalidate>{% csrf_token %}<input type="hidden" name="action" value="invite_judge"><input type="hidden" name="setup_step" value="judges-consent">{% if from_param %}<input type="hidden" name="from" value="{{ from_param }}">{% endif %}{% include 'partials/_form_fields.html' with form=invite_form plain=True %}<div class="mt-3"><button class="btn btn-primary" type="submit">Send judge invitation</button></div></form>{% endif %}
+    {% if judge_invitations %}<h3 class="h5 mt-4 mb-3">Invited judges</h3><div class="list-group">{% for invitation in judge_invitations %}<article class="list-group-item"><div class="d-flex justify-content-between align-items-start flex-wrap gap-2"><div><strong>{{ invitation.email }}</strong><div class="small text-muted">{{ invitation.submitted_count }} submitted · expires {{ invitation.expires_at|date:'j M Y, H:i' }}</div></div>{% if not invitation.revoked_at and invitation.usable_at %}<form method="post" action="{% url 'showcase_event_manage' event.pk %}" data-panel-form data-confirm="Revoke this judge link? The judge will lose access." data-unsaved-ignore>{% csrf_token %}<input type="hidden" name="action" value="revoke_judge"><input type="hidden" name="invitation_id" value="{{ invitation.pk }}"><input type="hidden" name="setup_step" value="judges-consent">{% if from_param %}<input type="hidden" name="from" value="{{ from_param }}">{% endif %}<button class="btn btn-sm btn-outline-danger" type="submit">Revoke link</button></form>{% elif invitation.revoked_at %}<span class="badge text-bg-secondary">Revoked</span>{% else %}<span class="badge text-bg-secondary">Expired</span>{% endif %}</div><p class="small mb-0 mt-2">Assigned exhibits: {% for assignment in invitation.assigned_exhibits %}{% if not forloop.first %}, {% endif %}{{ assignment.exhibit.name }}{% empty %}None{% endfor %}</p></article>{% endfor %}</div>{% endif %}
+    {% if judge_conflicts %}<div class="alert alert-warning mt-3"><h3 class="h6">Judge conflicts to resolve <span class="visually-hidden">Conflict declarations needing reassignment</span></h3><ul class="mb-0">{% for conflict in judge_conflicts %}<li><strong>{{ conflict.assignment.exhibit.name }}</strong>: {{ conflict.assignment.invitation.email }}: {{ conflict.reason }}. Assign another judge to this exhibit.</li>{% endfor %}</ul></div>{% endif %}
+    <div class="d-flex justify-content-end mt-4"><button class="btn btn-primary btn-sm" type="button" data-panel-next="open">Next: Open Showcase <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button></div>
+  </section>
+  {% if consent_form %}<section id="consent" class="showcase-panel" aria-labelledby="minor-consent-heading"><header><div><h2 id="minor-consent-heading">Consent for participants under 18</h2><p class="text-muted mb-0">Confirm only after the required consent has been collected. Do not enter participants’ names or contact details.</p></div></header>{% if consent_form.non_field_errors %}<div class="mb-3">{% include 'partials/_inline_message.html' with tone='danger' messages=consent_form.non_field_errors plain=True %}</div>{% endif %}<form method="post" action="{% url 'showcase_event_manage' event.pk %}" data-panel-form novalidate>{% csrf_token %}<input type="hidden" name="action" value="confirm_consent"><input type="hidden" name="setup_step" value="judges-consent">{% if from_param %}<input type="hidden" name="from" value="{{ from_param }}">{% endif %}{% include 'partials/_form_fields.html' with form=consent_form plain=True %}<div class="mt-3"><button class="btn btn-outline-primary" type="submit">Record consent confirmation</button></div></form></section>{% endif %}
+  {% if consent_audit_events %}<section class="showcase-panel"><h2 class="h5">Consent confirmation history</h2><ul class="mb-0">{% for record in consent_audit_events %}<li>{{ record.confirmed_at|date:'j M Y, H:i' }}{% if record.actor_user %} by {{ record.actor_user.get_full_name|default:record.actor_user.username }}{% endif %}: {{ record.reason }}</li>{% endfor %}</ul></section>{% endif %}
+  </div>
+
+  <div class="panel-step" data-panel-panel="open">
+  <section id="review" class="showcase-panel" aria-labelledby="review-heading">
+    <header><div>
+      <p class="text-uppercase small text-primary fw-bold mb-1">Setup step 5</p>
+      <h2 id="review-heading">Review</h2>
+      <p class="text-muted mb-0">{% if event.status == 'draft' %}Check that every step is ready. You open the event from live control, not from this page.{% else %}This event is {{ event.get_status_display|lower }}. Run it from live control.{% endif %}</p>
+    </div></header>
+    <ul class="list-unstyled mb-3" aria-label="Setup checklist">
+      {% for step in setup_steps %}{% if step.key != 'open' %}
+      <li class="d-flex align-items-start gap-2 mb-2">
+        {% if step.complete %}<i class="bi bi-check-circle-fill text-success mt-1" aria-hidden="true"></i><span class="visually-hidden">Complete: </span>
+        {% elif step.optional %}<i class="bi bi-dash-circle text-muted mt-1" aria-hidden="true"></i><span class="visually-hidden">Optional: </span>
+        {% else %}<i class="bi bi-exclamation-circle-fill text-warning mt-1" aria-hidden="true"></i><span class="visually-hidden">Needs attention: </span>{% endif %}
+        <span><button type="button" class="btn btn-link p-0 align-baseline" data-panel-step="{{ step.key }}">{{ step.label }}</button>{% if step.optional %} <span class="small text-muted">(optional)</span>{% endif %}<span class="d-block small text-muted">{{ step.description }}</span></span>
+      </li>
+      {% endif %}{% endfor %}
+    </ul>
+    {% if event.status == 'draft' %}
+      {% if event_ready %}<div class="alert alert-success" role="status">Setup is complete. Open live control to start the event.</div>
+      {% else %}<div class="alert alert-warning" role="status">Finish the required steps marked above before opening.</div>{% endif %}
+    {% endif %}
+    {% if event.status == 'draft' or event.status == 'open' or event.status == 'closed' %}
+    <a class="btn btn-primary" href="{% url 'showcase_live_control' event_id=event.pk %}"><i class="bi bi-broadcast me-1" aria-hidden="true"></i>{% if event.status == 'draft' %}Go to live control to open{% else %}Go to live control{% endif %}</a>
+    {% else %}
+    <a class="btn btn-primary" href="{% url 'showcase_event_results' event_id=event.pk %}"><i class="bi bi-trophy me-1" aria-hidden="true"></i>View results and awards</a>
+    {% endif %}
+  </section>
+  </div>
+
     </div>
   </div>
-  {% include 'partials/_unsaved_changes.html' with form_selector='form[data-panel-details-form]' dialog_id='showcase-unsaved-dialog' title_id='showcase-unsaved-title' dialog_title='Leave setup?' dialog_body='You have unsaved changes in setup details. Save your changes before leaving, or discard them.' save_btn_text='Save details' step_selector='[data-panel-step]' %}
-  {% endif %}
+  {% include 'partials/_unsaved_changes.html' with form_selector='form[data-panel-details-form]' dialog_id='showcase-unsaved-dialog' title_id='showcase-unsaved-title' dialog_title='Leave setup?' dialog_body='You have unsaved changes in setup details. Save your changes before leaving, or discard them.' save_btn_text='Save details' has_leave_to=True step_selector='[data-panel-step], [data-panel-next]' step_return_field='return_step' %}
 </div>
 <script nonce="{{ csp_nonce }}">
 (function(){
-  document.addEventListener('submit', function(event) {
-    const message = event.target.dataset.confirm;
-    if (message && !window.confirm(message)) {
-      event.preventDefault();
-    }
-  });
   const root=document.querySelector('[data-panel-steps]');
   if(!root)return;
   const buttons=[...root.querySelectorAll('[data-panel-step]')];
@@ -175,15 +350,17 @@
     if(!active)return;
     currentStep=active;
     panels.forEach(p=>{p.hidden=p.dataset.panelPanel!==active;});
-    buttons.forEach(b=>{if(b.dataset.panelStep===active)b.setAttribute('aria-current','step');else b.removeAttribute('aria-current');});
+    window.DevPerfStepper.setCurrent(root,active);
     if(updateUrl&&window.history&&window.history.replaceState){
       const url=new URL(window.location.href);
       url.searchParams.set('step',active);
+      if(active!=='details')url.searchParams.delete('saved');
       window.history.replaceState({step:active},'',url);
     }
   }
   window.showPanelStep=show;
   buttons.forEach(b=>b.addEventListener('click',()=>show(b.dataset.panelStep)));
+  document.querySelectorAll('[data-panel-step]').forEach(b=>{if(!root.contains(b))b.addEventListener('click',()=>show(b.dataset.panelStep));});
   root.querySelectorAll('[data-panel-next]').forEach(b=>b.addEventListener('click',()=>show(b.dataset.panelNext)));
   root.querySelectorAll('form[data-panel-form]').forEach(f=>{
     f.addEventListener('submit',()=>{
@@ -196,7 +373,6 @@
     const fileInput=f.querySelector('input[type="file"]');
     const msgBox=f.querySelector('[data-inline-message]');
     const msgText=msgBox?msgBox.querySelector('[data-inline-message-text]'):null;
-    const dropzone=f.querySelector('[data-import-dropzone]');
     if(fileInput&&msgBox){
       fileInput.addEventListener('change',()=>{if(fileInput.files&&fileInput.files.length)msgBox.hidden=true;});
     }
@@ -205,7 +381,7 @@
         event.preventDefault();
         if(msgText)msgText.textContent='Please choose a spreadsheet file (.xlsx) first.';
         if(msgBox)msgBox.hidden=false;
-        if(dropzone)dropzone.focus();
+          if(fileInput)fileInput.focus();
       }
     });
   });

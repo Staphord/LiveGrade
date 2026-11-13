@@ -10,10 +10,76 @@
   <article class="card card-body showcase-rate-card">
     <p class="showcase-eyebrow text-uppercase small mb-1">{{ event.name }}{% if category %} · {{ category.name }}{% endif %}</p>{% if event.brand_tagline %}<p class="text-muted mb-3">{{ event.brand_tagline }}</p>{% endif %}
     <h1 class="h2 mb-2">{{ exhibit.name }}</h1>{% if exhibit.description %}<p class="mb-4">{{ exhibit.description }}</p>{% endif %}
-    {% if submitted %}<div class="alert alert-success showcase-success" role="status"><h2 class="h5">Thank you for sharing your feedback</h2><p class="mb-0">Thank you. Your rating has been recorded.</p></div>
-    {% else %}<div class="mb-4"><h2 class="h5">How would you rate this exhibit?</h2><p class="text-muted small mb-0">Choose one rating from 1 (lowest) to 5 (highest).</p></div>{% if message %}<p class="alert alert-danger" role="alert">{{ message }}</p>{% endif %}{% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
-      <form method="post" novalidate>{% csrf_token %}<fieldset class="showcase-stars"{% if form.stars.errors %} aria-describedby="stars-error"{% endif %}><legend class="visually-hidden">{{ form.stars.label }}</legend><div class="showcase-scale-help"><span>Lowest</span><span>Highest</span></div>{% for radio in form.stars %}<label>{{ radio.tag }}<span>{{ radio.choice_label }}</span>{% if forloop.first %}<span class="rating-word">Lowest</span>{% elif forloop.last %}<span class="rating-word">Highest</span>{% endif %}</label>{% endfor %}</fieldset>{% if form.stars.errors %}<p class="text-danger small mt-2" id="stars-error" role="alert">{{ form.stars.errors }}</p>{% endif %}<button class="btn btn-primary showcase-rate-submit mt-3" type="submit">Submit my rating</button><p class="text-muted small mt-3 mb-0">Your star rating is anonymous. This page does not collect names, contact details, or written comments.</p></form>
+    {% if unavailable and not already_rated %}<div class="alert alert-info" data-rate-waiting role="status"><h2 class="h5">Ratings are not open right now</h2><p class="mb-2">{{ unavailable }}</p>{% if on_stage and on_stage.pk != exhibit.pk %}<p class="mb-2">Now on stage: <strong>{{ on_stage.name }}</strong></p><a class="btn btn-primary btn-sm me-2" href="{% url 'showcase_rate_exhibit' on_stage.public_id %}">Rate {{ on_stage.name }}</a>{% endif %}<a class="btn btn-outline-primary btn-sm" href="{% url 'showcase_visit' event.public_id %}">See all exhibits</a></div>
+    {% elif already_rated %}<div class="alert alert-success" role="status"><h2 class="h5">You have already rated this exhibit</h2><p class="mb-3">Thank you. Your rating is recorded and cannot be changed. When the next exhibit is on stage it will appear on the exhibit list.</p><a class="btn btn-primary" href="{% url 'showcase_visit' event.public_id %}">Back to all exhibits</a></div>
+    {% elif submitted %}<div class="alert alert-success showcase-success" role="status"><h2 class="h5">Thank you for sharing your feedback</h2><p class="mb-3">Thank you. Your rating has been recorded.</p><p class="mb-3">Head back to the exhibit list and wait there. When the next exhibit is on stage it appears with a Rate button.</p><a class="btn btn-primary" href="{% url 'showcase_visit' event.public_id %}">Back to all exhibits</a></div>
+    {% else %}<div class="mb-4"><h2 class="h5">How would you rate this exhibit?</h2><p class="text-muted small mb-0">Choose one rating from 1 (lowest) to 5 (highest).</p></div>
+      <div class="alert alert-info" role="status" data-rate-blocked hidden><p class="mb-3" data-rate-blocked-text></p><a class="btn btn-primary" href="{% url 'showcase_visit' event.public_id %}">Back to all exhibits</a></div>
+      {% if message %}<div class="mb-3">{% include 'partials/_inline_message.html' with tone='danger' message=message %}</div>{% endif %}
+      {% if form.non_field_errors %}<div class="mb-3">{% include 'partials/_inline_message.html' with tone='danger' messages=form.non_field_errors %}</div>{% endif %}
+      <form method="post" novalidate data-rate-form>{% csrf_token %}<fieldset class="showcase-stars"{% if form.stars.errors %} aria-describedby="stars-error"{% endif %}><legend class="visually-hidden">{{ form.stars.label }}</legend><div class="showcase-scale-help"><span>Lowest</span><span>Highest</span></div>{% for radio in form.stars %}<label>{{ radio.tag }}<span>{{ radio.choice_label }}</span>{% if forloop.first %}<span class="rating-word">Lowest</span>{% elif forloop.last %}<span class="rating-word">Highest</span>{% endif %}</label>{% endfor %}</fieldset>{% if form.stars.errors %}<p class="text-danger small mt-2" id="stars-error" role="alert">{{ form.stars.errors }}</p>{% endif %}<button class="btn btn-primary showcase-rate-submit mt-3" type="submit">Submit my rating</button><p class="text-muted small mt-3 mb-0">Your star rating is anonymous. This page does not collect names, contact details, or written comments.</p></form>
     {% endif %}
   </article>
 </main>
 {% endblock %}
+{% block scripts %}<script nonce="{{ csp_nonce }}">
+(() => {
+  // The page re-checks with the server so the form can never be used when this device cannot
+  // rate: the exhibit left the stage, ratings paused or closed, or this visitor already rated
+  // it (even from another tab). The server enforces the same rules on submit.
+  const form = document.querySelector('[data-rate-form]');
+  const blocked = document.querySelector('[data-rate-blocked]');
+  if (!form && document.querySelector('[data-rate-waiting]')) {
+    // Waiting for this exhibit to reach the stage: reload as soon as the stage changes.
+    let waitSocket = null, waitRetries = 0;
+    const waitConnect = () => {
+      if (!window.WebSocket) return;
+      try {
+        waitSocket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/showcase/display/{{ event.public_id }}/`);
+        waitSocket.onopen = () => { waitRetries = 0; };
+        waitSocket.onmessage = () => window.setTimeout(() => window.location.reload(), 400);
+        waitSocket.onclose = () => window.setTimeout(waitConnect, Math.min(30000, 2000 * Math.pow(1.5, waitRetries++)));
+        waitSocket.onerror = () => waitSocket.close();
+      } catch (_err) {}
+    };
+    waitConnect();
+    return;
+  }
+  if (!form || !blocked) return;
+  const text = blocked.querySelector('[data-rate-blocked-text]');
+  const STATE_URL = "{% url 'showcase_rating_state' exhibit.public_id %}";
+  let socket = null, retries = 0, pending = null, checking = false;
+  const apply = state => {
+    form.hidden = !state.can_rate;
+    blocked.hidden = state.can_rate;
+    if (!state.can_rate) text.textContent = state.message;
+  };
+  const check = async () => {
+    if (checking) return;
+    checking = true;
+    try {
+      const response = await fetch(STATE_URL, { credentials: 'same-origin', cache: 'no-store', headers: { 'Accept': 'application/json' } });
+      if (response.ok) apply(await response.json());
+    } catch (_err) {} finally { checking = false; }
+  };
+  const schedule = () => { window.clearTimeout(pending); pending = window.setTimeout(check, 300); };
+  form.addEventListener('submit', () => {
+    const button = form.querySelector('button[type="submit"]');
+    if (button) window.setTimeout(() => { button.disabled = true; }, 0);
+  });
+  const connect = () => {
+    if (!window.WebSocket) return;
+    try {
+      socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/showcase/display/{{ event.public_id }}/`);
+      socket.onopen = () => { retries = 0; check(); };
+      socket.onmessage = schedule;
+      socket.onclose = () => window.setTimeout(connect, Math.min(30000, 2000 * Math.pow(1.5, retries++)));
+      socket.onerror = () => socket.close();
+    } catch (_err) {}
+  };
+  connect();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+  window.addEventListener('pageshow', check);
+  window.setInterval(() => { if (!socket || socket.readyState !== WebSocket.OPEN) check(); }, 15000);
+})();
+</script>{% endblock %}

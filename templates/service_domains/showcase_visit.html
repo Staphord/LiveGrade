@@ -1,0 +1,65 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% block title %}Rate exhibits · {{ event.name }}{% endblock %}
+{% block service_name %}Showcase audience rating{% endblock %}
+{% block extra_css %}<style nonce="{{ csp_nonce }}">
+.showcase-visit{--showcase-accent:{{ event.brand_accent_color }};max-width:48rem;margin:0 auto;border-top:.4rem solid var(--showcase-accent)!important;padding:clamp(1.25rem,5vw,2.25rem)}
+.showcase-visit-list{list-style:none;margin:0;padding:0;display:grid;gap:.6rem}
+.showcase-visit-list a{display:flex;align-items:center;justify-content:space-between;gap:.75rem;min-height:3.25rem;padding:.7rem .9rem;border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface);color:var(--ink);text-decoration:none;font-weight:650}
+.showcase-visit-list a:hover,.showcase-visit-list a:focus-visible{border-color:var(--showcase-accent)}
+</style>{% endblock %}
+{% block content %}
+<main id="public-main" class="public-service-content narrow">
+  <article class="card card-body showcase-visit">
+    <p class="text-uppercase small text-muted mb-1">{{ event.name }}</p>
+    <h1 class="h2 mb-2">Rate the exhibits</h1>
+    {% if event.brand_tagline %}<p class="text-muted">{{ event.brand_tagline }}</p>{% endif %}
+    {% if unavailable %}
+      <div class="alert alert-info" role="status"><p class="mb-0">{{ unavailable }}</p></div>
+    {% elif staged and staged_rated %}
+      <section class="border rounded-3 p-3 mb-3" aria-labelledby="visit-onstage-heading">
+        <p class="text-uppercase small fw-bold text-muted mb-1" id="visit-onstage-heading"><i class="bi bi-mic-fill me-1" aria-hidden="true"></i>On stage now</p>
+        <h2 class="h4 mb-1">{{ staged.name }}</h2>
+        <p class="mb-0 text-success"><i class="bi bi-check-circle-fill me-1" aria-hidden="true"></i>You have rated this exhibit. When the next exhibit is on stage it will appear here; this page updates by itself.</p>
+      </section>
+    {% elif staged %}
+      <section class="border rounded-3 p-3 mb-3" aria-labelledby="visit-onstage-heading">
+        <p class="text-uppercase small fw-bold text-muted mb-1" id="visit-onstage-heading"><i class="bi bi-mic-fill me-1" aria-hidden="true"></i>On stage now</p>
+        <h2 class="h4 mb-1">{{ staged.name }}</h2>
+        {% if staged.category %}<p class="text-muted small mb-2">{{ staged.category.name }}</p>{% endif %}
+        <a class="btn btn-primary" href="{% url 'showcase_rate_exhibit' staged.public_id %}">Rate {{ staged.name }}</a>
+      </section>
+    {% else %}
+      <div class="alert alert-info" role="status"><p class="mb-0">No exhibit is on stage right now. You can rate an exhibit while it is presenting; this page updates by itself.</p></div>
+    {% endif %}
+    {% for category, exhibits in groups.items %}
+      <section class="mt-3" aria-labelledby="visit-cat-{{ forloop.counter }}">
+        <h2 class="h6 text-uppercase text-muted" id="visit-cat-{{ forloop.counter }}">{{ category }}</h2>
+        <ul class="showcase-visit-list">
+          {% for exhibit in exhibits %}
+          <li>{% if exhibit.pk in rated_ids %}<span class="showcase-visit-item">{{ exhibit.name }} <span class="badge text-bg-success ms-1"><i class="bi bi-check2" aria-hidden="true"></i> Rated</span></span>{% elif staged and exhibit.pk == staged.pk and not unavailable %}<a href="{% url 'showcase_rate_exhibit' exhibit.public_id %}"><span>{{ exhibit.name }}</span><span class="badge text-bg-primary">On stage · Rate</span></a>{% else %}<span class="showcase-visit-item">{{ exhibit.name }}</span>{% endif %}</li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endfor %}
+  </article>
+</main>
+{% endblock %}
+{% block scripts %}<script nonce="{{ csp_nonce }}">
+(() => {
+  // The organizer's stage changes arrive over a socket; the page re-reads what is on stage.
+  let socket = null, retries = 0, pending = null;
+  const reload = () => { window.clearTimeout(pending); pending = window.setTimeout(() => window.location.reload(), 400); };
+  const connect = () => {
+    if (!window.WebSocket) return;
+    try {
+      socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/showcase/display/{{ event.public_id }}/`);
+      socket.onopen = () => { retries = 0; };
+      socket.onmessage = reload;
+      socket.onclose = () => window.setTimeout(connect, Math.min(30000, 2000 * Math.pow(1.5, retries++)));
+      socket.onerror = () => socket.close();
+    } catch (_err) {}
+  };
+  connect();
+  window.setInterval(() => { if (!socket || socket.readyState !== WebSocket.OPEN) window.location.reload(); }, 20000);
+})();
+</script>{% endblock %}

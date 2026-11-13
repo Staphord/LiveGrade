@@ -39,7 +39,7 @@
                 <div class="fw-bold text-dark">{{ row.exhibit.name }}</div>
                 <div class="small text-muted">
                   Booth #{{ row.exhibit.order|default:forloop.counter }}
-                  {% if row.is_stage_active %}· <span class="badge bg-primary text-white">On Stage</span>{% endif %}
+                  {% if row.stage_status == 'on_stage' %}· <span class="badge bg-primary text-white"><i class="bi bi-mic-fill me-1" aria-hidden="true"></i>On stage</span>{% elif row.stage_status == 'presented' %}· <span class="badge bg-secondary-subtle text-secondary-emphasis">Presented</span>{% endif %}
                 </div>
               </td>
               <td>
@@ -82,11 +82,17 @@
               </td>
               <td class="text-end pe-3">
                 <div class="d-inline-flex gap-1">
+                  {% if row.stage_status == 'on_stage' %}
+                  <button type="button" class="btn btn-primary btn-sm" data-showcase-live-action="stage_clear" title="Take this exhibit off stage">
+                    <i class="bi bi-mic-mute me-1" aria-hidden="true"></i>End pitch
+                  </button>
+                  {% else %}
                   <button type="button" class="btn btn-outline-primary btn-sm"
                           data-showcase-live-action="stage_set_exhibit" data-exhibit-id="{{ row.exhibit.pk }}"
-                          title="Spotlight on main stage">
-                    <i class="bi bi-mic me-1" aria-hidden="true"></i>Stage
+                          title="Put on the main stage">
+                    <i class="bi bi-mic me-1" aria-hidden="true"></i>{% if row.stage_status == 'presented' %}Stage again{% else %}Stage{% endif %}
                   </button>
+                  {% endif %}
                   {% if row.missing_judge and judges %}
                     <button type="button" class="btn btn-outline-warning btn-sm"
                             data-bs-toggle="modal" data-bs-target="#assign-judge-modal-{{ row.exhibit.pk }}"

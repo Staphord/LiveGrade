@@ -1,0 +1,19 @@
+{% comment %}
+The one tab list for an event's workspace. Pass `active` (console, setup or results)
+and optionally `from_param` so Edit setup returns to where the organizer came from.
+{% endcomment %}
+<nav class="page-tabs mb-3" aria-label="Event workspace">
+  <a href="{% url 'showcase_live_control' event_id=event.pk %}" class="page-tab{% if active == 'console' %} active{% endif %}"{% if active == 'console' %} aria-current="page"{% endif %}>
+    <i class="bi bi-broadcast me-1" aria-hidden="true"></i>Live console
+  </a>
+  {% if event.status != 'closed' %}
+  <a href="{% url 'showcase_event_manage' event_id=event.pk %}?from={{ from_param|default:'live' }}" class="page-tab{% if active == 'setup' %} active{% endif %}"{% if active == 'setup' %} aria-current="page"{% endif %}>
+    <i class="bi bi-pencil-square me-1" aria-hidden="true"></i>Edit setup
+  </a>
+  {% endif %}
+  {% if event.status != 'draft' %}
+  <a href="{% url 'showcase_event_results' event_id=event.pk %}" class="page-tab{% if active == 'results' %} active{% endif %}"{% if active == 'results' %} aria-current="page"{% endif %}>
+    <i class="bi bi-trophy me-1" aria-hidden="true"></i>Results &amp; Awards
+  </a>
+  {% endif %}
+</nav>

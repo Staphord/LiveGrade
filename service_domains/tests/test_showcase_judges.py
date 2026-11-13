@@ -19,6 +19,7 @@ from service_domains.operations import (issue_showcase_judge_invitation,
     submit_showcase_judge_evaluation, showcase_judge_progress,
     showcase_judge_coverage)
 
+from service_domains.tests.stage_helpers import put_on_stage
 
 class ShowcaseInvitedJudgeFoundationTests(TestCase):
     def setUp(self):
@@ -164,6 +165,7 @@ class ShowcaseInvitedJudgeFoundationTests(TestCase):
             str(criteria[2].pk): 'pass',
             str(criteria[3].pk): [0, 2],
         }
+        put_on_stage(self.event, self.exhibits[0])
         evaluation = submit_showcase_judge_evaluation(token,
             self.exhibits[0].public_id, payload)
         self.assertEqual(evaluation.score, Decimal('81.33'))
@@ -276,6 +278,7 @@ class ShowcaseJudgeWorkspaceViewTests(TestCase):
     def test_judge_submits_each_assigned_exhibit_once_and_receives_a_receipt(self):
         self.event.status = ShowcaseEvent.Status.OPEN
         self.event.save(update_fields=('status', 'updated_at'))
+        put_on_stage(self.event, self.exhibit)
         prefix = f'exhibit_{ShowcaseJudgeExhibitAssignment.objects.get().pk}'
         payload = {'exhibit_id': str(self.exhibit.public_id), f'{prefix}-criterion_{self.criteria[0].pk}': '8'}
         response = self.request('post', self.url, payload)
@@ -375,6 +378,7 @@ class ShowcaseJudgeWorkspaceViewTests(TestCase):
         self.event.status = ShowcaseEvent.Status.OPEN
         self.event.save(update_fields=('status', 'updated_at'))
         assignment = ShowcaseJudgeExhibitAssignment.objects.get()
+        put_on_stage(self.event, self.exhibit)
         payload = {'exhibit_id': str(self.exhibit.public_id),
             f'exhibit_{assignment.pk}-criterion_{self.criteria[0].pk}': '8'}
         with patch('service_domains.views.submit_showcase_judge_evaluation',

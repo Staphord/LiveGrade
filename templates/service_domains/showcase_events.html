@@ -179,9 +179,16 @@
         </thead>
         <tbody>
           {% for event in recent_events %}
-          <tr class="showcase-row-clickable" data-showcase-row-href="{% url 'showcase_event_manage' event_id=event.pk %}">
+          {% if event.status == 'open' %}
+            {% url 'showcase_live_control' event_id=event.pk as event_row_url %}
+          {% elif event.status == 'closed' or event.status == 'published' %}
+            {% url 'showcase_public_results' public_id=event.public_id as event_row_url %}
+          {% else %}
+            {% url 'showcase_event_manage' event_id=event.pk as event_row_url %}
+          {% endif %}
+          <tr class="showcase-row-clickable" data-showcase-row-href="{{ event_row_url }}">
             <td>
-              <a class="showcase-recent-name" href="{% url 'showcase_event_manage' event_id=event.pk %}">{{ event.name }}</a>
+              <a class="showcase-recent-name" href="{{ event_row_url }}">{{ event.name }}</a>
             </td>
             <td>
               <span class="badge {% if event.status == 'open' %}bg-success-subtle text-success-emphasis{% elif event.status == 'draft' %}bg-warning-subtle text-warning-emphasis{% else %}bg-secondary-subtle text-secondary-emphasis{% endif %}">{{ event.get_status_display }}</span>
