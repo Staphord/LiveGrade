@@ -48,3 +48,43 @@ jobs:
           coverage combine >/dev/null 2>&1 || true
           coverage json -o cov.json -q || true
           python scripts/ci_summary.py test test.log cov.json >> "$GITHUB_STEP_SUMMARY"
+
+  # Automatic deployment, as before the guarded release workflow was added: every push to main
+  # that passes the tests above is deployed to the VPS. The manual, approval-gated path is
+  # release.yml (scripts/deploy.sh).
+  deploy:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+        run: |
+          install -m 700 -d ~/.ssh
+          (umask 077; printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy)
+          ssh-keyscan -p "$VPS_PORT" "$VPS_HOST" >> ~/.ssh/known_hosts
+      - name: Deploy
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_APP_DIR: ${{ secrets.VPS_APP_DIR }}
+          VPS_SERVICES: ${{ secrets.VPS_SERVICES }}
+        run: |
+          set -o pipefail
+          ssh -i ~/.ssh/id_deploy -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
+            "APP_DIR='$VPS_APP_DIR' SERVICES='$VPS_SERVICES' bash -s" \
+            < scripts/deploy_auto.sh 2>&1 | tee deploy.log
+      - name: Job summary
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: python3 scripts/ci_summary.py deploy deploy.log >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove temporary SSH identity
+        if: always()
+        run: rm -f ~/.ssh/id_deploy ~/.ssh/known_hosts
