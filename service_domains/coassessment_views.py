@@ -1035,6 +1035,7 @@ def coassessment_export_csv(request, session_id):
     has_ind = session.individual_criteria().exists()
     writer = csv.writer(response)
     if has_ind:
+        # nosemgrep: python.django.security.injection.csv-writer-injection.csv-writer-injection
         writer.writerow([
             'Team', 'Topic', 'Student Name', 'Student ID',
             'Weighted Group Mark', 'Weighted Individual Mark', 'Final Grade',
@@ -1073,6 +1074,7 @@ def coassessment_export_csv(request, session_id):
                     'Yes' if r['latest_moderation'] else 'No',
                 ])
     else:
+        # nosemgrep: python.django.security.injection.csv-writer-injection.csv-writer-injection
         writer.writerow([
             'Order', 'Team', 'Topic', 'Panel Score', 'Panel Raters',
             'Peer Score', 'Peer Raters', 'Discrepancy', 'Combined Score', 'Final Mark', 'Moderated'
