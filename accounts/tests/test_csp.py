@@ -175,7 +175,7 @@ class TemplateRulesTests(SimpleTestCase):
 
     def test_templates_do_not_depend_on_the_asset_cdn(self):
         linked = [str(path.relative_to(BASE)) for path in self.templates()
-                  if 'cdn.jsdelivr.net' in path.read_text()]
+                  if re.search(r'cdn\.jsdelivr\.net', path.read_text())]
         self.assertEqual(linked, [])
 
     def test_templates_do_not_load_remote_resources(self):
