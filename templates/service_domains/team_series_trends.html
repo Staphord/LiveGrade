@@ -5,7 +5,8 @@
 {% include 'service_domains/_workspace_styles.html' %}
 {% include 'service_domains/_team_competition_styles.html' %}
 <div class="container-fluid py-4 service-workspace tc-workspace">
-  <p><a href="{% url 'training_series_manage' series_id=series.pk %}">← {{ series.name }}</a></p>
+  {% if from_session %}{% include 'service_domains/_partials/training_session_tabs.html' with link=from_session session_status=from_session.assessment_session.status active='trends' %}
+  {% else %}<p><a href="{% url 'training_series_manage' series_id=series.pk %}">← {{ series.name }}</a></p>{% endif %}
   <header class="tc-hero"><div><h1>Series progress</h1><p>Competency results across {{ session_count }} demo{{ session_count|pluralize }}.</p></div>
     <a class="btn btn-outline-primary" href="{% url 'training_series_export' series_id=series.pk %}">Download outcomes CSV</a>
   </header>

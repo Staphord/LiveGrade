@@ -23,7 +23,7 @@ from service_domains.models import (TrainingCompetency, TrainingCompetencyResult
                                     TrainingFeedback, TrainingLearnerReportLink,
                                     TrainingParticipant, TrainingSeries, TrainingSeriesSession,
                                     TrainingSessionCompetency, TrainingCertificate)
-from service_domains.team_forms import CreateTrainingSessionForm
+from service_domains.team_forms import CreateTrainingSessionForm, TrainingSeriesDetailsForm
 from service_domains.operations import record_training_competency_result, issue_training_certificates
 from service_domains.operations import (training_series_competency_trends,
                                         training_series_competency_export)
@@ -40,6 +40,44 @@ class TrainingSeriesWorkspaceTests(TestCase):
         with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'team'), \
                 patch('accounts.context.is_released', side_effect=lambda slug: slug == 'team'):
             return getattr(self.client, method)(url, *args, **kwargs)
+
+    def test_series_purpose_grows_from_one_row_and_is_limited_to_one_hundred_words(self):
+        form = TrainingSeriesDetailsForm(data={
+            'name': 'Practice series',
+            'description': ' '.join(['skill'] * 100),
+            'cadence_note': '',
+        })
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.fields['description'].widget.attrs['rows'], 1)
+        self.assertEqual(form.fields['description'].widget.attrs['data-word-limit'], '100')
+
+        over_limit = TrainingSeriesDetailsForm(data={
+            'name': 'Practice series',
+            'description': ' '.join(['skill'] * 101),
+            'cadence_note': '',
+        })
+        self.assertFalse(over_limit.is_valid())
+        self.assertEqual(over_limit.errors['description'], ['Use 100 words or fewer.'])
+
+    def test_setup_stepper_uses_the_shared_partial_for_create_and_manage(self):
+        sign_in(self.client, self.owner, self.org)
+        created = self.request('get', reverse('training_series_create'))
+        steps = created.context['stepper_steps']
+        self.assertEqual([s['key'] for s in steps],
+                         ['details', 'roster', 'competencies', 'demos', 'review'])
+        self.assertTrue(steps[0]['current'])
+        self.assertTrue(all(s['disabled'] for s in steps[1:]))
+        self.assertContains(created, 'class="stepper-nav"')
+
+        series = TrainingSeries.objects.create(
+            organization_id=self.org.id, created_by=self.owner, name='Stepper Series')
+        manage = self.request('get', reverse('training_series_manage', args=(series.pk,)) + '?step=roster')
+        steps = {s['key']: s for s in manage.context['stepper_steps']}
+        self.assertTrue(steps['roster']['current'])
+        self.assertTrue(steps['details']['done'])
+        self.assertFalse(any(s['disabled'] for s in steps.values()))
+        self.assertContains(manage, 'DevPerfStepper.setCurrent(stepRoot, key)')
 
     def test_series_manage_forms_have_unique_control_ids(self):
         sign_in(self.client, self.owner, self.org)
@@ -439,7 +477,7 @@ class TrainingSeriesWorkspaceTests(TestCase):
         sign_in(self.client, self.owner, self.org)
         series_page = self.request('get', detail)
         self.assertContains(series_page, 'Week 1 demo')
-        self.assertContains(series_page, '/team/app/')
+        self.assertContains(series_page, '/live/')
 
     def test_series_trend_uses_latest_revisions_and_renders_three_source_sessions(self):
         sign_in(self.client, self.owner, self.org)
@@ -1496,4 +1534,41 @@ class TrainingCompetencyDecisionOperationTests(TestCase):
         self.assertEqual(apply_res.status_code, 302)
         self.assertEqual(apply_res['Location'], f'{detail}?step=roster')
         self.assertGreater(series.participants.count(), 0)
+
+    def test_live_workshop_series_setup_stepper_rendered_in_edit_mode_and_back_routing(self):
+        sign_in(self.client, self.owner, self.org)
+        series = TrainingSeries.objects.create(
+            organization_id=self.org.id, created_by=self.owner, name='Live Workshop Series'
+        )
+        session = AssessmentSession.objects.create(
+            organization_id=self.org.id, created_by=self.owner,
+            name='Workshop Live 1', status=AssessmentSession.Status.LIVE,
+        )
+        link = TrainingSeriesSession.objects.create(
+            organization_id=self.org.id, created_by=self.owner,
+            series=series, assessment_session=session, sequence=1,
+        )
+        manage_url = reverse('training_series_manage', args=(series.pk,))
+        live_url = reverse('training_session_live', kwargs={'series_id': series.pk, 'session_id': link.pk})
+
+        res_live = self.request('get', live_url)
+        self.assertEqual(res_live.status_code, 200)
+        self.assertContains(res_live, f'{manage_url}?from=live')
+        self.assertContains(res_live, 'Edit setup')
+
+        res_manage = self.request('get', f'{manage_url}?from=live')
+        self.assertEqual(res_manage.status_code, 200)
+        self.assertContains(res_manage, 'Series setup')
+        self.assertContains(res_manage, 'aria-label="Workshop workspace"')
+        self.assertContains(res_manage, f'href="{live_url}"')
+
+        res_update = self.request('post', manage_url, {
+            'action': 'series_details',
+            'name': 'Updated Live Workshop Series',
+            'from': 'live',
+        })
+        self.assertEqual(res_update.status_code, 302)
+        self.assertIn('from=live', res_update['Location'])
+        series.refresh_from_db()
+        self.assertEqual(series.name, 'Updated Live Workshop Series')
 

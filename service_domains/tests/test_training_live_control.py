@@ -111,7 +111,8 @@ class TrainingLiveControlTests(TestCase):
         self.assertEqual(data.get('active_drill_phase'), 'briefing')
         self.assertIn('hero_html', data)
         self.assertIn('competencies_html', data)
-        self.assertIn('feedback_html', data)
+        self.assertNotIn('feedback_html', data)
+        self.assertEqual(data['drill_timer']['seconds'], 900)
         self.assertIn('pods_html', data)
 
     def test_live_actions_dispatch_and_mutate_workshop_state(self):
@@ -183,3 +184,73 @@ class TrainingLiveControlTests(TestCase):
         })
         res = other_client.get(url)
         self.assertEqual(res.status_code, 404)
+
+    def test_conclude_session_action_closes_session_and_returns_redirect(self):
+        action_url = reverse('training_session_live_action', kwargs={
+            'series_id': self.series.pk,
+            'session_id': self.session.pk,
+        })
+        # AJAX submission
+        res = self.client.post(action_url, {'action': 'conclude_session'}, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data.get('status'), 'closed')
+        self.assertIn('redirect', data)
+        self.assess_session.refresh_from_db()
+        self.assertEqual(self.assess_session.status, 'closed')
+
+    def test_live_session_allows_anonymous_feedback_submission(self):
+        # Configure series feedback minimum
+        self.series.feedback_minimum_responses = 1
+        self.series.save(update_fields=('feedback_minimum_responses',))
+        self.assess_session.status = 'live'
+        self.assess_session.save(update_fields=('status',))
+
+        feedback_url = reverse('training_anonymous_feedback', kwargs={
+            'feedback_public_id': self.session.feedback_public_id,
+        })
+        # Live workshop in progress shows informative waiting state instead of 404
+        live_res = self.client.get(feedback_url)
+        self.assertEqual(live_res.status_code, 200)
+        self.assertContains(live_res, 'Workshop in Progress')
+
+        # Conclude session to open feedback collection
+        self.assess_session.status = 'closed'
+        self.assess_session.save(update_fields=('status',))
+
+        get_res = self.client.get(feedback_url)
+        self.assertEqual(get_res.status_code, 200)
+        self.assertContains(get_res, 'How useful was this demo?')
+
+        post_res = self.client.post(feedback_url, {'score': '5'})
+        self.assertEqual(post_res.status_code, 200)
+        self.assertTrue(
+            TrainingFeedback.objects.filter(
+                series_session=self.session, score=5
+            ).exists()
+        )
+
+    def test_training_session_projector_renders_venue_display_without_notes_or_scoring(self):
+        projector_url = reverse('training_session_projector', kwargs={
+            'series_id': self.series.pk,
+            'session_id': self.session.pk,
+        })
+        res = self.client.get(projector_url)
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'Venue Display')
+        self.assertContains(res, 'Executive Crisis Simulation')
+        self.assertContains(res, 'Emergency Operations Drill')
+        self.assertContains(res, 'proj-clock')
+        # Ensure coach scoring buttons and private notes are omitted from room projector
+        self.assertNotContains(res, 'data-training-score')
+        self.assertNotContains(res, 'data-training-note')
+
+    def test_training_session_feedback_qr_png_format(self):
+        qr_url = reverse('training_session_feedback_qr', kwargs={
+            'series_id': self.series.pk,
+            'session_id': self.session.pk,
+        })
+        res = self.client.get(qr_url + '?format=png')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res['Content-Type'], 'image/png')
+        self.assertTrue(res.content.startswith(b'\x89PNG\r\n\x1a\n'))

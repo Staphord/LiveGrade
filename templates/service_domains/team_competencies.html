@@ -5,7 +5,7 @@
 {% include 'service_domains/_workspace_styles.html' %}
 {% include 'service_domains/_team_competition_styles.html' %}
 <div class="container-fluid py-4 service-workspace tc-workspace">
-  <p><a href="{% url 'assessment_session_detail' session.pk %}">← {{ session.name }}</a></p>
+  {% include 'service_domains/_partials/training_session_tabs.html' with link=series_link session_status=session.status active='outcomes' %}
   <header class="tc-hero"><div><h1>Competency outcomes</h1><p>{{ session.name }} · Record a score and work-related evidence for each learner.</p>
       <div class="tc-context"><span class="tc-chip"><strong>{{ criteria|length }}</strong> competencies</span><span class="tc-chip"><strong>{{ session.students.count }}</strong> learners</span></div>
     </div><span class="tc-status {% if session.status == 'closed' %}is-success{% else %}is-active{% endif %}">{{ session.get_status_display }}</span>

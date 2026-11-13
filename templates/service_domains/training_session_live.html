@@ -1,21 +1,23 @@
 {% extends 'base.html' %}
-{% block title %}{{ series.name }} — Session {{ session.sequence }}: Live Workshop · LiveGrade{% endblock %}
+{% block title %}{{ series.name }} · Session {{ session.sequence }}: Live Workshop · LiveGrade{% endblock %}
 {% block page_title %}{{ series.name }} · Session {{ session.sequence }}{% endblock %}
 
 {% block topbar_actions %}
 <div class="d-flex align-items-center gap-2">
-  <span class="live-badge" id="training-conn-badge">
-    <span class="dot"></span>Live
-  </span>
-  <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#training-feedback-qr-modal">
-    <i class="bi bi-qr-code me-1" aria-hidden="true"></i>Feedback QR
-  </button>
-  <a href="{% url 'training_series_manage' series_id=series.pk %}" class="btn btn-outline-secondary btn-sm">
-    <i class="bi bi-gear me-1" aria-hidden="true"></i>Series setup
-  </a>
-  <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#training-finish-modal">
-    <i class="bi bi-flag me-1" aria-hidden="true"></i>Finish session
-  </button>
+  {% if session_status == 'live' %}
+  <span class="live-badge" id="training-conn-badge"><span class="dot"></span>Live</span>
+  <form method="post" action="{% url 'training_session_live_action' series_id=series.pk session_id=session.pk %}" class="d-inline"
+        data-confirm="Are you ready to close Session {{ session.sequence }}: {{ assessment_session.name }}? This will mark the session as complete, preserve all recorded competency scores, and release learner reports."
+        data-confirm-title="Conclude Workshop Session?"
+        data-confirm-label="Conclude Session"
+        data-confirm-tone="danger">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="conclude_session">
+    <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-flag me-1" aria-hidden="true"></i>Finish session</button>
+  </form>
+  {% elif session_status == 'draft' %}
+  <span class="badge bg-warning-subtle text-warning-emphasis">Not live yet</span>
+  {% endif %}
   <a href="{% url 'training_series_table' %}" class="btn btn-outline-secondary btn-sm">
     <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>All series
   </a>
@@ -41,69 +43,139 @@
 
 {% block content %}
 <div class="container-fluid py-3" style="max-width: 1400px;">
+  {% include 'service_domains/_partials/training_session_tabs.html' with link=session active='live' %}
+
+  <div class="mb-3">
+    {% include 'partials/_inline_message.html' with tone='danger' message_id='training-live-inline-error' %}
+  </div>
+
+  {% if session_status == 'draft' %}
+  <section class="card shadow-sm mb-4" aria-labelledby="training-start-heading">
+    <div class="card-body p-4">
+      <h2 class="h4 fw-bold" id="training-start-heading">{{ assessment_session.name }}</h2>
+      <p class="text-muted">Starting opens the drill console and its countdown. Check the setup first.</p>
+      <ul class="list-unstyled mb-3" aria-label="Before you start">
+        <li class="d-flex gap-2 mb-2"><i class="bi {% if participant_count %}bi-check-circle-fill text-success{% else %}bi-dash-circle text-muted{% endif %} mt-1" aria-hidden="true"></i><span>{{ participant_count }} learner{{ participant_count|pluralize }} on the roster</span></li>
+        <li class="d-flex gap-2 mb-2"><i class="bi {% if can_go_live %}bi-check-circle-fill text-success{% else %}bi-exclamation-circle-fill text-warning{% endif %} mt-1" aria-hidden="true"></i><span>{% if can_go_live %}The rubric and groups are ready.{% else %}The session needs a rubric whose weights total 100% and at least one group. <a href="{% url 'assessment_setup' assessment_session.pk %}">Finish the session setup</a>.{% endif %}</span></li>
+      </ul>
+      <form method="post" action="{% url 'training_session_live_action' series_id=series.pk session_id=session.pk %}" data-confirm="Learners can start giving feedback as soon as the session is live." data-confirm-title="Start the session?" data-confirm-label="Start session" data-confirm-tone="primary">
+        {% csrf_token %}<input type="hidden" name="action" value="start_session">
+        <button type="submit" class="btn btn-success"{% if not can_go_live %} disabled title="Finish the session setup first"{% endif %}><i class="bi bi-play-circle me-1" aria-hidden="true"></i>Start session</button>
+      </form>
+    </div>
+  </section>
+  {% elif session_status == 'closed' %}
+  <section class="card shadow-sm mb-4" aria-labelledby="training-closed-heading">
+    <div class="card-body p-4 text-center">
+      <div class="display-6 text-secondary mb-2"><i class="bi bi-flag-fill" aria-hidden="true"></i></div>
+      <h2 class="h4 fw-bold" id="training-closed-heading">This session is closed</h2>
+      <p class="text-muted mb-3">{{ assessment_session.name }} has ended and the competency scores are preserved. Review the outcomes and issue certificates.</p>
+      <a href="{% url 'training_session_competencies' pk=session.assessment_session_id %}" class="btn btn-primary btn-lg"><i class="bi bi-award me-1" aria-hidden="true"></i>View outcomes and certificates</a>
+      {% if series.feedback_minimum_responses %}
+      <div class="mt-4 mx-auto" style="max-width: 32rem;">
+        <label class="form-label small text-muted" for="training-feedback-url">Anonymous feedback link for learners</label>
+        <img src="{{ qr_img_url }}" alt="QR code for the feedback link" width="160" height="160" class="mb-2 bg-white p-2 rounded border">
+        <input id="training-feedback-url" class="form-control form-control-sm text-center" value="{{ feedback_url }}" readonly>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+  {% else %}
   <!-- Workshop Command Hero -->
   {% include 'service_domains/_partials/training_live_hero.html' %}
 
-  <!-- Live Competencies Matrix and Feedback Stream -->
-  <div class="row g-4 mb-4">
-    <div class="col-lg-8">
-      {% include 'service_domains/_partials/training_live_competencies.html' %}
-    </div>
-    <div class="col-lg-4">
-      {% include 'service_domains/_partials/training_live_feedback.html' %}
-    </div>
+  <div class="mb-4">
+    {% include 'service_domains/_partials/training_live_competencies.html' %}
   </div>
 
   <!-- Breakout Pod & Station Tracker -->
   <div class="mb-4">
     {% include 'service_domains/_partials/training_live_pods.html' %}
   </div>
+  {% endif %}
 </div>
 
-<!-- Modal: Feedback QR Presentation -->
-{% include 'service_domains/_partials/training_live_feedback_modal.html' %}
-
-<!-- Modal: Finish Session -->
-<div class="modal fade" id="training-finish-modal" tabindex="-1" aria-labelledby="finish-modal-title" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <form method="post" action="{% url 'training_session_live_action' series_id=series.pk session_id=session.pk %}">
-        {% csrf_token %}
-        <input type="hidden" name="action" value="conclude_session">
-        <div class="modal-header">
-          <h5 class="modal-title text-danger" id="finish-modal-title">Conclude Workshop Session</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body">
-          <p class="mb-2">Are you ready to close <strong>Session {{ session.sequence }}: {{ assessment_session.name }}</strong>?</p>
-          <p class="text-muted small mb-0">
-            This will mark the session as complete, preserve all recorded competency scores, and release learner reports.
-          </p>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-danger btn-sm">Yes, Conclude Session</button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
 {% endblock %}
 
-{% block extra_js %}
-<script nonce="{{ csp_nonce }}">
+{% block scripts %}
+{% if session_status == 'live' %}<script nonce="{{ csp_nonce }}">
 (function() {
   const stateUrl = "{% url 'training_session_live_state' series_id=series.pk session_id=session.pk %}";
   const actionUrl = "{% url 'training_session_live_action' series_id=series.pk session_id=session.pk %}";
   const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
-  let pollInterval = 2500;
-  let activeTimer = null;
+  let timer = null;      // the server's clock: seconds, paused, ends_at_ms, server_now_ms
+  let clockOffset = 0;   // server time minus this device's time, set on every update
+
+  function setTimer(next) {
+    if (!next) return;
+    timer = next;
+    clockOffset = next.server_now_ms - Date.now();
+    tick();
+  }
+
+  function remainingSeconds() {
+    if (!timer) return null;
+    if (timer.paused || timer.ends_at_ms === null) return timer.seconds;
+    return Math.max(0, Math.round((timer.ends_at_ms - (Date.now() + clockOffset)) / 1000));
+  }
+
+  function tick() {
+    const seconds = remainingSeconds();
+    if (seconds === null) return;
+    const label = document.getElementById("training-timer-label");
+    if (label) label.textContent = Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
+    const ring = document.getElementById("training-drill-ring");
+    if (ring) {
+      ring.style.setProperty("--turn-pct", Math.min(100, Math.round(seconds * 100 / Math.max(timer.duration, 1))));
+      ring.classList.toggle("is-urgent", seconds > 0 && seconds <= 60 || (seconds === 0 && !timer.paused));
+    }
+    const badge = document.getElementById("training-timer-state-badge");
+    if (badge) {
+      const up = seconds === 0 && !timer.paused;
+      badge.textContent = up ? "Time is up" : (timer.paused ? "Paused" : "Running");
+      badge.className = "badge " + (up ? "text-bg-danger" : (timer.paused ? "text-bg-warning" : "text-bg-success"));
+    }
+  }
+  setInterval(tick, 250);
+
+  function showInlineError(msg) {
+    const box = document.getElementById("training-live-inline-error");
+    if (!box) return;
+    const textEl = box.querySelector("[data-inline-message-text]");
+    if (textEl) textEl.textContent = msg;
+    box.hidden = false;
+  }
+
+  function clearInlineError() {
+    const box = document.getElementById("training-live-inline-error");
+    if (box) box.hidden = true;
+  }
+
+  function updateDom(data) {
+    setTimer(data.drill_timer);
+    for (const [key, id] of [["hero_html", "training-live-hero"], ["competencies_html", "training-live-competencies"], ["pods_html", "training-live-pods"]]) {
+      const el = document.getElementById(id);
+      if (!data[key] || !el) continue;
+      // Never replace a field the coach is typing in
+      if (id === "training-live-competencies" && el.contains(document.activeElement) && document.activeElement.tagName === "INPUT") continue;
+      el.outerHTML = data[key];
+    }
+    tick();
+  }
+
+  async function refresh() {
+    try {
+      const res = await fetch(stateUrl, { headers: { "X-Requested-With": "XMLHttpRequest" } });
+      if (!res.ok) throw new Error("state");
+      const data = await res.json();
+      if (data.session_status !== "live") { window.location.reload(); return; }
+      updateDom(data);
+    } catch (err) { /* the next event or fallback check retries */ }
+  }
 
   async function postAction(params) {
     const body = new FormData();
-    for (const [k, v] of Object.entries(params)) {
-      body.append(k, v);
-    }
+    for (const [k, v] of Object.entries(params)) body.append(k, v);
     try {
       const res = await fetch(actionUrl, {
         method: "POST",
@@ -111,114 +183,82 @@
         body: body,
       });
       const data = await res.json();
-      if (data.redirect) {
-        window.location.href = data.redirect;
-        return;
-      }
-      if (data.hero_html) updateDom(data);
+      if (data.redirect) { window.location.href = data.redirect; return; }
+      if (!res.ok || data.error) { showInlineError(data.error || "Action could not be completed."); return; }
+      clearInlineError();
+      updateDom(data);
     } catch (err) {
-      console.error("Action failed", err);
+      showInlineError("Network connection interrupted. Please try again.");
     }
   }
 
-  function updateDom(data) {
-    if (data.hero_html) {
-      const el = document.getElementById("training-live-hero");
-      if (el) el.outerHTML = data.hero_html;
-    }
-    if (data.competencies_html) {
-      const el = document.getElementById("training-live-competencies");
-      if (el) {
-        // Only update if no note input is currently focused
-        const hasFocusedInput = el.contains(document.activeElement) && document.activeElement.tagName === "INPUT";
-        if (!hasFocusedInput) {
-          el.outerHTML = data.competencies_html;
-        }
-      }
-    }
-    if (data.feedback_html) {
-      const el = document.getElementById("training-live-feedback");
-      if (el) el.outerHTML = data.feedback_html;
-    }
-    if (data.pods_html) {
-      const el = document.getElementById("training-live-pods");
-      if (el) el.outerHTML = data.pods_html;
-    }
-  }
-
-  async function pollState() {
+  // Live updates: the server tells every open screen when something changed.
+  const badge = document.getElementById("training-conn-badge");
+  const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+  let socket = null, retries = 0, retryTimer = null;
+  function connect() {
+    if (!window.WebSocket) return;
     try {
-      const res = await fetch(stateUrl, {
-        headers: { "X-Requested-With": "XMLHttpRequest" }
-      });
-      if (!res.ok) throw new Error("Poll error");
-      const data = await res.json();
-      if (data.ok) {
-        updateDom(data);
-        const badge = document.getElementById("training-conn-badge");
-        if (badge) badge.classList.remove("is-offline");
-      }
-    } catch (err) {
-      const badge = document.getElementById("training-conn-badge");
-      if (badge) badge.classList.add("is-offline");
-    } finally {
-      activeTimer = setTimeout(pollState, pollInterval);
-    }
+      socket = new WebSocket(scheme + "://" + window.location.host + "/ws/training/session/{{ session.pk }}/live/");
+      socket.onopen = function() { retries = 0; if (badge) badge.classList.remove("is-offline"); refresh(); };
+      socket.onmessage = function() { refresh(); };
+      socket.onclose = function() {
+        if (badge) badge.classList.add("is-offline");
+        window.clearTimeout(retryTimer);
+        retryTimer = window.setTimeout(connect, Math.min(30000, 2000 * Math.pow(1.5, retries++)));
+      };
+      socket.onerror = function() { socket.close(); };
+    } catch (err) { /* fallback check below keeps the page current */ }
   }
+  connect();
+  setInterval(function() { if (!socket || socket.readyState !== WebSocket.OPEN) refresh(); }, 15000);
+  document.addEventListener("visibilitychange", function() { if (!document.hidden) refresh(); });
+  setTimer({{ drill_timer_json }});
+
+  document.addEventListener("submit", function(e) {
+    const form = e.target.closest("form");
+    if (form && form.querySelector('input[name="action"][value="conclude_session"]')) {
+      e.preventDefault();
+      postAction({ action: "conclude_session" });
+    }
+  });
 
   document.addEventListener("click", function(e) {
     const actionBtn = e.target.closest("[data-training-action]");
     if (actionBtn) {
       e.preventDefault();
-      const action = actionBtn.getAttribute("data-training-action");
-      const phase = actionBtn.getAttribute("data-phase");
-      const delta = actionBtn.getAttribute("data-delta");
-      const podName = actionBtn.getAttribute("data-pod-name");
-      const params = { action: action };
-      if (phase) params.phase = phase;
-      if (delta) params.delta = delta;
-      if (podName) params.pod_name = podName;
+      const params = { action: actionBtn.getAttribute("data-training-action") };
+      for (const [attr, name] of [["data-phase", "phase"], ["data-delta", "delta"], ["data-pod-name", "pod_name"]]) {
+        const value = actionBtn.getAttribute(attr);
+        if (value) params[name] = value;
+      }
       postAction(params);
       return;
     }
-
     const scoreBtn = e.target.closest("[data-training-score]");
     if (scoreBtn) {
       e.preventDefault();
-      const criterionId = scoreBtn.getAttribute("data-criterion-id");
-      const studentId = scoreBtn.getAttribute("data-student-id");
-      const score = scoreBtn.getAttribute("data-score");
       postAction({
         action: "record_competency_score",
-        criterion_id: criterionId,
-        student_id: studentId,
-        score: score,
+        criterion_id: scoreBtn.getAttribute("data-criterion-id"),
+        student_id: scoreBtn.getAttribute("data-student-id"),
+        score: scoreBtn.getAttribute("data-score"),
       });
-      return;
     }
   });
 
   document.addEventListener("change", function(e) {
     if (e.target.matches("[data-training-note]")) {
-      const key = e.target.getAttribute("data-key");
-      const note = e.target.value;
-      postAction({
-        action: "save_observation_note",
-        key: key,
-        note: note,
-      });
+      postAction({ action: "save_observation_note", key: e.target.getAttribute("data-key"), note: e.target.value });
     }
   });
 
-  // Spacebar hotkey to advance drill phase
   document.addEventListener("keydown", function(e) {
-    if (e.code === "Space" && !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) {
+    if (e.code === "Space" && !["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A"].includes(document.activeElement.tagName)) {
       e.preventDefault();
       postAction({ action: "toggle_drill_pause" });
     }
   });
-
-  activeTimer = setTimeout(pollState, pollInterval);
 })();
-</script>
+</script>{% endif %}
 {% endblock %}

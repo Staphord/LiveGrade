@@ -20,7 +20,7 @@
       <caption>Review of spreadsheet rows, one learner per row</caption>
       <thead><tr><th scope="col">Row</th><th scope="col">Learner</th><th scope="col">Reference</th><th scope="col">Team</th><th scope="col">Review</th></tr></thead>
       <tbody>{% for row in plan.participants %}<tr>
-        <th scope="row">{{ row.row }}</th><td>{{ row.display_name|default:'—' }}</td><td>{{ row.reference|default:'—' }}</td><td>{{ row.group_name|default:'—' }}</td>
+        <th scope="row">{{ row.row }}</th><td>{{ row.display_name|default:'-' }}</td><td>{{ row.reference|default:'-' }}</td><td>{{ row.group_name|default:'-' }}</td>
         <td>{% if row.ready %}<span class="tc-outcome is-pass">Ready to add</span>{% else %}<span class="tc-outcome">Skipped</span>{% endif %}
           {% for issue in row.issues %}<div class="text-danger small mt-1">{{ issue }}</div>{% endfor %}{% for warning in row.warnings %}<div class="text-warning-emphasis small mt-1">{{ warning }}</div>{% endfor %}
         </td>

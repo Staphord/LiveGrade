@@ -26,6 +26,8 @@ class TrainingSeriesForm(StyledFormMixin, forms.ModelForm):
 
 
 class TrainingSeriesDetailsForm(StyledFormMixin, forms.ModelForm):
+    PURPOSE_WORD_LIMIT = 100
+
     class Meta:
         model = TrainingSeries
         fields = ('name', 'description', 'cadence_note')
@@ -34,7 +36,19 @@ class TrainingSeriesDetailsForm(StyledFormMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields['description'].label = 'Purpose or intended skill goal'
         self.fields['description'].help_text = (
-            'What performance need should this series help address, and what should learners be able to do?')
+            'What performance need should this series help address, and what should learners be able to do? '
+            'Maximum 100 words.')
+        self.fields['description'].widget.attrs.update({
+            'rows': 1,
+            'data-purpose-autogrow': '',
+            'data-word-limit': str(self.PURPOSE_WORD_LIMIT),
+        })
+
+    def clean_description(self):
+        description = self.cleaned_data.get('description', '')
+        if len(description.split()) > self.PURPOSE_WORD_LIMIT:
+            raise forms.ValidationError('Use 100 words or fewer.')
+        return description
 
 class TrainingParticipantForm(StyledFormMixin, forms.ModelForm):
     class Meta:

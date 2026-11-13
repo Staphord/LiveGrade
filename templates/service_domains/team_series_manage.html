@@ -5,8 +5,10 @@
 {% include 'service_domains/_workspace_styles.html' %}
 {% include 'service_domains/_team_competition_styles.html' %}
 {% include 'service_domains/_panel_ui_styles.html' %}
+{% include 'assessments/_partials/import_dropzone_styles.html' %}
 <div class="container-fluid py-4 service-workspace tc-workspace">
-  <p><a href="{% url 'training_series_table' %}">← Training series</a></p>
+  {% if workspace_link %}{% include 'service_domains/_partials/training_session_tabs.html' with link=workspace_link session_status=workspace_link.assessment_session.status active='setup' %}
+  {% else %}<p><a href="{{ back_url }}">← {{ back_label }}</a></p>{% endif %}
   <header class="tc-hero">
     <div><h1>{% if is_new_series %}Create a training series{% else %}{{ series.name }}{% endif %}</h1>
       {% if series.description %}<p>{{ series.description }}</p>{% else %}<p>Manage the team, competency criteria and demos for this series.</p>{% endif %}
@@ -25,26 +27,8 @@
   {% if messages %}<div aria-live="polite">{% for message in messages %}<p class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'warning' %}alert-warning{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %}">{{ message }}</p>{% endfor %}</div>{% endif %}
   {% if roster_import_pending %}<div class="alert alert-info" role="status">Your roster is ready to review. <a href="{% url 'training_series_roster_preview' series_id=series.pk %}">Continue to import review</a>.</div>{% endif %}
 
-  {% if not is_new_series %}<nav aria-label="Series setup progress">
-    <ol class="tc-step-nav">
-      {% for step in setup_steps %}<li><a href="{{ step.href }}"{% if step.complete %} aria-label="{{ step.label }}, complete"{% endif %}><span class="tc-step-number">{{ forloop.counter }}</span>{{ step.label }}{% if step.complete %} · ✓{% endif %}</a></li>{% endfor %}
-    </ol>
-  </nav>{% endif %}
-
   <div class="panel-step-layout mt-3" data-panel-steps data-initial-step="{{ active_step|default:'details' }}">
-    <ol class="panel-step-nav" aria-label="Setup steps">
-      {% for step in setup_steps %}
-      <li>
-        <button type="button" class="panel-step-btn{% if forloop.first %} is-active{% endif %}{% if step.complete %} is-done{% endif %}" data-panel-step="{{ step.key }}"{% if is_new_series and not forloop.first %} disabled aria-disabled="true"{% endif %}>
-          <span class="panel-step-num">{% if step.complete %}<i class="bi bi-check-lg" aria-hidden="true"></i>{% else %}{{ forloop.counter }}{% endif %}</span>
-          <span>
-            <span class="panel-step-title">{{ step.label }}</span>
-            <span class="panel-step-meta">{% if step.complete %}Complete{% else %}In progress{% endif %}</span>
-          </span>
-        </button>
-      </li>
-      {% endfor %}
-    </ol>
+    {% include 'partials/_stepper.html' with steps=stepper_steps %}
 
     <div data-panel-panel="details">
       <section class="tc-panel mb-3" id="series-details" aria-labelledby="series-details-heading">
@@ -65,6 +49,8 @@
           {% csrf_token %}
           <input type="hidden" name="action" value="series_details">
           <input type="hidden" name="setup_step" value="details">
+          <input type="hidden" name="from" value="{{ from_param }}">
+          <input type="hidden" name="session_id" value="{{ target_session_id }}">
           {% include 'partials/_form_fields.html' with form=details_form %}
           <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3 pt-3 border-top">
             <button class="btn btn-outline-primary" type="submit">Save details</button>
@@ -81,7 +67,7 @@
           <div class="table-responsive mb-3"><table class="table tc-table align-middle"><caption>People in this reusable series roster</caption><thead><tr><th scope="col">Name</th><th scope="col">Reference</th><th scope="col">Team</th><th scope="col" class="text-end">Action</th></tr></thead><tbody>
             {% for participant in participants %}<tr>
               <th scope="row">{{ participant.display_name }}</th>
-              <td>{{ participant.reference|default:'—' }}</td>
+              <td>{{ participant.reference|default:'-' }}</td>
               <td>{{ participant.group_name }}</td>
               <td class="text-end">
                 <form method="post" class="d-inline" data-panel-form>
@@ -89,7 +75,7 @@
                   <input type="hidden" name="action" value="remove_participant">
                   <input type="hidden" name="setup_step" value="roster">
                   <input type="hidden" name="participant_id" value="{{ participant.pk }}">
-                  <button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="Remove this team member from the series roster?">Remove</button>
+                  <button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="Remove this team member from the series roster?" data-confirm-title="Remove team member?" data-confirm-label="Remove" data-confirm-tone="danger">Remove</button>
                 </form>
               </td>
             </tr>{% endfor %}
@@ -127,9 +113,9 @@
                     {% for row in roster_import_plan.participants %}
                     <tr>
                       <td>{{ row.row }}</td>
-                      <td>{{ row.display_name|default:'—' }}</td>
-                      <td><code>{{ row.reference|default:'—' }}</code></td>
-                      <td>{{ row.group_name|default:'—' }}</td>
+                      <td>{{ row.display_name|default:'-' }}</td>
+                      <td><code>{{ row.reference|default:'-' }}</code></td>
+                      <td>{{ row.group_name|default:'-' }}</td>
                       <td>
                         {% if row.issues %}
                           <span class="text-danger small">{{ row.issues|join:'; ' }}</span>
@@ -176,8 +162,10 @@
     <div data-panel-panel="competencies" hidden>
       <section id="competency-criteria" class="tc-panel mb-3" aria-labelledby="competency-criteria-heading">
         <header><div><h2 id="competency-criteria-heading">Competency criteria</h2><p>Track work outcomes separately from the peer feedback rubric used during a demo. Set a pass score for each competency.</p></div><span class="tc-status {% if competencies %}is-success{% else %}is-warn{% endif %}">{% if competencies %}{{ competencies|length }} set{% else %}Needs criteria{% endif %}</span></header>
-        {% if competencies %}<div class="tc-list mb-3">{% for competency in competencies %}<article class="tc-list-card"><span><h3>{{ competency.name }}</h3>{% if competency.description %}<p>{{ competency.description }}</p>{% endif %}</span><div class="d-flex align-items-center gap-2"><span class="tc-chip">Pass score {{ competency.passing_score }}</span><form method="post" class="d-inline" data-panel-form>{% csrf_token %}<input type="hidden" name="action" value="remove_competency"><input type="hidden" name="setup_step" value="competencies"><input type="hidden" name="competency_id" value="{{ competency.pk }}"><button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="Remove this competency criterion from the series?">Remove</button></form></div></article>{% endfor %}</div>
+        {% if competencies %}<div class="tc-list mb-3">{% for competency in competencies %}<article class="tc-list-card"><span><h3>{{ competency.name }}</h3>{% if competency.description %}<p>{{ competency.description }}</p>{% endif %}</span><div class="d-flex align-items-center gap-2"><span class="tc-chip">Pass score {{ competency.passing_score }}</span><form method="post" class="d-inline" data-panel-form>{% csrf_token %}<input type="hidden" name="action" value="remove_competency"><input type="hidden" name="setup_step" value="competencies"><input type="hidden" name="competency_id" value="{{ competency.pk }}"><button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="Remove this competency criterion from the series?" data-confirm-title="Remove competency criterion?" data-confirm-label="Remove" data-confirm-tone="danger">Remove</button></form></div></article>{% endfor %}</div>
         {% else %}<div class="tc-empty mb-3"><h3>No criteria yet</h3><p>Add a competency and pass score before recording outcomes.</p></div>{% endif %}
+        {% url 'training_competency_import' series.pk as competency_import_url %}{% url 'training_competency_import_sample' series.pk as competency_sample_url %}
+        {% include 'partials/_import_card.html' with title='Import competencies' intro='One competency per row with a Competency and a Pass score column. Description is optional. Existing competencies stay unchanged.' form=competency_import_form import_url=competency_import_url sample_url=competency_sample_url dropzone_id='team-competency-dropzone' filename_id='team-competency-filename' preview_label='Preview competencies' file_hint='One competency per row (.xlsx)' plan=competency_import_plan token=competency_import_token errors=competency_import_errors %}
         <details class="tc-disclosure" {% if competency_form.errors or not competencies %}open{% endif %}>
           <summary>Add a competency</summary><div class="tc-disclosure-body"><form method="post" class="service-flow-form mt-2" data-panel-form novalidate>{% csrf_token %}<input type="hidden" name="action" value="competency"><input type="hidden" name="setup_step" value="competencies">{% include 'partials/_form_fields.html' with form=competency_form %}<button class="btn btn-secondary" type="submit">Add competency</button></form></div>
         </details>
@@ -192,10 +180,21 @@
         <header><div><h2 id="series-demos-heading">Demos</h2><p>Each new demo starts with this roster and a selected Team rubric.</p></div>
           {% if sessions %}<a class="btn btn-outline-primary" href="{% url 'training_series_trends' series_id=series.pk %}">View progress</a>{% endif %}
         </header>
+        {% if target_session_id %}
+        <div class="alert alert-info d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+          <div>
+            <strong>Live workshop session in progress.</strong>
+            <div class="small text-muted">Observation matrix and real-time learner feedback are active.</div>
+          </div>
+          <a class="btn btn-primary btn-sm" href="{% url 'training_session_live' series_id=series.pk session_id=target_session_id %}">
+            <i class="bi bi-broadcast me-1" aria-hidden="true"></i>Go to Live Workshop
+          </a>
+        </div>
+        {% endif %}
         {% if sessions %}<div class="tc-list mb-3">{% for link in sessions %}<article class="tc-list-card">
           <span><h3>{{ forloop.counter }}. {{ link.assessment_session.name }}</h3>
             <p>{% if link.scheduled_for %}Planned {{ link.scheduled_for|date:'j M Y, H:i' }} · {% endif %}{{ link.assessment_session.get_status_display }}</p>
-            <span class="tc-context"><a class="tc-chip" style="font-weight: 600; color: var(--accent);" href="{% url 'training_session_live' series_id=series.pk session_id=link.pk %}"><i class="bi bi-broadcast me-1" aria-hidden="true"></i>Live workshop</a><a class="tc-chip" href="{% url 'assessment_session_detail' pk=link.assessment_session_id %}">Open demo</a><a class="tc-chip" href="{% url 'training_session_competencies' pk=link.assessment_session_id %}">Record outcomes</a>{% if link.assessment_session.status == 'closed' and series.feedback_minimum_responses %}<a class="tc-chip" href="{% url 'training_anonymous_feedback' feedback_public_id=link.feedback_public_id %}">Feedback link</a>{% endif %}</span>
+            <span class="tc-context">{% if link.assessment_session.status == 'draft' %}<a class="btn btn-sm btn-primary" href="{% url 'training_session_live' series_id=series.pk session_id=link.pk %}"><i class="bi bi-play-circle me-1" aria-hidden="true"></i>Start workshop</a>{% elif link.assessment_session.status == 'closed' %}<a class="btn btn-sm btn-outline-primary" href="{% url 'training_session_competencies' pk=link.assessment_session_id %}"><i class="bi bi-award me-1" aria-hidden="true"></i>View outcomes</a>{% if series.feedback_minimum_responses %}<a class="btn btn-sm btn-link" href="{% url 'training_anonymous_feedback' feedback_public_id=link.feedback_public_id %}">Feedback link</a>{% endif %}{% else %}<a class="btn btn-sm btn-primary" href="{% url 'training_session_live' series_id=series.pk session_id=link.pk %}"><i class="bi bi-broadcast me-1" aria-hidden="true"></i>Go to live workshop</a>{% endif %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'assessment_session_detail' pk=link.assessment_session_id %}"><i class="bi bi-people me-1" aria-hidden="true"></i>Open demo</a></span>
           </span><span class="tc-status {% if link.assessment_session.status == 'closed' %}is-success{% else %}is-active{% endif %}">{{ link.assessment_session.get_status_display }}</span>
         </article>{% endfor %}</div>{% else %}<div class="tc-empty mb-3"><h3>No demos yet</h3><p>Create the first demo when the roster is ready. You can reuse a built-in or saved Team rubric.</p></div>{% endif %}
         <details class="tc-disclosure" {% if launch_form.errors or not sessions %}open{% endif %}>
@@ -205,19 +204,34 @@
             <form method="post" class="service-flow-form" data-panel-form novalidate>{% csrf_token %}<input type="hidden" name="action" value="create_session"><input type="hidden" name="setup_step" value="demos">{% include 'partials/_form_fields.html' with form=launch_form %}<button class="btn btn-primary" type="submit" {% if not participants %}disabled{% endif %}>Create demo session</button>{% if not participants %}<p class="form-text">Add at least one team member to enable demo creation.</p>{% endif %}</form>
           </div>
         </details>
+        <div class="border-top pt-3 mt-3" id="feedback-privacy">
+          <h3 class="h6 fw-bold">Anonymous learner feedback</h3>
+        {% if series.feedback_minimum_responses %}<p>Results stay hidden until at least <strong>{{ series.feedback_minimum_responses }}</strong> responses are received.</p>{% else %}<p>Choose a response minimum to enable feedback collection. Leave it blank to keep feedback disabled.</p>{% endif %}
+        <details class="tc-disclosure mb-3" {% if privacy_form.errors %}open{% endif %}><summary>Change response minimum</summary><div class="tc-disclosure-body"><form method="post" class="service-flow-form mt-2" data-panel-form novalidate>{% csrf_token %}<input type="hidden" name="action" value="feedback_privacy"><input type="hidden" name="setup_step" value="demos">{% include 'partials/_form_fields.html' with form=privacy_form %}<button class="btn btn-outline-secondary" type="submit">Save privacy setting</button></form></div></details>
+        </div>
         <div class="d-flex justify-content-end mt-3 pt-3 border-top">
-          <button type="button" class="btn btn-primary" data-panel-next="certification">Next: Certification <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button>
+          <button type="button" class="btn btn-primary" data-panel-next="review">Next: Review <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button>
         </div>
       </section>
     </div>
 
-    <div data-panel-panel="certification" hidden>
-      <section id="feedback-privacy" class="tc-panel" aria-labelledby="feedback-privacy-heading">
-        <header><div><h2 id="feedback-privacy-heading">Anonymous feedback privacy</h2><p>Only an aggregate usefulness rating is collected. Names, learner accounts and written comments are not collected.</p></div>
-          {% if series.feedback_minimum_responses %}<span class="tc-status is-success">Enabled</span>{% else %}<span class="tc-status is-warn">Disabled</span>{% endif %}
+    <div data-panel-panel="review" hidden>
+      <section id="series-review" class="tc-panel" aria-labelledby="series-review-heading">
+        <header><div><h2 id="series-review-heading">Review</h2><p>Check the setup, then run each demo from its live workshop. Nothing is configured here.</p></div>
+          {% if live_link %}<span class="tc-status is-success">Ready</span>{% else %}<span class="tc-status is-warn">Needs a demo</span>{% endif %}
         </header>
-        {% if series.feedback_minimum_responses %}<p>Results stay hidden until at least <strong>{{ series.feedback_minimum_responses }}</strong> responses are received.</p>{% else %}<p>Choose a response minimum to enable feedback collection. Leave it blank to keep feedback disabled.</p>{% endif %}
-        <details class="tc-disclosure" {% if privacy_form.errors %}open{% endif %}><summary>Change response minimum</summary><div class="tc-disclosure-body"><form method="post" class="service-flow-form mt-2" data-panel-form novalidate>{% csrf_token %}<input type="hidden" name="action" value="feedback_privacy"><input type="hidden" name="setup_step" value="certification">{% include 'partials/_form_fields.html' with form=privacy_form %}<button class="btn btn-outline-secondary" type="submit">Save privacy setting</button></form></div></details>
+        <ul class="list-unstyled mb-3" aria-label="Setup checklist">
+          <li class="d-flex gap-2 mb-2"><i class="bi {% if participants %}bi-check-circle-fill text-success{% else %}bi-dash-circle text-muted{% endif %} mt-1" aria-hidden="true"></i><span><button type="button" class="btn btn-link p-0 align-baseline" data-panel-step="roster">Roster</button><span class="d-block small text-muted">{{ participants|length }} learner{{ participants|length|pluralize }}</span></span></li>
+          <li class="d-flex gap-2 mb-2"><i class="bi {% if competencies %}bi-check-circle-fill text-success{% else %}bi-dash-circle text-muted{% endif %} mt-1" aria-hidden="true"></i><span><button type="button" class="btn btn-link p-0 align-baseline" data-panel-step="competencies">Competencies</button><span class="d-block small text-muted">{{ competencies|length }} competenc{{ competencies|length|pluralize:'y,ies' }}</span></span></li>
+          <li class="d-flex gap-2 mb-2"><i class="bi {% if sessions %}bi-check-circle-fill text-success{% else %}bi-exclamation-circle-fill text-warning{% endif %} mt-1" aria-hidden="true"></i><span><button type="button" class="btn btn-link p-0 align-baseline" data-panel-step="demos">Session evaluation</button><span class="d-block small text-muted">{{ sessions|length }} demo{{ sessions|length|pluralize }}{% if series.feedback_minimum_responses %} · feedback hidden until {{ series.feedback_minimum_responses }} response{{ series.feedback_minimum_responses|pluralize }}{% else %} · learner feedback off{% endif %}</span></span></li>
+        </ul>
+        {% if live_link %}
+        <a class="btn btn-primary" href="{% url 'training_session_live' series_id=series.pk session_id=live_link.pk %}"><i class="bi bi-broadcast me-1" aria-hidden="true"></i>Go to live workshop: {{ live_link.assessment_session.name }}</a>
+        {% elif sessions %}
+        <p class="text-muted mb-0">Every demo is closed. Create another demo to run a new workshop, or open a closed one from the Demos step to see its results.</p>
+        {% else %}
+        <p class="text-muted mb-0">Create the first demo in the Session evaluation step, then come back to start it.</p>
+        {% endif %}
       </section>
     </div>
     {% endif %}
@@ -236,9 +250,7 @@
 
       function activateStep(key, updateUrl) {
         if (!validKeys.includes(key)) key = validKeys[0];
-        buttons.forEach((btn) => {
-          btn.classList.toggle('is-active', btn.dataset.panelStep === key);
-        });
+        window.DevPerfStepper.setCurrent(stepRoot, key);
         panels.forEach((panel) => {
           panel.hidden = panel.dataset.panelPanel !== key;
         });
@@ -263,6 +275,57 @@
           stepRoot.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
       });
+    }
+
+    const purposeField = document.querySelector('[data-purpose-autogrow]');
+    if (purposeField) {
+      const wordLimit = Number(purposeField.dataset.wordLimit) || 100;
+      const fieldId = purposeField.id || 'training-series-purpose';
+      const counter = document.createElement('div');
+      counter.className = 'form-text text-muted';
+      counter.id = fieldId + '_word_count';
+      const limitNotice = document.createElement('div');
+      limitNotice.className = 'form-text text-danger';
+      limitNotice.id = fieldId + '_word_limit_notice';
+      limitNotice.setAttribute('role', 'status');
+      limitNotice.setAttribute('aria-live', 'polite');
+      limitNotice.hidden = true;
+      purposeField.insertAdjacentElement('afterend', counter);
+      counter.insertAdjacentElement('afterend', limitNotice);
+
+      const describedBy = new Set((purposeField.getAttribute('aria-describedby') || '')
+        .split(/\s+/).filter(Boolean));
+      describedBy.add(counter.id);
+      describedBy.add(limitNotice.id);
+      purposeField.setAttribute('aria-describedby', Array.from(describedBy).join(' '));
+
+      function resizePurposeField() {
+        purposeField.style.height = 'auto';
+        purposeField.style.height = purposeField.scrollHeight + 'px';
+      }
+
+      function updatePurposeField() {
+        const words = purposeField.value.trim().split(/\s+/u).filter(Boolean);
+        if (words.length > wordLimit) {
+          const caret = purposeField.selectionStart ?? purposeField.value.length;
+          purposeField.value = words.slice(0, wordLimit).join(' ');
+          const nextCaret = Math.min(caret, purposeField.value.length);
+          purposeField.setSelectionRange(nextCaret, nextCaret);
+          limitNotice.textContent = 'Maximum 100 words. Extra words were removed.';
+          limitNotice.hidden = false;
+        } else {
+          limitNotice.hidden = true;
+          limitNotice.textContent = '';
+        }
+        const count = Math.min(words.length, wordLimit);
+        counter.textContent = count + ' of ' + wordLimit + ' words';
+        resizePurposeField();
+      }
+
+      purposeField.addEventListener('input', updatePurposeField);
+      purposeField.addEventListener('change', updatePurposeField);
+      window.addEventListener('resize', resizePurposeField);
+      updatePurposeField();
     }
 
     document.querySelectorAll('form[data-panel-import-form]').forEach((form) => {

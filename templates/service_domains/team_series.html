@@ -108,7 +108,14 @@
     <div class="table-responsive"><table class="table table-hover" data-team-row-navigation>
       <caption class="visually-hidden">Five most recently created training series, their status, team members, competencies, demos, creation date, and actions</caption>
       <thead><tr><th scope="col">Series</th><th scope="col">Status</th><th scope="col">Team members</th><th scope="col">Competencies</th><th scope="col">Demos</th><th scope="col">Created</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
-      <tbody>{% for item in recent_series %}{% url 'training_series_manage' item.pk as series_row_url %}
+      <tbody>{% for item in recent_series %}
+        {% if item.latest_live_session_id %}
+          {% url 'training_session_live' series_id=item.pk session_id=item.latest_live_session_id as series_row_url %}
+        {% elif item.demo_count > 0 and item.closed_demo_count == item.demo_count %}
+          {% url 'training_series_trends' series_id=item.pk as series_row_url %}
+        {% else %}
+          {% url 'training_series_manage' item.pk as series_row_url %}
+        {% endif %}
         <tr class="team-row-clickable" data-team-row-href="{{ series_row_url }}">
           <td><a class="team-recent-name" href="{{ series_row_url }}">{{ item.name }}</a>{% if item.cadence_note %}<span class="team-recent-secondary">Usual rhythm: {{ item.cadence_note }}</span>{% endif %}</td>
           <td><span class="badge bg-success-subtle text-success-emphasis">Active</span></td>

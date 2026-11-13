@@ -9,9 +9,11 @@ from .views import (training_anonymous_feedback, training_series_list,
                     training_series_manage, training_series_trends,
                     training_series_export, training_certificate_verify,
                     training_series_roster_import, training_series_roster_preview,
-                    training_series_roster_sample,
+                    training_series_roster_sample, training_competency_import,
+                    training_competency_import_sample,
                     training_session_live, training_session_live_state,
-                    training_session_live_action, training_session_feedback_qr)
+                    training_session_live_action, training_session_feedback_qr,
+                    training_session_projector)
 
 urlpatterns = [
     path('results/<str:token>/', training_learner_report, name='training_learner_report'),
@@ -30,6 +32,8 @@ urlpatterns = [
     path('series/<int:series_id>/delete/', training_series_delete, name='training_series_delete'),
     path('series/<int:series_id>/sessions/<int:session_id>/live/', training_session_live,
          name='training_session_live'),
+    path('series/<int:series_id>/sessions/<int:session_id>/projector/', training_session_projector,
+         name='training_session_projector'),
     path('series/<int:series_id>/sessions/<int:session_id>/live-state/', training_session_live_state,
          name='training_session_live_state'),
     path('series/<int:series_id>/sessions/<int:session_id>/live-action/', training_session_live_action,
@@ -46,4 +50,8 @@ urlpatterns = [
          name='training_series_roster_preview'),
     path('series/<int:series_id>/roster/sample.xlsx', training_series_roster_sample,
          name='training_series_roster_sample'),
+    path('series/<int:series_id>/competencies/import/', training_competency_import,
+         name='training_competency_import'),
+    path('series/<int:series_id>/competencies/import/sample.xlsx', training_competency_import_sample,
+         name='training_competency_import_sample'),
 ]

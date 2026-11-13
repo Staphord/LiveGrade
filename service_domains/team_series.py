@@ -81,6 +81,19 @@ def annotated_series(queryset):
         participant_count=_count_annotation(TrainingParticipant),
         competency_count=_count_annotation(TrainingCompetency),
         demo_count=_count_annotation(TrainingSeriesSession),
+        closed_demo_count=Coalesce(Subquery(
+            TrainingSeriesSession.objects.filter(
+                series_id=OuterRef('pk'),
+                assessment_session__status=AssessmentSession.Status.CLOSED,
+            ).order_by().values('series_id').annotate(total=Count('pk')).values('total')[:1]),
+            Value(0)
+        ),
+        latest_live_session_id=Subquery(
+            TrainingSeriesSession.objects.filter(
+                series_id=OuterRef('pk'),
+                assessment_session__status=AssessmentSession.Status.LIVE,
+            ).order_by('-sequence', '-pk').values('pk')[:1]
+        ),
     )
 
 

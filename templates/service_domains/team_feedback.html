@@ -9,15 +9,21 @@
   <header class="tc-public-head"><h1>How useful was this demo?</h1><p>{{ series_link.assessment_session.name }}</p></header>
   <div class="tc-public-body">
   <p>Your rating is anonymous. The presenter sees only an anonymous summary after enough responses are received.</p>
-  {% if submitted %}
+  {% if is_live %}
+    <div class="alert alert-info text-center py-4" role="status">
+      <i class="bi bi-broadcast display-6 text-primary mb-2 d-block" aria-hidden="true"></i>
+      <h2 class="h5 fw-bold mb-1">Workshop in Progress</h2>
+      <p class="text-muted small mb-0">This demo session is currently active. Anonymous feedback ratings will open once the facilitator concludes the session.</p>
+    </div>
+  {% elif submitted %}
     <div class="tc-result-state" role="status"><div><strong>Thank you</strong> Your anonymous rating has been recorded.</div></div>
   {% elif already_submitted %}
     <div class="alert alert-info" role="status"><strong>Response already recorded.</strong> This browser has already submitted feedback for this demo.</div>
   {% else %}
-    {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+    {% if error %}<div class="mb-3">{% include 'partials/_inline_message.html' with tone='danger' message=error %}</div>{% endif %}
     <form method="post" novalidate>
       {% csrf_token %}
-      {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+      {% if form.non_field_errors %}<div class="mb-3">{% include 'partials/_inline_message.html' with tone='danger' messages=form.non_field_errors %}</div>{% endif %}
       <fieldset class="border rounded-3 p-3">
         <legend>{{ form.score.label }}</legend>
         <div class="d-grid gap-2">{% for radio in form.score %}<label class="tc-rating-choice">{{ radio.tag }} <span>{{ radio.choice_label }}</span></label>{% endfor %}</div>
