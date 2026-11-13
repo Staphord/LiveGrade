@@ -14,8 +14,8 @@
     {% if not active_org.public %}<li><button class="dropdown-item" type="button" aria-haspopup="dialog" aria-controls="session-action-modal" data-session-action-modal data-action-url="{% url 'assessment_transfer' session.pk %}" data-action-modal-title="Transfer ownership"><i class="bi bi-arrow-left-right me-2" aria-hidden="true"></i>Transfer ownership</button></li>{% endif %}
   </ul>
 </div>{% endif %}
-<a href="{% url 'assessment_session_list' %}" class="btn btn-outline-secondary btn-sm">
-  <i class="bi bi-arrow-left me-1"></i>All sessions
+<a href="{{ sessions_home.url }}" class="btn btn-outline-secondary btn-sm">
+  <i class="bi bi-arrow-left me-1"></i>{{ sessions_home.label }}
 </a>
 {% endblock %}
 

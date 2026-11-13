@@ -12,39 +12,11 @@
     {% if not active_org.public %}<li><button class="dropdown-item" type="button" aria-haspopup="dialog" aria-controls="session-action-modal" data-session-action-modal data-action-url="{% url 'assessment_transfer' session.pk %}" data-action-modal-title="Transfer ownership"><i class="bi bi-arrow-left-right me-2" aria-hidden="true"></i>Transfer ownership</button></li>{% endif %}
   </ul>
 </div>{% endif %}
-<a href="{% url 'assessment_session_list' %}" class="btn btn-outline-secondary btn-sm">All sessions</a>
+<a href="{{ sessions_home.url }}" class="btn btn-outline-secondary btn-sm">{{ sessions_home.label }}</a>
 {% endblock %}
 
 {% block extra_css %}
 <style nonce="{{ csp_nonce }}">
-/* ---------------------------------------------------------- Stepper nav --
-   Left-column vertical progress tracker for the draft setup journey
-   (basics → roster → rubric → groups → go live). Evolves the old static
-   "what happens next" dot-and-connector list (session_create.html) into a
-   real nav: each item is an anchor to its section below, ticks reflect
-   actual completion instead of just being a numbered list. */
-.setup-stepper-sticky{position:sticky;top:calc(var(--topbar-h) + var(--sp-3));margin-top:var(--sp-6)}
-.setup-stepper-nav{position:relative;padding-left:0}
-.stepper-item{position:relative;display:flex;align-items:flex-start;gap:.75rem;padding:0 0 1.5rem 0;
-     text-decoration:none;color:inherit}
-.stepper-item:last-child{padding-bottom:0}
-.stepper-item:not(:last-child)::before{content:"";position:absolute;left:15px;top:32px;bottom:-.2rem;
-     width:2px;background:var(--border)}
-.stepper-dot{width:32px;height:32px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;
-     justify-content:center;background:var(--surface-hover);border:2px solid var(--border);
-     color:var(--text-muted);font-weight:700;font-size:var(--fs-sm);transition:background .15s ease,border-color .15s ease,color .15s ease}
-.stepper-label{padding-top:3px;min-width:0}
-.stepper-title{display:block;font-weight:700;font-size:var(--fs-body);color:var(--ink)}
-.stepper-desc{display:block;font-size:var(--fs-micro);color:var(--text-muted)}
-.stepper-item.is-current .stepper-dot{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
-.stepper-item.is-current .stepper-title{color:var(--accent)}
-.stepper-item.is-done .stepper-dot{background:var(--tone-success-bg);border-color:var(--success);color:var(--tone-success-fg)}
-.stepper-item.is-locked{opacity:.5;cursor:default}
-.stepper-item.is-locked .stepper-dot{background:var(--surface-hover);border-color:var(--border);color:var(--text-muted)}
-a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
-.stepper-item.is-final .stepper-dot{background:var(--tone-success-bg);color:var(--tone-success-fg);border-color:var(--success)}
-.stepper-item.is-final.is-locked .stepper-dot{background:var(--surface-hover);color:var(--text-muted);border-color:var(--border)}
-
 /* Only the section matching the current stepper item is shown at a time -
    JS toggles `.is-active-panel` on click (data-step on the stepper items
    matches data-step on the sections) so moving between steps never
@@ -291,50 +263,14 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 {% endblock %}
 
 {% block content %}
-<h1 class="visually-hidden">{% if session %}{{ session.name }} — Setup{% elif request.service == 'team' %}New Team demo setup{% else %}New assessment session{% endif %}</h1>
-<a href="{% url 'assessment_session_list' %}" class="back-link">
-  <i class="bi bi-chevron-left"></i>{% if request.service == 'team' %}Team demos{% else %}All sessions{% endif %}
+<h1 class="visually-hidden">{% if session %}{{ session.name }} - Setup{% elif request.service == 'team' %}New Team demo setup{% else %}New assessment session{% endif %}</h1>
+<a href="{{ sessions_home.url }}" class="back-link">
+  <i class="bi bi-chevron-left"></i>{{ sessions_home.label }}
 </a>
 
 <div class="row g-4">
   <div class="col-lg-3">
-    <div class="setup-stepper-sticky">
-      <div class="setup-stepper-nav">
-        <a href="{% if session %}#basics-section{% else %}#{% endif %}" data-step="basics" class="stepper-item is-done">
-          <span class="stepper-dot"><i class="bi bi-check-lg"></i></span>
-          <span class="stepper-label">
-            <span class="stepper-title">Basics</span>
-            <span class="stepper-desc">Name, join &amp; penalty</span>
-          </span>
-        </a>
-        <a href="{% if session %}#groups-section{% else %}#{% endif %}" data-step="groups"
-           class="stepper-item {% if not session %}is-locked{% elif step_groups_done %}is-done{% elif active_step == 'groups' %}is-current{% endif %}">
-          <span class="stepper-dot">{% if step_groups_done %}<i class="bi bi-check-lg"></i>{% else %}2{% endif %}</span>
-          <span class="stepper-label">
-            <span class="stepper-title">Groups &amp; {% if request.service == 'team' %}team members{% else %}students{% endif %}</span>
-            <span class="stepper-desc">Import or build groups</span>
-          </span>
-        </a>
-        <a href="{% if session %}#rubric-section{% else %}#{% endif %}" data-step="rubric"
-           class="stepper-item {% if not session %}is-locked{% elif step_rubric_done %}is-done{% elif active_step == 'rubric' %}is-current{% endif %}">
-          <span class="stepper-dot">{% if step_rubric_done %}<i class="bi bi-check-lg"></i>{% else %}3{% endif %}</span>
-          <span class="stepper-label">
-            <span class="stepper-title">Rubric</span>
-            <span class="stepper-desc">Categories &amp; weights</span>
-          </span>
-        </a>
-        {% if not live_mode %}
-        <a href="{% if session %}#go-live-section{% else %}#{% endif %}" data-step="go-live"
-           class="stepper-item is-final {% if not session or not session.can_go_live %}is-locked{% endif %}">
-          <span class="stepper-dot"><i class="bi bi-rocket-takeoff"></i></span>
-          <span class="stepper-label">
-            <span class="stepper-title">Go live</span>
-            <span class="stepper-desc">Show QR, start grading</span>
-          </span>
-        </a>
-        {% endif %}
-      </div>
-    </div>
+    {% include 'partials/_stepper.html' with steps=stepper_steps stepper_label='Setup steps' %}
   </div>
 
   <div class="col-lg-9">
@@ -415,7 +351,7 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
           {% include 'assessments/_partials/instructions_field.html' with field=form.instructions %}
           <div class="d-flex gap-2 mt-4">
             <button type="submit" class="btn btn-primary"><i class="bi bi-arrow-right-circle me-1"></i>{% if request.service == 'team' %}Create setup and add team members{% else %}Create session and add groups{% endif %}</button>
-            <a href="{% url 'assessment_session_list' %}" class="btn btn-outline-secondary">Cancel</a>
+            <a href="{{ sessions_home.url }}" class="btn btn-outline-secondary">Cancel</a>
           </div>
         </form>
         {% elif editing %}
@@ -1137,26 +1073,19 @@ a.stepper-item:not(.is-locked):hover .stepper-dot{border-color:var(--accent)}
 (function () {
   const steps = ['basics', 'groups', 'rubric', 'go-live'];
   const sections = {};
-  const navItems = {};
   steps.forEach(function (step) {
     sections[step] = document.querySelector('.setup-section[data-step="' + step + '"]');
   });
-  document.querySelectorAll('.setup-stepper-nav .stepper-item').forEach(function (item) {
-    navItems[item.dataset.step] = (navItems[item.dataset.step] || []).concat(item);
-  });
-
   function showStep(step) {
     if (!sections[step]) return;
     steps.forEach(function (s) {
       if (sections[s]) sections[s].classList.toggle('is-active-panel', s === step);
     });
-    document.querySelectorAll('.setup-stepper-nav .stepper-item').forEach(function (item) {
-      item.classList.toggle('is-current', item.dataset.step === step);
-    });
+    window.DevPerfStepper.setCurrent(document, step);
   }
 
  
-  document.querySelectorAll('.setup-stepper-nav [data-step], .step-nav-next[data-step], .step-nav-back[data-step]').forEach(function (el) {
+  document.querySelectorAll('.stepper-nav [data-step], .step-nav-next[data-step], .step-nav-back[data-step]').forEach(function (el) {
     el.addEventListener('click', function (e) {
       if (!sections[el.dataset.step]) return;
       e.preventDefault();

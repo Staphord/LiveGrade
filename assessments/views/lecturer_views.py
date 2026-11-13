@@ -15,6 +15,7 @@ from django.views.decorators.http import require_http_methods, require_POST
 from accounts.access import active_organization, can_oversee, in_public_workspace, lecturer_required
 from accounts.context import CLASSROOM_WALKTHROUGHS_KEY
 from accounts.models import User
+from portal.stepper import build_steps
 
 from ..duplication import duplicate_session
 from ..excel import export_results
@@ -191,6 +192,8 @@ def assessment_dashboard(request):
 
 @lecturer_required
 def assessment_session_list(request):
+    if getattr(request, 'service', None) != 'classroom':
+        raise Http404
     # "All sessions in the organization" is for people DevPerf has given the
     # oversee permission; for everybody else the parameter does nothing.
     show_all = request.GET.get('scope') == 'all' and can_oversee(request)
@@ -349,6 +352,7 @@ def assessment_session_create(request):
         'session': None, 'active_step': 'basics', 'form': form, 'template_picker': picker,
         'selected_template': selected, 'template_selection': selection,
         'template_categories': categories,
+        'stepper_steps': _setup_stepper(request, None, 'basics'),
     })
 
 
@@ -414,6 +418,7 @@ def assessment_session_edit(request, pk):
                       {**_setup_context(request, session, 'basics'), 'form': form, 'editing': True})
     return render(request, 'assessments/session_setup.html', {
         'session': session, 'active_step': 'basics', 'form': form, 'editing': True,
+        'stepper_steps': _setup_stepper(request, session, 'basics'),
     })
 
 
@@ -698,6 +703,31 @@ def _roster_context(request, session):
 
 
 
+def _setup_stepper(request, session, active_step, groups_done=None, rubric_done=None, live_mode=False):
+    """Steps for the shared stepper on the classroom setup screen. Completion
+    is read from the session unless the caller already computed it."""
+    if session is not None:
+        if groups_done is None:
+            groups_done = session.groups.exists()
+        if rubric_done is None:
+            rubric_done = session.rubric_weight_total() == TOTAL_WEIGHT
+    people = 'team members' if request.service == 'team' else 'students'
+    specs = [
+        {'key': 'basics', 'label': 'Basics', 'desc': 'Name, join & penalty', 'done': session is not None},
+        {'key': 'groups', 'label': f'Groups & {people}', 'desc': 'Import or build groups', 'done': groups_done},
+        {'key': 'rubric', 'label': 'Rubric', 'desc': 'Categories & weights', 'done': rubric_done},
+    ]
+    if not live_mode:
+        can_go_live = session is not None and session.can_go_live()
+        specs.append({'key': 'go-live', 'label': 'Go live', 'desc': 'Show QR, start grading',
+                      'final': True, 'icon': 'bi-rocket-takeoff', 'locked': not can_go_live,
+                      'disabled': session is None})
+    for spec in specs:
+        if session is not None:
+            spec['href'] = f"#{spec['key']}-section"
+    return build_steps(specs, active_step, locked_after_first=session is None)
+
+
 def _setup_context(request, session, active_step, roster_form=None, rubric_form=None, group_form=None):
     """Everything the merged create → groups and students → rubric → go-live
     screen needs, built from the same context-builders each standalone step
@@ -756,6 +786,8 @@ def _setup_context(request, session, active_step, roster_form=None, rubric_form=
     context.update({
         'step_rubric_done': rubric_ready,
         'step_groups_done': session.groups.exists(),
+        'stepper_steps': _setup_stepper(request, session, active_step, session.groups.exists(),
+                                        rubric_ready, context['live_mode']),
     })
     return context
 

@@ -41,7 +41,7 @@
 
   function displayScore(value) {
     const score = Number(value);
-    return Number.isFinite(score) ? numberFormat.format(score) : '—';
+    return Number.isFinite(score) ? numberFormat.format(score) : '-';
   }
 
   function plural(count, singular, pluralForm) {

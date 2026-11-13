@@ -12,7 +12,7 @@
   </a>
 </div>
 {% endif %}
-<a href="{% url 'assessment_session_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>All sessions</a>
+<a href="{{ sessions_home.url }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>{{ sessions_home.label }}</a>
 {% endblock %}
 
 {% block extra_css %}
@@ -43,7 +43,7 @@
 {% endblock %}
 
 {% block content %}
-<h1 class="visually-hidden">Results — {{ session.name }}</h1>
+<h1 class="visually-hidden">Results - {{ session.name }}</h1>
 {% if session.service == 'classroom' %}<p class="text-muted">Peer grading supplies 100% of the assessment score.{% if session.ungraded_penalty %} Configured participation penalties are deducted from the final mark.{% endif %}</p>{% endif %}
 <div class="tabs-sticky-header">
 {% include 'assessments/_session_tabs.html' with active='results' %}

@@ -68,6 +68,26 @@ def _classroom_walkthrough(request, organization):
     }
 
 
+def _sessions_home(request, organization):
+    """Where the shared assessment pages send "back": the classroom session list
+    for Classroom, and the demo's own workshop (or the series list) for Team, so a
+    Team page never links into another service's records."""
+    if getattr(request, 'service', None) != 'team':
+        return {'url': reverse('assessment_session_list'), 'label': 'All sessions'}
+    match = getattr(request, 'resolver_match', None)
+    pk = match.kwargs.get('pk') if match and (match.url_name or '').startswith('assessment_') else None
+    if pk and organization and getattr(request.user, 'is_authenticated', False):
+        from service_domains.models import TrainingSeriesSession
+
+        link = (TrainingSeriesSession.objects.filter(
+            organization_id=organization['id'], created_by_id=request.user.pk,
+            assessment_session_id=pk).first())
+        if link is not None:
+            return {'url': reverse('training_session_live', args=(link.series_id, link.pk)),
+                    'label': 'Back to live workshop'}
+    return {'url': reverse('training_series_list'), 'label': 'Training series'}
+
+
 def livegrade(request):
     """The pieces every page's header needs.
 
@@ -89,6 +109,7 @@ def livegrade(request):
         'active_org': organization,
         'can_oversee_panel': can_oversee(request),
         'classroom_walkthrough': _classroom_walkthrough(request, organization),
+        'sessions_home': _sessions_home(request, organization),
         'my_orgs': [{**org, 'display_name': PERSONAL if org.get('public') else org['name']}
                     for org in organizations],
         # nosemgrep: python.django.security.nan-injection.nan-injection (bool() of a list, not a number cast)

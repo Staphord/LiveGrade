@@ -2,7 +2,7 @@
 {% block title %}Participation - {{ session.name }}{% endblock %}
 {% block page_title %}{{ session.name }}{% endblock %}
 {% block topbar_actions %}
-<a href="{% url 'assessment_session_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>All sessions</a>
+<a href="{{ sessions_home.url }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>{{ sessions_home.label }}</a>
 {% endblock %}
 
 {% block extra_css %}
@@ -127,7 +127,7 @@
 {% endblock %}
 
 {% block content %}
-<h1 class="visually-hidden">Participation — {{ session.name }}</h1>
+<h1 class="visually-hidden">Participation - {{ session.name }}</h1>
 <div class="tabs-sticky-header">
 {% include 'assessments/_session_tabs.html' with active='participation' %}
 {% include 'assessments/_partials/participation_stats.html' %}
