@@ -24,6 +24,7 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods, require_POST
 
 from accounts.access import lecturer_required
+from assessments.spreadsheet_safety import spreadsheet_safe_text
 from assessments.qr import qr_png
 from assessments.pagination import PAGE_SIZE, PAGE_SIZES, paginate
 from .coassessment_forms import (
@@ -1042,11 +1043,12 @@ def coassessment_export_csv(request, session_id):
         for r in rows:
             if r['member_results']:
                 for m in r['member_results']:
+                    # nosemgrep: python.django.security.injection.csv-writer-injection.csv-writer-injection
                     writer.writerow([
-                        r['group_name'],
-                        r['group_topic'],
-                        m['full_name'],
-                        m['student_id'],
+                        spreadsheet_safe_text(r['group_name']),
+                        spreadsheet_safe_text(r['group_topic']),
+                        spreadsheet_safe_text(m['full_name']),
+                        spreadsheet_safe_text(m['student_id']),
                         m['group_score'],
                         m['individual_score'],
                         m['final_score'],
@@ -1056,9 +1058,10 @@ def coassessment_export_csv(request, session_id):
                         'Yes' if r['latest_moderation'] else 'No',
                     ])
             else:
+                # nosemgrep: python.django.security.injection.csv-writer-injection.csv-writer-injection
                 writer.writerow([
-                    r['group_name'],
-                    r['group_topic'],
+                    spreadsheet_safe_text(r['group_name']),
+                    spreadsheet_safe_text(r['group_topic']),
                     'Entire Team',
                     '',
                     r['group_mark'] or r['final_mark'] or '',
@@ -1075,10 +1078,11 @@ def coassessment_export_csv(request, session_id):
             'Peer Score', 'Peer Raters', 'Discrepancy', 'Combined Score', 'Final Mark', 'Moderated'
         ])
         for r in rows:
+            # nosemgrep: python.django.security.injection.csv-writer-injection.csv-writer-injection
             writer.writerow([
                 r.get('order', ''),
-                r['group_name'],
-                r['group_topic'],
+                spreadsheet_safe_text(r['group_name']),
+                spreadsheet_safe_text(r['group_topic']),
                 r['panel_score'] or '',
                 r['panel_raters'],
                 r['peer_score'] or '',

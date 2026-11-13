@@ -2,7 +2,6 @@ import csv
 import hashlib
 import hmac
 import io
-import json
 import logging
 import re
 import secrets
@@ -34,7 +33,6 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods, require_safe, require_POST
 from django.utils import timezone
-from django.utils.safestring import mark_safe
 from django.utils.cache import patch_vary_headers
 
 from accounts.access import can_oversee, lecturer_required
@@ -1493,6 +1491,7 @@ def panel_recusal_export(request, hearing_id):
     writer = csv.writer(output)
     writer.writerow(('hearing', 'candidate', 'examiner_email', 'conflict_reason', 'declared_at'))
     for conflict in conflicts:
+        # nosemgrep: python.django.security.injection.csv-writer-injection.csv-writer-injection
         writer.writerow(tuple(_csv_cell(value) for value in (
             hearing.name, conflict.candidate.display_name, conflict.invitation.email,
             conflict.reason, conflict.declared_at.isoformat())))
@@ -2759,6 +2758,7 @@ def training_series_export(request, series_id):
                      'learner_name', 'competency', 'score', 'passing_score',
                      'passed', 'revision', 'assessed_at'))
     for row in rows:
+        # nosemgrep: python.django.security.injection.csv-writer-injection.csv-writer-injection
         writer.writerow(tuple(_csv_cell(row[key]) for key in (
             'series', 'sequence', 'session', 'learner_reference', 'learner_name',
             'competency', 'score', 'passing_score')) + (
@@ -3396,7 +3396,7 @@ def training_series_roster_import(request, series_id):
         return training_series_roster_preview(request, series_id)
     series = _owned_training_series(request, series_id)
     manage_url = reverse('training_series_manage', kwargs={'series_id': series.pk})
-    embedded = request.GET.get('embedded') == '1' or bool(request.POST.get('setup_step'))
+    embedded = request.GET.get('embedded') == '1' or 'setup_step' in request.POST
     target_manage_url = f'{manage_url}?step=roster' if embedded else manage_url
     form = TrainingRosterImportForm(request.POST, request.FILES)
     if not form.is_valid():
@@ -3431,7 +3431,7 @@ def training_series_roster_import(request, series_id):
 def training_series_roster_preview(request, series_id):
     series = _owned_training_series(request, series_id)
     manage_url = reverse('training_series_manage', kwargs={'series_id': series.pk})
-    embedded = request.GET.get('embedded') == '1' or bool(request.POST.get('setup_step'))
+    embedded = request.GET.get('embedded') == '1' or 'setup_step' in request.POST
     target_manage_url = f'{manage_url}?step=roster' if embedded else manage_url
     token = request.session.get(TEAM_ROSTER_IMPORT_SESSION_KEY)
     try:
@@ -5462,7 +5462,6 @@ def training_session_live(request, series_id, session_id):
     context['qr_img_url'] = qr_img_url
     assessment_session = session.assessment_session
     context['session_status'] = assessment_session.status
-    context['drill_timer_json'] = mark_safe(json.dumps(context['drill_timer']))
     context['can_go_live'] = (assessment_session.status == AssessmentSession.Status.DRAFT
                               and assessment_session.can_go_live())
     context['participant_count'] = TrainingParticipant.objects.filter(
@@ -5488,7 +5487,6 @@ def training_session_projector(request, series_id, session_id):
     }) + '?format=png'
     context['feedback_url'] = feedback_url
     context['qr_img_url'] = qr_img_url
-    context['drill_timer_json'] = mark_safe(json.dumps(context['drill_timer']))
     response = render(request, 'service_domains/training_session_projector.html', context)
     response['Cache-Control'] = 'private, no-store'
     response['Referrer-Policy'] = 'same-origin'

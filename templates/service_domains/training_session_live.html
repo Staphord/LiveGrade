@@ -98,6 +98,7 @@
 {% endblock %}
 
 {% block scripts %}
+{{ drill_timer|json_script:"drill-timer-data" }}
 {% if session_status == 'live' %}<script nonce="{{ csp_nonce }}">
 (function() {
   const stateUrl = "{% url 'training_session_live_state' series_id=series.pk session_id=session.pk %}";
@@ -213,7 +214,7 @@
   connect();
   setInterval(function() { if (!socket || socket.readyState !== WebSocket.OPEN) refresh(); }, 15000);
   document.addEventListener("visibilitychange", function() { if (!document.hidden) refresh(); });
-  setTimer({{ drill_timer_json }});
+  setTimer(JSON.parse(document.getElementById('drill-timer-data').textContent));
 
   document.addEventListener("submit", function(e) {
     const form = e.target.closest("form");

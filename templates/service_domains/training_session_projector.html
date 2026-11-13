@@ -196,11 +196,12 @@ body {
 {% endblock %}
 
 {% block scripts %}
+{{ drill_timer|json_script:"drill-timer-data" }}
 <script nonce="{{ csp_nonce }}">
 (function() {
   const stateUrl = "{% url 'training_session_live_state' series_id=series.pk session_id=session.pk %}";
   const titles = { briefing: "Scenario briefing", simulation: "Active drill", debrief: "Debrief and assessment" };
-  let timer = {{ drill_timer_json }};
+  let timer = JSON.parse(document.getElementById('drill-timer-data').textContent);
   let clockOffset = timer.server_now_ms - Date.now();
   let activePhase = "{{ drill_phase }}";
   const clockEl = document.getElementById("proj-clock");

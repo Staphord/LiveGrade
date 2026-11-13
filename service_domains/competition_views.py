@@ -1099,6 +1099,7 @@ def competition_results_export(request, competition_id):
         value = str(value or '')
         return "'" + value if value.lstrip().startswith(('=', '+', '-', '@')) else value
     for row in rows.iterator(chunk_size=500):
+        # nosemgrep: python.django.security.injection.csv-writer-injection.csv-writer-injection
         writer.writerow([safe_text(competition.name), safe_text(row.round.name), safe_text(row.track.name),
             safe_text(row.entry.name), safe_text(row.entry.reference), row.judge_score,
             row.audience_score, row.score])
