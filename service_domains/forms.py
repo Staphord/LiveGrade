@@ -130,7 +130,7 @@ class PanelScoringPanelForm(StyledFormMixin, forms.ModelForm):
         cleaned = super().clean()
         if (cleaned.get('aggregation') == PanelHearing.Aggregation.TRIMMED_MEAN
                 and self.instance.trim_fraction is None):
-            self.add_error('trim_fraction', 'Trimmed mean requires an explicit trim fraction.')
+            self.add_error('aggregation', 'Trimmed mean requires an explicit trim fraction.')
         return cleaned
 
 

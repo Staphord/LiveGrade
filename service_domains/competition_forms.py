@@ -83,8 +83,7 @@ class CompetitionCriterionForm(StyledFormMixin, forms.ModelForm):
                 track=track, organization_id=org_id
             ).count()
             cleaned['order'] = existing_count + 1
-            if self.instance:
-                self.instance.order = existing_count + 1
+            self.instance.order = existing_count + 1
         return cleaned
 
 
@@ -120,8 +119,7 @@ class CompetitionEntryForm(StyledFormMixin, forms.ModelForm):
                 track=track, organization_id=org_id
             ).count()
             cleaned['order'] = existing_count + 1
-            if self.instance:
-                self.instance.order = existing_count + 1
+            self.instance.order = existing_count + 1
         return cleaned
 
 

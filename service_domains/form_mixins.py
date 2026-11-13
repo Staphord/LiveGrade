@@ -11,14 +11,11 @@ def apply_form_field_styles(fields):
             classes.add('form-check-input')
         elif isinstance(widget, forms.Select):
             classes.add('form-select')
-        elif isinstance(widget, forms.CheckboxSelectMultiple):
-            pass
         elif isinstance(widget, forms.FileInput):
             classes.add('form-control')
         else:
             classes.add('form-control')
-        if classes:
-            widget.attrs['class'] = ' '.join(sorted(classes))
+        widget.attrs['class'] = ' '.join(sorted(classes))
         if isinstance(widget, forms.NumberInput) and 'inputmode' not in widget.attrs:
             widget.attrs['inputmode'] = 'decimal' if getattr(field, 'decimal_places', 0) else 'numeric'
         if getattr(field, 'help_text', '') and 'aria-describedby' not in widget.attrs:
