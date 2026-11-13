@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{% if session %}Details : {{ session.name }}{% else %}New Co-Assessment{% endif %} : LiveGrade{% endblock %}
+{% block page_title %}Co-Assessment Setup{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 service-workspace panel-page--wide panel-setup">
+  {% include 'coassessment/_wizard_head.html' %}
+
+  <section class="panel-step-layout" aria-label="Co-assessment setup">
+    {% include 'partials/_stepper.html' with steps=stepper_steps %}
+
+    <section class="panel-step panel-step-card service-section" data-inline-region>
+      <div class="card-icon-head mb-3">
+        <div class="head-left">
+          <span class="icon-badge"><i class="bi bi-sliders" aria-hidden="true"></i></span>
+          <div>
+            <div class="title">Details</div>
+            <div class="sub">Name the event and split the mark between panel and peers</div>
+          </div>
+        </div>
+      </div>
+
+      <form method="post" data-unsaved-guard novalidate id="policyForm">
+        {% csrf_token %}
+
+        {% include 'partials/_form_field.html' with field=form.name %}
+        {% include 'partials/_form_field.html' with field=form.description %}
+
+        <h3 class="h6 fw-bold mt-4 mb-2">Mark split</h3>
+        <div class="row g-3">
+          <div class="col-12 col-md-6">{% include 'partials/_form_field.html' with field=form.panel_weight %}</div>
+          <div class="col-12 col-md-6">{% include 'partials/_form_field.html' with field=form.peer_weight %}</div>
+        </div>
+        <p id="weightBalanceNotice" class="small mb-3" aria-live="polite">
+          <span id="weightBalanceStatus" class="badge bg-success">Total 100%</span>
+        </p>
+
+        <section class="panel-sub-card mb-3" id="policy-advanced" aria-labelledby="policy-advanced-title"><h3 class="h6 fw-bold mb-3" id="policy-advanced-title">Quorum and moderation</h3>
+            <div class="row g-3">
+              <div class="col-12 col-md-6">{% include 'partials/_form_field.html' with field=form.minimum_panel_evaluators %}</div>
+              <div class="col-12 col-md-6">{% include 'partials/_form_field.html' with field=form.minimum_peer_evaluators %}</div>
+            </div>
+            {% include 'partials/_form_field.html' with field=form.moderation_threshold %}
+            {% include 'partials/_form_field.html' with field=form.allow_anonymous_peer_comments %}
+          </section>
+
+        <div class="d-flex justify-content-between align-items-center mt-4 pt-3 border-top">
+          <a href="{% url 'coassessment_dashboard' %}" class="btn btn-outline-secondary">Cancel</a>
+          <button type="submit" class="btn btn-primary fw-semibold" id="savePolicyBtn">Save and continue<i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></button>
+        </div>
+      </form>
+    </section>
+  </section>
+</div>
+
+{% include 'partials/_unsaved_changes.html' with form_selector='form[data-unsaved-guard]' %}
+{% include 'partials/_inline_save.html' %}
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  function update() {
+    const panel = document.getElementById('id_panel_weight');
+    const peer = document.getElementById('id_peer_weight');
+    const badge = document.getElementById('weightBalanceStatus');
+    if (!panel || !peer || !badge) return;
+    const sum = Math.round(((parseFloat(panel.value) || 0) + (parseFloat(peer.value) || 0)) * 100) / 100;
+    const ok = Math.abs(sum - 100) < 0.001;
+    badge.className = 'badge ' + (ok ? 'bg-success' : 'bg-danger');
+    badge.textContent = ok ? 'Total 100%' : 'Total ' + sum + '%: must equal 100%';
+  }
+  document.addEventListener('input', function (event) {
+    if (event.target.id === 'id_panel_weight' || event.target.id === 'id_peer_weight') update();
+  });
+  update();
+})();
+</script>
+{% endblock %}

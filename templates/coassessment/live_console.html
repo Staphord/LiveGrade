@@ -1,0 +1,206 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ session.name }} : Live control : LiveGrade{% endblock %}
+{% block page_title %}{{ session.name }}{% endblock %}
+
+{% block topbar_actions %}
+<div class="d-flex align-items-center gap-2">
+  {% if is_live %}<span class="live-badge" id="coassessment-conn-badge"><span class="dot"></span>Live</span>
+  {% else %}<span class="badge text-bg-secondary">{{ session.get_status_display }}</span>{% endif %}
+  <a href="{% url 'coassessment_dashboard' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i>All co-assessments</a>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style nonce="{{ csp_nonce }}">
+.live-badge{display:inline-flex;align-items:center;gap:5px;font-size:var(--fs-micro);font-weight:700;padding:.25rem .65rem;border-radius:999px;background:var(--tone-success-bg);color:var(--tone-success-fg)}
+.live-badge.is-offline{background:var(--tone-warn-bg);color:var(--tone-warn-fg)}
+.live-badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:co-pulse 1.4s ease-in-out infinite}
+@keyframes co-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+.co-stage{background:#0f172a;color:#fff;border:1px solid #1e293b;border-radius:var(--radius-card);padding:var(--sp-5)}
+.co-clock{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:var(--radius-control);padding:var(--sp-3) var(--sp-4)}
+.co-clock strong{display:block;font-family:var(--font-mono);font-size:2.25rem;line-height:1.1}
+.co-clock span{font-size:var(--fs-micro);text-transform:uppercase;color:#94a3b8;letter-spacing:.05em}
+.co-meter{height:10px;background:var(--surface-sunken);border-radius:var(--radius-pill);overflow:hidden}
+.co-meter>div{height:100%;border-radius:var(--radius-pill);transition:width .3s ease}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3" style="max-width: 1400px;">
+  {% include 'coassessment/_workspace_tabs.html' with active='live' %}
+
+  {% if session.status == 'draft' %}
+  <section class="card shadow-sm" aria-labelledby="co-draft-heading">
+    <div class="card-body p-4">
+      <h2 class="h4 fw-bold" id="co-draft-heading">Not live yet</h2>
+      <p class="text-muted mb-3">Finish the setup and go live from the review step. The stage opens as soon as the session is live.</p>
+      <a href="{% url 'coassessment_setup_review' session.pk %}" class="btn btn-primary"><i class="bi bi-clipboard-check me-1" aria-hidden="true"></i>Go to review</a>
+    </div>
+  </section>
+
+  {% elif not is_live %}
+  <section class="card shadow-sm" aria-labelledby="co-closed-heading">
+    <div class="card-body p-4 text-center">
+      <div class="display-6 text-secondary mb-2"><i class="bi bi-flag-fill" aria-hidden="true"></i></div>
+      <h2 class="h4 fw-bold" id="co-closed-heading">{% if session.status == 'review' %}All teams have presented{% elif session.status == 'signed_off' %}Results are signed off{% else %}Results are released{% endif %}</h2>
+      <p class="text-muted mb-3">{% if session.status == 'review' %}Moderate any flagged marks, sign off, then release the results.{% else %}The stage is closed. Marks and moderation records are in Results.{% endif %}</p>
+      <a href="{% url 'coassessment_results' session.pk %}" class="btn btn-primary"><i class="bi bi-table me-1" aria-hidden="true"></i>Open results</a>
+      <a href="{{ public_screen_url }}" target="_blank" rel="noopener" class="btn btn-outline-secondary ms-2"><i class="bi bi-display me-1" aria-hidden="true"></i>Open public screen</a>
+    </div>
+  </section>
+
+  {% else %}
+  <div class="row g-4 mb-4">
+    <div class="col-lg-8">
+      <div class="co-stage h-100" data-inline-region="stage" id="co-stage"
+           data-presentation="{{ live_state.presentation_remaining_seconds }}" data-qa="{{ live_state.qa_remaining_seconds }}"
+           data-presentation-total="{{ session.presentation_duration_seconds }}" data-qa-total="{{ session.qa_duration_seconds }}"
+           data-paused="{% if live_state.timer_paused %}1{% else %}0{% endif %}" data-active="{% if active_turn %}1{% else %}0{% endif %}">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+          <span class="badge {% if active_turn and not active_turn.is_paused %}text-bg-danger{% elif active_turn %}text-bg-warning{% else %}text-bg-secondary{% endif %} text-uppercase">{% if active_turn %}{% if active_turn.is_paused %}Paused{% else %}On the floor{% endif %}{% else %}Stage standing by{% endif %}</span>
+          <a href="{{ public_screen_url }}" target="_blank" rel="noopener" class="btn btn-outline-light btn-sm"><i class="bi bi-display me-1" aria-hidden="true"></i>Open public screen<i class="bi bi-box-arrow-up-right small ms-1" aria-hidden="true"></i></a>
+        </div>
+        {% if active_turn %}
+          <h2 class="fw-bold mb-1" style="font-size: var(--fs-hero); letter-spacing: -0.02em;">{{ active_turn.group.name }}</h2>
+          <div class="mb-3" style="color: #94a3b8;">{{ active_turn.group.topic|default:"Presentation underway" }}</div>
+          <div class="d-flex flex-wrap gap-2 mb-3">{% for member in active_turn.group.members.all %}<span class="badge" style="background: rgba(255,255,255,.1); font-weight: 500;">{{ member.full_name }}</span>{% empty %}<span class="small" style="color: #64748b;">No members listed</span>{% endfor %}</div>
+        {% else %}
+          <h2 class="fw-bold mb-1" style="font-size: var(--fs-display); color: #94a3b8;">No team on stage</h2>
+          <p class="mb-3" style="color: #64748b;">Call a team from the lineup, or lock the turn to start the next one.</p>
+        {% endif %}
+        <div class="d-flex flex-wrap gap-3 align-items-end">
+          <div class="co-clock"><strong id="co-clock-presentation" style="color: #38bdf8;">{{ live_state.presentation_clock_formatted }}</strong><span>Presentation</span></div>
+          <div class="co-clock"><strong id="co-clock-qa" style="color: #cbd5e1;">{{ live_state.qa_clock_formatted }}</strong><span>Q&amp;A</span></div>
+        </div>
+        <div class="d-flex flex-wrap gap-2 mt-4 pt-3" style="border-top: 1px solid rgba(255,255,255,.1);">
+          <form method="post" action="{% url 'coassessment_pause_turn' session.pk %}">{% csrf_token %}<button type="submit" class="btn {% if active_turn and active_turn.is_paused %}btn-warning{% else %}btn-outline-light{% endif %}"{% if not active_turn %} disabled{% endif %}>{% if active_turn and active_turn.is_paused %}<i class="bi bi-play-fill me-1" aria-hidden="true"></i>Resume{% else %}<i class="bi bi-pause-fill me-1" aria-hidden="true"></i>Pause{% endif %}</button></form>
+          <form method="post" action="{% url 'coassessment_advance_turn' session.pk %}">{% csrf_token %}<button type="submit" class="btn btn-success"><i class="bi bi-check2-circle me-1" aria-hidden="true"></i>Lock turn and call next</button></form>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card border-0 shadow-sm h-100" data-inline-region="quorum">
+        <div class="card-body p-4">
+          <h3 class="h6 fw-bold mb-3">Scorecards in</h3>
+          <div class="mb-3">
+            <div class="d-flex justify-content-between"><span class="fw-semibold">Panel examiners</span><span class="font-monospace">{{ panel_count }} / {{ panel_total }}</span></div>
+            <div class="co-meter my-1"><div style="width: {{ panel_percent }}%; background: #4f46e5;"></div></div>
+            <small class="text-muted">{% if panel_quorum_met %}Quorum met{% else %}Needs {{ session.minimum_panel_evaluators }}{% endif %} · {{ session.panel_weight }}% of the mark</small>
+          </div>
+          <div class="mb-3">
+            <div class="d-flex justify-content-between"><span class="fw-semibold">Peer evaluators</span><span class="font-monospace">{{ peer_count }} / {{ peer_total }}</span></div>
+            <div class="co-meter my-1"><div style="width: {{ peer_percent }}%; background: #0284c7;"></div></div>
+            <small class="text-muted">{% if peer_quorum_met %}Quorum met{% else %}Needs {{ session.minimum_peer_evaluators }}{% endif %} · {{ session.peer_weight }}% of the mark</small>
+          </div>
+          <form method="post" action="{% url 'coassessment_update_timers' session.pk %}" class="row g-2 align-items-end pt-3 border-top">
+            {% csrf_token %}
+            <div class="col"><label class="form-label small mb-1" for="presentationMinutes">Presentation (min)</label><input id="presentationMinutes" name="presentation_minutes" type="number" min="1" max="240" class="form-control form-control-sm" value="{{ presentation_minutes }}" required></div>
+            <div class="col"><label class="form-label small mb-1" for="qaMinutes">Q&amp;A (min)</label><input id="qaMinutes" name="qa_minutes" type="number" min="1" max="240" class="form-control form-control-sm" value="{{ qa_minutes }}" required></div>
+            <div class="col-12"><button type="submit" class="btn btn-outline-primary btn-sm">Set clocks</button></div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section class="card border-0 shadow-sm" data-inline-region="lineup" aria-labelledby="co-lineup-heading">
+    <div class="card-body p-4">
+      <div class="d-flex justify-content-between align-items-center mb-3"><h3 class="h6 fw-bold mb-0" id="co-lineup-heading">Lineup</h3><span class="tc-chip">{{ group_lineup|length }} team{{ group_lineup|length|pluralize }}</span></div>
+      <div class="table-responsive"><table class="table align-middle mb-0">
+        <thead><tr><th scope="col">#</th><th scope="col">Team</th><th scope="col">Panel</th><th scope="col">Peers</th><th scope="col">Status</th><th scope="col"><span class="visually-hidden">Action</span></th></tr></thead>
+        <tbody>
+          {% for item in group_lineup %}
+          <tr>
+            <td>{{ item.group.order }}</td>
+            <th scope="row">{{ item.group.name }}{% if item.group.topic %}<div class="small text-muted fw-normal">{{ item.group.topic|truncatechars:60 }}</div>{% endif %}</th>
+            <td>{{ item.panel_raters }} / {{ session.minimum_panel_evaluators }}</td>
+            <td>{{ item.peer_raters }} / {{ session.minimum_peer_evaluators }}</td>
+            <td>{% if item.turn_status == 'active' %}<span class="badge text-bg-success">On stage</span>{% elif item.turn_status == 'closed' %}<span class="badge text-bg-light border">Presented</span>{% else %}<span class="badge text-bg-secondary">Queued</span>{% endif %}</td>
+            <td class="text-end">{% if item.turn_status == 'queued' %}<form method="post" action="{% url 'coassessment_activate_turn' session.pk item.group.pk %}" class="d-inline">{% csrf_token %}<button type="submit" class="btn btn-outline-primary btn-sm">Call to stage</button></form>{% endif %}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" class="text-center text-muted py-4">No teams in the lineup.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+    </div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if is_live %}
+{% include 'partials/_inline_save.html' %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  let clock = null;  // seconds left at the moment the server last told us
+
+  function readClock() {
+    const stage = document.getElementById('co-stage');
+    if (!stage) return;
+    clock = {
+      presentation: Number(stage.dataset.presentation), qa: Number(stage.dataset.qa),
+      presentationTotal: Number(stage.dataset.presentationTotal),
+      paused: stage.dataset.paused === '1', active: stage.dataset.active === '1', at: Date.now(),
+    };
+  }
+
+  function format(total) {
+    const seconds = Math.max(0, Math.round(total));
+    return String(Math.floor(seconds / 60)).padStart(2, '0') + ':' + String(seconds % 60).padStart(2, '0');
+  }
+
+  function tick() {
+    if (!clock) return;
+    const spent = clock.active && !clock.paused ? (Date.now() - clock.at) / 1000 : 0;
+    const presentation = Math.max(0, clock.presentation - spent);
+    const overflow = Math.max(0, spent - clock.presentation);
+    const qa = Math.max(0, clock.qa - overflow);
+    const p = document.getElementById('co-clock-presentation');
+    const q = document.getElementById('co-clock-qa');
+    if (p) p.textContent = format(presentation);
+    if (q) q.textContent = format(qa);
+  }
+
+  readClock();
+  setInterval(tick, 250);
+  document.addEventListener('inline-region-updated', function () { readClock(); tick(); });
+
+  // Every change on the floor (this console, an examiner, a peer) arrives as a
+  // socket message; the console then refetches its own regions in place.
+  const badge = document.getElementById('coassessment-conn-badge');
+  const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  let socket = null, retries = 0, retryTimer = null, pending = null;
+  function refresh() {
+    window.clearTimeout(pending);
+    pending = window.setTimeout(function () { if (window.InlineRegions) window.InlineRegions.refresh(); }, 150);
+  }
+  function connect() {
+    if (!window.WebSocket) return;
+    try {
+      socket = new WebSocket(scheme + '://' + window.location.host + '/ws/coassessment/{{ session.pk }}/live/');
+      socket.onopen = function () { retries = 0; if (badge) badge.classList.remove('is-offline'); };
+      socket.onmessage = function (event) {
+        let payload = {};
+        try { payload = JSON.parse(event.data); } catch (err) { /* ignore */ }
+        if (payload.type === 'update') refresh();
+      };
+      socket.onclose = function () {
+        if (badge) badge.classList.add('is-offline');
+        window.clearTimeout(retryTimer);
+        retryTimer = window.setTimeout(connect, Math.min(30000, 2000 * Math.pow(1.5, retries++)));
+      };
+      socket.onerror = function () { socket.close(); };
+    } catch (err) { /* the fallback check keeps the console current */ }
+  }
+  connect();
+  setInterval(function () { if (!socket || socket.readyState !== WebSocket.OPEN) refresh(); }, 15000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
+})();
+</script>
+{% endif %}
+{% endblock %}

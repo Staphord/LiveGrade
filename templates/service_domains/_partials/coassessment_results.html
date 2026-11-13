@@ -1,0 +1,116 @@
+<div id="coassessment-results" aria-busy="false">
+  <section class="coassessment-table-card" aria-labelledby="coassessment-table-heading">
+    <div class="coassessment-table-head">
+      <div class="coassessment-table-heading-group">
+        <h2 id="coassessment-table-heading">Co-assessments</h2>
+        <span class="coassessment-table-count">{% if search_query or status_filter %}{{ filtered_count }} matching{% else %}{{ status_counts.total }} total{% endif %} co-assessment{{ filtered_count|pluralize }}</span>
+      </div>
+      <div class="coassessment-table-tools">
+        <form id="coassessment-bulk-delete" method="post" action="{% url 'coassessment_bulk_delete' %}" data-confirm="Delete the selected co-assessments and all of their criteria, groups, participants, examiners, scorecards, and results? This cannot be undone." data-confirm-title="Delete selected co-assessments?" data-confirm-label="Delete selected" data-confirm-tone="danger">
+          {% csrf_token %}
+          <input type="hidden" name="q" value="{{ search_query }}">
+          <input type="hidden" name="status" value="{{ status_filter }}">
+          <input type="hidden" name="per_page" value="{{ per_page }}">
+          <button type="submit" class="btn btn-outline-danger btn-sm" data-bulk-delete-button hidden><i class="bi bi-trash me-1" aria-hidden="true"></i>Delete selected (<span data-selected-count>0</span>)</button>
+        </form>
+        <div class="coassessment-page-size">
+          <label for="coassessment-page-size">Rows per page</label>
+          <select id="coassessment-page-size" class="form-select form-select-sm" name="per_page" data-coassessment-page-size>
+            {% for size in page_sizes %}
+            <option value="{{ size }}"{% if size == per_page %} selected{% endif %}>{{ size }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+    {% if sessions %}
+    <div class="table-responsive">
+      <table class="table table-hover coassessment-table" data-coassessment-row-navigation>
+        <caption class="visually-hidden">Co-assessments with status, groups, criteria, examiners, creation date, and actions</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="coassessment-select-column"><input class="form-check-input" type="checkbox" data-coassessment-select-all aria-label="Select all co-assessments on this page"><span class="visually-hidden">Select</span></th>
+            <th scope="col">Co-assessment</th>
+            <th scope="col">Status</th>
+            <th scope="col">Groups</th>
+            <th scope="col">Criteria</th>
+            <th scope="col">Examiners</th>
+            <th scope="col">Created</th>
+            <th scope="col"><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for session in sessions %}
+          {% if session.status == 'active' %}
+            {% url 'coassessment_live_chair' session_id=session.pk as row_url %}
+          {% elif session.status == 'review' or session.status == 'released' %}
+            {% url 'coassessment_results' session_id=session.pk as row_url %}
+          {% else %}
+            {% url 'coassessment_setup' session_id=session.pk as row_url %}
+          {% endif %}
+          <tr class="coassessment-row-clickable" data-coassessment-row-href="{{ row_url }}">
+            <td class="coassessment-select-column">
+              <input class="form-check-input" type="checkbox" name="session_ids" value="{{ session.pk }}" form="coassessment-bulk-delete" data-coassessment-select aria-label="Select {{ session.name }}">
+            </td>
+            <td>
+              <a class="coassessment-table-name" href="{{ row_url }}">{{ session.name }}</a>
+              <span class="coassessment-table-secondary">
+                {% if session.status == 'draft' %}Next: complete rubric and roster setup
+                {% elif session.status == 'active' %}Next: manage live stage turns and scoring
+                {% elif session.status == 'review' %}Next: review variance and moderate marks
+                {% else %}Next: view signed results and leaderboard{% endif %}
+              </span>
+            </td>
+            <td>
+              <span class="coassessment-stage"><span class="coassessment-stage-dot {{ session.status }}" aria-hidden="true"></span>{{ session.get_status_display }}</span>
+            </td>
+            <td>{{ session.group_count }}</td>
+            <td>{{ session.criterion_count }}</td>
+            <td>{{ session.examiner_count }}</td>
+            <td>{{ session.created_at|date:'d M Y' }}</td>
+            <td class="text-end">{% include 'service_domains/_partials/coassessment_row_actions.html' with session=session %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if paginator.num_pages > 1 %}
+    <nav class="coassessment-pagination" aria-label="Co-assessment pages">
+      <span class="coassessment-pagination-label">Page {{ page_obj.number }} of {{ paginator.num_pages }} · {{ paginator.count }} co-assessment{{ paginator.count|pluralize }}</span>
+      <div class="coassessment-pagination-links">
+        {% if page_obj.has_previous %}<a class="btn btn-sm btn-outline-secondary" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page_obj.previous_page_number }}" data-coassessment-page>Previous</a>{% endif %}
+        {% if page_obj.has_next %}<a class="btn btn-sm btn-outline-secondary" href="?{% if querystring %}{{ querystring }}&amp;{% endif %}page={{ page_obj.next_page_number }}" data-coassessment-page>Next</a>{% endif %}
+      </div>
+    </nav>
+    {% endif %}
+    {% elif search_query or status_filter %}
+    <div class="coassessment-empty">
+      <div class="coassessment-empty-icon" aria-hidden="true"><i class="bi bi-search"></i></div>
+      <h2>No matching co-assessments</h2>
+      <p>Try a different co-assessment name or status filter.</p>
+      <a href="{% url 'coassessment_table' %}" class="btn btn-outline-secondary" data-coassessment-clear-filters>Clear filters</a>
+    </div>
+    {% else %}
+    <div class="coassessment-empty">
+      <div class="coassessment-empty-icon" aria-hidden="true"><i class="bi bi-person-video3"></i></div>
+      <h2>No co-assessments yet</h2>
+      <p>Create a co-assessment event to evaluate group presentations with unified peer and panel scoring.</p>
+      <div class="coassessment-empty-steps" aria-label="Co-assessment setup steps">
+        <div class="coassessment-empty-step">
+          <strong>1. Create the event</strong>
+          <span>Name the co-assessment and define scoring weights.</span>
+        </div>
+        <div class="coassessment-empty-step">
+          <strong>2. Configure rubric and roster</strong>
+          <span>Set shared criteria, import student teams, and invite examiners.</span>
+        </div>
+        <div class="coassessment-empty-step">
+          <strong>3. Run live stage and moderate</strong>
+          <span>Coordinate stage turns, review score variances, and publish results.</span>
+        </div>
+      </div>
+      <a href="{% url 'coassessment_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Create a co-assessment</a>
+    </div>
+    {% endif %}
+  </section>
+</div>

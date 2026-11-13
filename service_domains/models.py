@@ -2641,3 +2641,312 @@ class CombinedModerationDecision(OwnedDomainRecord):
 
     def delete(self, *args, **kwargs):
         raise ValidationError('Combined moderation decisions are append-only.')
+
+
+class CoAssessmentSession(OwnedDomainRecord):
+    """Aggregate root for a unified co-assessment event."""
+
+    class Status(models.TextChoices):
+        DRAFT = 'draft', 'Draft'
+        ACTIVE = 'active', 'Live on Stage'
+        REVIEW = 'review', 'In Moderation'
+        SIGNED_OFF = 'signed_off', 'Signed Off'
+        RELEASED = 'released', 'Results Released'
+
+    name = models.CharField(max_length=160)
+    description = models.CharField(max_length=500, blank=True)
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.DRAFT, db_index=True)
+    panel_weight = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal('70.00'),
+        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))])
+    peer_weight = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal('30.00'),
+        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))])
+    moderation_threshold = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal('15.00'),
+        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))],
+        help_text='Score discrepancy between panel and peer marks requiring chair review.')
+    minimum_panel_evaluators = models.PositiveSmallIntegerField(
+        default=1, validators=[MinValueValidator(1), MaxValueValidator(50)])
+    minimum_peer_evaluators = models.PositiveSmallIntegerField(
+        default=3, validators=[MinValueValidator(1), MaxValueValidator(500)])
+    presentation_duration_seconds = models.PositiveIntegerField(default=600)
+    qa_duration_seconds = models.PositiveIntegerField(default=300)
+    public_join_code = models.CharField(max_length=16, unique=True, editable=False)
+    allow_anonymous_peer_comments = models.BooleanField(default=True)
+    signed_off_at = models.DateTimeField(null=True, blank=True)
+    released_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ('-created_at',)
+
+    def __str__(self):
+        return self.name
+
+    def clean(self):
+        super().clean()
+        if (self.panel_weight + self.peer_weight) != Decimal('100.00'):
+            raise ValidationError({'peer_weight': 'Panel and Peer weights must total exactly 100%.'})
+
+    def save(self, *args, **kwargs):
+        if not self.public_join_code:
+            import secrets
+            self.public_join_code = secrets.token_hex(4).upper()
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def rubric_total_weight(self):
+        """Calculate the sum of all criterion weights."""
+        return sum((c.weight for c in self.criteria.all()), Decimal('0'))
+
+    def is_rubric_balanced(self):
+        """Check whether the criterion weights sum to 100 percent."""
+        return self.rubric_total_weight() == Decimal('100.00')
+
+    def group_criteria(self):
+        """Return criteria scoped to the overall team presentation."""
+        return self.criteria.filter(scope=CoAssessmentCriterion.Scope.GROUP)
+
+    def individual_criteria(self):
+        """Return criteria scoped to individual student members."""
+        return self.criteria.filter(scope=CoAssessmentCriterion.Scope.INDIVIDUAL)
+
+    def group_weight_total(self):
+        """Sum of weights across all group-scoped criteria."""
+        return sum((c.weight for c in self.group_criteria()), Decimal('0'))
+
+    def individual_weight_total(self):
+        """Sum of weights across all individual-scoped criteria."""
+        return sum((c.weight for c in self.individual_criteria()), Decimal('0'))
+
+
+class CoAssessmentCriterion(OwnedDomainRecord):
+    """Shared rubric criterion scored by both panel and peer evaluators."""
+
+    class Scope(models.TextChoices):
+        GROUP = 'group', 'Group / project'
+        INDIVIDUAL = 'individual', 'Individual student'
+
+    session = models.ForeignKey(
+        CoAssessmentSession, on_delete=models.CASCADE, related_name='criteria')
+    name = models.CharField(max_length=140)
+    description = models.TextField(blank=True, max_length=1000)
+    scope = models.CharField(
+        max_length=12, choices=Scope.choices, default=Scope.GROUP, db_index=True)
+    weight = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal('25.00'),
+        validators=[MinValueValidator(Decimal('0.01')), MaxValueValidator(Decimal('100'))])
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ('order', 'pk')
+        constraints = [
+            models.UniqueConstraint(
+                fields=('session', 'name'),
+                name='coassessment_criterion_name_unique'),
+        ]
+
+    def __str__(self):
+        return f'{self.name} ({self.get_scope_display()}, {self.weight}%)'
+
+
+class CoAssessmentLevelDescriptor(OwnedDomainRecord):
+    """Score anchor with descriptive performance guidance."""
+
+    criterion = models.ForeignKey(
+        CoAssessmentCriterion, on_delete=models.CASCADE, related_name='descriptors')
+    score = models.DecimalField(max_digits=5, decimal_places=2)
+    label = models.CharField(max_length=60)
+    guidance = models.CharField(max_length=MAX_LEVEL_DESCRIPTION)
+
+    class Meta:
+        ordering = ('score', 'pk')
+
+
+class CoAssessmentGroup(OwnedDomainRecord):
+    """Presenting team in the scheduled lineup."""
+
+    session = models.ForeignKey(
+        CoAssessmentSession, on_delete=models.CASCADE, related_name='groups')
+    name = models.CharField(max_length=140)
+    topic = models.CharField(max_length=255, blank=True)
+    location = models.CharField(max_length=120, blank=True)
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ('order', 'pk')
+
+    def __str__(self):
+        return self.name
+
+
+class CoAssessmentParticipant(OwnedDomainRecord):
+    """Student roster member who can evaluate presentations and present."""
+
+    session = models.ForeignKey(
+        CoAssessmentSession, on_delete=models.CASCADE, related_name='participants')
+    group = models.ForeignKey(
+        CoAssessmentGroup, null=True, blank=True, on_delete=models.SET_NULL, related_name='members')
+    full_name = models.CharField(max_length=150)
+    student_id = models.CharField(max_length=40, blank=True)
+    email = models.EmailField(blank=True)
+
+    class Meta:
+        ordering = ('full_name',)
+        constraints = [
+            models.UniqueConstraint(
+                fields=('session', 'student_id'),
+                condition=~models.Q(student_id=''),
+                name='coassessment_participant_student_id_unique'),
+        ]
+
+    def __str__(self):
+        return self.full_name or self.student_id
+
+
+class CoAssessmentExaminer(OwnedDomainRecord):
+    """Panel examiner with a secure token digest."""
+
+    session = models.ForeignKey(
+        CoAssessmentSession, on_delete=models.CASCADE, related_name='examiners')
+    email = models.EmailField()
+    display_name = models.CharField(max_length=120)
+    token_digest = models.CharField(max_length=64, unique=True, editable=False)
+    invite_token = models.CharField(max_length=64, blank=True, default='')
+    is_chair = models.BooleanField(default=False)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ('display_name',)
+
+    def __str__(self):
+        return f'{self.display_name} ({self.email})'
+
+
+class CoAssessmentTurn(OwnedDomainRecord):
+    """Presentation stage window for a group."""
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        ACTIVE = 'active', 'Active on Stage'
+        CLOSED = 'closed', 'Completed'
+
+    session = models.ForeignKey(
+        CoAssessmentSession, on_delete=models.CASCADE, related_name='turns')
+    group = models.ForeignKey(
+        CoAssessmentGroup, on_delete=models.CASCADE, related_name='turns')
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.PENDING)
+    opened_at = models.DateTimeField(null=True, blank=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    is_paused = models.BooleanField(default=False)
+    paused_at = models.DateTimeField(null=True, blank=True)
+    total_paused_seconds = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ('group__order', 'pk')
+
+    def __str__(self):
+        return f'{self.group.name} : {self.get_status_display()}'
+
+
+class CoAssessmentScorecard(OwnedDomainRecord):
+    """Evaluation submission from an individual peer or panel examiner."""
+
+    class Tier(models.TextChoices):
+        PANEL = 'panel', 'Panel Examiner'
+        PEER = 'peer', 'Student Peer'
+
+    turn = models.ForeignKey(
+        CoAssessmentTurn, on_delete=models.CASCADE, related_name='scorecards')
+    evaluator_tier = models.CharField(max_length=10, choices=Tier.choices)
+    peer_evaluator = models.ForeignKey(
+        CoAssessmentParticipant, null=True, blank=True, on_delete=models.CASCADE,
+        related_name='peer_scorecards')
+    examiner_evaluator = models.ForeignKey(
+        CoAssessmentExaminer, null=True, blank=True, on_delete=models.CASCADE,
+        related_name='examiner_scorecards')
+    qualitative_feedback = models.TextField(blank=True, max_length=2000)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=('turn', 'peer_evaluator'),
+                condition=models.Q(peer_evaluator__isnull=False),
+                name='coassessment_one_peer_scorecard_per_turn'),
+            models.UniqueConstraint(
+                fields=('turn', 'examiner_evaluator'),
+                condition=models.Q(examiner_evaluator__isnull=False),
+                name='coassessment_one_examiner_scorecard_per_turn'),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.evaluator_tier == self.Tier.PEER:
+            if not self.peer_evaluator_id:
+                raise ValidationError({'peer_evaluator': 'Peer scorecard must link to a valid participant.'})
+            if self.peer_evaluator.group_id == self.turn.group_id:
+                raise ValidationError({'peer_evaluator': 'Students cannot evaluate their own team.'})
+        elif self.evaluator_tier == self.Tier.PANEL:
+            if not self.examiner_evaluator_id:
+                raise ValidationError({'examiner_evaluator': 'Panel scorecard must link to an invited examiner.'})
+
+
+class CoAssessmentScoreValue(models.Model):
+    """Individual criterion score within a scorecard."""
+
+    scorecard = models.ForeignKey(
+        CoAssessmentScorecard, on_delete=models.CASCADE, related_name='values')
+    criterion = models.ForeignKey(
+        CoAssessmentCriterion, on_delete=models.PROTECT, related_name='values')
+    target_participant = models.ForeignKey(
+        'CoAssessmentParticipant', null=True, blank=True, on_delete=models.CASCADE,
+        related_name='received_scores')
+    score = models.DecimalField(
+        max_digits=5, decimal_places=2,
+        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))])
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=('scorecard', 'criterion'),
+                condition=models.Q(target_participant__isnull=True),
+                name='coassessment_unique_group_score_per_card'),
+            models.UniqueConstraint(
+                fields=('scorecard', 'criterion', 'target_participant'),
+                condition=models.Q(target_participant__isnull=False),
+                name='coassessment_unique_individual_score_per_card'),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.criterion_id:
+            if self.criterion.scope == CoAssessmentCriterion.Scope.GROUP and self.target_participant_id is not None:
+                raise ValidationError({'target_participant': 'Group criteria must not have a target participant.'})
+            if self.criterion.scope == CoAssessmentCriterion.Scope.INDIVIDUAL and self.target_participant_id is None:
+                raise ValidationError({'target_participant': 'Individual criteria require a target participant.'})
+
+
+class CoAssessmentModeration(OwnedDomainRecord):
+    """Chair moderation record for a turn."""
+
+    class Action(models.TextChoices):
+        APPROVE_COMBINED = 'approve', 'Approve combined mark'
+        OVERRIDE_PANEL = 'override_panel', 'Override with panel score only'
+        ADJUSTED = 'adjusted', 'Apply calibrated score'
+
+    turn = models.ForeignKey(
+        CoAssessmentTurn, on_delete=models.CASCADE, related_name='moderations')
+    action = models.CharField(max_length=20, choices=Action.choices)
+    panel_score_snapshot = models.DecimalField(max_digits=5, decimal_places=2)
+    peer_score_snapshot = models.DecimalField(max_digits=5, decimal_places=2)
+    final_score = models.DecimalField(max_digits=5, decimal_places=2)
+    justification = models.TextField(max_length=1500)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='coassessment_moderations')
+
+    class Meta:
+        ordering = ('-created_at',)
+

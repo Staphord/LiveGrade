@@ -1,0 +1,232 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Results & Moderation : {{ session.name }} : LiveGrade{% endblock %}
+{% block page_title %}Results & Moderation{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'coassessment_export_csv' session.pk %}" class="btn btn-outline-secondary btn-sm">
+  <i class="bi bi-download me-1" aria-hidden="true"></i>Export CSV
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="stage-content" style="max-width: 1400px; margin: 0 auto; display: grid; gap: var(--sp-4);">
+  {% include 'coassessment/_workspace_tabs.html' with active='results' %}
+  
+  <!-- Status & Release Bar -->
+  <div class="card p-4 bg-light border-0" style="border-radius: var(--radius-card);">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+      <div>
+        <span class="badge bg-secondary text-uppercase fw-bold" style="font-size: var(--fs-micro);">
+          Status: {{ session.get_status_display }}
+        </span>
+        <h2 class="h4 fw-bold mt-1 mb-1">{{ session.name }}</h2>
+        <div class="small text-muted">
+          Weights: Panel {{ session.panel_weight }}% / Peer {{ session.peer_weight }}% &bull;
+          Threshold: &plusmn;{{ session.moderation_threshold }} points
+        </div>
+      </div>
+
+      <div class="d-flex gap-2">
+        {% if session.status == 'active' or session.status == 'review' %}
+          {% if can_sign_off %}
+            <form method="post" action="{% url 'coassessment_sign_off' session.pk %}">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-primary">
+                &check; Sign Off Official Results
+              </button>
+            </form>
+          {% elif not all_groups_presented %}
+            <button class="btn btn-outline-secondary disabled" disabled title="All presentations must conclude before signing off">
+              Presentations In Progress ({{ closed_turns_count }}/{{ total_groups }} completed)
+            </button>
+          {% elif moderation_pending_count > 0 %}
+            <button class="btn btn-outline-warning disabled" disabled title="Resolve all pending moderation flags before signing off">
+              Pending Moderation Flags ({{ moderation_pending_count }})
+            </button>
+          {% else %}
+            <button class="btn btn-secondary disabled" disabled>
+              Sign Off Not Available
+            </button>
+          {% endif %}
+        {% elif session.status == 'signed_off' %}
+          <form method="post" action="{% url 'coassessment_release' session.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-success">
+              <i class="bi bi-megaphone me-1"></i>Release to Public Leaderboard
+            </button>
+          </form>
+        {% elif session.status == 'released' %}
+          <span class="badge bg-success fs-6 p-2">&check; Results Released to Public Display</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Master Results Table -->
+  <div class="card p-0 mb-0" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); overflow: hidden;">
+    <div class="p-3 border-bottom d-flex justify-content-between align-items-center">
+      <h3 class="h6 fw-bold mb-0">Presentation Marks & Discrepancy Ledger</h3>
+      <span class="small text-muted">{{ rows|length }} teams evaluated</span>
+    </div>
+
+    <table class="table table-hover align-middle mb-0">
+      <thead style="background: var(--surface-sunken);">
+        <tr>
+          <th style="font-size: var(--fs-micro); text-transform: uppercase; color: var(--text-muted); padding: 12px 14px;">Team</th>
+          <th style="font-size: var(--fs-micro); text-transform: uppercase; color: var(--text-muted); padding: 12px 14px;">Topic</th>
+          <th style="font-size: var(--fs-micro); text-transform: uppercase; color: var(--text-muted); padding: 12px 14px;">Panel ({{ session.panel_weight }}%)</th>
+          <th style="font-size: var(--fs-micro); text-transform: uppercase; color: var(--text-muted); padding: 12px 14px;">Peer ({{ session.peer_weight }}%)</th>
+          <th style="font-size: var(--fs-micro); text-transform: uppercase; color: var(--text-muted); padding: 12px 14px;">Discrepancy</th>
+          <th style="font-size: var(--fs-micro); text-transform: uppercase; color: var(--text-muted); padding: 12px 14px;">Combined</th>
+          <th style="font-size: var(--fs-micro); text-transform: uppercase; color: var(--text-muted); padding: 12px 14px;">Final Mark</th>
+          <th style="font-size: var(--fs-micro); text-transform: uppercase; color: var(--text-muted); padding: 12px 14px;">Moderation</th>
+          <th style="font-size: var(--fs-micro); text-transform: uppercase; color: var(--text-muted); padding: 12px 14px; text-align: right;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr {% if r.moderation_required and not r.latest_moderation %}style="background: rgba(255, 193, 7, 0.08);"{% endif %}>
+          <td style="padding: 12px 14px;"><strong>{{ r.group_name }}</strong></td>
+          <td style="padding: 12px 14px; color: var(--text-soft); font-size: var(--fs-sm);">{{ r.group_topic|default:"None" }}</td>
+          <td style="padding: 12px 14px; font-family: var(--font-mono);">
+            {% if r.panel_score %}{{ r.panel_score }} <small class="text-muted">({{ r.panel_raters }})</small>{% else %}<span class="text-muted">No quorum</span>{% endif %}
+          </td>
+          <td style="padding: 12px 14px; font-family: var(--font-mono);">
+            {% if r.peer_score %}{{ r.peer_score }} <small class="text-muted">({{ r.peer_raters }})</small>{% else %}<span class="text-muted">No quorum</span>{% endif %}
+          </td>
+          <td style="padding: 12px 14px; font-family: var(--font-mono);">
+            {% if r.discrepancy is not None %}
+              <span class="{% if r.moderation_required %}text-danger fw-bold{% else %}text-muted{% endif %}">
+                &plusmn;{{ r.discrepancy }}
+              </span>
+            {% else %}
+              <span class="text-muted">-</span>
+            {% endif %}
+          </td>
+          <td style="padding: 12px 14px; font-family: var(--font-mono);">
+            {{ r.combined_score|default:"-" }}
+          </td>
+          <td style="padding: 12px 14px; font-family: var(--font-mono); font-size: 1.05rem; font-weight: bold; color: var(--ink);">
+            {{ r.final_mark|default:"Pending" }}
+          </td>
+          <td style="padding: 12px 14px;">
+            {% if r.latest_moderation %}
+              <span class="badge bg-success-subtle text-success border border-success-subtle">
+                &check; Moderated ({{ r.latest_moderation.get_action_display }})
+              </span>
+            {% elif r.moderation_required %}
+              <span class="badge bg-warning text-dark border">
+                &#9888; Divergence Flag
+              </span>
+            {% else %}
+              <span class="badge bg-light text-muted border">Normal Variance</span>
+            {% endif %}
+          </td>
+          <td style="padding: 12px 14px; text-align: right;">
+            {% if r.moderation_required or r.latest_moderation %}
+              <button class="btn btn-outline-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#modBox_{{ r.turn_id }}">
+                Moderate
+              </button>
+            {% else %}
+              <span class="text-muted small">Auto-Approved</span>
+            {% endif %}
+          </td>
+        </tr>
+
+        {% if r.member_results and r.has_individual_criteria %}
+        <tr class="bg-light">
+          <td colspan="9" class="p-3">
+            <div class="small fw-bold text-muted mb-2 text-uppercase" style="font-size: var(--fs-micro); letter-spacing: 0.05em;">
+              Student Member Grades (Group Component: {{ r.group_mark }} + Individual Component)
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered bg-white mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th>Student Name</th>
+                    <th>Student ID</th>
+                    <th>Group Mark</th>
+                    <th>Individual Mark</th>
+                    <th>Final Student Grade</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for mem in r.member_results %}
+                  <tr>
+                    <td><strong>{{ mem.full_name }}</strong></td>
+                    <td class="font-monospace text-muted">{{ mem.student_id|default:"-" }}</td>
+                    <td class="font-monospace">{{ mem.group_score }}</td>
+                    <td class="font-monospace text-primary">+{{ mem.individual_score }}</td>
+                    <td class="font-monospace fw-bold text-success">{{ mem.final_score }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </td>
+        </tr>
+        {% endif %}
+
+        <!-- Moderation Collapse Box -->
+        {% if r.moderation_required or r.latest_moderation %}
+        <tr class="collapse" id="modBox_{{ r.turn_id }}">
+          <td colspan="9" class="p-4 bg-light border-bottom">
+            <div class="card p-3 border-warning" style="max-width: 720px; margin: 0 auto; background: var(--surface);">
+              <h4 class="h6 fw-bold mb-2">Chair Moderation : {{ r.group_name }}</h4>
+              
+              {% if r.latest_moderation %}
+                <div class="alert alert-info py-2 small mb-3">
+                  <strong>Current Decision:</strong> {{ r.latest_moderation.get_action_display }} &bull;
+                  Final score: {{ r.latest_moderation.final_score }} &bull;
+                  Logged by: {{ r.latest_moderation.reviewed_by }}
+                  <div class="mt-1 fst-italic">"{{ r.latest_moderation.justification }}"</div>
+                </div>
+              {% endif %}
+
+              <form method="post" action="{% url 'coassessment_moderate' session.pk r.turn_id %}">
+                {% csrf_token %}
+                <div class="row g-3 mb-3">
+                  <div class="col-12 col-md-6">
+                    <label class="form-label small fw-bold">Resolution Action:</label>
+                    <select name="action" class="form-select form-select-sm">
+                      <option value="approve" selected>Approve combined mark ({{ r.combined_score }})</option>
+                      <option value="override_panel">Override with Panel mark only ({{ r.panel_score }})</option>
+                      <option value="adjusted">Apply calibrated mark</option>
+                    </select>
+                  </div>
+                  <div class="col-12 col-md-6">
+                    <label class="form-label small fw-bold">Official Final Score:</label>
+                    <input type="number" step="0.01" min="0" max="100" name="final_score" class="form-control form-control-sm font-monospace" value="{{ r.final_mark|default:r.combined_score }}" required>
+                  </div>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label small fw-bold">Audited Justification (Mandatory):</label>
+                  <textarea name="justification" rows="2" class="form-control form-control-sm" placeholder="Explain the rationale for this moderation resolution..." required></textarea>
+                </div>
+
+                <div class="d-flex justify-content-end gap-2">
+                  <button type="submit" class="btn btn-primary btn-sm">
+                    Confirm & Record Moderation
+                  </button>
+                </div>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endif %}
+
+        {% empty %}
+        <tr>
+          <td colspan="9" class="text-center py-5 text-muted">
+            No presentation turns recorded yet.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

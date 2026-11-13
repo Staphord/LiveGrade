@@ -1,0 +1,42 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% load static %}
+
+{% block title %}Student Peer Check-In : {{ session.name }} : LiveGrade{% endblock %}
+{% block service_name %}Co-Assessment{% endblock %}
+
+{% block content %}
+<main id="public-main" class="public-service-content narrow">
+  <div class="card p-4 text-center" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card-lg); box-shadow: var(--elev-2); max-width: 460px; margin: 2rem auto;">
+    
+    <div style="width: 56px; height: 56px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: inline-flex; align-items: center; justify-content: center; font-size: 1.5rem; margin: 0 auto var(--sp-3);">
+      <i class="bi bi-qr-code"></i>
+    </div>
+
+    <span class="badge bg-light text-primary border mb-2 text-uppercase fw-bold" style="font-size: var(--fs-micro); letter-spacing: 0.05em;">
+      Student Peer Evaluation
+    </span>
+    
+    <h1 class="h4 fw-bold mb-1">{{ session.name }}</h1>
+    <p class="text-muted small mb-4">Enter your student ID or full name exactly as it appears on the class roster to open the scorecard.</p>
+
+    {% if messages %}
+      {% for msg in messages %}
+        <div class="alert alert-danger text-start small mb-3">{{ msg }}</div>
+      {% endfor %}
+    {% endif %}
+
+    <form method="post" novalidate>
+      {% csrf_token %}
+      <div class="mb-3 text-start">
+        <label for="identifierInput" class="form-label small fw-bold">Student ID or full name</label>
+        <input type="text" id="identifierInput" name="identifier" class="form-control" placeholder="S100234 or Jane Doe" required autofocus>
+        <div class="form-text text-muted small">Either one works.</div>
+      </div>
+
+      <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold">
+        Check In & Open Scorecard &rarr;
+      </button>
+    </form>
+  </div>
+</main>
+{% endblock %}

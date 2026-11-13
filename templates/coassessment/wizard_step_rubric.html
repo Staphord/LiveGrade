@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Rubric : {{ session.name }} : LiveGrade{% endblock %}
+{% block page_title %}Step 2: Rubric{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 service-workspace panel-page--wide panel-setup">
+  {% include 'coassessment/_wizard_head.html' %}
+
+  <section class="panel-step-layout" aria-label="Co-assessment setup">
+    {% include 'partials/_stepper.html' with steps=stepper_steps %}
+
+    <section class="panel-step panel-step-card service-section" data-inline-region>
+      <div class="card-icon-head mb-3">
+        <div class="head-left">
+          <span class="icon-badge"><i class="bi bi-list-check" aria-hidden="true"></i></span>
+          <div>
+            <div class="title">Rubric</div>
+            <div class="sub">One set of criteria for both panel and peers</div>
+          </div>
+        </div>
+        <span class="badge {% if is_balanced %}text-bg-success{% else %}text-bg-warning{% endif %} fs-6 font-monospace">{{ total_weight }}%</span>
+      </div>
+
+      <p class="small mb-3 {% if is_balanced %}text-success{% else %}text-muted{% endif %}" aria-live="polite">
+        {% if is_balanced %}<i class="bi bi-check-circle me-1" aria-hidden="true"></i>Weights total 100%.
+        {% elif remaining_weight > 0 %}{{ remaining_weight }}% left to assign. Weights must total 100%.
+        {% else %}{{ total_weight }}% is over 100%. Lower a weight or remove a criterion.{% endif %}
+        {% if criteria %}Group {{ session.group_weight_total }}% · Individual {{ session.individual_weight_total }}%{% endif %}
+      </p>
+
+      {% if criteria %}
+      <div class="table-responsive mb-3">
+        <table class="table align-middle mb-0">
+          <thead><tr><th scope="col">Criterion</th><th scope="col">Scope</th><th scope="col" class="text-end">Weight</th><th scope="col" class="text-end"><span class="visually-hidden">Actions</span></th></tr></thead>
+          <tbody>
+            {% for crit in criteria %}
+            <tr{% if editing and editing.pk == crit.pk %} class="table-active"{% endif %}>
+              <td>
+                <div class="fw-semibold">{{ crit.name }}</div>
+                {% if crit.description %}<div class="small text-muted">{{ crit.description|truncatewords:18 }}</div>{% endif %}
+              </td>
+              <td>{% if crit.scope == 'individual' %}<span class="badge text-bg-info">Individual</span>{% else %}<span class="badge text-bg-light border">Group</span>{% endif %}</td>
+              <td class="text-end font-monospace">{{ crit.weight }}%</td>
+              <td class="text-end text-nowrap">
+                <a class="btn btn-sm btn-outline-secondary" href="{% url 'coassessment_setup_rubric' session.pk %}?edit={{ crit.pk }}" data-inline-nav aria-label="Edit {{ crit.name }}"><i class="bi bi-pencil" aria-hidden="true"></i> Edit</a>
+                <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="delete_criterion"><input type="hidden" name="criterion_id" value="{{ crit.pk }}"><button type="submit" class="btn btn-sm btn-outline-danger" aria-label="Delete {{ crit.name }}" data-confirm="Remove this criterion from the rubric?" data-confirm-title="Delete criterion?" data-confirm-label="Delete" data-confirm-tone="danger"><i class="bi bi-trash" aria-hidden="true"></i> Delete</button></form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="text-center py-4 text-muted border border-dashed rounded mb-3">
+        <i class="bi bi-list-check fs-2 d-block mb-1" aria-hidden="true"></i>
+        No criteria yet. Import a spreadsheet or add one below.
+      </div>
+      {% endif %}
+
+      <section class="panel-sub-card mb-3" id="rubric-form" aria-labelledby="rubric-form-title"><h3 class="h6 fw-bold mb-3" id="rubric-form-title">{% if editing %}Edit criterion{% else %}Add a criterion{% endif %}</h3>
+          <form method="post" novalidate>
+            {% csrf_token %}
+            <input type="hidden" name="action" value="{% if editing %}update_criterion{% else %}add_criterion{% endif %}">
+            {% if editing %}<input type="hidden" name="criterion_id" value="{{ editing.pk }}">{% endif %}
+            {% include 'partials/_form_field.html' with field=form.name %}
+            <div class="row g-3">
+              <div class="col-12 col-md-7">{% include 'partials/_form_field.html' with field=form.scope %}</div>
+              <div class="col-12 col-md-5">{% include 'partials/_form_field.html' with field=form.weight %}</div>
+            </div>
+            {% include 'partials/_form_field.html' with field=form.description %}
+            {% if form.non_field_errors %}{% include 'partials/_inline_message.html' with tone='danger' messages=form.non_field_errors plain=True %}{% endif %}
+            <div class="d-flex flex-wrap gap-2">
+              <button type="submit" class="btn btn-primary">{% if editing %}Save changes{% else %}Add to rubric{% endif %}</button>
+              {% if editing %}<a class="btn btn-outline-secondary" href="{% url 'coassessment_setup_rubric' session.pk %}" data-inline-nav>Cancel</a>{% endif %}
+            </div>
+          </form>
+        </section>
+
+      <div class="mb-3" id="rubric-import">
+          {% url 'coassessment_rubric_import' session.pk as import_url %}{% url 'coassessment_rubric_sample' session.pk as sample_url %}
+          {% include 'partials/_import_card.html' with title='Import rubric' intro='Replaces the rubric with the file. Weights must total 100%.' form=import_state.form import_url=import_url sample_url=sample_url dropzone_id='co-rubric-dropzone' filename_id='co-rubric-filename' preview_label='Preview rubric' file_hint='Criterion, Scope, Weight, Description (.xlsx)' plan=import_state.plan token=import_state.token errors=import_state.errors %}
+        </div>
+
+      <div class="d-flex justify-content-between align-items-center mt-4 pt-3 border-top">
+        <a href="{% url 'coassessment_setup_policy' session.pk %}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i>Back</a>
+        {% if is_balanced %}
+          <a href="{% url 'coassessment_setup_roster' session.pk %}" class="btn btn-primary">Next: teams<i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></a>
+        {% else %}
+          <span class="d-inline-block" tabindex="0" title="Weights must total 100% first"><span class="btn btn-primary disabled" aria-disabled="true">Next: teams</span></span>
+        {% endif %}
+      </div>
+    </section>
+  </section>
+</div>
+{% include 'partials/_inline_save.html' %}
+{% endblock %}

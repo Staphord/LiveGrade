@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Review : {{ session.name }} : LiveGrade{% endblock %}
+{% block page_title %}Step 5: Review{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 service-workspace panel-page--wide panel-setup">
+  {% include 'coassessment/_wizard_head.html' %}
+
+  <section class="panel-step-layout" aria-label="Co-assessment setup">
+    {% include 'partials/_stepper.html' with steps=stepper_steps %}
+
+    <section class="panel-step panel-step-card service-section">
+      <div class="card-icon-head mb-3">
+        <div class="head-left">
+          <span class="icon-badge"><i class="bi bi-clipboard-check" aria-hidden="true"></i></span>
+          <div>
+            <div class="title">Review</div>
+            <div class="sub">Check the setup, then go live. The stage console runs the event.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex flex-wrap gap-2 mb-3">
+        <span class="tc-chip"><strong>{{ criteria_count }}</strong> criteri{{ criteria_count|pluralize:'on,a' }}</span>
+        <span class="tc-chip"><strong>{{ team_count }}</strong> team{{ team_count|pluralize }}</span>
+        <span class="tc-chip"><strong>{{ student_count }}</strong> student{{ student_count|pluralize }}</span>
+        <span class="tc-chip"><strong>{{ examiner_count }}</strong> examiner{{ examiner_count|pluralize }}</span>
+        <span class="tc-chip">Mark split <strong>{{ session.panel_weight }}% panel · {{ session.peer_weight }}% peer</strong></span>
+      </div>
+
+      <ul class="list-unstyled d-grid gap-2 mb-3">
+        {% for item in checks %}
+        <li class="tc-list-card align-items-center">
+          <span>
+            <i class="bi {% if item.ok %}bi-check-circle-fill text-success{% elif item.blocking %}bi-x-circle-fill text-danger{% else %}bi-exclamation-circle-fill text-warning{% endif %} me-2" aria-hidden="true"></i>
+            <strong>{{ item.label }}</strong>
+            <span class="small text-muted ms-2">{{ item.detail }}</span>
+            <span class="visually-hidden">{% if item.ok %}Done{% elif item.blocking %}Required{% else %}Recommended{% endif %}</span>
+          </span>
+          {% if not item.ok %}<a class="btn btn-sm btn-outline-secondary" href="{% url item.url session.pk %}">Fix</a>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+
+      {% if is_draft %}
+      <p class="small text-muted mb-3">Once live, peers scan the QR code on the public screen and check in with their student ID or full name.</p>
+      <div class="d-flex justify-content-between align-items-center pt-3 border-top">
+        <a href="{% url 'coassessment_setup_examiners' session.pk %}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i>Back</a>
+        <form method="post" action="{% url 'coassessment_publish' session.pk %}">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-success fw-semibold"{% if not can_publish %} disabled aria-disabled="true"{% endif %}><i class="bi bi-broadcast me-1" aria-hidden="true"></i>Go live</button>
+        </form>
+      </div>
+      {% else %}
+      <div class="d-flex justify-content-between align-items-center pt-3 border-top">
+        <span class="badge text-bg-success">{{ session.get_status_display }}</span>
+        <a href="{% url 'coassessment_live_console' session.pk %}" class="btn btn-primary">Open the stage console<i class="bi bi-arrow-right ms-1" aria-hidden="true"></i></a>
+      </div>
+      {% endif %}
+    </section>
+  </section>
+</div>
+{% endblock %}

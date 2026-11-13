@@ -10,7 +10,7 @@ from django.urls import reverse
 from django.template.loader import render_to_string
 from django.utils import timezone
 
-from .models import PanelInvitation, PanelHearing
+from .models import CoAssessmentExaminer, PanelInvitation, PanelHearing
 
 
 @shared_task
@@ -76,3 +76,34 @@ def send_panel_invitation_email(invitation_id, public_base_url=''):
         current.delivery_error = ''
         current.save(update_fields=('delivery_status', 'sent_at', 'delivery_error', 'updated_at'))
     return 'sent'
+
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=30)
+def send_coassessment_examiner_invitation_email(self, examiner_id, public_base_url=''):
+    """Email a co-assessment examiner their private scoring link."""
+    examiner = (CoAssessmentExaminer.objects.select_related('session')
+                .filter(pk=examiner_id).first())
+    if examiner is None or not examiner.invite_token:
+        return 'ignored'
+    path = reverse('coassessment_examiner_portal', kwargs={'token': examiner.invite_token})
+    configured_base = settings.LIVEGRADE_PUBLIC_BASE_URL or public_base_url or settings.LIVEGRADE_BASE_URL
+    _display_name, sender_address = parseaddr(settings.DEFAULT_FROM_EMAIL)
+    from_email = formataddr(('LiveGrade', sender_address or settings.DEFAULT_FROM_EMAIL))
+    context = {
+        'session_name': examiner.session.name,
+        'examiner_name': examiner.display_name,
+        'is_chair': examiner.is_chair,
+        'invitation_url': f'{configured_base.rstrip("/")}{path}',
+    }
+    try:
+        sent = send_mail(
+            subject=f'LiveGrade Co-Assessment invitation: {examiner.session.name}',
+            message=render_to_string('emails/coassessment_examiner_invitation.txt', context),
+            from_email=from_email,
+            recipient_list=[examiner.email],
+            fail_silently=False,
+            html_message=render_to_string('emails/coassessment_examiner_invitation.html', context),
+        )
+    except Exception as exc:
+        raise self.retry(exc=exc)
+    return 'sent' if sent == 1 else 'mail_not_accepted'

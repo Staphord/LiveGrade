@@ -1,0 +1,16 @@
+{% comment %}Back link and hero shared by every co-assessment setup step.{% endcomment %}
+{% include 'service_domains/_workspace_styles.html' %}
+{% include 'service_domains/_panel_ui_styles.html' %}
+{% include 'assessments/_partials/import_dropzone_styles.html' %}
+{% include 'service_domains/_team_competition_styles.html' %}
+{% if session and session.status != 'draft' %}{% include 'coassessment/_workspace_tabs.html' with active='setup' %}
+{% else %}<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <a href="{% url 'coassessment_dashboard' %}" class="btn btn-link px-0"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i>Co-Assessment dashboard</a>
+</div>
+{% endif %}
+<header class="panel-hero mb-4">
+  <div class="panel-hero__copy">
+    <p class="panel-eyebrow">Co-Assessment · Setup</p>
+    <h1 class="page-title">{% if session %}{{ session.name }}{% else %}New co-assessment{% endif %}</h1>
+  </div>
+</header>
