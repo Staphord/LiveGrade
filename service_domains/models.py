@@ -2500,12 +2500,8 @@ class CombinedPresentationAssessment(OwnedDomainRecord):
             return
         if self.classroom_session.organization_id != self.organization_id:
             raise ValidationError({'classroom_session': 'Choose a session in this organization.'})
-        if self.panel_hearing.organization_id != self.organization_id:
-            raise ValidationError({'panel_hearing': 'Choose a hearing in this organization.'})
         if self.classroom_session.created_by_id != self.created_by_id:
             raise ValidationError({'classroom_session': 'The linked sources must have the same owner.'})
-        if self.panel_hearing.created_by_id != self.created_by_id:
-            raise ValidationError({'panel_hearing': 'The linked sources must have the same owner.'})
         if self.classroom_session.service != 'classroom':
             raise ValidationError({'classroom_session': 'Only Classroom sessions can be linked.'})
         if self.result_policy == self.ResultPolicy.WEIGHTED:
@@ -2583,8 +2579,6 @@ class CombinedPresentationMapping(OwnedDomainRecord):
             raise ValidationError({'group': 'Practice groups cannot be combined assessment entries.'})
         if self.candidate.source_group_id and self.candidate.source_group_id != self.group_id:
             raise ValidationError({'candidate': 'This Panel entry is linked to a different Classroom group.'})
-        if self.organization_id != self.assessment.organization_id:
-            raise ValidationError({'assessment': 'The mapping must belong to the assessment organization.'})
 
 
 class CombinedModerationQuerySet(OwnedQuerySet):
@@ -2623,8 +2617,6 @@ class CombinedModerationDecision(OwnedDomainRecord):
 
     def clean(self):
         super().clean()
-        if self.mapping_id and self.organization_id != self.mapping.organization_id:
-            raise ValidationError({'mapping': 'The review must belong to the assessment organization.'})
         if not self.reason or not self.reason.strip():
             raise ValidationError({'reason': 'A reason is required for moderation.'})
         if self.supersedes_id:
