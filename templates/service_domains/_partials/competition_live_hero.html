@@ -2,7 +2,7 @@
   <div class="card-body p-4">
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
       <div>
-        <div class="d-flex align-items-center gap-2 mb-1">
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
           <span class="badge text-bg-primary text-uppercase" style="letter-spacing: .04em;">
             {% if active_round %}Round {{ active_round.order }}: {{ active_round.name }}{% else %}No Active Round{% endif %}
           </span>
@@ -25,19 +25,25 @@
       <div class="d-flex align-items-center gap-3">
         <!-- Countdown Circular Pitch Ring -->
         <div class="turn-ring-wrap" title="Pitch countdown timer">
-          <div class="turn-ring{% if pitch_seconds_remaining <= 30 %} is-urgent{% endif %}"
+          <div class="turn-ring{% if pitch_timer_state == 'running' and pitch_seconds_remaining <= 30 %} is-urgent{% endif %}"
                id="competition-pitch-ring"
-               style="--turn-pct: {% widthratio pitch_seconds_remaining 180 100 %};">
-            <span class="turn-ring-label" id="competition-timer-label">
-              {{ pitch_seconds_remaining|default:0 }}s
+               style="--turn-pct: {{ pitch_timer_percent|default:0 }};"
+               data-state="{{ pitch_timer_state }}"
+               data-seconds="{{ pitch_seconds_remaining }}"
+               data-duration="{{ pitch_timer_duration_seconds }}"
+               data-ends-at="{{ pitch_timer_ends_at_ms|default_if_none:'' }}"
+               data-server-now="{{ pitch_timer_server_now_ms }}">
+            <span class="turn-ring-label font-monospace" id="competition-timer-label" role="timer"
+                  aria-live="off" aria-label="Pitch time remaining {{ pitch_timer_display }}">
+              {{ pitch_timer_display|default:'00:00' }}
             </span>
           </div>
         </div>
 
         <div class="d-flex flex-column gap-1">
           <span class="small fw-semibold text-muted">Stage Timer</span>
-          <span class="badge {% if timer_paused %}text-bg-warning{% else %}text-bg-success{% endif %}" id="competition-timer-state-badge">
-            {% if timer_paused %}Paused{% else %}Active Pitch{% endif %}
+          <span class="badge {% if timer_paused %}text-bg-warning{% elif pitch_timer_state == 'expired' %}text-bg-danger{% else %}text-bg-success{% endif %}" id="competition-timer-state-badge">
+            {% if timer_paused %}Paused{% elif pitch_timer_state == 'expired' %}Time elapsed{% else %}Active pitch{% endif %}
           </span>
         </div>
       </div>
@@ -54,10 +60,16 @@
       <button type="button" class="btn btn-outline-secondary btn-sm" data-competition-action="adjust_pitch_timer" data-delta="-30">
         <i class="bi bi-dash-circle me-1" aria-hidden="true"></i>-30s
       </button>
+      {% if pitch_timer_state == 'expired' and not timer_paused %}
+      <button type="button" class="btn btn-outline-secondary btn-sm" disabled aria-label="Pitch timer has elapsed">
+        <i class="bi bi-hourglass-bottom me-1" aria-hidden="true"></i>Time elapsed
+      </button>
+      {% else %}
       <button type="button" class="btn {% if timer_paused %}btn-success{% else %}btn-outline-warning{% endif %} btn-sm" data-competition-action="toggle_pitch_pause">
         <i class="bi {% if timer_paused %}bi-play-fill{% else %}bi-pause-fill{% endif %} me-1" aria-hidden="true"></i>
         {% if timer_paused %}Resume{% else %}Pause{% endif %}
       </button>
+      {% endif %}
 
       {% if round_entries %}
       <div class="ms-auto d-flex align-items-center gap-2">

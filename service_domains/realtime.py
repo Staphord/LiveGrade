@@ -36,6 +36,26 @@ def schedule_competition_leaderboard_update(public_id, available):
         lambda: broadcast_competition_leaderboard_state(public_id, available))
 
 
+def broadcast_competition_live_update(competition_id):
+    """Notify organizer screens to fetch their authorized live projection."""
+    channel_layer = get_channel_layer()
+    if not channel_layer:
+        return
+    try:
+        async_to_sync(channel_layer.group_send)(
+            f'competition_live_{competition_id}',
+            {'type': 'competition.live_update'},
+        )
+    except Exception:
+        logger.warning('Competition live update could not be broadcast.')
+
+
+def schedule_competition_live_update(competition_id):
+    """Broadcast after the live-state transaction commits."""
+    competition_id = int(competition_id)
+    transaction.on_commit(lambda: broadcast_competition_live_update(competition_id))
+
+
 def broadcast_panel_hearing_event(hearing, event_type, data=None):
     """Broadcast an event across panel staff, examiner, and display channel groups."""
     channel_layer = get_channel_layer()

@@ -1,0 +1,18 @@
+<nav class="page-tabs mb-3" aria-label="Competition workspace">
+  <a href="{% url 'competition_live_control' competition_id=competition.pk %}"
+     class="page-tab{% if workspace_tab == 'live' %} active{% endif %}"{% if workspace_tab == 'live' %} aria-current="page"{% endif %}>
+    <i class="bi bi-broadcast me-1" aria-hidden="true"></i>Live arena
+  </a>
+  {% if competition.status == 'draft' or competition.status == 'active' %}
+  <a href="{% url 'competition_manage' competition_id=competition.pk %}?from=live"
+     class="page-tab{% if workspace_tab == 'setup' %} active{% endif %}"{% if workspace_tab == 'setup' %} aria-current="page"{% endif %}>
+    <i class="bi bi-pencil-square me-1" aria-hidden="true"></i>Edit setup
+  </a>
+  {% endif %}
+  {% if competition.status != 'draft' %}
+  <a href="{% url 'competition_results' competition_id=competition.pk %}"
+     class="page-tab{% if workspace_tab == 'results' %} active{% endif %}"{% if workspace_tab == 'results' %} aria-current="page"{% endif %}>
+    <i class="bi bi-trophy me-1" aria-hidden="true"></i>Results &amp; Standings
+  </a>
+  {% endif %}
+</nav>

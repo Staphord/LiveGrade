@@ -12,25 +12,25 @@
     <p class="text-muted small mb-3">Select the active layout broadcast to the main venue projector screen.</p>
     <div class="row g-2">
       <div class="col-6 col-md-3">
-        <button type="button" class="btn w-100 py-2 {% if projector_mode == 'stage' %}btn-primary{% else %}btn-outline-secondary{% endif %}" data-competition-projector="stage">
+        <button type="button" class="btn w-100 py-2 {% if projector_mode == 'stage' %}btn-primary{% else %}btn-outline-secondary{% endif %}" data-competition-projector="stage" aria-pressed="{% if projector_mode == 'stage' %}true{% else %}false{% endif %}">
           <i class="bi bi-mic d-block fs-5 mb-1" aria-hidden="true"></i>
           <span class="small fw-semibold">Stage Pitch</span>
         </button>
       </div>
       <div class="col-6 col-md-3">
-        <button type="button" class="btn w-100 py-2 {% if projector_mode == 'voting' %}btn-primary{% else %}btn-outline-secondary{% endif %}" data-competition-projector="voting">
+        <button type="button" class="btn w-100 py-2 {% if projector_mode == 'voting' %}btn-primary{% else %}btn-outline-secondary{% endif %}" data-competition-projector="voting" aria-pressed="{% if projector_mode == 'voting' %}true{% else %}false{% endif %}">
           <i class="bi bi-qr-code-scan d-block fs-5 mb-1" aria-hidden="true"></i>
           <span class="small fw-semibold">Voting QR</span>
         </button>
       </div>
       <div class="col-6 col-md-3">
-        <button type="button" class="btn w-100 py-2 {% if projector_mode == 'standings' %}btn-primary{% else %}btn-outline-secondary{% endif %}" data-competition-projector="standings">
+        <button type="button" class="btn w-100 py-2 {% if projector_mode == 'standings' %}btn-primary{% else %}btn-outline-secondary{% endif %}" data-competition-projector="standings" aria-pressed="{% if projector_mode == 'standings' %}true{% else %}false{% endif %}">
           <i class="bi bi-bar-chart-steps d-block fs-5 mb-1" aria-hidden="true"></i>
           <span class="small fw-semibold">Live Standings</span>
         </button>
       </div>
       <div class="col-6 col-md-3">
-        <button type="button" class="btn w-100 py-2 {% if projector_mode == 'winner' %}btn-primary{% else %}btn-outline-secondary{% endif %}" data-competition-projector="winner">
+        <button type="button" class="btn w-100 py-2 {% if projector_mode == 'winner' %}btn-primary{% else %}btn-outline-secondary{% endif %}" data-competition-projector="winner" aria-pressed="{% if projector_mode == 'winner' %}true{% else %}false{% endif %}">
           <i class="bi bi-trophy d-block fs-5 mb-1" aria-hidden="true"></i>
           <span class="small fw-semibold">Winner Reveal</span>
         </button>

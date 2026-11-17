@@ -1,0 +1,28 @@
+<section class="card border-0 shadow-sm mb-4" id="competition-round-timeline" aria-labelledby="competition-round-timeline-heading">
+  <div class="card-header bg-transparent border-0 pt-3 pb-0">
+    <h2 class="h6 mb-0 fw-bold" id="competition-round-timeline-heading">Round progress</h2>
+    <p class="text-muted small mb-0">Completed rounds stay available here. The current round follows the stage.</p>
+  </div>
+  <div class="card-body">
+    {% if rounds %}
+    <ol class="list-unstyled d-flex flex-column gap-2 mb-0">
+      {% for round in rounds %}
+      <li class="d-flex flex-wrap align-items-center justify-content-between gap-2 p-3 rounded {% if round.pk == active_round.pk %}border border-primary bg-primary-subtle{% else %}border bg-body{% endif %}">
+        <div class="d-flex align-items-center gap-3">
+          <span class="badge {% if round.advancement_locked_at %}text-bg-secondary{% elif round.pk == active_round.pk %}text-bg-primary{% else %}text-bg-light border text-muted{% endif %}">Round {{ round.order }}</span>
+          <div>
+            <strong>{{ round.name }}</strong>
+            <span class="d-block small text-muted">{{ round.entry_count }} entrant{{ round.entry_count|pluralize }}</span>
+          </div>
+        </div>
+        {% if round.pk == active_round.pk %}<span class="badge text-bg-primary">{% if competition.status == 'active' %}Current stage{% else %}Final round{% endif %}</span>
+        {% elif round.advancement_locked_at %}<span class="small text-muted">Advanced</span>
+        {% else %}<span class="small text-muted">Not started</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <p class="text-muted mb-0">No rounds have been created yet.</p>
+    {% endif %}
+  </div>
+</section>

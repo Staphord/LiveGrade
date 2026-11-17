@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}{{ competition.name }} · Results &amp; Standings · LiveGrade{% endblock %}
+{% block page_title %}{{ competition.name }}{% endblock %}
+
+{% block topbar_actions %}
+<div class="d-flex flex-wrap align-items-center gap-2">
+  {% if competition.status == 'active' %}
+  <span class="live-badge" id="competition-conn-badge" role="status" aria-live="polite"><span class="dot" aria-hidden="true"></span>Connecting</span>
+  {% else %}
+  <span class="badge {% if competition.status == 'revealed' %}text-bg-success{% else %}text-bg-secondary{% endif %}">{{ competition.get_status_display }}</span>
+  <a class="btn btn-outline-primary btn-sm" href="{% url 'competition_results_export' competition.pk %}">Download CSV</a>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style nonce="{{ csp_nonce }}">
+.live-badge{display:inline-flex;align-items:center;gap:5px;font-size:var(--fs-micro);font-weight:700;padding:.25rem .65rem;border-radius:999px;background:var(--tone-success-bg);color:var(--tone-success-fg)}
+.live-badge.is-offline{background:var(--tone-warn-bg);color:var(--tone-warn-fg)}
+.live-badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:competition-live-pulse 1.4s ease-in-out infinite}
+@keyframes competition-live-pulse{0%,100%{opacity:1}50%{opacity:.4}}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3" style="max-width: 1400px;"
+      data-competition-live-console
+      data-live-view="results"
+      data-live-status="{% if competition.status == 'active' %}active{% else %}closed{% endif %}"
+      data-live-state-url="{% url 'competition_live_state' competition_id=competition.pk %}"
+      data-live-action-url="{% url 'competition_live_action' competition_id=competition.pk %}"
+      data-live-websocket-path="/ws/competition/{{ competition.pk }}/live/">
+  {% include 'service_domains/_partials/competition_workspace_tabs.html' with workspace_tab='results' %}
+
+  <div class="mb-3">
+    {% include 'partials/_inline_message.html' with tone='danger' message_id='competition-live-inline-error' %}
+  </div>
+
+  <section class="card border-0 shadow-sm mb-4" aria-labelledby="competition-results-heading">
+    <div class="card-body p-4 d-flex flex-wrap justify-content-between align-items-start gap-3">
+      <div>
+        <p class="text-uppercase small fw-bold text-primary mb-1">Competition results</p>
+        <h1 class="h3 fw-bold mb-2" id="competition-results-heading">{{ competition.name }}</h1>
+        <p class="text-muted mb-0">{% if competition.status == 'active' %}Review the live standings, round history, and qualifying entrants before you advance.{% else %}Review the frozen final standings and round history.{% endif %}</p>
+      </div>
+      {% if competition.status != 'active' %}
+      <a href="{% url 'competition_manage' competition_id=competition.pk %}?step=launch&amp;from=live" class="btn btn-primary">
+        {% if competition.status == 'revealed' %}Manage public leaderboard{% else %}Review final results{% endif %}
+      </a>
+      {% endif %}
+    </div>
+  </section>
+
+  {% include 'service_domains/_partials/competition_round_timeline.html' %}
+  <div class="mb-4">
+    {% include 'service_domains/_partials/competition_live_standings.html' %}
+  </div>
+
+  {% if competition.status == 'active' %}
+  <p class="small text-muted">After advancing, the new round becomes the current stage and its entrants appear in the round progress list.</p>
+  {% endif %}
+</div>
+
+{% include 'service_domains/_partials/competition_live_round_modals.html' %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/competition-live-control.js' %}?v=live-console-20261117"></script>
+{% endblock %}

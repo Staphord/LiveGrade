@@ -51,6 +51,8 @@ TARGETS = {
     'assessment_leaderboard_scores': (POST, 'session'),
     'showcase_event_labels': (GET, 'showcase_event'),
     'competition_manage': (GET, 'competition'),
+    'competition_results': (GET, 'competition'),
+    'competition_projector_state': (GET, 'competition'),
     'competition_entry_import': (POST, {'competition_id': 'competition'}),
     'competition_entry_import_sample': (GET, {'competition_id': 'competition'}),
     'panel_hearing_manage': (GET, 'panel_hearing'),

@@ -2410,6 +2410,8 @@ class CompetitionLiveState(OwnedDomainRecord):
     active_entry = models.ForeignKey(CompetitionEntry, null=True, blank=True,
         on_delete=models.SET_NULL, related_name='active_in_live_states')
     pitch_seconds_remaining = models.PositiveIntegerField(default=180)
+    pitch_timer_duration_seconds = models.PositiveIntegerField(default=180)
+    pitch_timer_ends_at = models.DateTimeField(null=True, blank=True)
     timer_paused = models.BooleanField(default=False)
     audience_voting_open = models.BooleanField(default=True)
     projector_mode = models.CharField(max_length=32, default='stage')

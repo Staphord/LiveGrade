@@ -8,6 +8,7 @@
 {% include 'assessments/_partials/import_dropzone_styles.html' %}
 <div class="container-fluid py-4 service-workspace tc-workspace">
   <p><a href="{{ back_url }}">← {{ back_label }}</a></p>
+  {% include 'service_domains/_partials/competition_workspace_tabs.html' with workspace_tab='setup' %}
   <header class="tc-hero" id="competition-overview">
     <div><h1>{{ competition.name }}</h1>
       <p>{% if competition.status == 'draft' %}Prepare tracks, entries and rounds before starting.{% elif competition.status == 'active' %}Manage judges, audience voting and round progress.{% elif competition.status == 'complete' %}Review final results and resolve any ties before revealing them.{% else %}Manage the public leaderboard for this completed event.{% endif %}</p>

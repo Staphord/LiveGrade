@@ -47,7 +47,8 @@ from .models import (
     CompetitionWeightedResultAudit, CompetitionAudienceJoinCode,
     CompetitionLiveState,
 )
-from .realtime import schedule_competition_leaderboard_update
+from .realtime import (schedule_competition_leaderboard_update,
+                       schedule_competition_live_update)
 from .rules import (advance_entries, aggregate_anonymous_feedback, aggregate_scores,
                    ranked_choice_result, showcase_judge_score)
 
@@ -79,6 +80,11 @@ def competition_audience_join_code(competition, round_obj, track):
         except IntegrityError:
             code = ''.join(secrets.choice(COMPETITION_JOIN_CODE_ALPHABET) for _ in range(8))
     raise ValidationError('Unable to issue a unique audience code. Please retry.')
+
+
+def competition_audience_minimum_entries(competition):
+    """Return how many entrants are needed to offer an audience ballot."""
+    return 1 if competition.effective_audience_weight > 0 else 2
 
 
 def owned_rows(model, organization, user):
@@ -1584,6 +1590,7 @@ def start_competition(competition, *, organization, user):
         organization_id=competition.organization_id, created_by=user)
     event.full_clean()
     event.save(force_insert=True)
+    schedule_competition_live_update(competition.pk)
     return competition
 
 
@@ -1628,6 +1635,7 @@ def _transition_competition(competition, *, organization, user, expected_status,
         organization_id=competition.organization_id, created_by=user)
     event.full_clean()
     event.save(force_insert=True)
+    schedule_competition_live_update(competition.pk)
     return competition
 
 
@@ -1948,6 +1956,7 @@ def submit_competition_judge_scores(token, scores, *, at=None):
     invitation.save(update_fields=('submitted_at', 'updated_at'))
     _record_competition_judge_audit(invitation, CompetitionJudgeAudit.Action.SUBMITTED,
         None)
+    schedule_competition_live_update(competition.pk)
     return records
 
 
@@ -2031,6 +2040,7 @@ def compile_competition_judge_scores(competition, round_obj, track, *, organizat
         row.save(update_fields=('judge_score', 'score', 'score_breakdown', 'updated_at'))
         compiled.append({'entry_id': row.entry_id, 'score': row.judge_score,
                          'judge_count': judge_count})
+    schedule_competition_live_update(scoped_competition.pk)
     return compiled
 
 
@@ -2100,12 +2110,18 @@ def finalize_competition_weighted_scores(competition, round_obj, *, organization
             row.save(update_fields=('audience_score', 'score', 'updated_at'))
     locked_round.audience_locked_at = at or timezone.now()
     locked_round.save(update_fields=('audience_locked_at', 'updated_at'))
+    live_state = CompetitionLiveState.objects.select_for_update().filter(
+        competition=scoped, organization_id=scoped.organization_id).first()
+    if live_state is not None and live_state.audience_voting_open:
+        live_state.audience_voting_open = False
+        live_state.save(update_fields=('audience_voting_open', 'updated_at'))
     audit = CompetitionWeightedResultAudit(round=locked_round, actor_user=user,
         judge_weight=scoped.judge_weight, audience_weight=scoped.effective_audience_weight,
         audience_ballot_count=sum(len(track_ballots) for track_ballots in ballots_by_track.values()),
         organization_id=scoped.organization_id, created_by=user)
     audit.full_clean()
     audit.save(force_insert=True)
+    schedule_competition_live_update(scoped.pk)
     return rows
 
 
@@ -2215,6 +2231,22 @@ def create_next_competition_round(competition, source_round, name, *, organizati
 
     source.advancement_locked_at = at or timezone.now()
     source.save(update_fields=('advancement_locked_at', 'updated_at'))
+    live_state = CompetitionLiveState.objects.filter(
+        competition=competition, organization_id=competition.organization_id).first()
+    if live_state:
+        live_state.active_round = next_round
+        first_entry = (CompetitionRoundEntry.objects.filter(round=next_round)
+            .select_related('entry').order_by('entry__order', 'entry_id').first())
+        live_state.active_entry = first_entry.entry if first_entry else None
+        live_state.pitch_seconds_remaining = 180
+        live_state.pitch_timer_duration_seconds = 180
+        live_state.pitch_timer_ends_at = timezone.now() + timedelta(seconds=180)
+        live_state.timer_paused = False
+        live_state.audience_voting_open = True
+        live_state.save(update_fields=('active_round', 'active_entry',
+            'pitch_seconds_remaining', 'pitch_timer_duration_seconds',
+            'pitch_timer_ends_at', 'timer_paused', 'audience_voting_open', 'updated_at'))
+    schedule_competition_live_update(competition.pk)
     return next_round, selections
 
 
@@ -2233,6 +2265,10 @@ def submit_competition_audience_ballot(competition_public_id, round_id, track_id
         raise ValidationError('This competition ballot is unavailable.')
     if competition.status != Competition.Status.ACTIVE:
         raise ValidationError('Audience voting is only open during an active competition.')
+    live_state = CompetitionLiveState.objects.select_for_update().filter(
+        competition=competition).first()
+    if live_state is not None and not live_state.audience_voting_open:
+        raise ValidationError('Audience voting is currently paused by the organizer.')
     round_obj = (CompetitionRound.objects.select_for_update()
         .filter(pk=round_id, competition=competition).first())
     track = CompetitionTrack.objects.filter(pk=track_id, competition=competition).first()
@@ -2262,6 +2298,7 @@ def submit_competition_audience_ballot(competition_public_id, round_id, track_id
         ballot.save(force_insert=True)
     except IntegrityError as exc:
         raise ValidationError('This browser has already voted in this round and track.') from exc
+    schedule_competition_live_update(competition.pk)
     return ballot
 
 
@@ -3664,6 +3701,28 @@ def assign_showcase_roving_judge(event, exhibit_id, judge_invitation_id, *, orga
 PITCH_SECONDS = 180
 
 
+def competition_pitch_timer(live_state, now=None):
+    """Return the server-owned state of a competition pitch countdown."""
+    now = now or timezone.now()
+    duration = max(1, int(live_state.pitch_timer_duration_seconds or PITCH_SECONDS))
+    if live_state.timer_paused:
+        remaining = int(live_state.pitch_seconds_remaining)
+        state = 'paused'
+    elif live_state.pitch_timer_ends_at is not None:
+        remaining = math.ceil((live_state.pitch_timer_ends_at - now).total_seconds())
+        state = 'running' if remaining > 0 else 'expired'
+    else:
+        remaining = int(live_state.pitch_seconds_remaining)
+        state = 'running' if remaining > 0 else 'expired'
+    return {
+        'state': state,
+        'remaining': max(0, min(remaining, 24 * 60 * 60)),
+        'duration': max(duration, remaining, 1),
+        'ends_at': live_state.pitch_timer_ends_at if state == 'running' else None,
+        'server_now_ms': int(now.timestamp() * 1000),
+    }
+
+
 def showcase_pitch_timer(stage, now_ts):
     """Server-owned pitch clock: `state` is idle (no exhibit started), running,
     paused or finished; `remaining` is derived from the stored deadline, so a
@@ -3795,6 +3854,7 @@ def set_showcase_projector_mode(event, mode, *, organization, user):
 def get_or_create_competition_live_state(competition):
     """Retrieve or initialize live arena state for an active competition."""
     org_id = competition.organization_id
+    now = timezone.now()
     live_state = CompetitionLiveState.objects.filter(competition=competition, organization_id=org_id).first()
     if live_state is None:
         latest_round = CompetitionRound.objects.filter(competition=competition, organization_id=org_id).order_by('-order').first()
@@ -3810,10 +3870,21 @@ def get_or_create_competition_live_state(competition):
             active_round=latest_round,
             active_entry=first_entry,
             pitch_seconds_remaining=180,
+            pitch_timer_duration_seconds=180,
+            pitch_timer_ends_at=now + timedelta(seconds=180),
             timer_paused=False,
             audience_voting_open=True,
             projector_mode='stage',
         )
+    elif live_state.pitch_timer_ends_at is None and not live_state.timer_paused:
+        # Migrate an in-flight legacy timer the first time it is read. Its old
+        # value becomes the remaining time, then a server deadline owns it.
+        remaining = max(0, int(live_state.pitch_seconds_remaining))
+        live_state.pitch_timer_ends_at = now + timedelta(seconds=remaining)
+        live_state.pitch_timer_duration_seconds = max(
+            1, int(live_state.pitch_timer_duration_seconds or PITCH_SECONDS), remaining)
+        live_state.save(update_fields=(
+            'pitch_timer_ends_at', 'pitch_timer_duration_seconds', 'updated_at'))
     return live_state
 
 
@@ -3821,12 +3892,15 @@ def get_competition_live_state_context(competition):
     """Compile telemetry, stage pitch controls, judge matrix, audience meter, and round standings."""
     org_id = competition.organization_id
     live_state = get_or_create_competition_live_state(competition)
-    rounds = list(CompetitionRound.objects.filter(competition=competition, organization_id=org_id).order_by('order'))
+    rounds = list(CompetitionRound.objects.filter(competition=competition, organization_id=org_id)
+        .annotate(entry_count=Count('round_entries')).order_by('order'))
+    latest_round = rounds[-1] if rounds else None
     active_round = live_state.active_round
-    if not active_round and rounds:
-        active_round = rounds[-1]
+    if latest_round and active_round is None:
+        active_round = latest_round
         live_state.active_round = active_round
         live_state.save(update_fields=('active_round', 'updated_at'))
+    active_round_is_latest = bool(active_round and latest_round and active_round.pk == latest_round.pk)
 
     tracks = list(CompetitionTrack.objects.filter(competition=competition, organization_id=org_id).order_by('pk'))
 
@@ -3885,18 +3959,37 @@ def get_competition_live_state_context(competition):
 
     avg_judge_score = (judge_scores_total / Decimal(judge_scores_count)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP) if judge_scores_count > 0 else None
 
-    # Audience join code and ballots count
+    # Audience join codes are only useful when the public vote endpoint can
+    # accept a ballot for this active round and track.
+    timer = competition_pitch_timer(live_state)
     join_code = None
     ballots_count = 0
+    audience_ballot_available = False
+    audience_voting_control_available = False
+    audience_ballot_unavailable_reason = 'No active track is available for audience voting.'
     if active_round and active_track:
-        join_code_obj = CompetitionAudienceJoinCode.objects.filter(round=active_round, track=active_track).first()
-        if join_code_obj:
-            join_code = join_code_obj.code
+        entry_count = sum(row.track_id == active_track.pk for row in round_entries)
+        if competition.status != Competition.Status.ACTIVE:
+            audience_ballot_unavailable_reason = 'Voting is unavailable because this competition is not live.'
+        elif active_round.pk != (latest_round.pk if latest_round else None):
+            audience_ballot_unavailable_reason = 'Audience voting is only available for the current round.'
+        elif active_round.audience_locked_at is not None:
+            audience_ballot_unavailable_reason = 'Voting is closed for this round.'
+        elif entry_count < competition_audience_minimum_entries(competition):
+            if competition.effective_audience_weight > 0:
+                audience_ballot_unavailable_reason = 'This track needs at least one entrant before audience voting is available.'
+            else:
+                audience_ballot_unavailable_reason = 'Audience ranked voting requires at least two entries in this track.'
+        elif not live_state.audience_voting_open:
+            audience_voting_control_available = True
+            audience_ballot_unavailable_reason = 'Voting is paused by the organizer.'
         else:
+            audience_voting_control_available = True
             try:
                 join_code = competition_audience_join_code(competition, active_round, active_track)
-            except Exception:
-                join_code = 'JOIN123'
+                audience_ballot_available = True
+            except ValidationError:
+                audience_ballot_unavailable_reason = 'An audience ballot code could not be issued. Please try again.'
         ballots_count = CompetitionAudienceBallot.objects.filter(
             competition=competition, round=active_round, track=active_track
         ).count()
@@ -3904,7 +3997,10 @@ def get_competition_live_state_context(competition):
     # Round standings
     standings = []
     has_boundary_tie = False
-    cutoff_rank = 3
+    cutoff_rank = 0
+    for track in tracks:
+        track.has_boundary_tie = False
+        track.boundary_tie_rows = []
     if round_entries:
         sorted_entries = sorted(
             round_entries,
@@ -3914,11 +4010,42 @@ def get_competition_live_state_context(competition):
             ),
             reverse=True
         )
+        track_rank = {}
+        qualified_by_track = {}
+        for track in tracks:
+            track_entries = [row for row in sorted_entries if row.track_id == track.pk]
+            track_cutoff = (min(int(track.advancement_value), len(track_entries))
+                if track.advancement_rule == 'top_n' else None)
+            boundary_score = (track_entries[track_cutoff - 1].score
+                if track_cutoff else None)
+            for idx, row in enumerate(track_entries, start=1):
+                track_rank[row.pk] = idx
+                row.is_boundary_tie = bool(track_cutoff and boundary_score is not None and
+                    any(item.score == boundary_score for item in track_entries[track_cutoff:])
+                    and idx >= track_cutoff
+                    and idx <= track_cutoff + sum(
+                        item.score == boundary_score for item in track_entries[track_cutoff:])
+                    and row.score == boundary_score)
+                if row.is_boundary_tie:
+                    track.has_boundary_tie = True
+                    track.boundary_tie_rows.append(row)
+            if track.advancement_rule == 'top_n':
+                qualified_by_track[track.pk] = {
+                    row.entry_id for idx, row in enumerate(track_entries, start=1)
+                    if idx <= track_cutoff or (idx > track_cutoff and track_cutoff and
+                        row.score == track_entries[track_cutoff - 1].score)}
+                cutoff_rank = max(cutoff_rank, track_cutoff)
+            else:
+                qualified_by_track[track.pk] = {
+                    row.entry_id for row in track_entries
+                    if (row.score if row.score is not None else row.judge_score) is not None
+                    and (row.score if row.score is not None else row.judge_score) >= track.advancement_value}
         for idx, re in enumerate(sorted_entries, start=1):
             effective_score = re.score if re.score is not None else re.judge_score
-            is_qualified = (idx <= cutoff_rank)
+            is_qualified = re.entry_id in qualified_by_track.get(re.track_id, set())
             standings.append({
                 'rank': idx,
+                'track_rank': track_rank[re.pk],
                 'round_entry': re,
                 'entry': re.entry,
                 'track': re.track,
@@ -3929,39 +4056,133 @@ def get_competition_live_state_context(competition):
                 'is_qualified': is_qualified,
                 'is_active': bool(active_entry and re.entry_id == active_entry.pk),
             })
-        if len(standings) > cutoff_rank:
-            boundary_score = standings[cutoff_rank - 1]['effective_score']
-            next_score = standings[cutoff_rank]['effective_score']
-            if boundary_score is not None and boundary_score == next_score:
-                has_boundary_tie = True
+        has_boundary_tie = any(track.has_boundary_tie for track in tracks)
 
-    unresolved_ties = False
-    if has_boundary_tie and active_round:
-        tie_decisions = CompetitionLeaderboardTieDecision.objects.filter(
-            round=active_round, organization_id=org_id
-        ).exists()
-        unresolved_ties = not tie_decisions
+    # Advancement tie choices are submitted together with round advancement and
+    # stored as CompetitionAdvancementDecision records. A final leaderboard tie
+    # decision does not resolve an active round's qualification tie.
+    unresolved_ties = has_boundary_tie
 
+    scored_entry_count = sum(row.score is not None for row in round_entries)
+    every_track_has_entries = bool(tracks) and all(
+        any(row.track_id == track.pk for row in round_entries) for track in tracks)
+    all_scores_final = bool(round_entries) and scored_entry_count == len(round_entries)
+    weighted_results_final = (
+        competition.effective_audience_weight == 0
+        or bool(active_round and active_round.audience_locked_at is not None))
+    can_finalize_weighted = False
+    weighted_finalize_block_reason = ''
+    if (competition.status == Competition.Status.ACTIVE
+            and competition.effective_audience_weight > 0
+            and active_round and active_round.audience_locked_at is None):
+        if not active_round_is_latest:
+            weighted_finalize_block_reason = (
+                'The live stage must be on the latest round before its weighted results can be finalized.')
+        elif not tracks or any(not any(row.track_id == track.pk for row in round_entries)
+                               for track in tracks):
+            weighted_finalize_block_reason = (
+                'Every track needs at least one entrant before weighted results can be finalized.')
+        elif (competition.judge_weight > 0
+              and any(row.judge_score is None for row in round_entries)):
+            weighted_finalize_block_reason = (
+                'Finalize judge means for every entrant before calculating weighted results.')
+        elif CompetitionJudgeInvitation.objects.filter(
+                round=active_round, submitted_at__isnull=True,
+                revoked_at__isnull=True, expires_at__gt=timezone.now()).exists():
+            weighted_finalize_block_reason = (
+                'Submit or revoke every active judge invitation before calculating weighted results.')
+        else:
+            ballot_counts = dict(CompetitionAudienceBallot.objects.filter(
+                competition=competition, round=active_round
+            ).values('track_id').annotate(total=Count('pk')).values_list('track_id', 'total'))
+            minimum_ballots = competition.effective_minimum_audience_ballots
+            missing_ballot_track = next((track for track in tracks
+                if ballot_counts.get(track.pk, 0) < minimum_ballots), None)
+            if missing_ballot_track is not None:
+                weighted_finalize_block_reason = (
+                    f'Collect at least {minimum_ballots} complete audience ballot'
+                    f'{"s" if minimum_ballots != 1 else ""} for every track before finalizing weighted results.')
+            else:
+                can_finalize_weighted = True
+
+    next_round_qualifier_count = sum(row['is_qualified'] for row in standings)
+    has_qualifiers = next_round_qualifier_count > 0
     can_advance = (
-        active_round is not None
+        competition.status == Competition.Status.ACTIVE
+        and active_round is not None
+        and active_round_is_latest
         and active_round.advancement_locked_at is None
         and not unresolved_ties
-        and len(standings) > 0
+        and every_track_has_entries
+        and all_scores_final
+        and has_qualifiers
+        and weighted_results_final
     )
+
+    if not active_round:
+        advancement_block_reason = 'Create the first round before advancing.'
+    elif active_round.advancement_locked_at:
+        advancement_block_reason = 'This round has already advanced.'
+    elif not active_round_is_latest:
+        advancement_block_reason = 'The live state is on an earlier round. Select the latest round before advancing.'
+    elif not every_track_has_entries:
+        advancement_block_reason = 'Every track needs at least one entrant in this round.'
+    elif unresolved_ties:
+        advancement_block_reason = 'Resolve the advancement tie and record a reason before continuing.'
+    elif not weighted_results_final:
+        advancement_block_reason = 'Close audience voting and finalize the weighted scores before advancing.'
+    elif not all_scores_final:
+        advancement_block_reason = (
+            f'Finalize scores for all entrants ({scored_entry_count} of {len(round_entries)} ready).')
+    elif not has_qualifiers:
+        advancement_block_reason = (
+            'The current advancement rules select no entrants. Adjust the rules or scores before advancing.')
+    elif competition.status != Competition.Status.ACTIVE:
+        advancement_block_reason = 'Only a live competition can advance to another round.'
+    else:
+        advancement_block_reason = ''
+
+    tie_resolution_groups = []
+    if active_round and all_scores_final:
+        for track in tracks:
+            if not track.has_boundary_tie or track.advancement_rule != 'top_n':
+                continue
+            track_entries = [row for row in round_entries if row.track_id == track.pk]
+            cutoff = min(int(track.advancement_value), len(track_entries))
+            if not cutoff:
+                continue
+            boundary_score = track_entries[cutoff - 1].score
+            certain = sum(row.score > boundary_score for row in track_entries)
+            tie_resolution_groups.append({
+                'track': track,
+                'rows': track.boundary_tie_rows,
+                'slots': cutoff - certain,
+            })
 
     return {
         'competition': competition,
         'live_state': live_state,
         'rounds': rounds,
         'active_round': active_round,
+        'active_round_is_latest': active_round_is_latest,
         'tracks': tracks,
         'active_track': active_track,
         'round_entries': round_entries,
         'active_entry': active_entry,
         'active_round_entry': active_round_entry,
-        'pitch_seconds_remaining': live_state.pitch_seconds_remaining,
+        'pitch_seconds_remaining': timer['remaining'],
+        'pitch_timer_duration_seconds': timer['duration'],
+        'pitch_timer_percent': min(100, round(timer['remaining'] * 100 / timer['duration'])),
+        'pitch_timer_display': f"{timer['remaining'] // 60:02d}:{timer['remaining'] % 60:02d}",
+        'pitch_timer_ends_at_ms': (int(timer['ends_at'].timestamp() * 1000)
+                                  if timer['ends_at'] else None),
+        'pitch_timer_server_now_ms': timer['server_now_ms'],
+        'pitch_timer_state': timer['state'],
         'timer_paused': live_state.timer_paused,
         'audience_voting_open': live_state.audience_voting_open and (active_round.audience_locked_at is None if active_round else True),
+        'audience_ballot_available': audience_ballot_available,
+        'audience_voting_control_available': audience_voting_control_available,
+        'audience_ballot_unavailable_reason': audience_ballot_unavailable_reason,
         'join_code': join_code,
         'ballots_count': ballots_count,
         'judge_rows': judge_rows,
@@ -3971,58 +4192,121 @@ def get_competition_live_state_context(competition):
         'has_boundary_tie': has_boundary_tie,
         'unresolved_ties': unresolved_ties,
         'can_advance': can_advance,
+        'advancement_block_reason': advancement_block_reason,
+        'can_finalize_weighted': can_finalize_weighted,
+        'weighted_finalize_block_reason': weighted_finalize_block_reason,
+        'scored_entry_count': scored_entry_count,
+        'entry_count': len(round_entries),
+        'next_round_qualifier_count': next_round_qualifier_count,
+        'tie_resolution_groups': tie_resolution_groups,
         'projector_mode': live_state.projector_mode,
         'broadcast_banner': live_state.broadcast_banner,
     }
 
 
+def _locked_competition_live_state(competition, organization, user):
+    scoped = (Competition.objects.for_organization(organization).owned_by(user)
+        .select_for_update().filter(pk=competition.pk, status=Competition.Status.ACTIVE).first())
+    if scoped is None:
+        raise PermissionDenied
+    live_state = get_or_create_competition_live_state(scoped)
+    live_state = CompetitionLiveState.objects.select_for_update().get(pk=live_state.pk)
+    return scoped, live_state
+
+
 @transaction.atomic
 def set_competition_stage_entry(competition, entry_id, *, organization, user):
-    """Set the active entrant presenting on the arena stage."""
-    live_state = get_or_create_competition_live_state(competition)
-    entry = CompetitionEntry.objects.filter(pk=entry_id, organization_id=competition.organization_id).first()
+    """Put an entrant from the current round on stage and start a fresh pitch clock."""
+    scoped, live_state = _locked_competition_live_state(competition, organization, user)
+    try:
+        entry_id = int(entry_id)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError('Choose an entrant from the active round.') from exc
+    entry = (CompetitionRoundEntry.objects.filter(round=live_state.active_round,
+        round__competition=scoped, entry_id=entry_id,
+        organization_id=scoped.organization_id).select_related('entry').first())
     if entry is None:
-        raise ValidationError('Entrant not found.')
-    live_state.active_entry = entry
-    live_state.pitch_seconds_remaining = 180
+        raise ValidationError('That entrant is not in the active round.')
+    now = timezone.now()
+    live_state.active_entry = entry.entry
+    live_state.pitch_seconds_remaining = PITCH_SECONDS
+    live_state.pitch_timer_duration_seconds = PITCH_SECONDS
+    live_state.pitch_timer_ends_at = now + timedelta(seconds=PITCH_SECONDS)
     live_state.timer_paused = False
-    live_state.save(update_fields=('active_entry', 'pitch_seconds_remaining', 'timer_paused', 'updated_at'))
+    live_state.save(update_fields=('active_entry', 'pitch_seconds_remaining',
+        'pitch_timer_duration_seconds', 'pitch_timer_ends_at', 'timer_paused', 'updated_at'))
+    schedule_competition_live_update(scoped.pk)
     return live_state
 
 
 @transaction.atomic
 def adjust_competition_pitch_timer(competition, delta_seconds, *, organization, user):
-    """Adjust pitch countdown seconds."""
-    live_state = get_or_create_competition_live_state(competition)
-    live_state.pitch_seconds_remaining = max(0, live_state.pitch_seconds_remaining + int(delta_seconds))
-    live_state.save(update_fields=('pitch_seconds_remaining', 'updated_at'))
+    """Adjust the server-owned pitch countdown without resetting elapsed time."""
+    scoped, live_state = _locked_competition_live_state(competition, organization, user)
+    try:
+        delta = int(delta_seconds)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError('Timer adjustment must be a whole number of seconds.') from exc
+    if isinstance(delta_seconds, bool) or abs(delta) > 3600:
+        raise ValidationError('Timer adjustment must be between -3600 and 3600 seconds.')
+    now = timezone.now()
+    timer = competition_pitch_timer(live_state, now)
+    remaining = max(0, timer['remaining'] + delta)
+    live_state.pitch_seconds_remaining = remaining
+    live_state.pitch_timer_duration_seconds = max(timer['duration'], remaining, 1)
+    live_state.pitch_timer_ends_at = (None if live_state.timer_paused
+        else now + timedelta(seconds=remaining))
+    live_state.save(update_fields=('pitch_seconds_remaining',
+        'pitch_timer_duration_seconds', 'pitch_timer_ends_at', 'updated_at'))
+    schedule_competition_live_update(scoped.pk)
     return live_state
 
 
 @transaction.atomic
 def toggle_competition_pitch_pause(competition, *, organization, user):
-    """Toggle pitch timer pause."""
-    live_state = get_or_create_competition_live_state(competition)
-    live_state.timer_paused = not live_state.timer_paused
-    live_state.save(update_fields=('timer_paused', 'updated_at'))
+    """Pause or resume the countdown while preserving its server-calculated time."""
+    scoped, live_state = _locked_competition_live_state(competition, organization, user)
+    now = timezone.now()
+    timer = competition_pitch_timer(live_state, now)
+    if live_state.timer_paused:
+        live_state.timer_paused = False
+        live_state.pitch_timer_ends_at = now + timedelta(seconds=timer['remaining'])
+    else:
+        if timer['state'] == 'expired':
+            raise ValidationError('The pitch timer has expired. Add time or call the next entrant to restart it.')
+        live_state.pitch_seconds_remaining = timer['remaining']
+        live_state.timer_paused = True
+        live_state.pitch_timer_ends_at = None
+    live_state.save(update_fields=('pitch_seconds_remaining', 'pitch_timer_ends_at',
+        'timer_paused', 'updated_at'))
+    schedule_competition_live_update(scoped.pk)
     return live_state
 
 
 @transaction.atomic
 def toggle_competition_audience_voting(competition, *, organization, user):
-    """Toggle audience voting open/locked state."""
-    live_state = get_or_create_competition_live_state(competition)
+    """Pause or reopen voting only for the current unlocked round."""
+    scoped, live_state = _locked_competition_live_state(competition, organization, user)
+    latest_round = CompetitionRound.objects.filter(competition=scoped).order_by('-order').first()
+    if (live_state.active_round_id is None or latest_round is None
+            or live_state.active_round_id != latest_round.pk
+            or latest_round.audience_locked_at is not None):
+        raise ValidationError('Audience voting cannot be changed after this round is closed.')
     live_state.audience_voting_open = not live_state.audience_voting_open
     live_state.save(update_fields=('audience_voting_open', 'updated_at'))
+    schedule_competition_live_update(scoped.pk)
     return live_state
 
 
 @transaction.atomic
 def set_competition_projector_mode(competition, mode, *, organization, user):
-    """Set the arena projector display mode."""
-    live_state = get_or_create_competition_live_state(competition)
+    """Set a supported arena projector display mode."""
+    scoped, live_state = _locked_competition_live_state(competition, organization, user)
+    if mode not in ('stage', 'voting', 'standings', 'winner'):
+        raise ValidationError('Choose a supported projector display mode.')
     live_state.projector_mode = mode
     live_state.save(update_fields=('projector_mode', 'updated_at'))
+    schedule_competition_live_update(scoped.pk)
     return live_state
 
 

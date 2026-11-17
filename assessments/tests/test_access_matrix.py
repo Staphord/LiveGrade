@@ -166,6 +166,8 @@ CLOSED_SERVICE_ROUTES = {
     'competition_table': GET,
     'competition_create': GET,
     'competition_manage': GET,
+    'competition_results': GET,
+    'competition_projector_state': GET,
     'competition_delete': POST,
     'competition_bulk_delete': POST,
     'competition_entry_import': POST,

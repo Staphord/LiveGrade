@@ -53,6 +53,49 @@ class CompetitionLeaderboardConsumer(AsyncJsonWebsocketConsumer):
         return competition.public_leaderboard_enabled
 
 
+class CompetitionLiveConsumer(AsyncJsonWebsocketConsumer):
+    """Owner-only event stream for the live control and projector screens."""
+
+    async def connect(self):
+        if not is_released('competition'):
+            await self.close(code=4404)
+            return
+        self.competition_id = self.scope['url_route']['kwargs']['competition_id']
+        if not await self._may_manage_competition():
+            await self.close(code=4403)
+            return
+        self.group_name = f'competition_live_{self.competition_id}'
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
+        await self.accept()
+        await self.send_json({'type': 'competition.live.ready'})
+
+    async def disconnect(self, close_code):
+        if hasattr(self, 'group_name'):
+            await self.channel_layer.group_discard(self.group_name, self.channel_name)
+
+    async def competition_live_update(self, event):
+        await self.send_json({'type': 'competition.live.update'})
+
+    @database_sync_to_async
+    def _may_manage_competition(self):
+        user = self.scope.get('user')
+        session = self.scope.get('session')
+        if not user or not user.is_authenticated or session is None:
+            return False
+        competition = Competition.objects.filter(pk=self.competition_id).values(
+            'organization_id', 'created_by_id').first()
+        organizations = session.get(ORGS_KEY) or []
+        if competition is None or not isinstance(organizations, list) or not organizations:
+            return False
+        active_id = session.get(ACTIVE_KEY)
+        organization = next((item for item in organizations
+                             if isinstance(item, dict) and item.get('id') == active_id), None)
+        if organization is None:
+            organization = next((item for item in organizations if isinstance(item, dict)), None)
+        return bool(organization and organization.get('id') == competition['organization_id']
+                    and competition['created_by_id'] == user.pk)
+
+
 class PanelChamberConsumer(AsyncJsonWebsocketConsumer):
     """Authenticated staff event stream for hearing live chamber console."""
 
