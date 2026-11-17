@@ -70,6 +70,8 @@ class ClassroomWalkthroughTests(TestCase):
         completed = self.guide(completed_page, 4, 100)
         self.assertTrue(completed['completed'])
         self.assertContains(completed_page, 'Walkthrough complete')
+        self.assertContains(completed_page, 'Your session is live; share its QR code')
+        self.assertContains(completed_page, 'View session')
 
         self.assertEqual(self.client.get(reverse('assessment_walkthrough_dismiss')).status_code, 405)
         dismissed = self.client.post(reverse('assessment_walkthrough_dismiss'))
@@ -167,6 +169,10 @@ class ClassroomWalkthroughTests(TestCase):
         complete = self.client.get(self.list_url).context['classroom_walkthrough']
         self.assertTrue(complete['completed'])
         self.assertEqual((complete['current_step'], complete['progress_percent']), (4, 100))
+        closed_page = self.client.get(self.list_url)
+        self.assertContains(closed_page, 'Your session has ended')
+        self.assertNotContains(closed_page, 'Your session is live')
+        self.assertContains(closed_page, 'View session')
 
     def test_dismiss_handles_malformed_stored_state(self):
         browser = self.client.session
