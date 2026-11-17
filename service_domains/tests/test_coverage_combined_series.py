@@ -6,11 +6,10 @@ from unittest.mock import MagicMock, patch
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.test import TestCase, override_settings
-from django.urls import reverse
 from django.utils import timezone
 
-from accounts.testing import make_org, make_user, sign_in
-from assessments.models import AssessmentSession, PresentationTurn
+from accounts.testing import make_org, make_user
+from assessments.models import AssessmentSession
 from service_domains import team_series
 from service_domains.combined_assessment import mapping_is_complete, record_combined_moderation
 from service_domains.models import (
@@ -20,7 +19,7 @@ from service_domains.tests import test_combined_assessment as combined
 
 @override_settings(LIVEGRADE_LIVE_SERVICES=('classroom', 'panel'))
 class CombinedEdgeTests(TestCase):
-    setUp = combined.CombinedAssessmentTests.setUp
+    setUp = combined.CombinedAssessmentDomainTests.setUp
 
     def finish_sources(self):
         self.session.status = AssessmentSession.Status.CLOSED
@@ -70,29 +69,6 @@ class CombinedEdgeTests(TestCase):
         practice = self.session.groups.create(name='Practice', is_practice=True)
         PanelCandidate.objects.filter(pk=self.candidate.pk).update(source_group=practice)
         self.assertFalse(mapping_is_complete(CombinedPresentationAssessment.objects.get(pk=self.assessment.pk)))
-
-    def test_pausing_a_matched_pair_also_pauses_the_open_panel(self):
-        self.assessment.status = CombinedPresentationAssessment.Status.ACTIVE
-        self.assessment.save()
-        self.session.status = AssessmentSession.Status.LIVE
-        self.session.save()
-        self.hearing.status = PanelHearing.Status.OPEN
-        self.hearing.active_candidate = self.candidate
-        self.hearing.save()
-        PresentationTurn.objects.create(assessment_session=self.session, group=self.group,
-                                        status=PresentationTurn.Status.ACTIVE)
-        sign_in(self.client, self.owner, self.org)
-        self.client.post(reverse('combined_assessment_detail', args=[self.assessment.pk]), {'action': 'pause_entry'})
-        self.hearing.refresh_from_db()
-        self.assertIsNone(self.hearing.active_candidate_id)
-
-    def test_a_failed_bulk_delete_keeps_the_list_filters(self):
-        sign_in(self.client, self.owner, self.org)
-        response = self.client.post(reverse('combined_assessment_bulk_delete'), {
-            'q': 'event', 'status': 'draft', 'policy': 'weighted', 'per_page': '25'})
-        for part in ('q=event', 'status=draft', 'policy=weighted', 'per_page=25'):
-            self.assertIn(part, response['Location'])
-
 
 class SeriesHousekeepingTests(TestCase):
     def test_organization_identity_is_read_from_any_shape(self):

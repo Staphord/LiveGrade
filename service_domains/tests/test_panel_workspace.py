@@ -424,6 +424,14 @@ class PanelWorkspaceUiTests(TestCase):
         self.assertContains(response, 'Open and release results')
         self.assertContains(response, reverse('panel_hearing_create'))
 
+    def test_panel_assessment_list_has_no_combined_assessment_tab(self):
+        response = self.client.get(reverse('panel_hearing_table'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Search, filter, and manage Panel assessments.')
+        self.assertNotContains(response, 'aria-label="Assessment views"')
+        self.assertNotContains(response, 'Combined assessments')
+
     def test_sidebar_active_states_and_oversight_link(self):
         # Normal owner view
         res_dashboard = self.client.get(reverse('panel_hearing_list'))

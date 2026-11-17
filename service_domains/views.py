@@ -51,8 +51,7 @@ from .models import (
 )
 from .models import (Competition, CompetitionAudienceBallot, CompetitionRound,
                      CompetitionRoundEntry, CompetitionTrack)
-from .models import (CombinedPresentationAssessment,
-                     PanelAbstention, PanelAuditEvent, PanelCandidate, PanelConflict, PanelCriterion,
+from .models import (PanelAbstention, PanelAuditEvent, PanelCandidate, PanelConflict, PanelCriterion,
                      PanelCriterionLevel,
                      PanelCommentRedaction, PanelEntrantResultLink, PanelLiveDisplayLink,
                      PanelHearing, PanelInvitation,
@@ -432,9 +431,6 @@ def panel_hearing_table(request):
     query_params['per_page'] = str(paginator.per_page)
     querystring = query_params.urlencode()
 
-    combined_count = (CombinedPresentationAssessment.objects.for_organization(request.organization)
-                      .owned_by(request.user).count())
-
     context = {
         'hearings': annotated_page_hearings,
         'status_counts': status_counts,
@@ -447,9 +443,6 @@ def panel_hearing_table(request):
         'page_sizes': PAGE_SIZES,
         'querystring': querystring,
         'can_oversee_panel': can_oversee(request),
-        'active_tab': 'hearings',
-        'hearing_count': status_counts['total'],
-        'combined_count': combined_count,
     }
 
     if request.headers.get('x-requested-with') == 'XMLHttpRequest':

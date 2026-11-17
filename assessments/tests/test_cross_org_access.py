@@ -31,7 +31,7 @@ from assessments.models import (AssessmentSession, PresentationGroup,
 from service_domains.models import (Competition, PanelCandidate, PanelCriterion, PanelHearing,
                                     PanelInvitation, PanelResultAdjustment, PanelResultSnapshot,
                                     PanelScore, ShowcaseEvent, ShowcaseExhibit,
-                                    CombinedPresentationAssessment, TrainingSeries)
+                                    TrainingSeries)
 from portal.services import is_released
 
 from .test_access_matrix import named_patterns
@@ -65,8 +65,6 @@ TARGETS = {
     'panel_results_review': (GET, 'panel_hearing'),
     'panel_recusal_export': (GET, 'panel_hearing'),
     'panel_results_export': (GET, 'panel_hearing'),
-    'combined_assessment_detail': (GET, 'combined_assessment'),
-    'combined_assessment_delete': (POST, 'combined_assessment'),
     'showcase_event_delete': (POST, 'showcase_event'),
     'competition_delete': (POST, 'competition'),
     'panel_hearing_delete': (POST, 'panel_hearing'),
@@ -234,7 +232,6 @@ EXEMPT = {
     'training_session_live_state': 'unreleased service live state route; owner/org denial is exercised by service-domain tests',
     'training_session_live_action': 'unreleased service live action route; owner/org denial is exercised by service-domain tests',
     'training_session_feedback_qr': 'unreleased service feedback QR route; owner/org denial is exercised by service-domain tests',
-    'combined_assessment_live_state': 'unreleased service live state route; owner/org denial is exercised by service-domain tests',
     'showcase_event_transition': 'unreleased service owner route; owner/org denial is exercised by service-domain tests',
     'showcase_exhibit_import': 'unreleased service owner route; owner/org denial is exercised by service-domain tests',
     'showcase_exhibit_import_sample': 'unreleased service owner route; owner/org denial is exercised by service-domain tests',
@@ -299,9 +296,6 @@ class RowsAreUnreachable:
             'training_series': TrainingSeries.objects.create(
                 organization_id=cls.org_a.pk, created_by=owner, name=MARKER),
         }
-        cls.objects['combined_assessment'] = CombinedPresentationAssessment.objects.create(
-            organization_id=cls.org_a.pk, created_by=owner, name=MARKER,
-            classroom_session=session, panel_hearing=cls.objects['panel_hearing'])
         cls.objects['panel_candidate'] = PanelCandidate.objects.create(
             organization_id=cls.org_a.pk, created_by=owner,
             hearing=cls.objects['panel_hearing'], display_name='Panel candidate marker')

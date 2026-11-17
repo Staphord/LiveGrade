@@ -107,6 +107,15 @@ class ClassroomWorkspaceUiTests(TestCase):
         self.assertContains(response, 'View all sessions')
         self.assertContains(response, f'href="{reverse("assessment_session_list")}"')
 
+    def test_classroom_session_detail_does_not_offer_the_retired_panel_link_flow(self):
+        session = self.create_session('Classroom without a linked panel')
+
+        response = self.client.get(reverse('assessment_session_detail', args=[session.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Classroom polls')
+        self.assertNotContains(response, 'Add Panel grading')
+
     def test_empty_dashboard_has_real_zero_state_and_zero_distribution(self):
         response = self.client.get(reverse('assessment_dashboard'))
         self.assertEqual(response.context['dashboard_stats']['total'], 0)

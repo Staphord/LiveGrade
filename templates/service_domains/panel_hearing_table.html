@@ -68,22 +68,9 @@
   <header class="panel-list-heading">
     <div>
       <h1 class="page-title mb-1">Assessments</h1>
-      <p class="text-muted mb-0">Search, filter, and manage Panel hearings and linked Combined assessments.</p>
+      <p class="text-muted mb-0">Search, filter, and manage Panel assessments.</p>
     </div>
   </header>
-
-  <nav class="panel-view-tabs" aria-label="Assessment views">
-    <a href="{% url 'panel_hearing_table' %}" class="panel-view-tab {% if active_tab == 'hearings' %}active{% endif %}" {% if active_tab == 'hearings' %}aria-current="page"{% endif %}>
-      <i class="bi bi-list-ul" aria-hidden="true"></i>
-      <span>Panel assessments</span>
-      <span class="panel-view-tab__count">{{ hearing_count }}</span>
-    </a>
-    <a href="{% url 'combined_assessment_list' %}" class="panel-view-tab {% if active_tab == 'combined' %}active{% endif %}" {% if active_tab == 'combined' %}aria-current="page"{% endif %}>
-      <i class="bi bi-diagram-3" aria-hidden="true"></i>
-      <span>Combined assessments</span>
-      <span class="panel-view-tab__count">{{ combined_count }}</span>
-    </a>
-  </nav>
 
   {% if messages %}<div aria-live="polite">{% for message in messages %}<div class="alert {% if message.tags == 'error' %}alert-danger{% elif message.tags == 'warning' %}alert-warning{% elif message.tags == 'success' %}alert-success{% else %}alert-info{% endif %}" role="status">{{ message }}</div>{% endfor %}</div>{% endif %}
 
