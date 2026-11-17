@@ -27,6 +27,16 @@ prompts/
 .claude/skills/
 output/
 
+# Agent skill definitions stay local across all assistant directories.
+**/SKILL.md
+**/skill.md
+
+# Keep local generated output ignored.
+!output/
+output/*
+output/pdf/
+output/pdf/*
+
 # Local analysis and test caches
 .playwright-cli/
 .pytest_cache/
