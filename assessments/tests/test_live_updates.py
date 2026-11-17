@@ -28,8 +28,10 @@ from assessments.tests.participant_flow import join_as
 
 from accounts.testing import make_org, make_user, sign_in
 from assessments.models import (
-    AssessmentSession, PresentationGroup, PresentationTurn, RubricCategory, Student,
+    AssessmentSession, Evaluation, GroupMembership, ParticipationRecord, PresentationGroup,
+    PresentationTurn, RubricCategory, Student,
 )
+from assessments.views.lecturer_views import _live_participation_rows
 from assessments.turns import activate_turn, ensure_turn_progressed
 
 
@@ -147,6 +149,56 @@ class AssessmentLiveStateViewTests(TestCase):
         self.assertEqual(data['active_turn']['group_id'], self.group1.pk)
         self.assertIn('Group 1', data['hero_html'])
         self.assertIn('Group 1', data['groups_html'])
+
+    @patch('assessments.views.lecturer_views._participation_rows', side_effect=AssertionError)
+    def test_live_refresh_uses_only_the_joined_roster_projection(self, mock_participation_rows):
+        group3 = PresentationGroup.objects.create(
+            assessment_session=self.session, name='Group 3', order=3)
+        fully_graded = Student.objects.create(
+            assessment_session=self.session, student_id='C3', full_name='Fully Graded')
+        partially_graded = Student.objects.create(
+            assessment_session=self.session, student_id='C4', full_name='Partially Graded')
+        waiting = Student.objects.create(
+            assessment_session=self.session, student_id='C5', full_name='Waiting Learner')
+        GroupMembership.objects.create(student=fully_graded, group=self.group1)
+        GroupMembership.objects.create(student=partially_graded, group=self.group1)
+        GroupMembership.objects.create(student=waiting, group=self.group2)
+        ParticipationRecord.objects.create(assessment_session=self.session, student=fully_graded)
+        ParticipationRecord.objects.create(assessment_session=self.session, student=partially_graded)
+        ParticipationRecord.objects.create(assessment_session=self.session, student=waiting)
+        group2_turn = PresentationTurn.objects.create(
+            assessment_session=self.session, group=self.group2, status=PresentationTurn.Status.CLOSED)
+        group3_turn = PresentationTurn.objects.create(
+            assessment_session=self.session, group=group3, status=PresentationTurn.Status.CLOSED)
+        Evaluation.objects.create(presentation_turn=group2_turn, evaluator=fully_graded)
+        Evaluation.objects.create(presentation_turn=group3_turn, evaluator=fully_graded)
+        Evaluation.objects.create(presentation_turn=group2_turn, evaluator=partially_graded)
+        Evaluation.objects.create(presentation_turn=group2_turn, evaluator=waiting)
+
+        response = self.client.get(f'/classroom/app/{self.session.pk}/live-state/')
+
+        self.assertEqual(response.status_code, 200)
+        html = response.json()['roster_html']
+        self.assertIn('Fully Graded', html)
+        self.assertIn('class="roster-status roster-status-full"', html)
+        self.assertIn('Partially Graded', html)
+        self.assertIn('class="roster-status roster-status-partial"', html)
+        self.assertIn('Waiting Learner', html)
+        self.assertIn('class="roster-status roster-status-none"', html)
+        mock_participation_rows.assert_not_called()
+
+    def test_live_roster_marks_joined_student_complete_when_no_groups_are_eligible(self):
+        self.group1.delete()
+        self.group2.delete()
+        student = Student.objects.create(
+            assessment_session=self.session, student_id='C6', full_name='Only Learner')
+        ParticipationRecord.objects.create(assessment_session=self.session, student=student)
+
+        rows = _live_participation_rows(self.session)
+
+        self.assertEqual(rows, [{
+            'student': student, 'status': 'full', 'graded_count': 0, 'eligible_count': 0,
+        }])
 
     @patch('assessments.tasks.auto_advance_turn.apply_async')
     @patch('assessments.tasks.open_scheduled_voting.apply_async')

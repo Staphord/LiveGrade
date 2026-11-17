@@ -488,9 +488,11 @@ def _live_context(session):
     # breakdown (full/partial/none) so the two screens never tell a
     # lecturer two different stories - only worth computing once grading
     # has actually stopped, not on every live poll.
+    participation_rows = None
     participation_counts = None
     if session.status == AssessmentSession.Status.CLOSED:
-        counts = _participation_rows(session)['counts']
+        participation_rows = _participation_rows(session)
+        counts = participation_rows['counts']
         participation_counts = {
             'full_count': counts['full'], 'partial_count': counts['partial'], 'none_count': counts['none'],
         }
@@ -525,8 +527,10 @@ def _live_context(session):
         timeline.sort(key=lambda item: (item['rank'] is None, item['rank'] or 0))
         presentation_timeline = timeline
 
-    participation_rows = _participation_rows(session)
-    joined_students = [row for row in participation_rows['rows'] if row['joined']]
+    joined_students = (
+        [row for row in participation_rows['rows'] if row['joined']]
+        if participation_rows is not None else _live_participation_rows(session)
+    )
 
     return {
         'session': session,
@@ -1418,6 +1422,46 @@ def toggle_public_results(request, pk):
 # --------------------------------------------------------- Reporting views --
 
 PARTICIPATION_STATUSES = {'full', 'partial', 'none'}
+
+
+def _live_participation_rows(session):
+    """Build the live roster projection without loading the full participation report."""
+    students = list(session.students.filter(
+        participation_records__assessment_session=session).distinct().order_by('full_name'))
+    if not students:
+        return []
+
+    student_ids = {student.pk for student in students}
+    groups = list(session.groups.filter(is_practice=False).order_by('order', 'id'))
+    group_ids = {group.pk for group in groups}
+    own_group_ids = dict(GroupMembership.objects.filter(
+        student_id__in=student_ids, group_id__in=group_ids
+    ).values_list('student_id', 'group_id'))
+    voted_group_ids = {}
+    for student_id, group_id in Evaluation.objects.filter(
+        evaluator_id__in=student_ids, target_student__isnull=True,
+        presentation_turn__assessment_session=session,
+        presentation_turn__group__is_practice=False,
+    ).values_list('evaluator_id', 'presentation_turn__group_id').distinct():
+        voted_group_ids.setdefault(student_id, set()).add(group_id)
+
+    rows = []
+    for student in students:
+        own_group_id = own_group_ids.get(student.pk)
+        eligible_count = len(group_ids) - int(own_group_id in group_ids)
+        voted_groups = voted_group_ids.get(student.pk, set())
+        graded_count = len(voted_groups & group_ids) - int(own_group_id in voted_groups)
+        if eligible_count == 0 or graded_count >= eligible_count:
+            status = 'full'
+        elif graded_count == 0:
+            status = 'none'
+        else:
+            status = 'partial'
+        rows.append({
+            'student': student, 'status': status,
+            'graded_count': graded_count, 'eligible_count': eligible_count,
+        })
+    return rows
 
 
 def _participation_rows(session):
