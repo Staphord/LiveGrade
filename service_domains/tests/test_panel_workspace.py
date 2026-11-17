@@ -2,8 +2,10 @@
 from datetime import timedelta
 from decimal import Decimal
 from django.core.exceptions import ValidationError
+from django.db import connection
 from django.http import Http404
 from django.test import RequestFactory, TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -828,6 +830,50 @@ class PanelWorkspaceUiTests(TestCase):
         self.assertEqual(post_activate['Location'], reverse('panel_hearing_live', args=(hearing.pk,)))
         hearing.refresh_from_db()
         self.assertEqual(hearing.active_candidate_id, cand2.pk)
+
+    def test_participants_page_batches_score_counts_for_many_invitations(self):
+        hearing = self.create_hearing('Many examiner hearing', status=PanelHearing.Status.OPEN)
+        candidate = PanelCandidate.objects.create(
+            organization_id=self.org.pk, created_by=self.owner,
+            hearing=hearing, display_name='Active Candidate', order=1)
+        hearing.active_candidate = candidate
+        hearing.save(update_fields=('active_candidate',))
+        criterion = PanelCriterion.objects.create(
+            organization_id=self.org.pk, created_by=self.owner,
+            hearing=hearing, name='Delivery')
+        for number in range(4):
+            invitation = PanelInvitation.objects.create(
+                organization_id=self.org.pk, created_by=self.owner,
+                hearing=hearing, email=f'examiner{number}@example.test',
+                expires_at=timezone.now() + timedelta(days=2))
+            if number < 3:
+                PanelScore.objects.create(
+                    organization_id=self.org.pk, created_by=self.owner,
+                    candidate=candidate, criterion=criterion, invitation=invitation,
+                    score=Decimal('80.00'))
+
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(reverse('panel_hearing_participants', args=(hearing.pk,)))
+
+        self.assertEqual(response.status_code, 200)
+        score_queries = [query for query in queries
+                         if PanelScore._meta.db_table.lower() in query['sql'].lower()]
+        self.assertEqual(len(score_queries), 2)
+        self.assertEqual(len(response.context['examiners']), 4)
+        self.assertEqual([row['active_candidate_scored'] for row in response.context['examiners']],
+                         [1, 1, 1, 0])
+        self.assertEqual([row['total_evaluations'] for row in response.context['examiners']],
+                         [1, 1, 1, 0])
+
+        candidate.delete()
+        without_active_candidate = self.client.get(
+            reverse('panel_hearing_participants', args=(hearing.pk,)))
+        self.assertEqual(
+            [row['active_candidate_scored'] for row in without_active_candidate.context['examiners']],
+            [0, 0, 0, 0])
+        self.assertEqual(
+            [row['total_evaluations'] for row in without_active_candidate.context['examiners']],
+            [0, 0, 0, 0])
 
     def test_open_hearing_results_and_deliberation_page_accessible_without_404(self):
         hearing = self.create_hearing('Results Review Open', status=PanelHearing.Status.OPEN)

@@ -1935,19 +1935,27 @@ def panel_hearing_participants(request, hearing_id):
         })
 
     invitations_qs = list(PanelInvitation.objects.filter(hearing=hearing, organization_id=org, revoked_at__isnull=True).select_related('panel').order_by('pk'))
+    invitation_ids = [inv.pk for inv in invitations_qs]
+    score_counts_by_invitation = {
+        row['invitation_id']: row
+        for row in PanelScore.objects.filter(
+            invitation_id__in=invitation_ids, invitation__hearing=hearing, organization_id=org)
+        .values('invitation_id').annotate(
+            total_evaluations=Count('pk'),
+            active_candidate_scored=Count(
+                'pk', filter=Q(candidate_id=active_cand.pk) if active_cand else Q(pk__in=[])),
+        )
+    }
     examiner_rows = []
     for inv in invitations_qs:
-        scored_count = 0
-        if active_cand:
-            scored_count = PanelScore.objects.filter(candidate=active_cand, invitation=inv).count()
-        total_evaluations = PanelScore.objects.filter(invitation=inv).count()
+        score_counts = score_counts_by_invitation.get(inv.pk, {})
         examiner_rows.append({
             'invitation': inv,
             'panel_name': inv.panel.name if inv.panel else 'Default panel',
             'is_conflicted': bool(active_cand and inv.pk in conflicts_by_candidate.get(active_cand.pk, set())),
-            'active_candidate_scored': scored_count,
+            'active_candidate_scored': score_counts.get('active_candidate_scored', 0),
             'total_criteria': total_criteria,
-            'total_evaluations': total_evaluations,
+            'total_evaluations': score_counts.get('total_evaluations', 0),
             'is_bound': bool(inv.device_digest),
         })
 
