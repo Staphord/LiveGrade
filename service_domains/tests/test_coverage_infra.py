@@ -189,7 +189,7 @@ class PollModelRuleTests(TestCase):
         self.owner = make_user('poll-rules-owner')
 
     def poll(self, **fields):
-        base = dict(question='Q?', standalone=False)
+        base = dict(title='Q?', standalone=False)
         base.update(fields)
         return ClassroomPoll(**base)
 
@@ -211,8 +211,8 @@ class PollModelRuleTests(TestCase):
 
     def test_confirmed_option_must_belong_to_the_poll(self):
         session = AssessmentSession.objects.create(organization_id=self.org.pk, created_by=self.owner, name='C')
-        first = ClassroomPoll.objects.create(assessment_session=session, question='A?')
-        second = ClassroomPoll.objects.create(assessment_session=session, question='B?')
+        first = ClassroomPoll.objects.create(assessment_session=session, title='First poll')
+        second = ClassroomPoll.objects.create(assessment_session=session, title='Second poll')
         option = second.options.create(label='x', order=1)
         first.confirmed_option = option
         with self.assertRaises(ValidationError):

@@ -21,7 +21,7 @@ class ClassroomPollPageTests(TestCase):
     publish = classroom_polls.ClassroomPollTests.publish
 
     def test_a_refused_save_is_returned_as_json_for_the_editor(self):
-        response = self.client.post(self.manage, {'action': 'save', 'question': ''}, **AJAX)
+        response = self.client.post(self.manage, self.data(question=''), **AJAX)
         self.assertEqual(response.status_code, 400)
         self.assertFalse(response.json()['ok'])
 
@@ -60,15 +60,14 @@ class ClassroomPollPageTests(TestCase):
 class StandalonePollPageTests(TestCase):
     setUp = standalone_polls.StandalonePollsEndToEndTests.setUp
     _create_poll = standalone_polls.StandalonePollsEndToEndTests._create_poll
+    _draft_data = standalone_polls.StandalonePollsEndToEndTests._draft_data
 
     def data(self, **overrides):
-        data = {'action': 'save', 'question': 'Where?', 'allow_multiple': 'false', 'option_lines': 'Hall\nLibrary',
-                'timezone_name': 'Africa/Dar_es_Salaam', 'allow_abstain': 'on'}
-        data.update(overrides)
-        return data
+        return self._draft_data('Poll title', 'Where?', ['Hall', 'Library'], **overrides)
 
     def test_a_refused_save_is_returned_as_json_for_the_editor(self):
-        response = self.client.post(reverse('standalone_poll_list'), {'action': 'save', 'question': ''}, **AJAX)
+        response = self.client.post(reverse('standalone_poll_list'),
+                                    self._draft_data('', 'Where?', ['Hall', 'Library']), **AJAX)
         self.assertEqual(response.status_code, 400)
 
     def test_saving_can_return_to_the_page_the_organizer_was_leaving(self):

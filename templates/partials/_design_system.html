@@ -592,6 +592,9 @@ body{font-family:var(--font-ui);color:var(--text);font-size:var(--fs-body)}
 .poll-list-card-meta{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:var(--sp-2);color:var(--text-muted);font-size:var(--fs-sm)}
 .poll-status-badge{display:inline-flex;align-items:center;gap:6px;width:fit-content;max-width:100%;padding:3px 9px;border:1px solid transparent;border-radius:var(--radius-pill);font-size:var(--fs-sm);font-weight:700;line-height:1.4;white-space:nowrap}
 .poll-status-live{background:var(--tone-success-bg);color:var(--tone-success-fg)}
+.poll-live-dot{display:inline-block;flex:none;width:.5rem;height:.5rem;border-radius:50%;background:currentColor;animation:poll-live-pulse 1.8s ease-out infinite}
+@keyframes poll-live-pulse{0%{box-shadow:0 0 0 0 currentColor}70%{box-shadow:0 0 0 5px transparent}100%{box-shadow:0 0 0 0 transparent}}
+@media(prefers-reduced-motion:reduce){.poll-live-dot{animation:none}}
 .poll-status-deadline,.poll-status-draft{background:var(--tone-warn-bg);color:var(--tone-warn-fg)}
 .poll-status-closed{background:var(--tone-neutral-bg);color:var(--tone-neutral-fg);border-color:var(--border)}
 .poll-status-confirmed{background:var(--tone-info-bg);color:var(--tone-info-fg)}

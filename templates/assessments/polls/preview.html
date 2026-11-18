@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Preview: {{ poll.title }}{% endblock %}
+{% block page_title %}Poll preview{% endblock %}
+{% block extra_css %}{% include 'assessments/polls/_participant_ui_styles.html' %}{% include 'assessments/polls/_poll_builder_styles.html' %}{% endblock %}
+{% block content %}
+<div class="poll-preview-shell">
+  <section class="s-card poll-response-card" aria-labelledby="poll-preview-title">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+      <div><span class="badge text-bg-info">Preview</span><h1 class="h3 mt-2 mb-1" id="poll-preview-title">{{ poll.title }}</h1></div>
+      <a class="btn btn-outline-secondary" href="{{ return_url }}">Back to draft</a>
+    </div>
+    {% if poll.deadline %}<p class="poll-response-meta mb-0">Response deadline: <time datetime="{{ poll.deadline|date:'c' }}" data-local-deadline>{{ poll.deadline|date:'j M Y, H:i' }}</time></p>{% endif %}
+    <div data-poll-response-form>
+      {% include 'assessments/polls/_respondent_questions.html' with preview_mode=True %}
+    </div>
+  </section>
+</div>
+<script src="{% static 'js/poll_response.js' %}" defer></script>
+{% include 'assessments/polls/_local_deadline.html' %}
+{% endblock %}

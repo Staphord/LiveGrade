@@ -1,384 +1,751 @@
 <script nonce="{{ csp_nonce }}">
 (function () {
   const editor = document.querySelector('form[data-poll-editor]');
-  if (!editor || editor.dataset.pollEditorReady) return;
-  editor.dataset.pollEditorReady = 'true';
+  if (!editor) return;
 
-  const storageKey = 'livegrade-poll-editor:' + window.location.pathname + ':' +
-    (editor.querySelector('[name="poll"]') || {}).value;
-  let validationMessageCounter = 0;
-  let optionInputCounter = 0;
-  function editorControls() {
-    return Array.from(editor.elements).filter(function (control) {
-      return control.name && !['action', 'leave_to', 'csrfmiddlewaretoken'].includes(control.name) &&
-        control.type !== 'file' && control.type !== 'submit' && control.type !== 'button';
-    });
-  }
-  function restoreSnapshot() {
-    let rawSnapshot;
-    try {
-      rawSnapshot = sessionStorage.getItem(storageKey);
-    } catch (error) {
-      return;
-    }
-    if (!rawSnapshot) return;
-    try {
-      const stored = JSON.parse(rawSnapshot);
-      if (!stored || typeof stored !== 'object') return;
-      const isEnvelope = stored.__pollEditorSnapshot === 1;
-      const snapshot = isEnvelope ? stored.fields : stored;
-      if (!snapshot || typeof snapshot !== 'object') return;
-      editorControls().forEach(function (control) {
-        if (!Object.prototype.hasOwnProperty.call(snapshot, control.name)) return;
-        if (control.type === 'checkbox' || control.type === 'radio') control.checked = snapshot[control.name] === true;
-        else control.value = String(snapshot[control.name]);
-      });
-      const wasDirty = isEnvelope ? stored.dirty === true : true;
-      if (wasDirty) editor.dataset.dirtyInitial = 'true';
-      else editor.dataset.pollDirty = editor.dataset.dirtyInitial === 'true' ? 'true' : 'false';
-      sessionStorage.removeItem(storageKey);
-    } catch (error) {
-      try { sessionStorage.removeItem(storageKey); } catch (storageError) { /* Storage may be unavailable. */ }
-    }
-  }
-  window.snapshotPollEditorState = function () {
-    const snapshot = {};
-    editorControls().forEach(function (control) {
-      snapshot[control.name] = control.type === 'checkbox' || control.type === 'radio' ? control.checked : control.value;
-    });
-    const payload = {
-      __pollEditorSnapshot: 1,
-      dirty: editor.dataset.pollDirty === 'true' || editor.dataset.dirtyInitial === 'true',
-      fields: snapshot,
-    };
-    try { sessionStorage.setItem(storageKey, JSON.stringify(payload)); } catch (error) { /* Storage may be unavailable. */ }
-  };
-  restoreSnapshot();
+  const questionList = document.getElementById('poll-question-list');
+  const questionsInput = editor.elements.questions_json;
+  const titleInput = editor.elements.title;
+  const status = editor.querySelector('[data-poll-save-status]');
+  const saveError = editor.querySelector('[data-poll-save-error]');
+  const titleError = document.getElementById('poll-title-error');
+  const formError = document.getElementById('poll-question-form-error');
+  const limitStatus = document.getElementById('poll-question-limit');
+  const errorNode = document.getElementById('poll-question-errors');
+  const publishButton = document.querySelector('[data-poll-publish-form] button[type="submit"]');
+  const storageKey = editor.dataset.storageKey;
+  const responseTypes = [
+    ['multiple_choice', 'Multiple choice'],
+    ['checkboxes', 'Checkboxes'],
+    ['short_answer', 'Short answer'],
+    ['paragraph', 'Paragraph']
+  ];
+  let state = parseDefinitions(questionsInput.value);
+  let previewAfterSave = false;
+  let activeIndex = 0;
 
-  function resize(field) {
-    field.style.height = 'auto';
-    field.style.height = Math.max(field.scrollHeight, 42) + 'px';
-  }
-  function grow(field) {
-    if (field.dataset.autogrowReady) return;
-    field.dataset.autogrowReady = 'true';
-    field.addEventListener('input', function () { resize(field); });
-    resize(field);
-  }
-  function markRequired(label) {
-    const marker = document.createElement('span'); marker.className = 'text-danger';
-    marker.textContent = ' *'; marker.setAttribute('aria-hidden', 'true'); label.append(marker);
-    const assistive = document.createElement('span'); assistive.className = 'visually-hidden';
-    assistive.textContent = ' (required)'; label.append(assistive);
-  }
-  function inlineError(container, field, message) {
-    let error = container.querySelector(':scope > [data-poll-validation-error]');
-    if (!error) {
-      error = document.createElement('div'); error.className = 'field-error';
-      error.dataset.pollValidationError = ''; error.setAttribute('role', 'alert');
-      error.setAttribute('aria-live', 'assertive'); container.append(error);
-    }
-    error.textContent = message;
-    field.classList.add('poll-editor-invalid');
-    field.setAttribute('aria-invalid', 'true');
-    if (!error.id) error.id = 'poll-validation-' + (++validationMessageCounter);
-    const describedBy = (field.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
-    if (!describedBy.includes(error.id)) describedBy.push(error.id);
-    field.setAttribute('aria-describedby', describedBy.join(' '));
-  }
-  function clearError(container, field) {
-    const error = container.querySelector(':scope > [data-poll-validation-error]');
-    if (error) error.remove();
-    field.classList.remove('poll-editor-invalid');
-    field.removeAttribute('aria-invalid');
-    const describedBy = (field.getAttribute('aria-describedby') || '').split(/\s+/).filter(function (id) {
-      return id && (!error || id !== error.id);
-    });
-    if (describedBy.length) field.setAttribute('aria-describedby', describedBy.join(' '));
-    else field.removeAttribute('aria-describedby');
-  }
-  function questionPromptError(prompt, name) {
-    const container = prompt.closest('.mb-3') || prompt.parentElement;
-    const message = !prompt.value.trim() ? 'Enter a question.' :
-      prompt.value.trim().length > 250 ? 'Keep the question within 250 characters.' : '';
-    if (message) inlineError(container, prompt, name + ': ' + message);
-    else clearError(container, prompt);
-    return Boolean(message);
-  }
-  function typeError(select) {
-    const wrapper = select.parentElement;
-    const trigger = wrapper.querySelector('.custom-select-trigger');
-    const container = wrapper.parentElement;
-    if (!select.value) {
-      inlineError(container, trigger || select, 'Choose an answer type.');
-      return true;
-    }
-    clearError(container, trigger || select);
-    return false;
-  }
-  function optionError(list, name) {
-    const fields = Array.from(list.querySelectorAll('[data-option-row] textarea'));
-    const values = fields.map(function (field) { return field.value.trim(); }).filter(Boolean);
-    const unique = new Set(values.map(function (value) { return value.toLocaleLowerCase(); }));
-    const message = values.length < 2 ? name + ' needs at least two answer options.' :
-      values.length > 50 ? name + ' can have no more than 50 answer options.' :
-      values.some(function (value) { return value.length > 250; }) ? 'Keep each answer option within 250 characters.' :
-      unique.size !== values.length ? name + ' answer options must be different.' : '';
-    const anchor = fields[0] || list;
-    const container = list.parentElement;
-    if (message) inlineError(container, anchor, message);
-    else clearError(container, anchor);
-    return Boolean(message);
-  }
-
-  function optionList(list, values, onChange) {
-    const initial = Array.isArray(values) ? values : String(values || '').split('\n');
-    function rows() { return Array.from(list.querySelectorAll('[data-option-row]')); }
-    function sync() {
-      const current = rows();
-      const lastFilled = current.reduce(function (last, row, index) {
-        return row.querySelector('textarea').value.trim() ? index : last;
-      }, -1);
-      const needed = Math.max(2, lastFilled + 2);
-      while (rows().length < needed) addRow('');
-      while (rows().length > needed) rows().pop().remove();
-      onChange(rows().map(function (row) { return row.querySelector('textarea').value; }));
-    }
-    function addRow(value) {
-      const row = document.createElement('div'); row.className = 'poll-option-row'; row.dataset.optionRow = '';
-      const input = document.createElement('textarea'); input.rows = 1; input.maxLength = 250;
-      input.className = 'form-control'; input.placeholder = 'Add option'; input.value = value || '';
-      input.setAttribute('aria-label', 'Answer option'); input.dataset.autogrow = '';
-      input.id = 'poll-answer-option-' + (++optionInputCounter);
-      const help = list.parentElement.querySelector('.form-text');
-      if (help) {
-        if (!help.id) help.id = 'poll-option-help-' + input.id;
-        input.setAttribute('aria-describedby', help.id);
-      }
-      grow(input); input.addEventListener('input', sync); row.append(input); list.append(row); resize(input);
-    }
-    initial.forEach(addRow); sync();
+  function newQuestion() {
     return {
-      getValues: function () { return rows().map(function (row) { return row.querySelector('textarea').value; }).filter(function (value) { return value.trim(); }); },
-      sync: sync
+      id: null,
+      prompt: '',
+      response_type: 'multiple_choice',
+      required: true,
+      allow_abstain: false,
+      options: [{id: null, label: ''}, {id: null, label: ''}]
     };
   }
 
-  const primaryQuestion = editor.querySelector('[name="question"]');
-  const primaryType = editor.querySelector('[name="allow_multiple"]');
-  const primaryHiddenOptions = editor.querySelector('[name="option_lines"]');
-  const primaryList = editor.querySelector('[data-option-list="primary"]');
-  const extraHidden = editor.querySelector('[name="extra_questions_json"]');
-  const extraList = editor.querySelector('#poll-extra-questions');
-  const addButton = editor.querySelector('#add-poll-question');
-  const addButtonHome = addButton && addButton.parentElement;
-  const questionLabel = primaryQuestion && editor.querySelector('label[for="' + primaryQuestion.id + '"]');
-  const primaryOptionValues = primaryHiddenOptions ? primaryHiddenOptions.value.split('\n') : [];
-  let primaryOptions;
-  let nextQuestionId = 0;
-  let extras = [];
-  try { extras = JSON.parse(extraHidden && extraHidden.value || '[]'); } catch (error) { extras = []; }
-
-  function syncExtras() {
-    if (!extraHidden || !extraList) return;
-    const cards = Array.from(extraList.querySelectorAll('[data-extra-question]'));
-    extraHidden.value = JSON.stringify(cards.map(function (card) {
-      const type = card.querySelector('[data-type]').value;
-      return {prompt: card.querySelector('[data-prompt]').value,
-        allow_multiple: type === '' ? null : type === 'multiple',
-        allow_abstain: card.querySelector('[data-abstain]').checked,
-        options: card._optionList.getValues()};
-    }));
-    cards.forEach(function (card, index) {
-      card.querySelector('[data-question-number]').textContent = 'Question ' + (index + 2);
-    });
-    if (addButton) addButton.disabled = cards.length >= 99;
-    if (addButton) {
-      if (cards.length) cards[cards.length - 1].after(addButton);
-      else if (addButtonHome && !addButtonHome.contains(addButton)) addButtonHome.append(addButton);
+  function parseDefinitions(value) {
+    try {
+      const parsed = JSON.parse(value || '[]');
+      return Array.isArray(parsed) && parsed.length ? parsed : [newQuestion()];
+    } catch (_) {
+      return [newQuestion()];
     }
   }
-  function askToPublish(pollUuid) {
-    if (!window.DevPerf || typeof window.DevPerf.confirm !== 'function') return;
-    window.DevPerf.confirm({
-      title: 'Publish poll?',
-      message: 'Your draft is saved. Publish it now? Publishing locks the questions and opens voting.',
-      confirmLabel: 'Publish poll',
-      cancelLabel: 'Keep as draft',
-      tone: 'primary'
-    }).then(function (publish) {
-      if (!publish) return;
-      const csrf = editor.querySelector('[name="csrfmiddlewaretoken"]');
-      if (!csrf) return;
-      const publishForm = document.createElement('form');
-      publishForm.method = 'post';
-      publishForm.hidden = true;
-      publishForm.setAttribute('action', editor.getAttribute('action') || window.location.href);
-      [["csrfmiddlewaretoken", csrf.value], ["poll", pollUuid], ["action", "publish"]].forEach(function (entry) {
-        const input = document.createElement('input');
-        input.type = 'hidden'; input.name = entry[0]; input.value = entry[1];
-        publishForm.append(input);
+
+  function element(tag, attributes, text) {
+    const node = document.createElement(tag);
+    Object.keys(attributes || {}).forEach(function (key) {
+      if (key === 'className') node.className = attributes[key];
+      else if (key === 'checked' || key === 'disabled' || key === 'required') node[key] = attributes[key];
+      else node.setAttribute(key, attributes[key]);
+    });
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  const choiceTypes = ['multiple_choice', 'checkboxes'];
+  const MAX_QUESTIONS = 100;
+  const MAX_OPTIONS = 50;
+
+  function isChoice(type) {
+    return choiceTypes.includes(type);
+  }
+
+  function typeLabel(type) {
+    const match = responseTypes.find(function (item) { return item[0] === type; });
+    return match ? match[1] : '';
+  }
+
+  function iconButton(label, action, iconName, disabled, danger) {
+    const button = element('button', {
+      type: 'button', className: 'poll-icon-btn' + (danger ? ' is-danger' : ''),
+      'data-question-action': action, 'aria-label': label, title: label,
+      disabled: Boolean(disabled)
+    });
+    button.append(element('i', {className: 'bi bi-' + iconName, 'aria-hidden': 'true'}));
+    return button;
+  }
+
+  function menuButton(label, action, iconName, disabled) {
+    const button = element('button', {
+      type: 'button', 'data-question-action': action, disabled: Boolean(disabled)
+    });
+    button.append(element('i', {className: 'bi bi-' + iconName, 'aria-hidden': 'true'}), label);
+    return button;
+  }
+
+  function sampleText(question) {
+    if (isChoice(question.response_type)) {
+      const labels = (question.options || []).map(function (option) {
+        return (option.label || '').trim();
+      }).filter(Boolean);
+      return labels.slice(0, 3).join(' · ') || 'No answer options yet';
+    }
+    return question.response_type === 'short_answer' ? 'Short answer text' : 'Long answer text';
+  }
+
+  function renderSummary(question, index) {
+    const summary = element('button', {
+      type: 'button', className: 'poll-card-summary', 'data-question-summary': '',
+      'aria-label': 'Edit question ' + (index + 1) + ': ' + (question.prompt || 'Untitled question')
+    });
+    const meta = element('span', {className: 'poll-card-meta'});
+    meta.append(element('span', {}, 'Question ' + (index + 1)),
+      element('span', {'data-summary-type': ''}, typeLabel(question.response_type)));
+    const heading = element('span', {className: 'poll-card-heading d-block', 'data-summary-heading': ''},
+      question.prompt || 'Untitled question');
+    const star = element('span', {className: 'poll-required-star', 'aria-hidden': 'true', 'data-summary-star': ''}, '*');
+    star.hidden = question.required === false;
+    heading.append(star);
+    summary.append(meta, heading, element('span', {
+      className: 'poll-card-sample d-block', 'data-summary-sample': ''
+    }, sampleText(question)));
+    return summary;
+  }
+
+  function renderPromptRow(question, index) {
+    const top = element('div', {className: 'poll-card-top'});
+    const promptWrap = element('div', {className: 'poll-builder-field'});
+    const promptLabel = element('label', {className: 'visually-hidden', for: 'poll-question-prompt-' + index},
+      'Question ' + (index + 1) + ' prompt');
+    const prompt = element('textarea', {
+      id: 'poll-question-prompt-' + index, className: 'poll-prompt-input', rows: '1', maxlength: '250',
+      placeholder: 'Write your question…',
+      'data-question-prompt': '', 'aria-describedby': 'poll-question-prompt-help-' + index
+    });
+    prompt.value = question.prompt || '';
+    const promptRow = element('div', {className: 'poll-input-with-count'});
+    promptRow.append(prompt,
+      element('span', {className: 'poll-char-count', 'data-question-prompt-count': ''},
+        prompt.value.length + '/250'));
+    promptWrap.append(promptLabel, promptRow,
+      element('span', {id: 'poll-question-prompt-help-' + index, className: 'visually-hidden'},
+        'Required. Up to 250 characters.'));
+    const typeWrap = element('div', {className: 'poll-builder-field'});
+    const typeSelect = element('select', {
+      id: 'poll-question-type-' + index, className: 'form-select', 'data-question-type': '',
+      'aria-label': 'Answer type for question ' + (index + 1)
+    });
+    responseTypes.forEach(function (item) {
+      const option = element('option', {value: item[0]}, item[1]);
+      option.selected = question.response_type === item[0];
+      typeSelect.append(option);
+    });
+    typeWrap.append(typeSelect);
+    top.append(promptWrap, typeWrap);
+    return top;
+  }
+
+  function renderChoiceEditor(question, index) {
+    const controls = element('div');
+    const options = element('div', {className: 'poll-option-list', 'data-option-list': ''});
+    question.options.forEach(function (option, optionIndex) {
+      options.append(renderOption(option, index, optionIndex, question.options.length, question.response_type));
+    });
+    const addOption = element('button', {
+      type: 'button', className: 'poll-text-btn', 'data-question-action': 'option-add',
+      'aria-label': 'Add answer option to question ' + (index + 1),
+      disabled: question.options.length >= MAX_OPTIONS
+    }, '+ Add option');
+    controls.append(options, addOption);
+    return controls;
+  }
+
+  function renderTextEditor(question) {
+    const controls = element('div');
+    const long = question.response_type !== 'short_answer';
+    const sample = element('div', {className: 'poll-answer-sample' + (long ? ' is-long' : '')});
+    sample.append(
+      long ? 'Long answer text ' : 'Short answer text ',
+      element('span', {className: 'small opacity-75'},
+        long ? '(up to 4,000 characters)' : '(up to 250 characters)')
+    );
+    controls.append(sample);
+    return controls;
+  }
+
+  function renderFooter(question, index) {
+    const footer = element('div', {className: 'poll-card-footer'});
+    footer.append(
+      iconButton('Duplicate question ' + (index + 1), 'question-duplicate', 'files', state.length >= MAX_QUESTIONS),
+      iconButton('Remove question ' + (index + 1), 'question-remove', 'trash', state.length === 1, true),
+      element('span', {className: 'poll-card-footer-divider', 'aria-hidden': 'true'})
+    );
+    const required = element('input', {
+      id: 'poll-question-required-' + index, type: 'checkbox', role: 'switch',
+      className: 'form-check-input', 'data-question-required': '',
+      checked: question.required !== false
+    });
+    const requiredLabel = element('label', {className: 'poll-switch form-switch', for: required.id});
+    requiredLabel.append('Required', required);
+    const more = element('details', {className: 'poll-more'});
+    const toggle = element('summary', {
+      className: 'poll-icon-btn', 'aria-label': 'More options for question ' + (index + 1),
+      title: 'More options'
+    });
+    toggle.append(element('i', {className: 'bi bi-three-dots-vertical', 'aria-hidden': 'true'}));
+    const menu = element('div', {className: 'poll-more-menu'});
+    menu.append(
+      menuButton('Move question ' + (index + 1) + ' up', 'question-up', 'chevron-up', index === 0),
+      menuButton('Move question ' + (index + 1) + ' down', 'question-down', 'chevron-down', index === state.length - 1)
+    );
+    more.append(toggle, menu);
+    footer.append(requiredLabel, element('span', {className: 'poll-card-footer-divider', 'aria-hidden': 'true'}), more);
+    return footer;
+  }
+
+  function renderQuestion(question, index) {
+    const card = element('article', {
+      className: 'poll-builder-card' + (index === activeIndex ? ' is-active' : ''),
+      'data-question-card': '',
+      'data-question-id': question.id || '',
+      'aria-label': 'Question ' + (index + 1)
+    });
+    card.append(renderSummary(question, index));
+    const body = element('div', {className: 'poll-card-body'});
+    body.append(renderPromptRow(question, index));
+    const answers = element('div', {className: 'poll-answer-editor'});
+    answers.append(isChoice(question.response_type)
+      ? renderChoiceEditor(question, index) : renderTextEditor(question));
+    body.append(answers);
+    card.append(body, renderFooter(question, index));
+    card.append(element('div', {
+      className: 'poll-question-form-error', 'data-question-error': '', role: 'alert', hidden: true
+    }));
+    return card;
+  }
+
+  function renderOption(option, questionIndex, optionIndex, optionCount, type) {
+    const row = element('div', {
+      className: 'poll-option-row', 'data-option-row': '', 'data-option-id': option.id || ''
+    });
+    row.append(element('span', {
+      className: 'poll-option-marker' + (type === 'checkboxes' ? ' is-square' : ''), 'aria-hidden': 'true'
+    }));
+    const input = element('input', {
+      id: 'poll-option-' + questionIndex + '-' + optionIndex,
+      type: 'text', className: 'poll-option-input', maxlength: '250', placeholder: 'Option ' + (optionIndex + 1),
+      'data-option-label': '', 'aria-label': 'Answer option ' + (optionIndex + 1)
+    });
+    input.value = option.label || '';
+    input.dataset.hadText = input.value.length > 0 ? 'true' : 'false';
+    row.append(input);
+    const actions = element('div', {className: 'poll-option-actions'});
+    actions.append(
+      iconButton('Move option ' + (optionIndex + 1) + ' up', 'option-up', 'chevron-up', optionIndex === 0),
+      iconButton('Move option ' + (optionIndex + 1) + ' down', 'option-down', 'chevron-down', optionIndex === optionCount - 1),
+      iconButton('Remove option ' + (optionIndex + 1), 'option-remove', 'x-lg', optionCount <= 2, true)
+    );
+    row.append(actions);
+    return row;
+  }
+
+  function autoSizePrompt(field) {
+    field.style.height = 'auto';
+    field.style.height = field.scrollHeight + 'px';
+  }
+
+  function refreshSummary(card) {
+    const index = Array.from(questionList.children).indexOf(card);
+    const type = card.querySelector('[data-question-type]').value;
+    const prompt = card.querySelector('[data-question-prompt]').value.trim();
+    const labels = Array.from(card.querySelectorAll('[data-option-label]'))
+      .map(function (field) { return {label: field.value}; });
+    const heading = card.querySelector('[data-summary-heading]');
+    const star = heading.querySelector('[data-summary-star]');
+    heading.firstChild.textContent = prompt || 'Untitled question';
+    star.hidden = !card.querySelector('[data-question-required]').checked;
+    card.querySelector('[data-summary-type]').textContent = typeLabel(type);
+    card.querySelector('[data-summary-sample]').textContent = sampleText({
+      response_type: type, options: isChoice(type) ? labels : []
+    });
+    card.querySelector('[data-question-summary]').setAttribute('aria-label',
+      'Edit question ' + (index + 1) + ': ' + (prompt || 'Untitled question'));
+  }
+
+  function setActive(index) {
+    activeIndex = index;
+    Array.from(questionList.children).forEach(function (card, cardIndex) {
+      const wasActive = card.classList.contains('is-active');
+      if (wasActive && cardIndex !== index) refreshSummary(card);
+      card.classList.toggle('is-active', cardIndex === index);
+    });
+    const active = questionList.children[index];
+    const prompt = active && active.querySelector('[data-question-prompt]');
+    if (prompt) autoSizePrompt(prompt);
+  }
+
+  function focusPrompt(index) {
+    const card = questionList.children[index];
+    const prompt = card && card.querySelector('[data-question-prompt]');
+    if (!prompt) return;
+    prompt.focus();
+    card.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+  }
+
+  function render(errors) {
+    questionList.replaceChildren();
+    activeIndex = Math.min(Math.max(activeIndex, 0), state.length - 1);
+    state.forEach(function (question, index) {
+      const card = renderQuestion(question, index);
+      const message = errors && errors[String(index + 1)];
+      if (message) showQuestionError(card, message);
+      questionList.append(card);
+    });
+    const firstError = questionList.querySelector('[data-question-card].is-invalid');
+    if (firstError) setActive(Array.from(questionList.children).indexOf(firstError));
+    else setActive(activeIndex);
+    limitStatus.textContent = state.length >= 100 ? 'The poll has reached the 100-question limit.' : '';
+    const addQuestion = document.getElementById('add-poll-question');
+    if (addQuestion) addQuestion.disabled = state.length >= 100;
+    snapshot();
+  }
+
+  function readEditor() {
+    const cards = Array.from(questionList.querySelectorAll('[data-question-card]'));
+    return cards.map(function (card) {
+      const type = card.querySelector('[data-question-type]').value;
+      const choices = ['multiple_choice', 'checkboxes'].includes(type);
+      const optionRows = Array.from(card.querySelectorAll('[data-option-row]'));
+      return {
+        id: card.dataset.questionId ? Number(card.dataset.questionId) : null,
+        prompt: card.querySelector('[data-question-prompt]').value,
+        response_type: type,
+        required: card.querySelector('[data-question-required]').checked,
+        allow_abstain: false,
+        options: choices ? optionRows.map(function (row) {
+          return {
+            id: row.dataset.optionId ? Number(row.dataset.optionId) : null,
+            label: row.querySelector('[data-option-label]').value
+          };
+        }) : []
+      };
+    });
+  }
+
+  function snapshot() {
+    if (!questionList || !questionsInput) return;
+    state = readEditor();
+    questionsInput.value = JSON.stringify(state);
+    const count = titleInput.value.length;
+    const titleHelp = titleInput.parentElement.querySelector('[data-title-count]');
+    if (titleHelp) titleHelp.textContent = count + '/250';
+  }
+
+  function saveLocalState() {
+    if (!storageKey) return;
+    snapshot();
+    const saved = {};
+    ['title', 'questions_json', 'deadline_local', 'deadline_date', 'deadline_time', 'timezone_name']
+      .forEach(function (name) {
+        const field = editor.elements[name];
+        if (field) saved[name] = field.value;
       });
-      document.body.append(publishForm);
-      publishForm.submit();
+    const personal = editor.elements.personal_links_only;
+    if (personal) saved.personal_links_only = personal.checked;
+    try { sessionStorage.setItem(storageKey, JSON.stringify(saved)); } catch (_) {}
+  }
+
+  function showQuestionError(card, message) {
+    card.classList.add('is-invalid');
+    const error = card.querySelector('[data-question-error]');
+    error.textContent = message;
+    error.hidden = false;
+    card.querySelectorAll('textarea, select, input').forEach(function (field) {
+      field.setAttribute('aria-invalid', 'true');
     });
   }
-  function addQuestion(value) {
-    value = value || {prompt: '', allow_multiple: null, allow_abstain: true, options: []};
-    const id = ++nextQuestionId;
-    const card = document.createElement('fieldset'); card.className = 'border rounded-3 p-3 mb-3'; card.dataset.extraQuestion = '';
-    const legend = document.createElement('legend'); legend.className = 'visually-hidden'; legend.textContent = 'Additional question';
-    const head = document.createElement('div'); head.className = 'd-flex justify-content-between align-items-center mb-2';
-    const title = document.createElement('span'); title.className = 'h6 mb-0'; title.dataset.questionNumber = '';
-    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn btn-link btn-sm text-danger'; remove.textContent = 'Remove';
-    remove.addEventListener('click', function () { card.remove(); syncExtras(); }); head.append(title, remove);
 
-    const fields = document.createElement('div'); fields.className = 'poll-extra-question-fields';
-    const promptGroup = document.createElement('div');
-    const promptLabel = document.createElement('label'); promptLabel.className = 'form-label'; promptLabel.textContent = 'Question'; markRequired(promptLabel);
-    const prompt = document.createElement('textarea'); prompt.className = 'form-control'; prompt.rows = 1; prompt.maxLength = 250;
-    prompt.id = 'poll-extra-question-' + id + '-prompt'; promptLabel.htmlFor = prompt.id; prompt.value = value.prompt || '';
-    prompt.dataset.prompt = ''; prompt.dataset.autogrow = ''; grow(prompt); prompt.addEventListener('input', syncExtras);
-    promptGroup.append(promptLabel, prompt);
-
-    const typeGroup = document.createElement('div'); typeGroup.className = 'mb-3';
-    const typeLabel = document.createElement('label'); typeLabel.className = 'form-label'; typeLabel.textContent = 'Answer type'; markRequired(typeLabel);
-    const type = document.createElement('select'); type.className = 'form-select poll-answer-type';
-    type.hidden = true;
-    type.setAttribute('hidden', '');
-    type.dataset.hideEmptyOption = '';
-    type.id = 'poll-extra-question-' + id + '-type'; typeLabel.htmlFor = type.id; type.dataset.type = '';
-    [['', 'Choose an answer type'], ['single', 'Multiple choice'], ['multiple', 'Checkbox']].forEach(function (choice) {
-      const option = document.createElement('option'); option.value = choice[0]; option.textContent = choice[1]; type.append(option);
+  function showQuestionErrors(errors) {
+    questionList.querySelectorAll('[data-question-card]').forEach(function (card, index) {
+      const message = errors && errors[String(index + 1)];
+      if (message) showQuestionError(card, message);
     });
-    type.value = value.allow_multiple === true ? 'multiple' : value.allow_multiple === false ? 'single' : '';
-    type.addEventListener('change', syncExtras); typeGroup.append(typeLabel, type);
-
-    const optionGroup = document.createElement('div'); optionGroup.className = 'poll-question-options';
-    const optionLabel = document.createElement('div'); optionLabel.className = 'form-label'; optionLabel.textContent = 'Answer options'; markRequired(optionLabel);
-    const options = document.createElement('div'); options.className = 'poll-option-list'; options.dataset.options = '';
-    const help = document.createElement('div'); help.className = 'form-text'; help.textContent = 'Add at least two options.';
-    const abstainWrap = document.createElement('div'); abstainWrap.className = 'form-check mt-3';
-    const abstain = document.createElement('input'); abstain.type = 'checkbox'; abstain.className = 'form-check-input';
-    abstain.checked = value.allow_abstain !== false; abstain.dataset.abstain = ''; abstain.id = 'poll-extra-question-' + id + '-abstain';
-    const abstainLabel = document.createElement('label'); abstainLabel.className = 'form-check-label';
-    abstainLabel.htmlFor = abstain.id; abstainLabel.textContent = 'Allow “None of these options”';
-    abstain.addEventListener('change', syncExtras); abstainWrap.append(abstain, abstainLabel);
-    optionGroup.append(optionLabel, options, help, abstainWrap);
-    fields.append(promptGroup, typeGroup, optionGroup); card.append(legend, head, fields); extraList.append(card);
-    if (window.initCustomSelects) window.initCustomSelects(typeGroup);
-    let initializingOptions = true;
-    card._optionList = optionList(options, value.options || [], function () { if (!initializingOptions) syncExtras(); });
-    initializingOptions = false; syncExtras();
   }
 
-  if (questionLabel && !questionLabel.querySelector('.text-danger')) markRequired(questionLabel);
-  editor.querySelectorAll('textarea[data-autogrow]').forEach(grow);
-  window.addEventListener('resize', function () { editor.querySelectorAll('textarea[data-autogrow]').forEach(resize); });
-  if (primaryList && primaryHiddenOptions) {
-    primaryOptions = optionList(primaryList, primaryOptionValues, function (values) { primaryHiddenOptions.value = values.join('\n'); });
+  function clearErrors() {
+    questionList.querySelectorAll('[data-question-card]').forEach(function (card) {
+      card.classList.remove('is-invalid');
+      card.querySelectorAll('[aria-invalid="true"]').forEach(function (field) {
+        field.removeAttribute('aria-invalid');
+      });
+      const error = card.querySelector('[data-question-error]');
+      error.textContent = '';
+      error.hidden = true;
+    });
+    formError.hidden = true;
+    formError.textContent = '';
+    if (titleError) {
+      titleError.hidden = true;
+      titleError.textContent = '';
+    }
+    titleInput.removeAttribute('aria-invalid');
+    saveError.hidden = true;
+    saveError.textContent = '';
   }
-  extras.forEach(addQuestion);
-  if (addButton) addButton.addEventListener('click', function () {
-    if (extraList && extraList.children.length < 99) addQuestion();
-  });
 
   function validate() {
-    let invalid = false;
+    clearErrors();
+    snapshot();
     let firstInvalid = null;
-    function check(condition, field) {
-      if (condition) { invalid = true; if (!firstInvalid) firstInvalid = field; }
+    const title = titleInput.value.trim();
+    if (!title || title.length > 250) {
+      titleInput.setAttribute('aria-invalid', 'true');
+      const message = !title ? 'Enter a poll title.' : 'Keep the poll title within 250 characters.';
+      const targetError = titleError || formError;
+      targetError.textContent = message;
+      targetError.hidden = false;
+      firstInvalid = titleInput;
     }
-    if (primaryQuestion) check(questionPromptError(primaryQuestion, 'Question 1'), primaryQuestion);
-    if (primaryType) check(typeError(primaryType), primaryType.parentElement.querySelector('button'));
-    if (primaryList) check(optionError(primaryList, 'Question 1'), primaryList.querySelector('textarea'));
-    Array.from((extraList || document.createElement('div')).querySelectorAll('[data-extra-question]')).forEach(function (card, index) {
-      const name = 'Question ' + (index + 2);
-      const prompt = card.querySelector('[data-prompt]');
-      const type = card.querySelector('[data-type]');
-      const options = card.querySelector('[data-options]');
-      check(questionPromptError(prompt, name), prompt);
-      check(typeError(type), type.parentElement.querySelector('button'));
-      check(optionError(options, name), options.querySelector('textarea'));
+    questionList.querySelectorAll('[data-question-card]').forEach(function (card, index) {
+      let message = '';
+      const prompt = card.querySelector('[data-question-prompt]');
+      const type = card.querySelector('[data-question-type]').value;
+      const options = Array.from(card.querySelectorAll('[data-option-label]'))
+        .map(function (field) { return field.value.trim(); }).filter(Boolean);
+      if (!prompt.value.trim() || prompt.value.length > 250) {
+        message = 'Enter a question prompt of 250 characters or fewer.';
+      } else if (['multiple_choice', 'checkboxes'].includes(type)) {
+        if (options.length < 2 || options.length > 50) {
+          message = 'Add between 2 and 50 answer options.';
+        } else if (new Set(options.map(function (option) { return option.toLocaleLowerCase(); })).size !== options.length) {
+          message = 'Make each answer option different.';
+        }
+      }
+      if (message) {
+        showQuestionError(card, message);
+        if (!firstInvalid) firstInvalid = prompt;
+      }
     });
-    if (firstInvalid && firstInvalid.focus) firstInvalid.focus();
-    return !invalid;
+    const valid = !firstInvalid;
+    if (!valid) {
+      revealField(firstInvalid);
+      firstInvalid.focus();
+      firstInvalid.scrollIntoView({block: 'center', behavior: 'smooth'});
+    }
+    return valid;
   }
+
+  function revealField(field) {
+    const card = field.closest('[data-question-card]');
+    if (card) setActive(Array.from(questionList.children).indexOf(card));
+  }
+
+  function setDirty() {
+    editor.dataset.dirtyInitial = 'true';
+    editor.dataset.formDirty = 'true';
+    editor.dataset.pollDirty = 'true';
+    if (publishButton) publishButton.disabled = true;
+    if (status) status.textContent = 'Unsaved changes.';
+  }
+
+  function moveItem(items, index, direction) {
+    const next = index + direction;
+    if (next < 0 || next >= items.length) return items;
+    const copy = items.slice();
+    [copy[index], copy[next]] = [copy[next], copy[index]];
+    return copy;
+  }
+
+  function handleAction(button) {
+    snapshot();
+    const card = button.closest('[data-question-card]');
+    const questionIndex = card ? Array.from(questionList.children).indexOf(card) : -1;
+    const action = button.dataset.questionAction;
+    let focusOption = false;
+    if (questionIndex >= 0) activeIndex = questionIndex;
+    if (action === 'question-up') { state = moveItem(state, questionIndex, -1); activeIndex = Math.max(0, questionIndex - 1); }
+    else if (action === 'question-down') { state = moveItem(state, questionIndex, 1); activeIndex = Math.min(state.length - 1, questionIndex + 1); }
+    else if (action === 'question-remove' && state.length > 1) { state.splice(questionIndex, 1); activeIndex = Math.max(0, questionIndex - 1); }
+    else if (action === 'question-duplicate' && state.length < 100) {
+      const copy = JSON.parse(JSON.stringify(state[questionIndex]));
+      copy.id = null;
+      copy.prompt = ('Copy of ' + copy.prompt).slice(0, 250);
+      copy.options = copy.options.map(function (option) { return {id: null, label: option.label}; });
+      state.splice(questionIndex + 1, 0, copy);
+      activeIndex = questionIndex + 1;
+    } else if (action === 'option-add') {
+      state[questionIndex].options.push({id: null, label: ''});
+      focusOption = true;
+    } else if (action === 'option-remove') {
+      const row = button.closest('[data-option-row]');
+      const optionIndex = Array.from(card.querySelectorAll('[data-option-row]')).indexOf(row);
+      if (state[questionIndex].options.length > 2) state[questionIndex].options.splice(optionIndex, 1);
+    } else if (action === 'option-up' || action === 'option-down') {
+      const row = button.closest('[data-option-row]');
+      const optionIndex = Array.from(card.querySelectorAll('[data-option-row]')).indexOf(row);
+      state[questionIndex].options = moveItem(state[questionIndex].options, optionIndex,
+        action === 'option-up' ? -1 : 1);
+    }
+    render();
+    setDirty();
+    saveLocalState();
+    if (focusOption) {
+      const fields = questionList.children[activeIndex].querySelectorAll('[data-option-label]');
+      fields[fields.length - 1].focus();
+      return;
+    }
+    focusPrompt(activeIndex);
+  }
+
+  async function saveDraft(preview) {
+    if (!window.validatePollEditor()) return;
+    clearErrors();
+    snapshot();
+    if (status) status.textContent = 'Saving draft…';
+    if (saveError) saveError.hidden = true;
+    const submitButton = editor.querySelector('button[type="submit"]');
+    if (submitButton) submitButton.disabled = true;
+    try {
+      const response = await fetch(editor.getAttribute('action') || window.location.href, {
+        method: 'POST',
+        body: new FormData(editor),
+        headers: {'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json'},
+        credentials: 'same-origin',
+        cache: 'no-store'
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) {
+        if (saveError) {
+          saveError.textContent = result.error || 'The draft could not be saved. Your changes are still here.';
+          saveError.hidden = false;
+        }
+        showQuestionErrors(result.question_errors || {});
+        const titleErrors = (result.field_errors || {}).title || [];
+        if (titleErrors.length) {
+          titleInput.setAttribute('aria-invalid', 'true');
+          if (titleError) {
+            titleError.textContent = titleErrors[0];
+            titleError.hidden = false;
+          }
+          titleInput.focus();
+        } else {
+          const firstQuestion = questionList.querySelector('[data-question-card].is-invalid [data-question-prompt]');
+          if (firstQuestion) {
+            revealField(firstQuestion);
+            firstQuestion.focus();
+          }
+        }
+        if (status) status.textContent = 'Save failed. Your changes are still here.';
+        setDirty();
+        return;
+      }
+      try { sessionStorage.removeItem(storageKey); } catch (_) {}
+      editor.dataset.dirtyInitial = 'false';
+      editor.dataset.formDirty = 'false';
+      editor.dataset.pollDirty = 'false';
+      editor.dispatchEvent(new Event('poll-editor-saved'));
+      const leaveTo = editor.elements.leave_to ? editor.elements.leave_to.value : '';
+      const next = new URL(window.location.href);
+      next.search = '';
+      next.searchParams.set('poll', result.uuid);
+      if (preview) next.searchParams.set('preview', '1');
+      else next.searchParams.set('saved', '1');
+      if (leaveTo) {
+        try {
+          const destination = new URL(leaveTo, window.location.href);
+          if (destination.origin === window.location.origin) window.location.assign(destination.href);
+          else window.location.assign(next.href);
+        } catch (_) { window.location.assign(next.href); }
+      } else {
+        window.location.assign(next.href);
+      }
+    } catch (_) {
+      if (saveError) {
+        saveError.textContent = 'The draft could not be saved. Check your connection and try again.';
+        saveError.hidden = false;
+      }
+      if (status) status.textContent = 'Save failed. Your changes are still here.';
+      setDirty();
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  }
+
   window.validatePollEditor = validate;
+  window.snapshotPollEditorState = function () {
+    snapshot();
+    return {title: titleInput.value, questions: state};
+  };
+
+  const recovered = !editor.dataset.dirtyInitial || editor.dataset.dirtyInitial !== 'true';
+  if (recovered && storageKey) {
+    try {
+      const local = JSON.parse(sessionStorage.getItem(storageKey) || 'null');
+      if (local && typeof local === 'object') {
+        Object.keys(local).forEach(function (name) {
+          const field = editor.elements[name];
+          if (!field) return;
+          if (name === 'personal_links_only') field.checked = local[name] === true;
+          else field.value = local[name];
+        });
+        state = parseDefinitions(questionsInput.value);
+        editor.dataset.dirtyInitial = 'true';
+        editor.dataset.formDirty = 'true';
+        editor.dataset.pollDirty = 'true';
+        if (status) status.textContent = 'Unsaved changes recovered. Save draft to keep them.';
+      }
+    } catch (_) {}
+  }
+  let initialQuestionErrors = {};
+  if (errorNode) {
+    try { initialQuestionErrors = JSON.parse(errorNode.textContent || '{}'); } catch (_) {}
+  }
+  render(initialQuestionErrors);
+  if (editor.dataset.dirtyInitial === 'true' && status && !status.textContent.startsWith('Unsaved')) {
+    status.textContent = 'Your draft has unsaved changes. Review any errors and save again.';
+  }
+  if (editor.dataset.dirtyInitial === 'true' && publishButton) publishButton.disabled = true;
+
+  function focusOptionAt(questionIndex, optionIndex) {
+    const card = questionList.children[questionIndex];
+    if (!card) return;
+    const fields = card.querySelectorAll('[data-option-label]');
+    const target = fields[Math.min(Math.max(optionIndex, 0), fields.length - 1)];
+    if (!target) return;
+    target.focus();
+    const len = target.value.length;
+    target.setSelectionRange(len, len);
+  }
+
   editor.addEventListener('input', function (event) {
-    if (!event.target.matches('textarea')) return;
-    if (event.target === primaryQuestion || event.target.matches('[data-prompt]')) {
-      if (event.target.getAttribute('aria-invalid') === 'true') {
-        questionPromptError(event.target, event.target === primaryQuestion ? 'Question 1' : 'Question');
+    if (event.target.matches('[data-question-prompt]')) {
+      const count = event.target.parentElement.querySelector('[data-question-prompt-count]');
+      if (count) count.textContent = event.target.value.length + '/250';
+      autoSizePrompt(event.target);
+    } else if (event.target.matches('[data-option-label]')) {
+      if (event.target.value.length > 0) {
+        event.target.dataset.hadText = 'true';
+      } else if (event.target.dataset.hadText === 'true') {
+        const card = event.target.closest('[data-question-card]');
+        const row = event.target.closest('[data-option-row]');
+        const questionIndex = card ? Array.from(questionList.children).indexOf(card) : -1;
+        const optionIndex = row && card ? Array.from(card.querySelectorAll('[data-option-row]')).indexOf(row) : -1;
+        if (questionIndex >= 0 && optionIndex >= 0 && state[questionIndex].options.length > 2) {
+          snapshot();
+          activeIndex = questionIndex;
+          state[questionIndex].options.splice(optionIndex, 1);
+          render();
+          setDirty();
+          saveLocalState();
+          focusOptionAt(questionIndex, Math.max(0, optionIndex - 1));
+          return;
+        }
+        event.target.dataset.hadText = 'false';
       }
-    } else if (event.target.closest('[data-option-list], [data-options]')) {
-      const options = event.target.closest('[data-option-list], [data-options]');
-      if (options.parentElement.querySelector('[data-poll-validation-error]')) {
-        optionError(options, options === primaryList ? 'Question 1' : 'Answer options');
-      }
+    }
+    clearErrors();
+    snapshot();
+    setDirty();
+    saveLocalState();
+  });
+  questionList.addEventListener('keydown', function (event) {
+    if (!event.target.matches('[data-option-label]') || event.isComposing) return;
+    const card = event.target.closest('[data-question-card]');
+    const row = event.target.closest('[data-option-row]');
+    const questionIndex = card ? Array.from(questionList.children).indexOf(card) : -1;
+    const optionIndex = row && card ? Array.from(card.querySelectorAll('[data-option-row]')).indexOf(row) : -1;
+    if (questionIndex < 0 || optionIndex < 0) return;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      snapshot();
+      if (state[questionIndex].options.length >= MAX_OPTIONS) return;
+      activeIndex = questionIndex;
+      state[questionIndex].options.splice(optionIndex + 1, 0, {id: null, label: ''});
+      render();
+      setDirty();
+      saveLocalState();
+      focusOptionAt(questionIndex, optionIndex + 1);
+    } else if (event.key === 'Backspace' && event.target.value === '' && state[questionIndex].options.length > 2) {
+      event.preventDefault();
+      snapshot();
+      activeIndex = questionIndex;
+      state[questionIndex].options.splice(optionIndex, 1);
+      render();
+      setDirty();
+      saveLocalState();
+      focusOptionAt(questionIndex, Math.max(0, optionIndex - 1));
     }
   });
   editor.addEventListener('change', function (event) {
-    if (event.target.matches('select.poll-answer-type') && event.target.value) typeError(event.target);
+    const card = event.target.closest('[data-question-card]');
+    if (event.target.matches('[data-question-type]')) {
+      snapshot();
+      const index = Array.from(questionList.children).indexOf(card);
+      const question = state[index];
+      const choices = ['multiple_choice', 'checkboxes'].includes(event.target.value);
+      activeIndex = index;
+      question.response_type = event.target.value;
+      if (choices && !question.options.length) {
+        question.options = [{id: null, label: ''}, {id: null, label: ''}];
+      }
+      if (!choices) {
+        question.options = [];
+        question.allow_abstain = false;
+      }
+      render();
+    }
+    clearErrors();
+    snapshot();
+    setDirty();
+    saveLocalState();
+  });
+  questionList.addEventListener('click', function (event) {
+    const button = event.target.closest('[data-question-action]');
+    if (button) handleAction(button);
+  });
+  document.getElementById('add-poll-question').addEventListener('click', function () {
+    snapshot();
+    if (state.length >= 100) return;
+    state.push(newQuestion());
+    activeIndex = state.length - 1;
+    render();
+    setDirty();
+    saveLocalState();
+    focusPrompt(activeIndex);
+  });
+  questionList.addEventListener('focusin', function (event) {
+    const card = event.target.closest('[data-question-card]');
+    if (!card || card.classList.contains('is-active')) return;
+    if (event.target.closest('[data-question-summary]')) return;
+    setActive(Array.from(questionList.children).indexOf(card));
+  });
+  questionList.addEventListener('click', function (event) {
+    const summary = event.target.closest('[data-question-summary]');
+    if (!summary) return;
+    const index = Array.from(questionList.children).indexOf(summary.closest('[data-question-card]'));
+    setActive(index);
+    focusPrompt(index);
+  });
+  document.addEventListener('click', function (event) {
+    questionList.querySelectorAll('details.poll-more[open]').forEach(function (menu) {
+      if (!menu.contains(event.target)) menu.removeAttribute('open');
+    });
   });
   editor.addEventListener('submit', function (event) {
-    if (primaryOptions) primaryHiddenOptions.value = primaryOptions.getValues().join('\n');
-    syncExtras();
-    if (!validate()) event.preventDefault();
-    else if ((!event.submitter || event.submitter.textContent.trim() === 'Save draft') && window.fetch &&
-        !editor.querySelector('[name="leave_to"]').value) {
-      event.preventDefault();
-      const submitter = event.submitter || editor.querySelector('button[type="submit"]');
-      if (submitter) submitter.disabled = true;
-      function finishSave(pollUuid) {
-        const pollField = editor.querySelector('[name="poll"]');
-        if (pollField) pollField.value = pollUuid;
-        else {
-          const input = document.createElement('input'); input.type = 'hidden'; input.name = 'poll'; input.value = pollUuid;
-          editor.append(input);
-        }
-        const nextUrl = new URL(window.location.href);
-        nextUrl.searchParams.set('poll', pollUuid);
-        history.replaceState(null, '', nextUrl.pathname + nextUrl.search + nextUrl.hash);
-        if (window.notify) window.notify('Poll saved.', 'success');
-        editor.dataset.pollDirty = 'false';
-        editor.dataset.formDirty = 'false';
-        editor.dataset.dirtyInitial = 'false';
-        editor.dispatchEvent(new Event('poll-editor-saved'));
-        try { sessionStorage.removeItem(storageKey); } catch (error) { /* Storage may be unavailable. */ }
-        askToPublish(pollUuid);
-      }
-      fetch(editor.getAttribute('action') || window.location.href, {
-        method: 'POST', body: new FormData(editor),
-        headers: {'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json'},
-        credentials: 'same-origin'
-      }).then(function (response) {
-        if (response.redirected) {
-          const destination = new URL(response.url, window.location.href);
-          const redirectedPoll = destination.searchParams.get('poll');
-          if (destination.origin === window.location.origin &&
-              destination.pathname === window.location.pathname && redirectedPoll) {
-            finishSave(redirectedPoll);
-            return;
-          }
-          window.location.assign(destination.href);
-          return;
-        }
-        const contentType = response.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) {
-          throw new Error('The server returned an unexpected response. Your changes are still in this form; please try again.');
-        }
-        return response.json().then(function (payload) {
-          if (!response.ok || !payload.ok) throw new Error(payload.error || 'Please correct the poll below.');
-          finishSave(payload.uuid);
-        });
-      }).catch(function (error) {
-        const message = error instanceof SyntaxError || /^Unexpected token/.test(error.message || '')
-          ? 'The server returned an invalid response. Your changes are still in this form.'
-          : error.message || 'Could not save the poll. Your changes are still in this form; check your connection and try again.';
-        if (window.notify) window.notify(message, 'danger');
-      }).finally(function () { if (submitter) submitter.disabled = false; });
+    event.preventDefault();
+    saveDraft(false);
+  });
+  editor.querySelector('[data-preview-poll]').addEventListener('click', function () {
+    previewAfterSave = true;
+    saveDraft(previewAfterSave);
+  });
+  document.addEventListener('click', function (event) {
+    if (event.target.closest('[data-unsaved-discard]') && storageKey) {
+      try { sessionStorage.removeItem(storageKey); } catch (_) {}
     }
-  }, true);
+  });
 })();
 </script>

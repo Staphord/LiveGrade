@@ -1,0 +1,22 @@
+{% if text_response_review %}
+  <section class="card poll-text-response-review mt-3" id="poll-text-response-review" aria-labelledby="poll-text-response-heading">
+    <div class="card-body">
+      <div class="d-flex align-items-start justify-content-between gap-2 mb-1">
+        <h2 class="h5 mb-0" id="poll-text-response-heading">Written answers: {{ text_response_review.question.prompt }}</h2>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ text_response_base }}" data-poll-inline-nav>Close</a>
+      </div>
+      <p class="small text-muted">Shown without respondent names.</p>
+      <ul class="list-unstyled mb-3">
+        {% for answer in text_response_review.answers %}<li class="poll-text-answer border rounded-3 p-3 mb-2">{{ answer }}</li>
+        {% empty %}<li class="text-muted">No written answers have been submitted for this question.</li>{% endfor %}
+      </ul>
+      {% if text_response_review.page.paginator.num_pages > 1 %}
+        <nav aria-label="Written answer pages" class="d-flex align-items-center gap-2">
+          {% if text_response_review.page.has_previous %}<a class="btn btn-outline-secondary btn-sm" href="{{ text_response_base }}&text_question={{ text_response_review.question.pk }}&text_page={{ text_response_review.page.previous_page_number }}" data-poll-inline-nav>Previous answers</a>{% endif %}
+          <span class="small text-muted" aria-current="page">Page {{ text_response_review.page.number }} of {{ text_response_review.page.paginator.num_pages }}</span>
+          {% if text_response_review.page.has_next %}<a class="btn btn-outline-secondary btn-sm" href="{{ text_response_base }}&text_question={{ text_response_review.question.pk }}&text_page={{ text_response_review.page.next_page_number }}" data-poll-inline-nav>Next answers</a>{% endif %}
+        </nav>
+      {% endif %}
+    </div>
+  </section>
+{% endif %}

@@ -6,12 +6,12 @@ from django.db import migrations, models
 
 def backfill_owner_scope(apps, schema_editor):
     Poll = apps.get_model('assessments', 'ClassroomPoll')
-    Session = apps.get_model('assessments', 'AssessmentSession')
-    for poll in Poll.objects.select_related('assessment_session').iterator():
+    alias = schema_editor.connection.alias
+    for poll in Poll.objects.using(alias).select_related('assessment_session').iterator():
         session = poll.assessment_session
         poll.organization_id = session.organization_id
         poll.created_by_id = session.created_by_id
-        poll.save(update_fields=['organization_id', 'created_by'])
+        poll.save(using=alias, update_fields=['organization_id', 'created_by'])
 
 
 class Migration(migrations.Migration):

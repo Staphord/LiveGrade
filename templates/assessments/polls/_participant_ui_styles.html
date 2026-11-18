@@ -15,8 +15,13 @@ main.student-shell.poll-participant-shell{
 .poll-privacy-note i{flex:0 0 auto;margin-top:.12rem;color:var(--accent)}
 .poll-voter-chip{width:fit-content;max-width:100%;padding:.4rem .7rem;border:1px solid var(--border);border-radius:var(--radius-pill);background:var(--surface-hover);color:var(--text);font-size:var(--fs-sm)}
 .poll-vote-form{display:grid;gap:.9rem}
-.poll-question-card{min-width:0;margin:0;padding:clamp(.9rem,2vw,1.25rem);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
-.poll-question-card legend{float:none;width:auto;max-width:100%;padding:0;margin:0 0 .4rem;color:var(--ink);font-size:var(--fs-strong);font-weight:700;line-height:1.35;overflow-wrap:anywhere}
+.poll-builder-preview{display:grid;gap:var(--sp-3)}
+.poll-question-card{display:flow-root;min-width:0;margin:0;padding:clamp(.9rem,2vw,1.25rem);border:1px solid var(--border);border-radius:var(--radius-card);background:var(--surface)}
+.poll-question-card legend{float:left;width:100%;max-width:100%;padding:0;margin:0 0 .65rem;color:var(--ink);font-size:var(--fs-strong);font-weight:700;line-height:1.35;overflow-wrap:anywhere}
+.poll-question-card legend+*{clear:both}
+.poll-short-answer{resize:none;overflow:hidden;min-height:2.5rem}
+.poll-char-count{margin-top:.45rem;color:var(--text-muted);font-size:var(--fs-micro);text-align:right}
+.poll-question-required{display:inline-block;margin-left:.35rem;padding:.15rem .45rem;border-radius:var(--radius-pill);background:var(--surface-hover);color:var(--text-muted);font-size:var(--fs-micro);font-weight:600;vertical-align:middle}
 .poll-question-help{margin:0 0 .75rem;color:var(--text-muted);font-size:var(--fs-sm)}
 .poll-answer-choices{display:grid;gap:.55rem}
 .poll-answer-choice{display:flex;align-items:flex-start;gap:.75rem;min-height:3.25rem;padding:.78rem .9rem;margin:0;border:1px solid var(--border);border-radius:var(--radius-control);background:var(--surface);color:var(--text);cursor:pointer;transition:border-color var(--motion-fast),background-color var(--motion-fast),box-shadow var(--motion-fast)}
@@ -26,6 +31,8 @@ main.student-shell.poll-participant-shell{
 .poll-answer-choice .form-check-input{flex:0 0 auto;margin:.18rem 0 0;accent-color:var(--accent)}
 .poll-answer-choice span{min-width:0;line-height:1.45;overflow-wrap:anywhere}
 .poll-answer-choice-abstain{margin-top:.25rem;border-style:dashed;background:var(--surface-hover)}
+.poll-question-form-error{margin-top:.55rem;color:var(--danger);font-size:var(--fs-sm);font-weight:600}
+.poll-question-form-error:empty{display:none}
 .poll-vote-submit{min-height:3.25rem;font-weight:700}
 .poll-state-alert{display:flex;align-items:flex-start;gap:.65rem;margin:0}
 .poll-state-alert>i{flex:0 0 auto;margin-top:.15rem}

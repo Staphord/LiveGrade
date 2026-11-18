@@ -703,7 +703,7 @@ class ClassroomPoll(models.Model):
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
         on_delete=models.SET_NULL, related_name='standalone_polls_created')
     standalone = models.BooleanField(default=False, db_index=True)
-    question = models.CharField(max_length=250)
+    title = models.CharField(max_length=250)
     description = models.TextField(blank=True, max_length=4000)
     allow_multiple = models.BooleanField(default=False)
     personal_links_only = models.BooleanField(default=False)
@@ -745,9 +745,18 @@ class ClassroomPoll(models.Model):
 
 class ClassroomPollQuestion(models.Model):
     """A question within a poll; each question has its own answer options."""
+
+    class ResponseType(models.TextChoices):
+        MULTIPLE_CHOICE = 'multiple_choice', 'Multiple choice'
+        CHECKBOXES = 'checkboxes', 'Checkboxes'
+        SHORT_ANSWER = 'short_answer', 'Short answer'
+        PARAGRAPH = 'paragraph', 'Paragraph'
+
     poll = models.ForeignKey(ClassroomPoll, on_delete=models.CASCADE, related_name='questions')
     prompt = models.CharField(max_length=250)
-    allow_multiple = models.BooleanField(default=False)
+    response_type = models.CharField(max_length=20, choices=ResponseType.choices,
+                                     default=ResponseType.MULTIPLE_CHOICE)
+    required = models.BooleanField(default=True)
     allow_abstain = models.BooleanField(default=True)
     order = models.PositiveIntegerField(default=0)
     confirmed_option = models.ForeignKey('ClassroomPollOption', null=True, blank=True,

@@ -1,5 +1,5 @@
 <div id="poll-results" class="poll-results" aria-live="polite" aria-atomic="true">
-  {% if public_results or poll.standalone %}
+  {% if public_results %}
     <div class="poll-results-total"><strong>{{ responded }}</strong><span>total response{{ responded|pluralize }}</span></div>
   {% endif %}
   {% for item in questions %}
@@ -7,13 +7,28 @@
       <div class="poll-result-question-heading">
         <div>
           <h3 class="h6 mb-1" id="poll-question-{{ item.question.pk }}">{{ forloop.counter }}. {{ item.question.prompt }}</h3>
-          <p class="poll-result-question-count mb-0">{{ item.responded }} response{{ item.responded|pluralize }}</p>
+          <p class="poll-result-question-count mb-0">{{ item.responded }} answer{{ item.responded|pluralize }}{% if item.question.required == False %}, {{ item.unanswered }} left blank{% endif %}</p>
         </div>
-        <span class="poll-answer-type">{% if item.question.allow_multiple %}Checkbox{% else %}Multiple choice{% endif %}</span>
+        <span class="poll-answer-type">
+          {% if item.question.response_type == 'multiple_choice' %}Multiple choice{% endif %}
+          {% if item.question.response_type == 'checkboxes' %}Checkboxes{% endif %}
+          {% if item.question.response_type == 'short_answer' %}Short answer{% endif %}
+          {% if item.question.response_type == 'paragraph' %}Paragraph{% endif %}
+        </span>
       </div>
       {% if item.confirmed_option %}<div class="poll-decision-result"><i class="bi bi-check-circle-fill" aria-hidden="true"></i><div><strong>Decision: {{ item.confirmed_option.label }}</strong>{% if item.decision_note %}<p class="mb-0">{{ item.decision_note|linebreaksbr }}</p>{% endif %}</div></div>{% endif %}
-      {% if item.responded %}
-        {% if item.question.allow_multiple and not hide_option_percentages %}<p class="poll-result-hint">Percentages show the share of respondents who selected each option; they can add up to more than 100%.</p>{% endif %}
+      {% if item.question.response_type == 'short_answer' or item.question.response_type == 'paragraph' %}
+        {% if public_results %}
+          <p class="poll-results-empty mb-0">Written answers are private to the poll owner.</p>
+        {% elif text_response_base %}
+          {% if item.responded %}
+            <a class="btn btn-outline-primary btn-sm" href="{{ text_response_base }}&text_question={{ item.question.pk }}" data-poll-inline-nav>Review written answers</a>
+          {% else %}
+            <p class="poll-results-empty mb-0"><i class="bi {% if poll and poll.accepting_responses %}bi-hourglass-split{% else %}bi-inbox{% endif %} me-1" aria-hidden="true"></i>{% if poll and poll.accepting_responses %}Waiting for answers.{% else %}No answers were recorded.{% endif %}</p>
+          {% endif %}
+        {% endif %}
+      {% elif item.responded %}
+        {% if item.question.response_type == 'checkboxes' and not hide_option_percentages %}<p class="poll-result-hint">Percentages show the share of respondents who selected each option. They can add up to more than 100%.</p>{% endif %}
         <div class="poll-answer-chart" role="list" aria-label="Answer results for question {{ forloop.counter }}">
           {% for option in item.options %}
             <div class="poll-answer-row" role="listitem">
@@ -30,7 +45,7 @@
           {% endif %}
         </div>
       {% else %}
-        <p class="poll-results-empty mb-0"><i class="bi {% if poll and poll.accepting_responses %}bi-hourglass-split{% else %}bi-inbox{% endif %} me-1" aria-hidden="true"></i>{% if poll and poll.accepting_responses %}Waiting for responses.{% else %}No responses were recorded.{% endif %}</p>
+        <p class="poll-results-empty mb-0"><i class="bi {% if poll and poll.accepting_responses %}bi-hourglass-split{% else %}bi-inbox{% endif %} me-1" aria-hidden="true"></i>{% if poll and poll.accepting_responses %}Waiting for answers.{% else %}No answers were recorded.{% endif %}</p>
       {% endif %}
     </section>
   {% endfor %}

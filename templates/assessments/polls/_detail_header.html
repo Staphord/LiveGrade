@@ -4,16 +4,15 @@
       {% include 'assessments/polls/_status_badge.html' %}
       <span class="poll-detail-question-count">{{ results.questions|length }} question{{ results.questions|length|pluralize }}</span>
     </div>
-    <h2 class="h4 mb-2">{{ poll.question }}</h2>
+    <h2 class="h4 mb-2">{{ poll.title }}</h2>
     <p class="poll-detail-time mb-0">
-      {% if poll.deadline %}<span>Deadline: <time datetime="{{ poll.deadline|date:'c' }}" data-local-deadline>{{ poll.deadline|date:'j M Y, H:i' }}</time></span>
-      {% elif poll.status == 'open' and poll.accepting_responses %}<span>No response deadline</span>{% endif %}
+      {% if poll.deadline %}<span>Deadline: <time datetime="{{ poll.deadline|date:'c' }}" data-local-deadline>{{ poll.deadline|date:'j M Y, H:i' }}</time></span>{% endif %}
       {% if poll.status == 'closed' and poll.closed_at %}<span>Closed <time datetime="{{ poll.closed_at|date:'c' }}" data-local-deadline>{{ poll.closed_at|date:'j M Y, H:i' }}</time></span>{% endif %}
       {% if poll.status == 'confirmed' and poll.confirmed_at %}<span>Finalized <time datetime="{{ poll.confirmed_at|date:'c' }}" data-local-deadline>{{ poll.confirmed_at|date:'j M Y, H:i' }}</time></span>{% endif %}
     </p>
   </div>
   {% if poll.status == 'open' %}
-    <form method="post" class="poll-detail-primary-action">{% csrf_token %}<input type="hidden" name="poll" value="{{ poll.uuid }}"><button class="btn btn-primary" name="action" value="close"><i class="bi bi-stop-circle me-1" aria-hidden="true"></i>Close voting</button></form>
+    <form method="post" class="poll-detail-primary-action" data-confirm="Close voting for this poll? Respondents will no longer be able to submit or update answers." data-confirm-title="Close voting?" data-confirm-label="Close voting" data-confirm-tone="primary">{% csrf_token %}<input type="hidden" name="poll" value="{{ poll.uuid }}"><button class="btn btn-primary" name="action" value="close"><i class="bi bi-stop-circle me-1" aria-hidden="true"></i>Close voting</button></form>
   {% endif %}
   <div class="poll-detail-metrics">
     {% if classroom %}
@@ -25,5 +24,5 @@
       <div class="poll-detail-metric"><strong data-poll-response-count>{{ results.responded }}</strong><span>total responses</span></div>
     {% endif %}
   </div>
-  <p id="poll-connection" class="poll-connection" role="status">{% if poll.accepting_responses %}<i class="bi bi-arrow-repeat" aria-hidden="true"></i> Updating live{% elif poll.status == 'open' %}Deadline passed{% elif poll.status == 'closed' or poll.status == 'confirmed' %}Final results{% else %}Results{% endif %}</p>
+  <p id="poll-connection" class="poll-connection" role="status"{% if poll.accepting_responses %} hidden{% endif %}>{% if poll.accepting_responses %}{% elif poll.status == 'open' %}Deadline passed{% elif poll.status == 'closed' or poll.status == 'confirmed' %}Final results{% else %}Results{% endif %}</p>
 </header>

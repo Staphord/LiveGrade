@@ -1,0 +1,45 @@
+<div class="poll-builder-preview" data-poll-question-list>
+  {% for question in questions %}
+    <fieldset class="poll-question-card" data-response-question="{{ question.pk }}"
+              aria-describedby="poll-question-error-{{ question.pk }}"
+              {% if question.required %}aria-required="true"{% endif %}>
+      <legend>{{ forloop.counter }}. {{ question.prompt }}{% if question.required %} <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{% endif %}</legend>
+      {% if question.response_type == 'short_answer' or question.response_type == 'paragraph' %}
+        {% if question.response_type == 'short_answer' %}
+          <textarea class="form-control poll-short-answer" name="question-{{ question.pk }}" id="poll-answer-{{ question.pk }}"
+                    rows="1" maxlength="250" data-response-text="" data-autosize="true"
+                    aria-describedby="poll-question-error-{{ question.pk }}"
+                    {% if question.required %}required{% endif %}>{{ question.user_text|default:'' }}</textarea>
+        {% else %}
+          <textarea class="form-control" name="question-{{ question.pk }}" id="poll-answer-{{ question.pk }}"
+                    rows="4" maxlength="4000" data-response-text=""
+                    aria-describedby="poll-question-error-{{ question.pk }}"
+                    {% if question.required %}required{% endif %}>{{ question.user_text|default:'' }}</textarea>
+        {% endif %}
+        <div class="poll-char-count" data-response-char-count>{{ question.user_text|default:''|length }}/{% if question.response_type == 'short_answer' %}250{% else %}4,000{% endif %}</div>
+      {% else %}
+        <div class="poll-answer-choices">
+          {% for option in question.options.all %}
+            <label class="poll-answer-choice" for="option-{{ option.pk }}">
+              <input class="form-check-input" type="{% if question.response_type == 'checkboxes' %}checkbox{% else %}radio{% endif %}"
+                     name="question-{{ question.pk }}" id="option-{{ option.pk }}" value="{{ option.pk }}"
+                     data-response-choice="" {% if option.pk in question.user_selections %}checked{% endif %}
+                     aria-describedby="poll-question-error-{{ question.pk }}">
+              <span>{{ option.label }}</span>
+            </label>
+          {% endfor %}
+          {% if question.allow_abstain %}
+            <label class="poll-answer-choice poll-answer-choice-abstain" for="abstain-{{ question.pk }}">
+              <input class="form-check-input" type="checkbox" id="abstain-{{ question.pk }}"
+                     name="abstain-{{ question.pk }}" value="yes" data-response-abstain=""
+                     {% if question.user_abstained %}checked{% endif %}
+                     aria-describedby="poll-question-error-{{ question.pk }}">
+              <span>None of these options</span>
+            </label>
+          {% endif %}
+        </div>
+      {% endif %}
+      <div class="poll-question-form-error" id="poll-question-error-{{ question.pk }}" data-response-error role="alert" tabindex="-1">{{ question.validation_error|default:'' }}</div>
+    </fieldset>
+  {% endfor %}
+</div>

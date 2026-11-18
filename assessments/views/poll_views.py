@@ -25,7 +25,8 @@ from ..models import ClassroomPoll, ClassroomPollVoter, SessionChange
 from .. import poll_import
 from ..polls import (PollForm, append_imported_questions, changed,
                     create_imported_draft, poll_results, save_draft,
-                    save_response, transition)
+                    save_response, stored_abstained, stored_choice_ids,
+                    text_response_page, transition)
 from ..qr import public_url, qr_png
 from ..realtime import broadcast_session_event
 from ..spreadsheet_safety import spreadsheet_safe_text
@@ -53,6 +54,13 @@ def _private(response, *, bearer=False):
     response['Referrer-Policy'] = 'no-referrer' if bearer else 'same-origin'
     response['X-Robots-Tag'] = 'noindex, nofollow'
     return response
+
+
+def _poll_question_errors(error):
+    if not hasattr(error, 'error_dict'):
+        return {}
+    return {key: errors[0].message for key, errors in error.error_dict.items()
+            if key.isdigit() and errors}
 
 
 @lecturer_required
@@ -94,6 +102,17 @@ def classroom_polls(request, pk):
         stash = None
     question_import_form = PollQuestionImportForm(auto_id='id_poll_question_import_%s')
     form = PollForm(instance=poll if poll and poll.status == 'draft' else None)
+    if request.method == 'GET' and request.GET.get('preview') == '1':
+        if poll is None or poll.status != ClassroomPoll.Status.DRAFT:
+            raise Http404
+        questions = list(poll.questions.prefetch_related('options').all())
+        return _private(render(request, 'assessments/polls/preview.html', {
+            'poll': poll, 'questions': questions,
+            'has_text_questions': any(question.response_type in {'short_answer', 'paragraph'}
+                                      for question in questions),
+            'preview_mode': True,
+            'return_url': reverse('assessment_polls', args=[session.pk]) + '?poll=' + str(poll.uuid),
+        }))
     if request.method == 'POST':
         action = request.POST.get('action')
         error = None
@@ -172,7 +191,9 @@ def classroom_polls(request, pk):
             }, status=400 if error else 200))
         if error:
             if _poll_json_requested(request) and action == 'save':
-                return JsonResponse({'ok': False, 'error': error}, status=400)
+                return JsonResponse({'ok': False, 'error': error,
+                                     'field_errors': form.errors.get_json_data(),
+                                     'question_errors': form.question_errors}, status=400)
             messages.error(request, error)
         elif action in {'upload-questions', 'cancel-question-import'}:
             url = reverse('assessment_polls', args=[pk])
@@ -201,7 +222,9 @@ def classroom_polls(request, pk):
     if poll and request.GET.get('state') == '1':
         return _private(JsonResponse({'status': poll.status, 'accepting': poll.accepting_responses,
             'html': render_to_string('assessments/polls/_results.html',
-                {'poll': poll, **results, 'hide_option_bars': True, 'hide_option_percentages': True}, request=request),
+                {'poll': poll, **results, 'text_response_base':
+                 reverse('assessment_polls', args=[session.pk]) + '?poll=' + str(poll.uuid),
+                 'hide_option_bars': True, 'hide_option_percentages': True}, request=request),
             'responded_voters': list(poll.voters.filter(response__isnull=False).values_list('pk', flat=True))}))
     voters = list(poll.voters.select_related('response')) if poll else []
     for voter in voters:
@@ -215,10 +238,21 @@ def classroom_polls(request, pk):
             # nosemgrep: python.django.security.injection.csv-writer-injection.csv-writer-injection
             writer.writerow([spreadsheet_safe_text(voter.name), spreadsheet_safe_text(voter.identifier), voter.link])
         return _private(response)
+    text_review = (text_response_page(poll, request.GET.get('text_question'),
+                                      request.GET.get('text_page', 1))
+                   if poll and request.GET.get('text_question') else None)
+    text_response_base = (reverse('assessment_polls', args=[session.pk]) + '?poll=' + str(poll.uuid)
+                          if poll else '')
     return _private(render(request, 'assessments/polls/manage.html', {
         'session': session, 'polls': polls, 'poll': poll, 'form': form,
         'results': results, 'voters': voters,
+        'has_text_questions': bool(poll and poll.questions.filter(
+            response_type__in=['short_answer', 'paragraph']).exists()),
+        'poll_storage_key': f'classroom-{session.pk}-{poll.uuid if poll else "new"}',
         'pending_question_import': stash,
+        'text_response_review': text_review,
+        'text_response_base': text_response_base,
+        'saved': request.GET.get('saved') == '1',
         'question_import_form': question_import_form,
         'poll_question_sample_url': reverse('assessment_poll_questions_sample', args=[session.pk]),
         'poll_url': public_url(request, reverse('classroom_poll', args=[poll.uuid])) if poll else '',
@@ -332,6 +366,7 @@ def public_poll(request, poll_uuid):
         token = None
     voter = poll.voters.filter(token=token, student__isnull=False).first() if token else None
     error, saved = None, request.GET.get('saved') == '1'
+    error_map = {}
     if request.method == 'POST':
         action = request.POST.get('action')
         if action == 'identify' and not poll.personal_links_only:
@@ -352,17 +387,28 @@ def public_poll(request, poll_uuid):
                 legacy_choices = request.POST.getlist('options')
                 for index, question in enumerate(vote_questions):
                     key = str(question.pk)
+                    if question.response_type in {'short_answer', 'paragraph'}:
+                        question_answers[key] = {
+                            'type': question.response_type,
+                            'text': request.POST.get(f'question-{key}', ''),
+                        }
+                        continue
                     selected = request.POST.getlist(f'question-{key}')
                     abstained = request.POST.get(f'abstain-{key}') == 'yes'
                     if len(vote_questions) == 1 and not selected and not abstained:
                         selected = legacy_choices
                         abstained = request.POST.get('abstain') == 'yes'
-                    question_answers[key] = {'options': selected, 'abstained': abstained}
+                    question_answers[key] = {
+                        'type': question.response_type,
+                        'option_ids': selected,
+                        'abstained': abstained,
+                    }
                 save_response(poll.pk, voter.pk, [], token=token,
                               question_answers=question_answers)
                 return _private(redirect(reverse('classroom_poll', args=[poll.uuid]) + '?saved=1'))
             except ValidationError as exc:
                 error = ' '.join(exc.messages)
+                error_map = _poll_question_errors(exc)
         elif action == 'forget':
             identities = request.session.get(POLL_IDENTITIES, {})
             identities.pop(str(poll.uuid), None)
@@ -389,20 +435,36 @@ def public_poll(request, poll_uuid):
     for question in questions:
         key = str(question.pk)
         answer = saved_answers.get(key, [])
-        question.user_selections = set(answer or [])
-        question.user_abstained = key in saved_answers and answer is None
+        is_text = question.response_type in {'short_answer', 'paragraph'}
+        question.user_text = answer.get('text', '') if is_text and isinstance(answer, dict) else ''
+        question.user_selections = set(stored_choice_ids(answer)) if not is_text else set()
+        question.user_abstained = key in saved_answers and stored_abstained(answer)
         if key in saved_answers:
-            question.user_answer_display = ('None of these options' if answer is None else ', '.join(
-                option.label for option in question.options.all() if option.pk in answer))
+            if is_text and isinstance(answer, dict):
+                question.user_answer_display = answer.get('text', '')
+            elif stored_abstained(answer):
+                question.user_answer_display = 'None of these options'
+            else:
+                selected_ids = set(stored_choice_ids(answer))
+                question.user_answer_display = ', '.join(
+                    option.label for option in question.options.all() if option.pk in selected_ids)
         if error and request.POST.get('action') == 'vote':
-            posted = request.POST.getlist(f'question-{key}')
-            question.user_selections = {int(value) for value in posted if value.isdigit()}
-            question.user_abstained = request.POST.get(f'abstain-{key}') == 'yes'
+            question.validation_error = error_map.get(key, '')
+            if is_text:
+                question.user_text = request.POST.get(f'question-{key}', '')
+            else:
+                posted = request.POST.getlist(f'question-{key}')
+                question.user_selections = {int(value) for value in posted if value.isdigit()}
+                question.user_abstained = request.POST.get(f'abstain-{key}') == 'yes'
     return _private(render(request, 'assessments/polls/respond.html', {
         'session': poll.assessment_session, 'poll': poll, 'voter': voter,
         'questions': questions, 'results': results, 'public_results': True,
         'results_url': reverse('classroom_poll_results', args=[poll.uuid]),
         'error': error, 'saved': saved, 'response': response,
+        'global_error': bool(error and (request.POST.get('action') != 'vote'
+                                         or not voter or not poll.accepting_responses)),
+        'has_text_questions': any(question.response_type in {'short_answer', 'paragraph'}
+                                  for question in questions),
     }))
 
 

@@ -26,17 +26,17 @@
     <nav class="poll-list" aria-label="Poll list" data-poll-list>
       {% for item in polls %}
         <div class="poll-list-row" data-poll-list-row>
-        <input class="form-check-input mt-3" type="checkbox" name="polls" value="{{ item.uuid }}" data-poll-select aria-label="Select {{ item.question }}">
-        <a href="?poll={{ item.uuid }}" title="{{ item.question }}"
+        <input class="form-check-input mt-3" type="checkbox" name="polls" value="{{ item.uuid }}" data-poll-select aria-label="Select {{ item.title }}">
+        <a href="?poll={{ item.uuid }}" title="{{ item.title }}"
            class="poll-list-card{% if poll.pk == item.pk %} is-selected{% endif %}"
            data-poll-list-item
            data-poll-filter-state="{% if item.status == 'draft' %}draft{% elif item.status == 'open' and item.accepting_responses %}live{% else %}closed{% endif %}"
            {% if poll.pk == item.pk %}aria-current="page"{% endif %}>
-          <span class="poll-list-card-title">{{ item.question }}</span>
+          <span class="poll-list-card-title">{{ item.title }}</span>
           <span class="poll-list-card-meta">
             <span>{{ item.question_count }} question{{ item.question_count|pluralize }}</span>
             {% if item.status == 'open' and item.accepting_responses %}
-              <span class="poll-status-badge poll-status-live"><i class="bi bi-broadcast" aria-hidden="true"></i> Live</span>
+              <span class="poll-status-badge poll-status-live"><span class="poll-live-dot" aria-hidden="true"></span> Live</span>
             {% elif item.status == 'open' %}
               <span class="poll-status-badge poll-status-deadline"><i class="bi bi-clock-history" aria-hidden="true"></i> Deadline passed</span>
             {% elif item.status == 'draft' %}
@@ -60,7 +60,7 @@
             <span class="poll-list-response-label" data-poll-list-response-label>{{ item.response_count }} response{{ item.response_count|pluralize }}</span>
           {% endif %}
         </a>
-        <button class="btn btn-link text-danger p-1 mt-2" type="submit" data-poll-delete-one data-poll-id="{{ item.uuid }}" data-poll-title="{{ item.question }}" aria-label="Delete {{ item.question }}" title="Delete poll"><i class="bi bi-trash" aria-hidden="true"></i></button>
+        <button class="btn btn-link text-danger p-1 mt-2" type="submit" data-poll-delete-one data-poll-id="{{ item.uuid }}" data-poll-title="{{ item.title }}" aria-label="Delete {{ item.title }}" title="Delete poll"><i class="bi bi-trash" aria-hidden="true"></i></button>
         </div>
       {% empty %}
         <div class="poll-list-empty">

@@ -33,11 +33,48 @@ class ClassroomPollTests(TestCase):
         self.student = Client()
 
     def data(self, **overrides):
-        data = {'action': 'save', 'question': 'Where should we present?', 'description': 'Choose a venue.',
-                'option_lines': 'Main hall\nLibrary\nOnline', 'timezone_name': 'Africa/Dar_es_Salaam',
-                'allow_abstain': 'on'}
-        data.update(overrides)
-        return data
+        values = {'action': 'save', 'question': 'Where should we present?',
+                  'option_lines': 'Main hall\nLibrary\nOnline',
+                  'timezone_name': 'Africa/Dar_es_Salaam', 'allow_abstain': 'on'}
+        values.update(overrides)
+        poll_id = values.pop('poll', None)
+        prompt = values.pop('question')
+        title = values.pop('title', prompt)
+        option_lines = values.pop('option_lines').splitlines()
+        allow_multiple = values.pop('allow_multiple', False)
+        allow_abstain = values.pop('allow_abstain', 'on')
+        response_type = 'checkboxes' if allow_multiple in (True, 'on', 'true', '1') else 'multiple_choice'
+        question_id = None
+        option_ids = []
+        if poll_id:
+            existing = self.session.polls.filter(uuid=poll_id).first()
+            if existing:
+                first = existing.questions.first()
+                if first:
+                    question_id = first.pk
+                    option_ids = list(first.options.values_list('pk', flat=True))
+        definitions = [{
+            'id': question_id, 'prompt': prompt, 'response_type': response_type,
+            'required': True, 'allow_abstain': allow_abstain in (True, 'on', 'true', '1'),
+            'options': [{'id': option_ids[index] if index < len(option_ids) else None, 'label': label}
+                        for index, label in enumerate(option_lines)],
+        }]
+        extras = values.pop('extra_questions_json', '')
+        if extras:
+            if isinstance(extras, str):
+                extras = json.loads(extras)
+            for item in extras:
+                extra_type = 'checkboxes' if item.get('allow_multiple') else 'multiple_choice'
+                definitions.append({
+                    'id': None, 'prompt': item.get('prompt', ''), 'response_type': extra_type,
+                    'required': item.get('required', True),
+                    'allow_abstain': item.get('allow_abstain', True),
+                    'options': [{'id': None, 'label': option} for option in item.get('options', [])],
+                })
+        result = {**values, 'title': title, 'questions_json': json.dumps(definitions)}
+        if poll_id:
+            result['poll'] = poll_id
+        return result
 
     def create(self, **overrides):
         response = self.client.post(self.manage, self.data(**overrides))
@@ -70,26 +107,25 @@ class ClassroomPollTests(TestCase):
         self.assertNotContains(response, 'window.confirm(')
         self.assertContains(response, 'Unsaved changes in the poll editor will also be discarded.')
         self.assertContains(response, 'novalidate data-poll-deadline-form data-poll-editor')
-        self.assertContains(response, 'window.validatePollEditor = validate')
+        self.assertContains(response, 'window.validatePollEditor = validate;')
         self.assertContains(response, 'window.snapshotPollEditorState')
-        self.assertContains(response, 'window.DevPerf.confirm')
-        self.assertContains(response, 'Keep as draft')
-        self.assertContains(response, "event.target.matches('[data-poll-question-import], [data-poll-import-cancel], [data-poll-import-action], [data-poll-bulk-form]')")
-        self.assertContains(response, 'form.addEventListener(\'submit\', async function (event)')
+        self.assertContains(response, 'Save draft')
         self.assertContains(response, "headers: {'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json'}")
-        self.assertContains(response, "form.getAttribute('action') || window.location.href")
-        self.assertContains(response, "warningText.dataset.inlineMessageText = ''")
-        self.assertContains(response, 'custom-select-menu')
-        self.assertContains(response, "option.value===''&&select.hasAttribute('data-hide-empty-option')")
-        self.assertContains(response, 'window.initCustomSelects(typeGroup)')
-        self.assertNotContains(response, 'poll-answer-type-menu')
-        self.assertNotContains(response, 'window.enhancePollAnswerType')
-        self.assertRegex(response.content.decode(), r'<select(?=[^>]*name="allow_multiple")(?=[^>]*hidden)[^>]*>')
+        self.assertContains(response, "editor.getAttribute('action') || window.location.href")
+        self.assertContains(response, "'Duplicate question ' + (index + 1), 'question-duplicate'")
+        self.assertContains(response, 'Short answer')
+        self.assertContains(response, 'Paragraph')
+        self.assertNotContains(response, 'name="allow_multiple"')
         poll = self.create()
+        preview = self.client.get(self.manage, {'poll': str(poll.uuid), 'preview': '1'})
+        self.assertContains(preview, '>Preview<')
+        self.assertContains(preview, 'Back to draft')
+        self.assertNotContains(preview, 'name="action" value="vote"')
         self.assertEqual(list(poll.options.values_list('label', flat=True)), ['Main hall', 'Library', 'Online'])
         self.client.post(self.manage, self.data(poll=poll.uuid, question='Which project theme?', option_lines='Health\nTransport'))
         poll.refresh_from_db()
-        self.assertEqual(poll.question, 'Which project theme?')
+        self.assertEqual(poll.title, 'Which project theme?')
+        self.assertEqual(poll.questions.first().prompt, 'Which project theme?')
         page = self.client.get(self.manage, {'poll': poll.uuid})
         self.assertContains(page, 'Publish poll')
         self.assertContains(page, 'data-confirm-title="Publish poll?"')
@@ -99,6 +135,11 @@ class ClassroomPollTests(TestCase):
         self.session.refresh_from_db()
         self.assertEqual(self.session.status, 'draft')
         self.assertFalse(ParticipationRecord.objects.exists())
+
+    def test_preview_requires_an_existing_draft_poll(self):
+        response = self.client.get(self.manage, {'preview': '1'})
+
+        self.assertEqual(response.status_code, 404)
 
     def test_invalid_options_or_deadlines_do_not_save_partial_drafts(self):
         for options in ('One', 'Same\nsame', 'a' * 251 + '\nB', '\n'.join(map(str, range(51)))):
@@ -220,7 +261,7 @@ class ClassroomPollTests(TestCase):
         self.assertFalse(response.options.exists())
         self.assertEqual(poll_results(poll)['abstained_count'], 1)
         page = self.vote(poll, [options[0]], abstain='yes')
-        self.assertContains(page, 'Choose an answer or “None of these options” for each question, not both.')
+        self.assertContains(page, 'Choose an answer or “None of these options”, not both.')
         self.assertEqual(self.vote(poll, options).status_code, 302)
         response.refresh_from_db()
         self.assertFalse(response.abstained)
@@ -373,7 +414,7 @@ class ClassroomPollTests(TestCase):
         self.session.students.create(full_name='Late student')
         self.client.post(self.manage, self.data(poll=poll.uuid, question='Changed question'))
         poll.refresh_from_db()
-        self.assertEqual(poll.question, 'Where should we present?')
+        self.assertEqual(poll.title, 'Where should we present?')
         self.assertEqual(poll.voters.count(), 2)
         self.assertContains(self.student.post(self.page(poll), {'action': 'identify', 'identifier': 'Late student'}), 'could not identify you uniquely')
 
