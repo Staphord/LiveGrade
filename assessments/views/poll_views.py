@@ -236,8 +236,8 @@ def classroom_polls(request, pk):
         writer = csv.writer(response)
         writer.writerow(['Name', 'Roster identifier', 'Personal voting link'])
         for voter in voters:
-            # nosemgrep: python.django.security.injection.csv-writer-injection.csv-writer-injection
             # All text cells, including the generated invitation URL, are spreadsheet-escaped.
+            # nosemgrep: python.django.security.injection.csv-writer-injection.csv-writer-injection
             writer.writerow([
                 spreadsheet_safe_text(voter.name),
                 spreadsheet_safe_text(voter.identifier),
