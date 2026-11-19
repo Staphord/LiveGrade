@@ -2,23 +2,38 @@
   {% if recent_activity %}
   <ul class="activity-feed">
     {% for item in recent_activity %}
-    <li data-turn-id="{{ item.turn_id }}">
+    <li data-turn-id="{{ item.turn_id }}"{% if item.activity_id %} data-activity-id="{{ item.activity_id }}"{% endif %}>
       <span class="activity-dot"></span>
       <div class="activity-body">
         {% if item.rank %}
         <div class="activity-title">
           #{{ item.rank }} {{ item.group.name }}
-          {% if item.percent is not None %}<span class="text-muted">- {{ item.percent }}%</span>{% endif %}
+          {% if item.percent is not None %}<span class="text-muted">- {{ item.percent|floatformat:'-2' }}%</span>{% endif %}
         </div>
         <div class="activity-meta">
-          {{ item.votes }} vote{{ item.votes|pluralize }} in
+          {% if session.enable_peer and session.enable_panel %}
+            {{ item.votes }} peer vote{{ item.votes|pluralize }} · {{ item.panel_count }} panelist{{ item.panel_count|pluralize }}
+          {% elif session.enable_panel %}
+            {{ item.panel_count }} panelist{{ item.panel_count|pluralize }} scored
+          {% else %}
+            {{ item.votes }} vote{{ item.votes|pluralize }} in
+          {% endif %}
           {% if item.duration_label %}· {{ item.duration_label }} on stage{% endif %}
         </div>
+        {% elif item.kind == 'panel_scorecard' %}
+        <div class="activity-title">{{ item.examiner_name }} scored {{ item.group.name }}</div>
+        <div class="activity-meta">Panel evaluation · {{ item.timestamp|time:'H:i' }}</div>
         {% else %}
         <div class="activity-title">{{ item.group.name }} finished presenting</div>
         <div class="activity-meta">
-          {{ item.votes }} vote{{ item.votes|pluralize }} in ·
-          {{ item.closed_at|time:'H:i' }}
+          {% if session.enable_peer and session.enable_panel %}
+            {{ item.votes }} peer vote{{ item.votes|pluralize }} · {{ item.panel_count }} panelist{{ item.panel_count|pluralize }}
+          {% elif session.enable_panel %}
+            {{ item.panel_count }} panelist{{ item.panel_count|pluralize }} scored
+          {% else %}
+            {{ item.votes }} vote{{ item.votes|pluralize }} in
+          {% endif %}
+          · {{ item.closed_at|time:'H:i' }}
         </div>
         {% endif %}
       </div>
@@ -26,6 +41,6 @@
     {% endfor %}
   </ul>
   {% else %}
-  <div class="text-muted t-sm">Nothing to show yet - this fills in as groups finish presenting.</div>
+  <div class="text-muted t-sm">No activity yet - updates appear as evaluations and turns complete.</div>
   {% endif %}
 </div>
