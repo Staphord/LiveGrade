@@ -104,38 +104,38 @@ def check_escaped(label, body, status):
 
 # 1. Stored XSS on every lecturer page that renders seeded data, plus the JSON/HTML fragments
 # the front end injects with innerHTML/outerHTML.
-for page in ['/classroom/app/', f'/classroom/app/{A}/', f'/classroom/app/{A}/edit/',
-             f'/classroom/app/{A}/setup/', f'/classroom/app/{A}/roster/', f'/classroom/app/{A}/rubric/',
-             f'/classroom/app/{A}/rubric/table/', f'/classroom/app/{A}/groups/',
-             f'/classroom/app/{A}/groups/{GROUP_A}/members/', f'/classroom/app/{A}/participation/',
-             f'/classroom/app/{A}/participation/refresh/', f'/classroom/app/{A}/results/',
-             f'/classroom/app/{A}/results/refresh/', f'/classroom/app/{A}/live-state/',
-             f'/classroom/app/{A}/transfer/', f'/assess/{UUID_A}/join-screen/',
+for page in ['/assessment/app/', f'/assessment/app/{A}/', f'/assessment/app/{A}/edit/',
+             f'/assessment/app/{A}/setup/', f'/assessment/app/{A}/roster/', f'/assessment/app/{A}/rubric/',
+             f'/assessment/app/{A}/rubric/table/', f'/assessment/app/{A}/groups/',
+             f'/assessment/app/{A}/groups/{GROUP_A}/members/', f'/assessment/app/{A}/participation/',
+             f'/assessment/app/{A}/participation/refresh/', f'/assessment/app/{A}/results/',
+             f'/assessment/app/{A}/results/refresh/', f'/assessment/app/{A}/live-state/',
+             f'/assessment/app/{A}/transfer/', f'/assess/{UUID_A}/join-screen/',
              f'/assess/{UUID_A}/join-screen/state/']:
     status, body = get(page, env['ORG_A_COOKIE'])
     check_escaped(f'stored XSS {page}', body, status)
 
 # 2. Reflected XSS through query-string inputs.
 quoted = urllib.parse.quote(PAYLOAD)
-for page, param in ((f'/classroom/app/{A}/roster/search/', 'q'), (f'/classroom/app/{A}/results/', 'sort'),
-                    (f'/classroom/app/{A}/results/', 'dir'), (f'/classroom/app/{A}/results/', 'status'),
-                    ('/classroom/app/', 'scope'), ('/classroom/app/', 'page'), ('/classroom/app/', 'per_page'),
-                    (f'/classroom/app/{A}/setup/', 'step')):
+for page, param in ((f'/assessment/app/{A}/roster/search/', 'q'), (f'/assessment/app/{A}/results/', 'sort'),
+                    (f'/assessment/app/{A}/results/', 'dir'), (f'/assessment/app/{A}/results/', 'status'),
+                    ('/assessment/app/', 'scope'), ('/assessment/app/', 'page'), ('/assessment/app/', 'per_page'),
+                    (f'/assessment/app/{A}/setup/', 'step')):
     status, body = get(f'{page}?{param}={quoted}', env['ORG_A_COOKIE'])
     check_escaped(f'reflected XSS {page}?{param}=', body, status)
 
 # 3. Cross-organization access: the other org's cookie must get 403/404, never data.
-for page in (f'/classroom/app/{A}/', f'/classroom/app/{A}/setup/', f'/classroom/app/{A}/roster/',
-             f'/classroom/app/{A}/results/', f'/classroom/app/{A}/results/export/',
-             f'/classroom/app/{A}/live-state/', f'/classroom/app/{A}/qr.png',
-             f'/classroom/app/{A}/participation/'):
+for page in (f'/assessment/app/{A}/', f'/assessment/app/{A}/setup/', f'/assessment/app/{A}/roster/',
+             f'/assessment/app/{A}/results/', f'/assessment/app/{A}/results/export/',
+             f'/assessment/app/{A}/live-state/', f'/assessment/app/{A}/qr.png',
+             f'/assessment/app/{A}/participation/'):
     status, _ = get(page, env['ORG_B_COOKIE'])
     report(status in (403, 404), f'cross-org B->A GET {page} -> {status} (want 403/404)')
 
 
 def post_as(cookie, path, fields):
     """POST with a real CSRF token, so a refusal is the view's and not the CSRF check's."""
-    token_request = urllib.request.Request(BASE + '/classroom/app/new/', headers={'Cookie': f'{COOKIE}={cookie}'})
+    token_request = urllib.request.Request(BASE + '/assessment/app/new/', headers={'Cookie': f'{COOKIE}={cookie}'})
     try:
         response = urllib.request.build_opener(NoRedirect).open(token_request, timeout=30)
     except urllib.error.HTTPError as err:
@@ -155,37 +155,37 @@ def post_as(cookie, path, fields):
 
 
 # These two only accept POST, so a GET is always 405; the real question is a POST from org B.
-for page, fields in ((f'/classroom/app/{A}/groups/{GROUP_A}/members/', {'action': 'add', 'student_id': STUDENT_A}),
-                     (f'/classroom/app/{A}/roster/{STUDENT_A}/edit/', {'full_name': 'Hijacked', 'student_id': 'X'})):
+for page, fields in ((f'/assessment/app/{A}/groups/{GROUP_A}/members/', {'action': 'add', 'student_id': STUDENT_A}),
+                     (f'/assessment/app/{A}/roster/{STUDENT_A}/edit/', {'full_name': 'Hijacked', 'student_id': 'X'})):
     status = post_as(env['ORG_B_COOKIE'], page, fields)
     if status is None:
         report(False, f'cross-org B->A POST {page}: could not get a CSRF token to test with', warn=True)
     else:
         report(status in (403, 404), f'cross-org B->A POST {page} -> {status} (want 403/404)')
-for page in (f'/classroom/app/{B}/', f'/classroom/app/{B}/results/'):
+for page in (f'/assessment/app/{B}/', f'/assessment/app/{B}/results/'):
     status, _ = get(page, env['ORG_A_COOKIE'])
     report(status in (403, 404), f'cross-org A->B GET {page} -> {status} (want 403/404)')
 
 # 4. Anonymous access to lecturer URLs.
-for page in ('/classroom/app/', f'/classroom/app/{A}/', f'/classroom/app/{A}/results/export/',
-             f'/classroom/app/{A}/qr.png', f'/classroom/app/{A}/live-state/'):
+for page in ('/assessment/app/', f'/assessment/app/{A}/', f'/assessment/app/{A}/results/export/',
+             f'/assessment/app/{A}/qr.png', f'/assessment/app/{A}/live-state/'):
     status, _ = get(page)
     report(status in (302, 403), f'anonymous GET {page} -> {status} (want redirect/403)')
 
 # 4b. Service entry addresses: the destination never comes from the request, an unopened
 # service shows its coming-soon page, and anything else is not a route.
-status, where = location('/classroom/')
+status, where = location('/assessment/')
 report(status == 302 and where == '/oidc/authenticate/',
-       f'service entry /classroom/ sends a visitor to sign in -> {status} {where}')
+       f'service entry /assessment/ sends a visitor to sign in -> {status} {where}')
 for hostile in ('https://evil.example/', '//evil.example/', 'javascript:alert(1)'):
-    status, where = location('/classroom/?next=' + urllib.parse.quote(hostile))
+    status, where = location('/assessment/?next=' + urllib.parse.quote(hostile))
     report(status == 302 and 'evil' not in where and 'javascript' not in where,
            f'service entry ignores a hostile next={hostile} -> {status} {where}')
-status, body = get('/panel/')
-report(status == 200 and 'coming soon' in body, f'service entry /panel/ shows coming soon -> {status}')
+status, body = get('/showcase/')
+report(status == 200 and 'coming soon' in body, f'service entry /showcase/ shows coming soon -> {status}')
 status, _ = get('/nope/')
 report(status == 404, f'service entry /nope/ is not a route -> {status} (want 404)')
-status, _ = get('/classroom/', method='POST', data=b'')
+status, _ = get('/assessment/', method='POST', data=b'')
 report(status in (403, 405), f'service entry refuses a POST -> {status} (want 403/405)')
 
 # 5. Student flow: no lecturer cookie. Join, then render pages that show teammates' data.

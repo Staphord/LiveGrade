@@ -46,7 +46,7 @@ jobs:
       - name: Start LiveGrade (ASGI, as in production)
         run: |
           nohup daphne -b 127.0.0.1 -p 8001 config.asgi:application > server.log 2>&1 &
-          for i in $(seq 1 30); do curl -fs http://localhost:8001/healthz && break; sleep 1; done
+          for _ in $(seq 1 30); do curl -fs http://localhost:8001/healthz && break; sleep 1; done
           curl -fs http://localhost:8001/healthz
       - name: Targeted checks (XSS, cross-org access, anonymous, student flow, WebSocket)
         run: |

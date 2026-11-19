@@ -39,7 +39,7 @@ jobs:
         run: |
           set -o pipefail
           coverage run manage.py test --parallel 2>&1 | tee test.log
-      # .coveragerc enforces fail_under = 100.
+      # Reports line and branch coverage. The 100% fail_under threshold is currently disabled in .coveragerc.
       - name: Coverage gate
         run: coverage combine && coverage report
       - name: Job summary
