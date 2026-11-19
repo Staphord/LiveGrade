@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
-{% block title %}Classroom dashboard - LiveGrade{% endblock %}
-{% block page_title %}Classroom dashboard{% endblock %}
+{% block title %}Assessment dashboard - LiveGrade{% endblock %}
+{% block page_title %}Assessment dashboard{% endblock %}
 
 {% block extra_css %}
 {% include 'partials/_service_dashboard_styles.html' %}
@@ -73,7 +73,7 @@
 <div class="stage-content classroom-dashboard">
   <header class="hero-banner between-banner">
     <div class="hero-meta">
-      <p>A live summary of your sessions, rosters, and current classroom activity.</p>
+      <p>A live summary of your sessions, rosters, and current assessment activity.</p>
     </div>
     <div class="hero-actions">
       <a href="{% url 'assessment_session_list' %}{% if can_oversee %}?scope=all{% endif %}" class="btn btn-outline-primary">{% if can_oversee %}Browse all sessions{% else %}Browse sessions{% endif %}</a>
@@ -83,17 +83,17 @@
 
   <section class="classroom-kpis" aria-label="Classroom key metrics">
     <article class="classroom-kpi"><div class="classroom-kpi-label">Total sessions</div><div class="classroom-kpi-value">{{ dashboard_stats.total }}</div><div class="classroom-kpi-note">Your sessions in this organization</div></article>
-    <article class="classroom-kpi"><div class="classroom-kpi-label">Live now</div><div class="classroom-kpi-value">{{ dashboard_stats.live_count }}</div><div class="classroom-kpi-note">{% if dashboard_stats.live_count %}{{ dashboard_stats.live_joined_count }} of {{ dashboard_stats.live_roster_count }} rostered students have joined across your live rooms{% else %}No live rooms to report participation for{% endif %}</div></article>
+    <article class="classroom-kpi"><div class="classroom-kpi-label">Live now</div><div class="classroom-kpi-value">{{ dashboard_stats.live_count }}</div><div class="classroom-kpi-note">{% if dashboard_stats.live_count %}{{ dashboard_stats.live_joined_count }} of {{ dashboard_stats.live_roster_count }} rostered participants have joined across your live rooms{% else %}No live rooms to report participation for{% endif %}</div></article>
     <article class="classroom-kpi"><div class="classroom-kpi-label">In setup</div><div class="classroom-kpi-value">{{ dashboard_stats.draft_count }}</div><div class="classroom-kpi-note">Draft sessions not yet running</div></article>
     <article class="classroom-kpi"><div class="classroom-kpi-label">Completed</div><div class="classroom-kpi-value">{{ dashboard_stats.closed_count }}</div><div class="classroom-kpi-note">Sessions that have been closed</div></article>
-    <article class="classroom-kpi"><div class="classroom-kpi-label">Students on rosters</div><div class="classroom-kpi-value">{{ dashboard_stats.student_count }}</div><div class="classroom-kpi-note">Roster entries across your sessions</div></article>
+    <article class="classroom-kpi"><div class="classroom-kpi-label">Participants on rosters</div><div class="classroom-kpi-value">{{ dashboard_stats.student_count }}</div><div class="classroom-kpi-note">Roster entries across your sessions</div></article>
     <article class="classroom-kpi"><div class="classroom-kpi-label">Presentation groups</div><div class="classroom-kpi-value">{{ dashboard_stats.group_count }}</div><div class="classroom-kpi-note">Non-practice groups across your sessions</div></article>
   </section>
 
   {% if live_sessions %}
   <section class="classroom-live-panel" aria-labelledby="classroom-live-heading">
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-      <div><span class="classroom-live-now"><span class="classroom-live-dot" aria-hidden="true"></span>Live in the classroom</span><h2 class="h5 mt-1 mb-0" id="classroom-live-heading">{{ dashboard_stats.live_count }} active session{{ dashboard_stats.live_count|pluralize }}</h2></div>
+      <div><span class="classroom-live-now"><span class="classroom-live-dot" aria-hidden="true"></span>Live now</span><h2 class="h5 mt-1 mb-0" id="classroom-live-heading">{{ dashboard_stats.live_count }} active session{{ dashboard_stats.live_count|pluralize }}</h2></div>
       <a href="{% url 'assessment_session_list' %}?status=live{% if can_oversee %}&amp;scope=all{% endif %}" class="btn btn-sm btn-outline-primary">View live sessions</a>
     </div>
     <div class="classroom-live-list">
@@ -101,7 +101,7 @@
       <a class="classroom-live-card-link" href="{% url 'assessment_session_detail' session.pk %}">
         <article class="classroom-live-item">
           <h3>{{ session.name }}</h3>
-          <div class="classroom-live-meta"><span>{{ session.live_joined_count }} of {{ session.student_count }} students joined</span><span>{{ session.group_count }} presentation group{{ session.group_count|pluralize }}</span></div>
+          <div class="classroom-live-meta"><span>{{ session.live_joined_count }} of {{ session.student_count }} participants joined</span><span>{{ session.group_count }} presentation group{{ session.group_count|pluralize }}</span></div>
           <div class="classroom-live-meta">{% if session.live_active_group %}<span>Presenting: {{ session.live_active_group.name }}</span>{% else %}<span>No group is presenting right now</span>{% endif %}</div>
         </article>
       </a>
@@ -111,11 +111,11 @@
   {% else %}
   <section class="classroom-live-panel" aria-labelledby="classroom-live-heading">
     <h2 class="h6 mb-1" id="classroom-live-heading">None of your sessions are live right now</h2>
-    <p class="text-muted small mb-0">Live sessions will appear here with current student participation.</p>
+    <p class="text-muted small mb-0">Live sessions will appear here with current participant participation.</p>
   </section>
   {% endif %}
 
-  <section class="classroom-visual-grid" aria-label="Classroom data visualizations">
+  <section class="classroom-visual-grid" aria-label="Assessment data visualizations">
     <article class="classroom-data-card" aria-labelledby="classroom-stage-heading">
       <h2 id="classroom-stage-heading">Session stages</h2>
       <p class="classroom-data-subtitle">Distribution across your {{ dashboard_stats.total }} session{{ dashboard_stats.total|pluralize }}.</p>
@@ -134,7 +134,7 @@
     </article>
 
     <article class="classroom-data-card" aria-labelledby="classroom-roster-heading">
-      <h2 id="classroom-roster-heading">Largest student rosters</h2>
+      <h2 id="classroom-roster-heading">Largest participant rosters</h2>
       <p class="classroom-data-subtitle">Roster sizes by session; bars are scaled to the largest roster shown.</p>
       {% if roster_sessions and largest_roster %}
       <ol class="classroom-roster-list">
@@ -145,8 +145,8 @@
         </li>
         {% endfor %}
       </ol>
-      <div class="classroom-roster-axis" aria-hidden="true"><span>0 students</span><span>{{ largest_roster }} students</span></div>
-      {% else %}<p class="classroom-empty mb-0">Roster data will appear after students are added to a session.</p>{% endif %}
+      <div class="classroom-roster-axis" aria-hidden="true"><span>0 participants</span><span>{{ largest_roster }} participants</span></div>
+      {% else %}<p class="classroom-empty mb-0">Roster data will appear after participants are added to a session.</p>{% endif %}
     </article>
   </section>
 
@@ -155,7 +155,7 @@
     {% if recent_sessions %}
     <div class="table-responsive">
       <table class="table table-hover" data-session-row-navigation>
-        <caption class="visually-hidden">Five most recently created Classroom sessions</caption>
+        <caption class="visually-hidden">Five most recently created assessment sessions</caption>
         <thead><tr><th scope="col">Session</th><th scope="col">Status</th><th scope="col">Students</th><th scope="col">Groups</th><th scope="col">Created</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
         <tbody>
           {% for session in recent_sessions %}
@@ -175,7 +175,7 @@
       </table>
     </div>
     {% else %}
-      <div class="classroom-empty"><h2>You haven’t created a classroom session yet</h2><p>Your dashboard shows sessions you own. Create a session to see rosters and live activity here.{% if can_oversee %} You can also <a href="{% url 'assessment_session_list' %}?scope=all">view all sessions in {{ active_org.name }}</a>.{% endif %}</p><a href="{% url 'assessment_session_create' %}" class="btn btn-primary">Create a session</a></div>
+      <div class="classroom-empty"><h2>You have not created an assessment session yet</h2><p>Your dashboard shows sessions you own. Create a session to see rosters and live activity here.{% if can_oversee %} You can also <a href="{% url 'assessment_session_list' %}?scope=all">view all sessions in {{ active_org.name }}</a>.{% endif %}</p><a href="{% url 'assessment_session_create' %}" class="btn btn-primary">Create a session</a></div>
     {% endif %}
   </section>
 </div>

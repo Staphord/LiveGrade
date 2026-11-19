@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+{% block title %}Submitted Work : {{ session.name }} : LiveGrade{% endblock %}
+{% block page_title %}{{ session.name }}{% endblock %}
+
+{% block content %}
+{% include 'service_domains/_workspace_styles.html' %}
+{% include 'service_domains/_panel_ui_styles.html' %}
+<div class="container-fluid py-4 service-workspace panel-page--wide">
+  {% include 'assessments/_session_tabs.html' with active='async' %}
+
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <span class="badge {% if session.status == 'live' %}text-bg-success{% elif session.status == 'submissions_open' %}text-bg-primary{% elif session.status == 'closed' %}text-bg-secondary{% else %}text-bg-warning{% endif %}">{{ session.get_status_display }}</span>
+    {% if session.status == 'live' %}
+    <form method="post" action="{% url 'assessment_close_session' session.pk %}"
+          data-confirm="Close this session? Reviewing will end, and this can't be undone."
+          data-confirm-label="Close session">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger btn-sm">
+        <i class="bi bi-flag-fill me-1"></i>Close session
+      </button>
+    </form>
+    {% endif %}
+  </div>
+
+  <div class="row g-4">
+    <div class="col-12 col-lg-6">
+      <section class="panel-card">
+        <div class="panel-section-heading"><div><h2 class="h5 mb-0">1. Entry submissions ({{ submissions|length }})</h2></div></div>
+        {% if session.status == 'draft' %}
+        <form method="post" class="mb-3">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="open_submissions">
+          <button type="submit" class="btn btn-primary fw-semibold">Open submissions</button>
+        </form>
+        {% elif session.status == 'submissions_open' %}
+        <form method="post" class="mb-3">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="freeze">
+          <button type="submit" class="btn btn-warning fw-semibold" data-confirm="Freeze all submitted entries and open reviewing?">Freeze submissions &amp; open reviewing</button>
+        </form>
+        {% endif %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead><tr><th>Entry</th><th>Status</th><th>Revision</th><th>Submit link</th></tr></thead>
+            <tbody>
+              {% for sub in submissions %}
+              <tr>
+                <td>{{ sub.group.name }}</td>
+                <td><span class="badge text-bg-secondary">{{ sub.get_status_display }}</span></td>
+                <td>v{{ sub.current_revision }}</td>
+                <td><a href="{% url 'assessment_async_submit_entry' session.uuid sub.group_id %}">Open</a></td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="4" class="panel-muted">No submissions yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <div class="col-12 col-lg-6">
+      <section class="panel-card">
+        <div class="panel-section-heading"><div><h2 class="h5 mb-0">2. Review allocation ({{ assignments|length }})</h2></div></div>
+        <p class="small panel-muted">Frozen entries: {{ preview.frozen_versions|length }} | Feasible: {{ preview.feasible|yesno:'Yes,No' }}</p>
+        {% if session.status == 'live' and preview.feasible %}
+        <form method="post" class="mb-3">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="commit_allocations">
+          <button type="submit" class="btn btn-primary fw-semibold">Commit review allocations</button>
+        </form>
+        {% endif %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead><tr><th>Track</th><th>Entry</th><th>Reviewer</th><th>Status</th></tr></thead>
+            <tbody>
+              {% for a in assignments %}
+              <tr>
+                <td>{{ a.get_track_display }}</td>
+                <td>{{ a.submission_version.submission.group.name }}</td>
+                <td>{% if a.peer_evaluator %}{{ a.peer_evaluator.full_name }}{% else %}{{ a.examiner_evaluator.display_name }}{% endif %}</td>
+                <td><span class="badge text-bg-info">{{ a.get_status_display }}</span></td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="4" class="panel-muted">No assignments committed yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}

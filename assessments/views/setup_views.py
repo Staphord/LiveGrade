@@ -27,7 +27,7 @@ __all__ = [
 ]
 
 XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-STEPS = ('basics', 'groups', 'rubric')
+STEPS = ('basics', 'groups', 'rubric', 'panel', 'go-live')
 
 
 def _download(buffer, filename):
@@ -40,7 +40,7 @@ def _download(buffer, filename):
 @require_safe
 def onboarding_sample(request, kind):
     """Synthetic examples an owner can download before creating their first session."""
-    if getattr(request, 'service', None) != 'classroom':
+    if getattr(request, 'service', None) != 'assessment':
         raise Http404
     if kind == 'groups':
         return _download(group_import.sample_workbook(), 'groups-and-students-sample.xlsx')

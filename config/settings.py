@@ -89,9 +89,9 @@ if not DEBUG and (EMAIL_HOST_USER or EMAIL_HOST_PASSWORD) and not (EMAIL_USE_TLS
 
 # The services that are open to the public (portal/services.py). Any other service is shown
 # as coming soon and cannot be entered. Names that are not in the registry are ignored.
-LIVEGRADE_LIVE_SERVICES = [s.strip() for s in os.getenv('LIVEGRADE_LIVE_SERVICES', 'classroom,polls').split(',') if s.strip()]
+LIVEGRADE_LIVE_SERVICES = [s.strip() for s in os.getenv('LIVEGRADE_LIVE_SERVICES', 'assessment,polls').split(',') if s.strip()]
 if 'test' in sys.argv:
-    LIVEGRADE_LIVE_SERVICES = ['classroom', 'polls']
+    LIVEGRADE_LIVE_SERVICES = ['assessment', 'polls']
 
 # Production hardening, as in DevPerf: refuse to start weak rather than start
 # with a published key. Never during `manage.py test`.

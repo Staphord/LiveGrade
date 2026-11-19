@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% block title %}Panel Examiners : {{ session.name }} : LiveGrade{% endblock %}
+{% block page_title %}{{ session.name }}{% endblock %}
+
+{% block content %}
+{% include 'service_domains/_workspace_styles.html' %}
+{% include 'service_domains/_panel_ui_styles.html' %}
+<div class="container-fluid py-4 service-workspace panel-page--wide">
+  {% include 'assessments/_session_tabs.html' with active='panel' %}
+
+  <div class="row g-4">
+    <div class="col-12 col-lg-5">
+      <section class="panel-card">
+        <div class="panel-section-heading"><div><h2 class="h5 mb-0">Invite panelist</h2></div></div>
+        <form method="post" novalidate>
+          {% csrf_token %}
+          {% include 'partials/_form_field.html' with field=form.display_name %}
+          {% include 'partials/_form_field.html' with field=form.email %}
+          {% include 'partials/_form_field.html' with field=form.is_chair %}
+          <button type="submit" class="btn btn-primary fw-semibold mt-2">Add panelist</button>
+        </form>
+      </section>
+    </div>
+
+    <div class="col-12 col-lg-7">
+      <section class="panel-card">
+        <div class="panel-section-heading">
+          <div><h2 class="h5 mb-0">Invited panelists ({{ examiners|length }})</h2></div>
+        </div>
+        {% if not readiness.panel_feasibility.feasible and readiness.panel_feasibility.message %}
+        <div class="alert alert-warning py-2 px-3 small mb-3">{{ readiness.panel_feasibility.message }}</div>
+        {% endif %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr><th>Name</th><th>Email</th><th>Role</th><th>Delivery</th><th>Portal</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for ex in examiners %}
+              <tr>
+                <td>{{ ex.display_name }}</td>
+                <td>{{ ex.email }}</td>
+                <td>{% if ex.is_chair %}<span class="badge text-bg-primary">Chair</span>{% else %}Panelist{% endif %}</td>
+                <td>
+                  <span class="badge {% if ex.delivery_status == 'sent' %}text-bg-success{% elif ex.delivery_status == 'failed' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ ex.get_delivery_status_display }}</span>
+                  {% if ex.delivery_status == 'failed' %}<div class="text-danger small mt-1">{{ ex.delivery_error_message }}</div>{% endif %}
+                </td>
+                <td><a href="{% url 'assessment_examiner_portal' ex.invite_token %}" target="_blank" rel="noopener">Open link</a></td>
+                <td class="d-flex gap-2">
+                  <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="resend_examiner">
+                    <input type="hidden" name="examiner_id" value="{{ ex.pk }}">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">Resend</button>
+                  </form>
+                  <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="remove_examiner">
+                    <input type="hidden" name="examiner_id" value="{{ ex.pk }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="Remove {{ ex.display_name }} from the panel?">Remove</button>
+                  </form>
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="6" class="panel-muted">No panelists invited yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}

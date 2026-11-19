@@ -49,16 +49,19 @@ class JoinTests(StudentTestCase):
 
     def test_the_join_page_asks_for_whatever_the_session_identifies_by(self):
         response = self.client.get(self.url('student_join'))
-        self.assertContains(response, 'your student ID')
-        self.assertContains(response, 'This session checks your student ID against the class roster.')
-        self.assertNotContains(response, 'This session checks your full name against the class roster.')
+        self.assertContains(response, 'Ready to join')
+        self.assertContains(response, 'Your student ID')
+        self.assertNotContains(response, 'Your full name')
+        self.assertNotContains(response, 'class roster')
+        self.assertNotContains(response, "You're in!")
 
     def test_a_name_session_asks_for_a_name(self):
         AssessmentSession.objects.filter(pk=self.session.pk).update(identify_by='full_name')
         response = self.client.get(self.url('student_join'))
-        self.assertContains(response, 'your full name')
-        self.assertContains(response, 'This session checks your full name against the class roster.')
-        self.assertNotContains(response, 'This session checks your student ID against the class roster.')
+        self.assertContains(response, 'Ready to join')
+        self.assertContains(response, 'Your full name')
+        self.assertNotContains(response, 'Your student ID')
+        self.assertNotContains(response, 'class roster')
 
     def test_somebody_who_is_on_the_roster_is_let_in_and_recorded(self):
         response = self.client.post(self.url('student_join'), {'identifier': 's3'})

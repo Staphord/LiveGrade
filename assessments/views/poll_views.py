@@ -71,7 +71,7 @@ def leaderboard_scores(request, pk):
         raise Http404
     with transaction.atomic():
         session = _session(request, pk, lock=True)
-        if session.service != 'classroom':
+        if session.service != 'assessment':
             raise Http404
         show = action == 'show'
         if session.public_leaderboard_show_scores != show:
@@ -93,7 +93,7 @@ def leaderboard_scores(request, pk):
 @require_http_methods(['GET', 'POST'])
 def classroom_polls(request, pk):
     session = _session(request, pk)
-    if session.service != 'classroom':
+    if session.service != 'assessment':
         raise Http404
     selected_uuid = request.POST.get('poll') if request.method == 'POST' else request.GET.get('poll')
     poll = _poll(session.polls.all(), selected_uuid) if selected_uuid else None
@@ -263,7 +263,7 @@ def classroom_polls(request, pk):
 @require_POST
 def classroom_poll_delete(request, pk):
     session = _session(request, pk)
-    if session.service != 'classroom':
+    if session.service != 'assessment':
         raise Http404
     action = request.POST.get('action')
     ids = request.POST.getlist('polls')
@@ -285,7 +285,7 @@ def classroom_poll_delete(request, pk):
 @require_http_methods(['GET'])
 def classroom_poll_import_sample(request, pk):
     session = _session(request, pk)
-    if session.service != 'classroom':
+    if session.service != 'assessment':
         raise Http404
     response = HttpResponse(poll_import.sample_workbook().getvalue(), content_type=(
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'))
@@ -295,7 +295,7 @@ def classroom_poll_import_sample(request, pk):
 
 def _public_poll(poll_uuid):
     return get_object_or_404(ClassroomPoll.objects.select_related('assessment_session', 'confirmed_option'),
-        uuid=poll_uuid, assessment_session__service='classroom', status__in=['open', 'closed', 'confirmed', 'cancelled'])
+        uuid=poll_uuid, assessment_session__service='assessment', status__in=['open', 'closed', 'confirmed', 'cancelled'])
 
 
 @never_cache
@@ -331,7 +331,7 @@ def poll_qr_screen(request, poll_uuid):
 @require_http_methods(['GET'])
 def poll_invitation(request, token):
     voter = get_object_or_404(ClassroomPollVoter.objects.select_related('poll'), token=token,
-        student__isnull=False, poll__assessment_session__service='classroom',
+        student__isnull=False, poll__assessment_session__service='assessment',
         poll__status__in=['open', 'closed', 'confirmed', 'cancelled'])
     identities = request.session.get(POLL_IDENTITIES, {})
     identities[str(voter.poll.uuid)] = str(voter.token)

@@ -13,7 +13,7 @@ class Command(BaseCommand):
     )
 
     def handle(self, *args, **options):
-        sessions = AssessmentSession.objects.filter(service='classroom')
+        sessions = AssessmentSession.objects.filter(service='assessment')
         students = Student.objects.filter(assessment_session__in=sessions)
         evaluators = Evaluator.objects.filter(assessment_session__in=sessions)
         evaluations = Evaluation.objects.filter(

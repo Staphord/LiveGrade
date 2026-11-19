@@ -1,0 +1,32 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% block title %}Submit Work : {{ group.name }}{% endblock %}
+{% block service_name %}Submit entry work{% endblock %}
+
+{% block content %}
+{% include 'service_domains/_panel_ui_styles.html' %}
+<main id="public-main" class="public-service-content">
+  <header class="panel-hero mb-4">
+    <div class="panel-hero__copy">
+      <p class="panel-eyebrow">{{ session.name }}</p>
+      <h1>{{ group.name }}</h1>
+    </div>
+    <div class="panel-hero__actions">
+      <span class="panel-state panel-state--done">{{ session.get_status_display }}</span>
+    </div>
+  </header>
+
+  <section class="panel-card">
+    {% if existing %}
+    <div class="alert alert-info">Current status: <strong>{{ existing.get_status_display }}</strong> (Revision {{ existing.current_revision }})</div>
+    {% endif %}
+    <form method="post" novalidate>
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+      {% include 'partials/_form_field.html' with field=form.title %}
+      {% include 'partials/_form_field.html' with field=form.content %}
+      {% include 'partials/_form_field.html' with field=form.external_url %}
+      <button type="submit" class="btn btn-primary fw-semibold mt-2">Submit revision</button>
+    </form>
+  </section>
+</main>
+{% endblock %}

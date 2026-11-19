@@ -4,16 +4,16 @@ from django.test import RequestFactory, SimpleTestCase, override_settings
 from portal.middleware import ServiceMiddleware, service_for_path
 
 
-@override_settings(LIVEGRADE_LIVE_SERVICES=['classroom'])
+@override_settings(LIVEGRADE_LIVE_SERVICES=['assessment'])
 class ServiceForPathTests(SimpleTestCase):
 
     def test_a_service_entry_address_belongs_to_that_service(self):
-        for path in ('/classroom/', '/classroom', '/classroom/app/', '/classroom/app/5/edit/'):
+        for path in ('/assessment/', '/assessment', '/assessment/app/', '/assessment/app/5/edit/'):
             with self.subTest(path=path):
-                self.assertEqual(service_for_path(path), 'classroom')
+                self.assertEqual(service_for_path(path), 'assessment')
 
-    def test_legacy_classroom_addresses_do_not_gain_classroom_scope(self):
-        for path in ('/assessments/', '/assessments', '/assessments/12/results/'):
+    def test_legacy_classroom_addresses_do_not_gain_assessment_scope(self):
+        for path in ('/assessments/', '/assessments', '/classroom/', '/panel/', '/coassessment/'):
             with self.subTest(path=path):
                 self.assertIsNone(service_for_path(path))
 
@@ -24,24 +24,24 @@ class ServiceForPathTests(SimpleTestCase):
                 self.assertIsNone(service_for_path(path))
 
     def test_a_service_that_is_not_open_has_no_scope(self):
-        for path in ('/panel/', '/panel/app/', '/showcase/', '/team/', '/competition/'):
+        for path in ('/showcase/', '/team/', '/competition/'):
             with self.subTest(path=path):
                 self.assertIsNone(service_for_path(path))
 
     def test_only_an_exact_slug_counts(self):
-        for path in ('/Classroom/', '/CLASSROOM/', '/classrooms/', '/class/', '//classroom/', '/ classroom/',
-                     'classroom/', '/classroom%2F/'):
+        for path in ('/Assessment/', '/ASSESSMENT/', '/assessments/', '//assessment/', '/ assessment/',
+                     'assessment/', '/assessment%2F/'):
             with self.subTest(path=path):
                 self.assertIsNone(service_for_path(path))
 
     def test_dot_segments_do_not_change_the_first_segment(self):
-        self.assertEqual(service_for_path('/classroom/../panel/'), 'classroom')
-        self.assertIsNone(service_for_path('/oidc/../classroom/'))
+        self.assertEqual(service_for_path('/assessment/../showcase/'), 'assessment')
+        self.assertIsNone(service_for_path('/oidc/../assessment/'))
 
     @override_settings(LIVEGRADE_LIVE_SERVICES=[])
     def test_switching_the_service_off_removes_the_scope(self):
-        self.assertIsNone(service_for_path('/classroom/'))
-        self.assertIsNone(service_for_path('/classroom/app/'))
+        self.assertIsNone(service_for_path('/assessment/'))
+        self.assertIsNone(service_for_path('/assessment/app/'))
         self.assertIsNone(service_for_path('/assessments/'))
 
 
@@ -58,8 +58,8 @@ class MiddlewareTests(SimpleTestCase):
         return seen['service'], result
 
     def test_the_service_is_set_before_the_view_runs(self):
-        service, result = self.run_middleware('/classroom/app/')
-        self.assertEqual(service, 'classroom')
+        service, result = self.run_middleware('/assessment/app/')
+        self.assertEqual(service, 'assessment')
         self.assertEqual(result, 'response')
 
     def test_the_attribute_always_exists_even_when_it_is_empty(self):
@@ -67,10 +67,10 @@ class MiddlewareTests(SimpleTestCase):
         self.assertIsNone(service)
 
     def test_a_query_string_cannot_set_the_service(self):
-        service, _ = self.run_middleware('/oidc/authenticate/?service=classroom')
+        service, _ = self.run_middleware('/oidc/authenticate/?service=assessment')
         self.assertIsNone(service)
 
     def test_a_header_cannot_set_the_service(self):
-        request = RequestFactory().get('/oidc/authenticate/', HTTP_X_SERVICE='classroom')
+        request = RequestFactory().get('/oidc/authenticate/', HTTP_X_SERVICE='assessment')
         ServiceMiddleware(lambda r: setattr(self, 'got', r.service))(request)
         self.assertIsNone(self.got)

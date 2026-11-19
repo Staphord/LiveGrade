@@ -187,7 +187,7 @@ class ParticipantAccessibilityTests(SessionFixture):
         self.assertContains(page, 'content="width=device-width, initial-scale=1.0"', html=False)
         self.assertNotContains(page, 'maximum-scale')
         self.assertContains(page, '<label class="form-label fw-600 s-label" for="id_identifier">', html=False)
-        self.assertContains(page, 'id="identifier-help"')
+        self.assertContains(page, 'id="identifier-help"', html=False)
 
         invalid = self.client.post(reverse('student_join', args=[self.session.uuid]), {'identifier': ''})
         self.assertContains(invalid, 'aria-invalid="true"')
@@ -257,9 +257,9 @@ class ParticipantAccessibilityTests(SessionFixture):
             status=PresentationTurn.Status.ACTIVE, opened_at=timezone.now(),
             voting_opened_at=timezone.now(), voting_ends_at=timezone.now() + timedelta(minutes=1),
         )
-        PrivacyNotice.objects.filter(service='classroom').update(is_active=False)
+        PrivacyNotice.objects.filter(service='assessment').update(is_active=False)
         PrivacyNotice.objects.create(
-            service='classroom', version='budget-1', title='Privacy notice',
+            service='assessment', version='accessibility-1', title='Privacy notice',
             body='How participant data is used.', is_active=True,
         )
         participant = Client()
@@ -330,8 +330,10 @@ class ParticipantAccessibilityTests(SessionFixture):
         participant = Client()
         participant.get(join_url)
         participant.post(join_url, {'identifier': self.cat.student_id})
-        pages.append(participant.get(reverse('student_privacy_notice', args=[self.session.uuid])))
-        participant.post(reverse('student_privacy_notice', args=[self.session.uuid]), {'action': 'continue'})
+        notice_url = reverse('student_privacy_notice', args=[self.session.uuid])
+        pages.append(participant.get(notice_url))
+        participant.post(notice_url, {'action': 'continue'})
+        pages.append(participant.get(reverse('student_evaluate', args=[self.session.uuid])))
 
         self.session.status = 'live'
         self.session.save(update_fields=['status'])

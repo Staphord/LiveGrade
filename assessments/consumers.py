@@ -43,7 +43,7 @@ class AssessmentStaffSessionConsumer(AssessmentSessionConsumer):
         if not user or not user.is_authenticated:
             return False
         session = AssessmentSession.objects.filter(
-            uuid=self.session_uuid, service__in=('classroom', 'team')).only(
+            uuid=self.session_uuid, service__in=('assessment', 'team')).only(
                 'organization_id', 'created_by_id', 'service').first()
         state = self.scope.get('session')
         if session is None or state is None or not is_released(session.service):

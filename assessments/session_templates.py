@@ -78,7 +78,7 @@ TEAM_STARTERS = (
 
 
 def starters_for(service):
-    if service == 'classroom':
+    if service == 'assessment':
         return CLASSROOM_STARTERS
     if service == 'team':
         return TEAM_STARTERS

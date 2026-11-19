@@ -77,7 +77,7 @@ def join(request, session_uuid):
 @never_cache
 @require_http_methods(['GET', 'POST'])
 def privacy_notice(request, session_uuid):
-    """Show the current service notice and record the exact version delivered."""
+    """Show the active service notice and record the exact version delivered."""
     session = _get_session(session_uuid)
     student = student_from_request(request, session)
     if student is None:
@@ -319,7 +319,7 @@ def join_screen(request, session_uuid):
     view of the same join link the QR on the admin panel already encodes.
     """
     session = _get_session(session_uuid)
-    if session.service != 'classroom':
+    if session.service != 'assessment':
         raise Http404
     response = render(request, 'assessments/student/join_screen.html', {
         'session': session, **_public_live_state(session),
@@ -409,7 +409,7 @@ def _public_live_state(session):
 
 def _public_group_leaderboard(session):
     """Completed-group rankings; numeric scores never leave the server when hidden."""
-    if session.service != 'classroom' or session.status == AssessmentSession.Status.DRAFT:
+    if session.service != 'assessment' or session.status == AssessmentSession.Status.DRAFT:
         return []
     from ..leaderboard import group_standings
     rows = []
@@ -426,7 +426,7 @@ def _public_group_leaderboard(session):
 @require_http_methods(['GET'])
 def join_screen_state(request, session_uuid):
     session = _get_session(session_uuid)
-    if session.service != 'classroom':
+    if session.service != 'assessment':
         raise Http404
     response = JsonResponse(_public_live_state(session))
     response['Cache-Control'] = 'private, no-store'
@@ -442,7 +442,7 @@ def join_screen_qr(request, session_uuid):
     organization scoping); both just wrap the same `qr_png(join_url(...))`.
     """
     session = _get_session(session_uuid)
-    if session.service != 'classroom':
+    if session.service != 'assessment':
         raise Http404
     response = HttpResponse(qr_png(join_url(request, session)), content_type='image/png')
     response['Cache-Control'] = 'private, no-store'

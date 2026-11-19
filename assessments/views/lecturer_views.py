@@ -22,12 +22,12 @@ from ..excel import export_results
 from ..reports import export_results_csv
 from ..level_descriptors import format_descriptors
 from ..forms import (
-    AssessmentSessionForm, DuplicateSessionForm, GroupImportForm, PresentationGroupForm,
-    RubricCategoryForm, RubricImportForm, StudentForm, TemplateChoiceForm,
+    AssessmentSessionForm, DuplicateSessionForm, GroupImportForm, PanelExaminerForm,
+    PresentationGroupForm, RubricCategoryForm, RubricImportForm, StudentForm, TemplateChoiceForm,
 )
 from ..models import (
-    TOTAL_WEIGHT, AssessmentSession, Evaluation, GroupMembership, ParticipationRecord,
-    PresentationGroup, PresentationTurn, RubricCategory, Student,
+    TOTAL_WEIGHT, AssessmentSession, Evaluation, GroupMembership, PanelScorecard,
+    ParticipationRecord, PresentationGroup, PresentationTurn, RubricCategory, Student,
 )
 from ..session_templates import blueprint, save_draft_from_template, starters_for, template_queryset
 from ..setup_rules import (
@@ -40,6 +40,7 @@ from ..qr import join_url, qr_png
 from ..weight_pie import weight_pie
 from ..realtime import broadcast_session_event
 from ..scoring import group_score_percents, group_vote_counts, session_results, turn_vote_counts
+from ..unified_operations import compute_session_readiness, unified_group_outcome
 from ..transfers import TransferError, eligible_recipients, transfer_session
 from ..turns import (
     activate_turn, adjust_timer, ensure_turn_progressed, open_voting, pause_timer, resume_timer,
@@ -98,12 +99,12 @@ def _closed(request, session):
 @lecturer_required
 def assessment_dashboard(request):
     """Classroom overview: a compact, data-backed summary of owned sessions."""
-    if getattr(request, 'service', None) != 'classroom':
+    if getattr(request, 'service', None) != 'assessment':
         raise Http404
     if request.GET.get('scope') == 'all' or request.GET.get('q') or request.GET.get('status'):
         return assessment_session_list(request)
     sessions = (AssessmentSession.objects.for_request(request)
-                .for_service('classroom').owned_by(request.user))
+                .for_service('assessment').owned_by(request.user))
     counts = sessions.aggregate(
         total=models.Count('pk'),
         live_count=models.Count('pk', filter=models.Q(status=AssessmentSession.Status.LIVE)),
@@ -192,13 +193,13 @@ def assessment_dashboard(request):
 
 @lecturer_required
 def assessment_session_list(request):
-    if getattr(request, 'service', None) != 'classroom':
+    if getattr(request, 'service', None) != 'assessment':
         raise Http404
     # "All sessions in the organization" is for people DevPerf has given the
     # oversee permission; for everybody else the parameter does nothing.
     show_all = request.GET.get('scope') == 'all' and can_oversee(request)
     visible = (AssessmentSession.objects.for_request(request)
-               .for_service('classroom'))
+               .for_service('assessment'))
     if not show_all:
         visible = visible.owned_by(request.user)
 
@@ -280,10 +281,10 @@ def assessment_session_list(request):
 @require_POST
 def assessment_walkthrough_start(request):
     """Start or resume a first-session walkthrough for this org in this service."""
-    if getattr(request, 'service', None) != 'classroom':
+    if getattr(request, 'service', None) != 'assessment':
         raise Http404
     organization = active_organization(request)
-    existing = (AssessmentSession.objects.for_request(request).for_service('classroom')
+    existing = (AssessmentSession.objects.for_request(request).for_service('assessment')
                 .owned_by(request.user).filter(status=AssessmentSession.Status.DRAFT)
                 .order_by('-created_at', '-pk').first())
     walkthroughs = request.session.get(CLASSROOM_WALKTHROUGHS_KEY, {})
@@ -299,7 +300,7 @@ def assessment_walkthrough_start(request):
 @lecturer_required
 @require_POST
 def assessment_walkthrough_dismiss(request):
-    if getattr(request, 'service', None) != 'classroom':
+    if getattr(request, 'service', None) != 'assessment':
         raise Http404
     organization = active_organization(request)
     walkthroughs = request.session.get(CLASSROOM_WALKTHROUGHS_KEY, {})
@@ -319,7 +320,7 @@ def assessment_session_create(request):
     service = getattr(request, 'service', None)
     # Team can use the shared setup flow to build its first session template.
     # Other services have their own assessment and result workflows.
-    if service not in ('classroom', 'team'):
+    if service not in ('assessment', 'team'):
         raise Http404
     saved = list(template_queryset(request).prefetch_related('rubric_categories__level_descriptors'))
     starters = starters_for(service)
@@ -342,7 +343,7 @@ def assessment_session_create(request):
         else:
             walkthroughs = request.session.get(CLASSROOM_WALKTHROUGHS_KEY, {})
             guide = walkthroughs.get(str(organization['id'])) if isinstance(walkthroughs, dict) else None
-            if (service == 'classroom' and isinstance(guide, dict)
+            if (service == 'assessment' and isinstance(guide, dict)
                     and guide.get('session_id') is None):
                 walkthroughs[str(organization['id'])] = {'session_id': session.pk}
                 request.session[CLASSROOM_WALKTHROUGHS_KEY] = walkthroughs
@@ -457,11 +458,45 @@ def _live_context(session):
     recent_activity = []
     durations = []
     recent_votes = turn_vote_counts([turn.pk for turn in closed_turns])
+    recent_panel_counts = {}
+    if session.enable_panel and closed_turns:
+        recent_panel_counts = dict(
+            PanelScorecard.objects.filter(turn_id__in=[turn.pk for turn in closed_turns])
+            .values('turn_id')
+            .annotate(c=models.Count('id'))
+            .values_list('turn_id', 'c')
+        )
     for turn in closed_turns:
         votes = recent_votes.get(turn.pk, 0)
         if turn.opened_at and turn.closed_at:
             durations.append((turn.closed_at - turn.opened_at).total_seconds())
-        recent_activity.append({'group': turn.group, 'closed_at': turn.closed_at, 'votes': votes, 'turn_id': turn.pk})
+        recent_activity.append({
+            'kind': 'turn_closed',
+            'activity_id': f'turn-{turn.pk}',
+            'group': turn.group,
+            'closed_at': turn.closed_at,
+            'timestamp': turn.closed_at,
+            'votes': votes,
+            'panel_count': recent_panel_counts.get(turn.pk, 0),
+            'turn_id': turn.pk,
+        })
+    if session.enable_panel:
+        panel_cards = list(
+            PanelScorecard.objects.filter(turn__assessment_session=session)
+            .select_related('examiner', 'turn__group')
+            .order_by('-submitted_at')[:5]
+        )
+        for card in panel_cards:
+            recent_activity.append({
+                'kind': 'panel_scorecard',
+                'activity_id': f'panel-{card.pk}',
+                'examiner_name': card.examiner.display_name,
+                'group': card.turn.group,
+                'timestamp': card.submitted_at,
+                'turn_id': card.turn_id,
+            })
+    recent_activity.sort(key=lambda item: item['timestamp'], reverse=True)
+    recent_activity = recent_activity[:6]
     avg_turn_seconds = int(sum(durations) / len(durations)) if durations else None
 
     # Once a session is closed its "running for" clock has to stop ticking
@@ -511,6 +546,14 @@ def _live_context(session):
             .exclude(closed_at__isnull=True).select_related('group'))
         timeline = []
         timeline_votes = turn_vote_counts([turn.pk for turn in all_closed_turns])
+        timeline_panel_counts = {}
+        if session.enable_panel and all_closed_turns:
+            timeline_panel_counts = dict(
+                PanelScorecard.objects.filter(turn_id__in=[turn.pk for turn in all_closed_turns])
+                .values('turn_id')
+                .annotate(c=models.Count('id'))
+                .values_list('turn_id', 'c')
+            )
         for turn in all_closed_turns:
             votes = timeline_votes.get(turn.pk, 0)
             duration_label = None
@@ -520,6 +563,7 @@ def _live_context(session):
             rank_row = rank_by_group_id.get(turn.group_id)
             timeline.append({
                 'group': turn.group, 'votes': votes, 'turn_id': turn.pk,
+                'panel_count': timeline_panel_counts.get(turn.pk, 0),
                 'duration_label': duration_label,
                 'rank': rank_row['rank'] if rank_row else None,
                 'percent': rank_row['percent'] if rank_row else None,
@@ -557,12 +601,19 @@ def _live_context(session):
         'joined_students': joined_students,
         'joining_locked': session.joining_locked,
         'designated_next_group': session.designated_next_group,
+        'panel_examiners_count': session.panel_examiners.count() if session.enable_panel else 0,
+        'panel_submitted_count': active_turn.panel_scorecards.count() if (session.enable_panel and active_turn) else 0,
     }
 
 
 @lecturer_required
 def assessment_session_detail(request, pk):
     session = _session(request, pk)
+    if (
+        session.delivery_mode == AssessmentSession.DeliveryMode.ASYNC_SUBMISSION
+        and session.status != AssessmentSession.Status.DRAFT
+    ):
+        return redirect('assessment_async_console', pk=session.pk)
     if session.status == AssessmentSession.Status.DRAFT:
         # A draft session has no live console to show yet - render the same
         # merged setup screen the groups/rubric steps render, opened
@@ -614,6 +665,7 @@ def assessment_live_state(request, pk):
         'roster_html': render_to_string('assessments/_partials/live_roster.html', context, request=request),
         'pause_html': render_to_string('assessments/_partials/live_pause_button.html', context, request=request),
         'qr_html': render_to_string('assessments/_partials/live_qr.html', {**context, 'join_url': join_url(request, session)}, request=request),
+        'panel_status_html': render_to_string('assessments/_partials/live_panelists.html', context, request=request) if session.enable_panel else '',
     })
 
 
@@ -631,7 +683,7 @@ def assessment_session_delete(request, pk):
 @require_POST
 def assessment_session_bulk_delete(request):
     """Delete an explicitly selected set of the current lecturer's sessions."""
-    if getattr(request, 'service', None) != 'classroom':
+    if getattr(request, 'service', None) != 'assessment':
         raise Http404
 
     raw_ids = request.POST.getlist('session_ids')
@@ -645,7 +697,7 @@ def assessment_session_bulk_delete(request):
 
     session_ids = {int(value) for value in raw_ids}
     owned_sessions = (AssessmentSession.objects.for_request(request)
-                      .for_service('classroom').owned_by(request.user))
+                      .for_service('assessment').owned_by(request.user))
     with transaction.atomic():
         selected = list(owned_sessions.select_for_update().filter(pk__in=session_ids))
         if len(selected) != len(session_ids):
@@ -708,23 +760,28 @@ def _roster_context(request, session):
 
 
 def _setup_stepper(request, session, active_step, groups_done=None, rubric_done=None, live_mode=False):
-    """Steps for the shared stepper on the classroom setup screen. Completion
-    is read from the session unless the caller already computed it."""
+    """Steps for the unified assessment setup screen."""
     if session is not None:
         if groups_done is None:
             groups_done = session.groups.exists()
         if rubric_done is None:
             rubric_done = session.rubric_weight_total() == TOTAL_WEIGHT
-    people = 'team members' if request.service == 'team' else 'students'
+    people = 'team members' if request.service == 'team' else 'participants'
     specs = [
-        {'key': 'basics', 'label': 'Basics', 'desc': 'Name, join & penalty', 'done': session is not None},
-        {'key': 'groups', 'label': f'Groups & {people}', 'desc': 'Import or build groups', 'done': groups_done},
-        {'key': 'rubric', 'label': 'Rubric', 'desc': 'Categories & weights', 'done': rubric_done},
+        {'key': 'basics', 'label': 'Mode & basics', 'done': session is not None},
+        {'key': 'groups', 'label': f'Entries & {people}', 'done': groups_done},
+        {'key': 'rubric', 'label': 'Rubric', 'done': rubric_done},
     ]
+    if session is not None and session.enable_panel and request.service != 'team':
+        specs.append({
+            'key': 'panel',
+            'label': 'Panel',
+            'done': session.panel_examiners.exists(),
+        })
     if not live_mode:
-        can_go_live = session is not None and session.can_go_live()
-        specs.append({'key': 'go-live', 'label': 'Go live', 'desc': 'Show QR, start grading',
-                      'final': True, 'icon': 'bi-rocket-takeoff', 'locked': not can_go_live,
+        readiness = compute_session_readiness(session) if session is not None else {'ready': False}
+        specs.append({'key': 'go-live', 'label': 'Review & launch',
+                      'final': True, 'icon': 'bi-rocket-takeoff', 'locked': not readiness['ready'],
                       'disabled': session is None})
     for spec in specs:
         if session is not None:
@@ -787,11 +844,37 @@ def _setup_context(request, session, active_step, roster_form=None, rubric_form=
     context['rubric_review'] = pending_rubric_import(request, session) if active_step == 'rubric' else None
 
     rubric_ready = weight_total == TOTAL_WEIGHT
+    readiness = compute_session_readiness(session)
+    setup_return_url = None
+    setup_return_label = None
+    if session.status != AssessmentSession.Status.DRAFT:
+        source_map = {
+            'async': ('assessment_async_console', 'Back to Submissions & Allocation'),
+            'results': ('assessment_results', 'Back to results'),
+            'panel': ('assessment_panel_examiners', 'Back to Panel Examiners'),
+            'participation': ('assessment_participation', 'Back to participation'),
+            'polls': ('assessment_polls', 'Back to polls'),
+            'overview': ('assessment_session_detail', 'Back to live control'),
+        }
+        default_source = (
+            'async'
+            if session.delivery_mode == AssessmentSession.DeliveryMode.ASYNC_SUBMISSION
+            else 'overview'
+        )
+        source_key = request.GET.get('from') if request.GET.get('from') in source_map else default_source
+        url_name, setup_return_label = source_map[source_key]
+        setup_return_url = reverse(url_name, args=[session.pk])
+
     context.update({
         'step_rubric_done': rubric_ready,
         'step_groups_done': session.groups.exists(),
+        'readiness': readiness,
+        'panel_examiner_form': PanelExaminerForm(auto_id='id_panel_%s'),
+        'panel_examiners': list(session.panel_examiners.all()),
         'stepper_steps': _setup_stepper(request, session, active_step, session.groups.exists(),
                                         rubric_ready, context['live_mode']),
+        'setup_return_url': setup_return_url,
+        'setup_return_label': setup_return_label,
     })
     return context
 
@@ -1149,13 +1232,20 @@ def delete_groups(request, session, groups):
 @require_POST
 def go_live(request, pk):
     session = _session(request, pk)
-    if not session.can_go_live():
-        messages.error(request, 'Add rubric categories whose weights add up to exactly 100% '
-                                 'and at least one group before going live.')
-        return redirect('assessment_session_detail', pk=session.pk)
+    readiness = compute_session_readiness(session)
+    if not readiness['ready']:
+        messages.error(request, readiness['blockers'][0])
+        return redirect('assessment_setup', pk=session.pk)
+    if session.delivery_mode == AssessmentSession.DeliveryMode.ASYNC_SUBMISSION:
+        session.status = AssessmentSession.Status.SUBMISSIONS_OPEN
+        session.save(update_fields=['status'])
+        broadcast_session_event(session, 'session.live', {'status': session.status})
+        messages.success(request, 'Submissions are now open.')
+        return redirect('assessment_async_console', pk=session.pk)
     session.status = AssessmentSession.Status.LIVE
     session.save(update_fields=['status'])
-    messages.success(request, 'Session is now live. Share the QR code with students.')
+    broadcast_session_event(session, 'session.live', {'status': session.status})
+    messages.success(request, 'Session is now live.')
     return redirect('assessment_session_detail', pk=session.pk)
 
 
@@ -1641,10 +1731,48 @@ def _results_context(request, session):
 
 
 @lecturer_required
+@require_http_methods(['GET', 'POST'])
 def results(request, pk):
     session = _session(request, pk, oversight=True)
+    is_owner = session.created_by_id == request.user.pk
+    can_moderate = (
+        session.enable_panel
+        or session.delivery_mode == AssessmentSession.DeliveryMode.ASYNC_SUBMISSION
+    )
+    outcomes = []
+    if can_moderate:
+        groups = list(session.groups.filter(is_practice=False).order_by('order', 'pk'))
+        outcomes = [unified_group_outcome(g, session) for g in groups]
+
+    if request.method == 'POST' and is_owner and can_moderate:
+        from ..unified_operations import publish_session_snapshot, record_turn_moderation
+
+        action = request.POST.get('action')
+        try:
+            if action == 'moderate_turn':
+                turn_id = int(request.POST.get('turn_id'))
+                turn = get_object_or_404(PresentationTurn, pk=turn_id, assessment_session=session)
+                record_turn_moderation(
+                    turn,
+                    request.POST.get('mod_action', 'adjusted'),
+                    request.POST.get('final_score'),
+                    request.POST.get('justification', ''),
+                    request.user,
+                )
+                messages.success(request, f'Recorded moderation for {turn.group.name}.')
+            elif action == 'publish_snapshot':
+                reason = request.POST.get('correction_reason', '')
+                pub = publish_session_snapshot(session, request.user, outcomes, correction_reason=reason)
+                messages.success(request, f'Published immutable result snapshot (Revision {pub.revision}).')
+        except (ValidationError, ValueError, TypeError) as exc:
+            messages.error(request, getattr(exc, 'message', str(exc)))
+        return redirect('assessment_results', pk=session.pk)
+
     context = _results_context(request, session)
-    context['is_owner'] = session.created_by_id == request.user.pk
+    context['is_owner'] = is_owner
+    if can_moderate:
+        context['unified_outcomes'] = outcomes
+        context['publications'] = list(session.publications.all()[:10])
     return render(request, 'assessments/results.html', context)
 
 

@@ -44,17 +44,31 @@ class AssessmentSession(OrganizationScopedModel):
 
     class IdentifyBy(models.TextChoices):
         FULL_NAME = 'full_name', 'Full name'
-        STUDENT_ID = 'student_id', 'Student ID'
+        STUDENT_ID = 'student_id', 'Participant ID'
 
     class Status(models.TextChoices):
         DRAFT = 'draft', 'Draft'
+        SUBMISSIONS_OPEN = 'submissions_open', 'Submissions open'
         LIVE = 'live', 'Live'
         CLOSED = 'closed', 'Closed'
+
+    class DeliveryMode(models.TextChoices):
+        LIVE_STAGE = 'live_stage', 'Live session'
+        ASYNC_SUBMISSION = 'async_submission', 'Submitted work'
+
+    class EntryMode(models.TextChoices):
+        GROUP = 'group', 'Groups / teams'
+        INDIVIDUAL = 'individual', 'Individual participants'
+
+    class PanelAggregation(models.TextChoices):
+        MEAN = 'mean', 'Mean'
+        MEDIAN = 'median', 'Median'
+        TRIMMED_MEAN = 'trimmed_mean', 'Trimmed mean'
 
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False,
         help_text='Used in the public join URL instead of the numeric id, '
                   'so a student cannot guess or enumerate other sessions.')
-    service = models.CharField(max_length=20, default='classroom', db_index=True,
+    service = models.CharField(max_length=20, default='assessment', db_index=True,
         help_text='The LiveGrade service this session belongs to (a slug from portal/services.py). '
                   'Every owner page works on one service only, so a session of one service is '
                   'never reachable from another.')
@@ -62,18 +76,48 @@ class AssessmentSession(OrganizationScopedModel):
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
         related_name='assessment_sessions_created')
     identify_by = models.CharField(max_length=20, choices=IdentifyBy.choices,
-        default=IdentifyBy.FULL_NAME,
-        help_text='Which roster field a student types in to join.')
-    status = models.CharField(max_length=10, choices=Status.choices,
+        default=IdentifyBy.FULL_NAME)
+    status = models.CharField(max_length=20, choices=Status.choices,
         default=Status.DRAFT)
+    enable_peer = models.BooleanField(default=True)
+    enable_panel = models.BooleanField(default=False)
+    delivery_mode = models.CharField(
+        max_length=20, choices=DeliveryMode.choices, default=DeliveryMode.LIVE_STAGE)
+    entry_mode = models.CharField(
+        max_length=20, choices=EntryMode.choices, default=EntryMode.GROUP)
+    timezone_name = models.CharField(max_length=64, default='Africa/Dar_es_Salaam')
+    peer_weight = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal('100.00'),
+        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))])
+    panel_weight = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal('0.00'),
+        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))])
+    minimum_peer_evaluators = models.PositiveSmallIntegerField(
+        default=1, validators=[MinValueValidator(1), MaxValueValidator(500)])
+    minimum_panel_evaluators = models.PositiveSmallIntegerField(
+        default=1, validators=[MinValueValidator(1), MaxValueValidator(50)])
+    moderation_threshold = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal('15.00'),
+        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))])
+    avoid_reciprocal_pairs = models.BooleanField(default=False)
+    panel_aggregation = models.CharField(
+        max_length=16, choices=PanelAggregation.choices, default=PanelAggregation.MEAN)
+    panel_trim_fraction = models.DecimalField(
+        max_digits=4, decimal_places=3, null=True, blank=True,
+        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('0.499'))])
+    panel_enable_rubric = models.BooleanField(default=True)
+    panel_enable_vote = models.BooleanField(default=False)
+    panel_enable_written_review = models.BooleanField(default=False)
+    panel_enable_private_notes = models.BooleanField(default=True)
+    require_chair_approval = models.BooleanField(default=False)
+    publication_revision = models.PositiveIntegerField(default=0)
+    submissions_frozen_at = models.DateTimeField(null=True, blank=True)
     ungraded_penalty = models.DecimalField(max_digits=5, decimal_places=2,
         default=Decimal('1.00'),
         validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))],
         help_text='Points taken off a student\'s final score for every other group '
                   'they did not grade. 0 turns the penalty off.')
-    instructions = models.TextField(blank=True, default='', max_length=4000,
-        help_text='Instructions shown when students join and before they score. '
-                  'Explain how to use the rubric and how their scores count.')
+    instructions = models.TextField(blank=True, default='', max_length=4000)
     voting_paused = models.BooleanField(default=False,
         help_text='Lecturer-controlled kill switch: no evaluation can be '
                   'submitted while true, independent of which turn is active.')
@@ -121,6 +165,30 @@ class AssessmentSession(OrganizationScopedModel):
 
     def __str__(self):
         return self.name
+
+    @property
+    def assessment_mode_label(self):
+        """Human-readable label for the enabled assessment modes."""
+        if self.enable_peer and self.enable_panel:
+            return 'Peer + Panel'
+        if self.enable_panel:
+            return 'Panel only'
+        return 'Peer only'
+
+    def clean(self):
+        super().clean()
+        if not self.enable_peer and not self.enable_panel:
+            raise ValidationError('Enable at least one assessment mode (Peer or Panel).')
+        if self.enable_peer and not self.enable_panel:
+            self.peer_weight = Decimal('100.00')
+            self.panel_weight = Decimal('0.00')
+        elif self.enable_panel and not self.enable_peer:
+            self.panel_weight = Decimal('100.00')
+            self.peer_weight = Decimal('0.00')
+        elif (self.panel_weight + self.peer_weight) != Decimal('100.00'):
+            raise ValidationError({'peer_weight': 'Panel and Peer weights must total exactly 100%.'})
+        if self.panel_aggregation == self.PanelAggregation.TRIMMED_MEAN and self.panel_trim_fraction is None:
+            raise ValidationError({'panel_trim_fraction': 'Trimmed mean requires an explicit trim fraction.'})
 
     def active_turn(self):
         return self.presentation_turns.filter(
@@ -252,7 +320,7 @@ class Student(models.Model):
             if session is None:
                 session = AssessmentSession.objects.using(using).only('service').get(
                     pk=self.assessment_session_id)
-            if session.service == 'classroom':
+            if session.service == 'assessment':
                 Evaluator.objects.using(using).get_or_create(
                     assessment_session_id=self.assessment_session_id,
                     student_id=self.pk,
@@ -339,6 +407,30 @@ class PresentationGroup(models.Model):
 
     def __str__(self):
         return self.name
+
+    @property
+    def assessment_mode_label(self):
+        """Human-readable label for the enabled assessment modes."""
+        if self.enable_peer and self.enable_panel:
+            return 'Peer + Panel'
+        if self.enable_panel:
+            return 'Panel only'
+        return 'Peer only'
+
+    def clean(self):
+        super().clean()
+        if not self.enable_peer and not self.enable_panel:
+            raise ValidationError('Enable at least one assessment mode (Peer or Panel).')
+        if self.enable_peer and not self.enable_panel:
+            self.peer_weight = Decimal('100.00')
+            self.panel_weight = Decimal('0.00')
+        elif self.enable_panel and not self.enable_peer:
+            self.panel_weight = Decimal('100.00')
+            self.peer_weight = Decimal('0.00')
+        elif (self.panel_weight + self.peer_weight) != Decimal('100.00'):
+            raise ValidationError({'peer_weight': 'Panel and Peer weights must total exactly 100%.'})
+        if self.panel_aggregation == self.PanelAggregation.TRIMMED_MEAN and self.panel_trim_fraction is None:
+            raise ValidationError({'panel_trim_fraction': 'Trimmed mean requires an explicit trim fraction.'})
 
     def clean(self):
         super().clean()
@@ -463,7 +555,7 @@ class PresentationTurn(models.Model):
 class PrivacyNotice(models.Model):
     """One published, versioned participant privacy notice for a service."""
 
-    service = models.CharField(max_length=20, default='classroom', db_index=True)
+    service = models.CharField(max_length=20, default='assessment', db_index=True)
     version = models.CharField(max_length=40, default=DEFAULT_PRIVACY_NOTICE_VERSION)
     title = models.CharField(max_length=160, default=DEFAULT_PRIVACY_NOTICE_TITLE)
     body = models.TextField(default=DEFAULT_PRIVACY_NOTICE_BODY)
@@ -624,7 +716,7 @@ class SessionChange(models.Model):
 
 class SessionTemplate(OrganizationScopedModel):
     """An owner's reusable service configuration, with no participants or results."""
-    service = models.CharField(max_length=20, default='classroom', db_index=True)
+    service = models.CharField(max_length=20, default='assessment', db_index=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, related_name='assessment_templates')
     name = models.CharField(max_length=150)
@@ -647,6 +739,30 @@ class SessionTemplate(OrganizationScopedModel):
     def __str__(self):
         return self.name
 
+    @property
+    def assessment_mode_label(self):
+        """Human-readable label for the enabled assessment modes."""
+        if self.enable_peer and self.enable_panel:
+            return 'Peer + Panel'
+        if self.enable_panel:
+            return 'Panel only'
+        return 'Peer only'
+
+    def clean(self):
+        super().clean()
+        if not self.enable_peer and not self.enable_panel:
+            raise ValidationError('Enable at least one assessment mode (Peer or Panel).')
+        if self.enable_peer and not self.enable_panel:
+            self.peer_weight = Decimal('100.00')
+            self.panel_weight = Decimal('0.00')
+        elif self.enable_panel and not self.enable_peer:
+            self.panel_weight = Decimal('100.00')
+            self.peer_weight = Decimal('0.00')
+        elif (self.panel_weight + self.peer_weight) != Decimal('100.00'):
+            raise ValidationError({'peer_weight': 'Panel and Peer weights must total exactly 100%.'})
+        if self.panel_aggregation == self.PanelAggregation.TRIMMED_MEAN and self.panel_trim_fraction is None:
+            raise ValidationError({'panel_trim_fraction': 'Trimmed mean requires an explicit trim fraction.'})
+
 
 class TemplateRubricCategory(models.Model):
     template = models.ForeignKey(SessionTemplate, on_delete=models.CASCADE, related_name='rubric_categories')
@@ -662,6 +778,30 @@ class TemplateRubricCategory(models.Model):
 
     def __str__(self):
         return self.name
+
+    @property
+    def assessment_mode_label(self):
+        """Human-readable label for the enabled assessment modes."""
+        if self.enable_peer and self.enable_panel:
+            return 'Peer + Panel'
+        if self.enable_panel:
+            return 'Panel only'
+        return 'Peer only'
+
+    def clean(self):
+        super().clean()
+        if not self.enable_peer and not self.enable_panel:
+            raise ValidationError('Enable at least one assessment mode (Peer or Panel).')
+        if self.enable_peer and not self.enable_panel:
+            self.peer_weight = Decimal('100.00')
+            self.panel_weight = Decimal('0.00')
+        elif self.enable_panel and not self.enable_peer:
+            self.panel_weight = Decimal('100.00')
+            self.peer_weight = Decimal('0.00')
+        elif (self.panel_weight + self.peer_weight) != Decimal('100.00'):
+            raise ValidationError({'peer_weight': 'Panel and Peer weights must total exactly 100%.'})
+        if self.panel_aggregation == self.PanelAggregation.TRIMMED_MEAN and self.panel_trim_fraction is None:
+            raise ValidationError({'panel_trim_fraction': 'Trimmed mean requires an explicit trim fraction.'})
 
 
 class TemplateLevelDescriptor(models.Model):
@@ -737,7 +877,7 @@ class ClassroomPoll(models.Model):
                 raise ValidationError({'assessment_session': 'Standalone polls cannot belong to a Classroom session.'})
             if not self.organization_id or not self.created_by_id:
                 raise ValidationError('Standalone polls need an organization and owner.')
-        if self.assessment_session_id and self.assessment_session.service != 'classroom':
+        if self.assessment_session_id and self.assessment_session.service != 'assessment':
             raise ValidationError('Polls belong to Classroom sessions.')
         if self.confirmed_option_id and self.confirmed_option.poll_id != self.pk:
             raise ValidationError({'confirmed_option': 'Choose an option from this poll.'})
@@ -824,6 +964,303 @@ class StandalonePollAudit(models.Model):
     by_user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
         on_delete=models.SET_NULL, related_name='+')
     summary = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
+
+
+class PanelExaminer(models.Model):
+    """Invited panel examiner for an AssessmentSession with a private capability token."""
+
+    class DeliveryStatus(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        SENT = 'sent', 'Sent'
+        FAILED = 'failed', 'Failed'
+
+    session = models.ForeignKey(
+        AssessmentSession, on_delete=models.CASCADE, related_name='panel_examiners')
+    display_name = models.CharField(max_length=120)
+    email = models.EmailField()
+    is_chair = models.BooleanField(default=False)
+    invite_token = models.CharField(max_length=64, blank=True, default='')
+    token_digest = models.CharField(max_length=64, unique=True, editable=False)
+    delivery_status = models.CharField(
+        max_length=12, choices=DeliveryStatus.choices, default=DeliveryStatus.PENDING)
+    delivery_error = models.CharField(max_length=120, blank=True, default='')
+    sent_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['display_name', 'pk']
+
+    def __str__(self):
+        return f'{self.display_name} ({self.email})'
+
+    @property
+    def delivery_error_message(self):
+        """Sanitized user-facing delivery failure message."""
+        messages_map = {
+            'mail_backend_error': 'Email delivery failed. Please check mail settings and click Resend.',
+            'mail_not_accepted': 'The mail server did not accept this recipient address.',
+            'enqueue_failed': 'Could not queue the invitation email. Please click Resend.',
+        }
+        return messages_map.get(self.delivery_error, 'Invitation could not be delivered. Please click Resend.')
+
+
+class PanelScorecard(models.Model):
+    """Live-stage panel examiner submission for a PresentationTurn."""
+
+    turn = models.ForeignKey(
+        PresentationTurn, on_delete=models.CASCADE, related_name='panel_scorecards')
+    examiner = models.ForeignKey(
+        PanelExaminer, on_delete=models.CASCADE, related_name='scorecards')
+    qualitative_feedback = models.TextField(blank=True, max_length=2000)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['turn', 'examiner'],
+                name='assessment_one_panel_scorecard_per_turn'),
+        ]
+
+
+class PanelScoreValue(models.Model):
+    """Normalized 0-100 criterion score inside a PanelScorecard."""
+
+    scorecard = models.ForeignKey(
+        PanelScorecard, on_delete=models.CASCADE, related_name='values')
+    category = models.ForeignKey(
+        RubricCategory, on_delete=models.CASCADE, related_name='panel_scores')
+    target_student = models.ForeignKey(
+        Student, null=True, blank=True, on_delete=models.CASCADE, related_name='panel_scores_received')
+    score = models.DecimalField(
+        max_digits=5, decimal_places=2,
+        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))])
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['scorecard', 'category'],
+                condition=models.Q(target_student__isnull=True),
+                name='assessment_panel_group_score_unique'),
+            models.UniqueConstraint(
+                fields=['scorecard', 'category', 'target_student'],
+                condition=models.Q(target_student__isnull=False),
+                name='assessment_panel_indiv_score_unique'),
+        ]
+
+
+class PanelVote(models.Model):
+    """Composable private panel vote and written review per entry."""
+
+    class Choice(models.TextChoices):
+        PASS = 'pass', 'Pass'
+        REVISE = 'revise', 'Revise'
+        FAIL = 'fail', 'Fail'
+        ABSTAIN = 'abstain', 'Abstain'
+
+    session = models.ForeignKey(
+        AssessmentSession, on_delete=models.CASCADE, related_name='panel_votes')
+    group = models.ForeignKey(
+        PresentationGroup, on_delete=models.CASCADE, related_name='panel_votes')
+    examiner = models.ForeignKey(
+        PanelExaminer, on_delete=models.CASCADE, related_name='panel_votes')
+    choice = models.CharField(max_length=12, choices=Choice.choices)
+    written_review = models.TextField(blank=True, max_length=4000)
+    private_note = models.TextField(blank=True, max_length=2000)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['group', 'examiner'],
+                name='assessment_panel_vote_unique'),
+        ]
+
+
+class TurnModeration(models.Model):
+    """Chair moderation decision for a turn or entry outcome."""
+
+    class Action(models.TextChoices):
+        APPROVE_COMBINED = 'approve', 'Approve combined mark'
+        OVERRIDE_PANEL = 'override_panel', 'Override with panel score only'
+        ADJUSTED = 'adjusted', 'Apply calibrated score'
+
+    turn = models.ForeignKey(
+        PresentationTurn, on_delete=models.CASCADE, related_name='moderations')
+    action = models.CharField(max_length=20, choices=Action.choices)
+    peer_score_snapshot = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    panel_score_snapshot = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    final_score = models.DecimalField(max_digits=5, decimal_places=2)
+    justification = models.TextField(max_length=1500)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='turn_moderations')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+
+class EntrySubmission(models.Model):
+    """Submission container for an entry in asynchronous delivery mode."""
+
+    class Status(models.TextChoices):
+        DRAFT = 'draft', 'Draft'
+        SUBMITTED = 'submitted', 'Submitted'
+        FROZEN = 'frozen', 'Frozen for review'
+
+    session = models.ForeignKey(
+        AssessmentSession, on_delete=models.CASCADE, related_name='entry_submissions')
+    group = models.OneToOneField(
+        PresentationGroup, on_delete=models.CASCADE, related_name='entry_submission')
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.DRAFT, db_index=True)
+    current_revision = models.PositiveIntegerField(default=0)
+    frozen_version = models.ForeignKey(
+        'EntrySubmissionVersion', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='+')
+
+    class Meta:
+        ordering = ['group__order', 'pk']
+
+
+class EntrySubmissionVersion(models.Model):
+    """Immutable revision of an entry's asynchronous submission."""
+
+    submission = models.ForeignKey(
+        EntrySubmission, on_delete=models.CASCADE, related_name='versions')
+    revision = models.PositiveIntegerField()
+    title = models.CharField(max_length=200)
+    content = models.TextField(blank=True, max_length=20000)
+    external_url = models.URLField(blank=True, max_length=500)
+    submitted_by = models.ForeignKey(
+        Student, null=True, blank=True, on_delete=models.SET_NULL, related_name='submitted_versions')
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    frozen_at = models.DateTimeField(null=True, blank=True)
+    content_hash = models.CharField(max_length=64, blank=True)
+
+    class Meta:
+        ordering = ['-revision']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['submission', 'revision'],
+                name='assessment_entry_submission_version_unique'),
+        ]
+
+
+class ReviewAssignment(models.Model):
+    """Authorised review allocation for async submissions (Peer or Panel)."""
+
+    class Track(models.TextChoices):
+        PEER = 'peer', 'Peer'
+        PANEL = 'panel', 'Panel'
+
+    class Status(models.TextChoices):
+        ACTIVE = 'active', 'Assigned'
+        DRAFT = 'draft', 'Draft saved'
+        SUBMITTED = 'submitted', 'Submitted'
+        RECUSED = 'recused', 'Recused'
+        SUPERSEDED = 'superseded', 'Superseded'
+
+    session = models.ForeignKey(
+        AssessmentSession, on_delete=models.CASCADE, related_name='review_assignments')
+    track = models.CharField(max_length=10, choices=Track.choices, db_index=True)
+    submission_version = models.ForeignKey(
+        EntrySubmissionVersion, on_delete=models.CASCADE, related_name='assignments')
+    peer_evaluator = models.ForeignKey(
+        Student, null=True, blank=True, on_delete=models.CASCADE, related_name='review_assignments')
+    examiner_evaluator = models.ForeignKey(
+        PanelExaminer, null=True, blank=True, on_delete=models.CASCADE, related_name='review_assignments')
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.ACTIVE, db_index=True)
+    row_version = models.PositiveIntegerField(default=1)
+    draft_payload = models.JSONField(default=dict, blank=True)
+    recusal_reason = models.CharField(max_length=300, blank=True)
+    total_score = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    overall_feedback = models.TextField(blank=True, max_length=2000)
+    submitted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['track', 'pk']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['track', 'submission_version', 'peer_evaluator'],
+                condition=models.Q(peer_evaluator__isnull=False, status__in=('active', 'draft', 'submitted')),
+                name='assessment_peer_assignment_unique'),
+            models.UniqueConstraint(
+                fields=['track', 'submission_version', 'examiner_evaluator'],
+                condition=models.Q(examiner_evaluator__isnull=False, status__in=('active', 'draft', 'submitted')),
+                name='assessment_panel_assignment_unique'),
+        ]
+
+
+class ResultPublication(models.Model):
+    """Immutable publication batch for a session (supports versioned corrections)."""
+
+    session = models.ForeignKey(
+        AssessmentSession, on_delete=models.CASCADE, related_name='publications')
+    revision = models.PositiveIntegerField()
+    policy_snapshot = models.JSONField(default=dict)
+    published_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='result_publications')
+    published_at = models.DateTimeField(default=timezone.now)
+    correction_reason = models.TextField(blank=True, max_length=1000)
+    prior_publication = models.ForeignKey(
+        'self', null=True, blank=True, on_delete=models.SET_NULL, related_name='corrections')
+
+    class Meta:
+        ordering = ['-revision']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['session', 'revision'],
+                name='assessment_session_publication_rev_unique'),
+        ]
+
+
+class ResultSnapshot(models.Model):
+    """Immutable published result row for one entry within a ResultPublication."""
+
+    class OutcomeStatus(models.TextChoices):
+        APPROVED = 'approved', 'Approved'
+        WITHHELD = 'withheld', 'Withheld'
+
+    publication = models.ForeignKey(
+        ResultPublication, on_delete=models.CASCADE, related_name='snapshots')
+    group = models.ForeignKey(
+        PresentationGroup, on_delete=models.CASCADE, related_name='result_snapshots')
+    peer_average = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    panel_average = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    calculated_final = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    effective_final = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    override_reason = models.TextField(blank=True, max_length=1500)
+    outcome_status = models.CharField(
+        max_length=16, choices=OutcomeStatus.choices, default=OutcomeStatus.APPROVED)
+    withheld_reason = models.CharField(max_length=300, blank=True)
+    breakdown_snapshot = models.JSONField(default=dict)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['publication', 'group'],
+                name='assessment_pub_group_snapshot_unique'),
+        ]
+
+
+class SessionAuditEvent(models.Model):
+    """Append-only audit trail for session lifecycle, overrides, and publications."""
+
+    session = models.ForeignKey(
+        AssessmentSession, on_delete=models.CASCADE, related_name='audit_events')
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='session_audit_events')
+    action = models.CharField(max_length=64, db_index=True)
+    object_ref = models.CharField(max_length=120, blank=True)
+    summary = models.CharField(max_length=500)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

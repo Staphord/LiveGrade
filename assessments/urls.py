@@ -1,7 +1,7 @@
 from django.urls import path
 
 from . import views
-from .views import poll_views
+from .views import poll_views, unified_views
 
 urlpatterns = [
     path('<int:pk>/polls/', poll_views.classroom_polls, name='assessment_polls'),
@@ -72,4 +72,7 @@ urlpatterns = [
     path('<int:pk>/results/export.csv', views.results_export_csv, name='assessment_results_export_csv'),
     path('<int:pk>/qr.png', views.session_qr, name='assessment_qr'),
     path('<int:pk>/transfer/', views.session_transfer, name='assessment_transfer'),
+    path('<int:pk>/panel/', unified_views.panel_examiners, name='assessment_panel_examiners'),
+    path('<int:pk>/moderation/', unified_views.session_moderation, name='assessment_moderation'),
+    path('<int:pk>/async/', unified_views.async_console, name='assessment_async_console'),
 ]

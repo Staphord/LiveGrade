@@ -3,7 +3,6 @@ from django.urls import path
 from .consumers import AssessmentSessionConsumer, AssessmentStaffSessionConsumer
 from service_domains.consumers import (
     CompetitionLiveConsumer,
-    CoAssessmentLiveConsumer,
     CompetitionLeaderboardConsumer,
     PanelChamberConsumer,
     PanelExaminerConsumer,
@@ -28,5 +27,4 @@ websocket_urlpatterns = [
     path('ws/showcase/judge/<str:token>/', ShowcaseJudgeConsumer.as_asgi()),
     path('ws/showcase/display/<uuid:public_id>/', ShowcaseDisplayConsumer.as_asgi()),
     path('ws/training/session/<int:session_id>/live/', TrainingSessionLiveConsumer.as_asgi()),
-    path('ws/coassessment/<int:session_id>/live/', CoAssessmentLiveConsumer.as_asgi()),
 ]

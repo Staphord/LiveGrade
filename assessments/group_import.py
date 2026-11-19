@@ -296,7 +296,7 @@ def apply_import(session, parsed):
     # New students and their memberships go in as two bulk inserts, in the order the
     # file listed them, instead of two queries per person.
     Student.objects.bulk_create(new_students)
-    if session.service == 'classroom' and new_students:
+    if session.service == 'assessment' and new_students:
         Evaluator.objects.bulk_create([
             Evaluator(assessment_session=session, student=student,
                       kind=Evaluator.Kind.ROSTER)

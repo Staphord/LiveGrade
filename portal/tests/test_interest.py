@@ -10,21 +10,21 @@ from portal.models import ServiceAccess, ServiceInterest
 from portal.throttling import allow_service_interest
 
 
-@override_settings(LIVEGRADE_LIVE_SERVICES=['classroom'], LIVEGRADE_INTEREST_RATE_LIMIT=5,
+@override_settings(LIVEGRADE_LIVE_SERVICES=['assessment'], LIVEGRADE_INTEREST_RATE_LIMIT=5,
                    LIVEGRADE_INTEREST_RATE_WINDOW=600)
 class InterestTests(TestCase):
 
     def setUp(self):
         cache.clear()
-        self.url = '/panel/notify/'
+        self.url = '/showcase/notify/'
         self.fields = {'email': 'Ann@Example.test', 'consent': 'on'}
 
     def tearDown(self):
         cache.clear()
 
     def test_the_coming_soon_page_has_a_consented_signup_for_its_own_service(self):
-        response = self.client.get('/panel/')
-        self.assertContains(response, 'action="/panel/notify/"')
+        response = self.client.get('/showcase/')
+        self.assertContains(response, 'action="/showcase/notify/"')
         self.assertContains(response, 'name="csrfmiddlewaretoken"')
         self.assertContains(response, 'Email me once when this service opens.')
         self.assertContains(response, 'name="consent" required')
@@ -33,7 +33,7 @@ class InterestTests(TestCase):
         response = self.client.post(self.url, self.fields)
         self.assertContains(response, "You're on the notification list.")
         row = ServiceInterest.objects.get()
-        self.assertEqual((row.email, row.service, row.consent), ('ann@example.test', 'panel', True))
+        self.assertEqual((row.email, row.service, row.consent), ('ann@example.test', 'showcase', True))
         self.assertEqual(ServiceAccess.objects.count(), 0)
         self.assertNotIn('_auth_user_id', self.client.session)
 
@@ -55,7 +55,7 @@ class InterestTests(TestCase):
     def test_submitted_service_and_redirect_fields_cannot_change_the_service_or_destination(self):
         response = self.client.post(self.url, {
             **self.fields, 'service': 'competition', 'next': 'https://evil.example/'})
-        self.assertEqual(ServiceInterest.objects.get().service, 'panel')
+        self.assertEqual(ServiceInterest.objects.get().service, 'showcase')
         self.assertNotIn('Location', response)
         self.assertNotContains(response, 'evil.example')
 
@@ -66,14 +66,14 @@ class InterestTests(TestCase):
         self.assertEqual(ServiceInterest.objects.count(), 0)
 
     def test_a_released_or_unknown_service_cannot_accept_interest(self):
-        for url in ('/classroom/notify/', '/unknown/notify/'):
+        for url in ('/assessment/notify/', '/unknown/notify/'):
             self.assertEqual(self.client.post(url, self.fields).status_code, 404)
         self.assertEqual(ServiceInterest.objects.count(), 0)
 
     @override_settings(LIVEGRADE_INTEREST_RATE_LIMIT=2)
     def test_limit_is_shared_across_services_and_cannot_be_bypassed_with_a_forwarded_header(self):
         self.client.post(self.url, self.fields)
-        self.client.post('/showcase/notify/', self.fields)
+        self.client.post('/team/notify/', self.fields)
         response = self.client.post('/competition/notify/', self.fields, HTTP_X_FORWARDED_FOR='192.0.2.50')
         self.assertEqual(response.status_code, 429)
         self.assertEqual(response['Retry-After'], '600')
@@ -90,7 +90,7 @@ class InterestTests(TestCase):
 
     def test_database_refuses_an_unconsented_interest(self):
         with self.assertRaises(IntegrityError), transaction.atomic():
-            ServiceInterest.objects.create(email='ann@example.test', service='panel', consent=False)
+            ServiceInterest.objects.create(email='ann@example.test', service='showcase', consent=False)
 
     def test_cache_key_does_not_retain_the_raw_client_address(self):
         request = RequestFactory().post(self.url, REMOTE_ADDR='192.0.2.100')
