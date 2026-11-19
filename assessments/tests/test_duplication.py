@@ -68,7 +68,7 @@ class DuplicateTests(TestCase):
     def test_default_copy_has_settings_rubric_and_fresh_identity_only(self):
         copy = self.copy()
         self.assertEqual(copy.organization_id, self.source.organization_id)
-        self.assertEqual(copy.service, 'classroom')
+        self.assertEqual(copy.service, 'assessment')
         self.assertEqual(copy.created_by, self.owner)
         self.assertNotEqual(copy.uuid, self.source.uuid)
         for field in ('identify_by', 'instructions', 'ungraded_penalty', 'default_presentation_seconds',
@@ -153,9 +153,9 @@ class DuplicateTests(TestCase):
             self.assertEqual(AssessmentSession.objects.count(), 1)
 
     def test_server_ignores_submitted_owner_scope_and_runtime_state(self):
-        copy = self.copy(service='panel', organization_id='99999', created_by='99999', status='live',
+        copy = self.copy(service='team', organization_id='99999', created_by='99999', status='live',
                          voting_paused='on', uuid=str(self.source.uuid))
-        self.assertEqual(copy.service, 'classroom')
+        self.assertEqual(copy.service, 'assessment')
         self.assertEqual(copy.organization_id, self.org.id)
         self.assertEqual(copy.created_by, self.owner)
         self.assert_clean_draft(copy)
@@ -191,7 +191,7 @@ class DuplicateTests(TestCase):
 
     def test_helper_refuses_an_oversight_queryset_without_ownership(self):
         with self.assertRaises(Http404):
-            duplicate_session(AssessmentSession.objects.for_organization(self.org.as_claim()).for_service('classroom'),
+            duplicate_session(AssessmentSession.objects.for_organization(self.org.as_claim()).for_service('assessment'),
                               self.source.pk, owner=make_user('other'), name='No')
         self.assertEqual(AssessmentSession.objects.count(), 1)
 

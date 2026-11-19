@@ -1,6 +1,6 @@
 """Default copy for a new Classroom privacy notice release."""
 
-DEFAULT_PRIVACY_NOTICE_SERVICE = 'classroom'
+DEFAULT_PRIVACY_NOTICE_SERVICE = 'assessment'
 DEFAULT_PRIVACY_NOTICE_VERSION = '3'
 DEFAULT_PRIVACY_NOTICE_TITLE = 'How your information is used'
 DEFAULT_PRIVACY_NOTICE_BODY = (

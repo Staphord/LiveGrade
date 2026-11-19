@@ -1,0 +1,77 @@
+<script nonce="{{ csp_nonce }}">
+(function () {
+  const workspace = document.getElementById('poll-manage-workspace');
+  if (!workspace) return;
+
+  function applyLocalDeadlines(root) {
+    root.querySelectorAll('[data-local-deadline]').forEach(function (element) {
+      const instant = new Date(element.dateTime);
+      if (Number.isNaN(instant.getTime())) return;
+      element.textContent = new Intl.DateTimeFormat(undefined, {
+        day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+      }).format(instant);
+    });
+  }
+
+  async function swapFromResponse(response, nextUrl) {
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    const html = await response.text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const nextWorkspace = doc.getElementById('poll-manage-workspace');
+    if (!nextWorkspace) {
+      window.location.assign(response.url || nextUrl);
+      return;
+    }
+    workspace.innerHTML = nextWorkspace.innerHTML;
+    const currentList = document.querySelector('[data-poll-list]');
+    const nextList = doc.querySelector('[data-poll-list]');
+    if (currentList && nextList) currentList.innerHTML = nextList.innerHTML;
+    applyLocalDeadlines(workspace);
+    const targetUrl = response.url || nextUrl;
+    if (targetUrl && targetUrl !== window.location.href) {
+      history.replaceState(null, '', targetUrl);
+    }
+    window.scrollTo(scrollX, scrollY);
+  }
+
+  workspace.addEventListener('click', async function (event) {
+    const link = event.target.closest('a[data-poll-inline-nav]');
+    if (!link) return;
+    event.preventDefault();
+    try {
+      const response = await fetch(link.href, {credentials: 'same-origin', cache: 'no-store'});
+      if (!response.ok) { window.location.assign(link.href); return; }
+      await swapFromResponse(response, link.href);
+    } catch (_) {
+      window.location.assign(link.href);
+    }
+  });
+
+  workspace.addEventListener('submit', async function (event) {
+    if (event.defaultPrevented) return;
+    const form = event.target;
+    if (!form || form.matches('[data-poll-editor], [data-poll-question-import]')) return;
+    event.preventDefault();
+    const submitter = event.submitter;
+    const payload = new FormData(form);
+    if (submitter && submitter.name) payload.set(submitter.name, submitter.value);
+    const action = form.getAttribute('action') || window.location.href;
+    if (submitter) submitter.disabled = true;
+    try {
+      const response = await fetch(action, {
+        method: 'POST',
+        body: payload,
+        credentials: 'same-origin',
+        cache: 'no-store'
+      });
+      if (!response.ok) { form.submit(); return; }
+      await swapFromResponse(response, action);
+    } catch (_) {
+      form.submit();
+    } finally {
+      if (submitter && submitter.isConnected) submitter.disabled = false;
+    }
+  });
+})();
+</script>

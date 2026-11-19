@@ -28,8 +28,10 @@ from assessments.tests.participant_flow import join_as
 
 from accounts.testing import make_org, make_user, sign_in
 from assessments.models import (
-    AssessmentSession, PresentationGroup, PresentationTurn, RubricCategory, Student,
+    AssessmentSession, Evaluation, GroupMembership, ParticipationRecord, PresentationGroup,
+    PresentationTurn, RubricCategory, Student,
 )
+from assessments.views.lecturer_views import _live_participation_rows
 from assessments.turns import activate_turn, ensure_turn_progressed
 
 
@@ -139,7 +141,7 @@ class AssessmentLiveStateViewTests(TestCase):
     def test_returns_fragments_reflecting_the_active_turn(self, mock_apply_async):
         activate_turn(self.session, self.group1, duration_seconds=90)
 
-        response = self.client.get(f'/classroom/app/{self.session.pk}/live-state/')
+        response = self.client.get(f'/assessment/app/{self.session.pk}/live-state/')
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -147,6 +149,56 @@ class AssessmentLiveStateViewTests(TestCase):
         self.assertEqual(data['active_turn']['group_id'], self.group1.pk)
         self.assertIn('Group 1', data['hero_html'])
         self.assertIn('Group 1', data['groups_html'])
+
+    @patch('assessments.views.lecturer_views._participation_rows', side_effect=AssertionError)
+    def test_live_refresh_uses_only_the_joined_roster_projection(self, mock_participation_rows):
+        group3 = PresentationGroup.objects.create(
+            assessment_session=self.session, name='Group 3', order=3)
+        fully_graded = Student.objects.create(
+            assessment_session=self.session, student_id='C3', full_name='Fully Graded')
+        partially_graded = Student.objects.create(
+            assessment_session=self.session, student_id='C4', full_name='Partially Graded')
+        waiting = Student.objects.create(
+            assessment_session=self.session, student_id='C5', full_name='Waiting Learner')
+        GroupMembership.objects.create(student=fully_graded, group=self.group1)
+        GroupMembership.objects.create(student=partially_graded, group=self.group1)
+        GroupMembership.objects.create(student=waiting, group=self.group2)
+        ParticipationRecord.objects.create(assessment_session=self.session, student=fully_graded)
+        ParticipationRecord.objects.create(assessment_session=self.session, student=partially_graded)
+        ParticipationRecord.objects.create(assessment_session=self.session, student=waiting)
+        group2_turn = PresentationTurn.objects.create(
+            assessment_session=self.session, group=self.group2, status=PresentationTurn.Status.CLOSED)
+        group3_turn = PresentationTurn.objects.create(
+            assessment_session=self.session, group=group3, status=PresentationTurn.Status.CLOSED)
+        Evaluation.objects.create(presentation_turn=group2_turn, evaluator=fully_graded)
+        Evaluation.objects.create(presentation_turn=group3_turn, evaluator=fully_graded)
+        Evaluation.objects.create(presentation_turn=group2_turn, evaluator=partially_graded)
+        Evaluation.objects.create(presentation_turn=group2_turn, evaluator=waiting)
+
+        response = self.client.get(f'/assessment/app/{self.session.pk}/live-state/')
+
+        self.assertEqual(response.status_code, 200)
+        html = response.json()['roster_html']
+        self.assertIn('Fully Graded', html)
+        self.assertIn('class="roster-status roster-status-full"', html)
+        self.assertIn('Partially Graded', html)
+        self.assertIn('class="roster-status roster-status-partial"', html)
+        self.assertIn('Waiting Learner', html)
+        self.assertIn('class="roster-status roster-status-none"', html)
+        mock_participation_rows.assert_not_called()
+
+    def test_live_roster_marks_joined_student_complete_when_no_groups_are_eligible(self):
+        self.group1.delete()
+        self.group2.delete()
+        student = Student.objects.create(
+            assessment_session=self.session, student_id='C6', full_name='Only Learner')
+        ParticipationRecord.objects.create(assessment_session=self.session, student=student)
+
+        rows = _live_participation_rows(self.session)
+
+        self.assertEqual(rows, [{
+            'student': student, 'status': 'full', 'graded_count': 0, 'eligible_count': 0,
+        }])
 
     @patch('assessments.tasks.auto_advance_turn.apply_async')
     @patch('assessments.tasks.open_scheduled_voting.apply_async')
@@ -158,7 +210,7 @@ class AssessmentLiveStateViewTests(TestCase):
         turn.presentation_ends_at = timezone.now() - timedelta(seconds=1)
         turn.save(update_fields=['presentation_ends_at'])
 
-        data = self.client.get(f'/classroom/app/{self.session.pk}/live-state/').json()
+        data = self.client.get(f'/assessment/app/{self.session.pk}/live-state/').json()
 
         self.assertEqual(data['active_turn']['group_id'], self.group2.pk)
         self.assertIn('Group 1 finished presenting', data['activity_html'])
@@ -166,12 +218,12 @@ class AssessmentLiveStateViewTests(TestCase):
     def test_reports_closed_status_for_a_closed_session(self):
         self.session.status = AssessmentSession.Status.CLOSED
         self.session.save(update_fields=['status'])
-        data = self.client.get(f'/classroom/app/{self.session.pk}/live-state/').json()
+        data = self.client.get(f'/assessment/app/{self.session.pk}/live-state/').json()
         self.assertEqual(data['status'], 'closed')
 
     def test_requires_admin(self):
         self.client.logout()
-        response = self.client.get(f'/classroom/app/{self.session.pk}/live-state/')
+        response = self.client.get(f'/assessment/app/{self.session.pk}/live-state/')
         self.assertNotEqual(response.status_code, 200)
 
 
@@ -227,7 +279,7 @@ class SetDefaultTurnSecondsViewTests(TestCase):
 
     def test_saves_the_chosen_duration_as_the_session_default(self):
         response = self.client.post(
-            f'/classroom/app/{self.session.pk}/set-timer/', {'duration_seconds': '600'})
+            f'/assessment/app/{self.session.pk}/set-timer/', {'duration_seconds': '600'})
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {'ok': True, 'duration_seconds': 600})
@@ -238,7 +290,7 @@ class SetDefaultTurnSecondsViewTests(TestCase):
         self.session.default_turn_seconds = 90
         self.session.save(update_fields=['default_turn_seconds'])
 
-        response = self.client.post(f'/classroom/app/{self.session.pk}/set-timer/', {'duration_seconds': ''})
+        response = self.client.post(f'/assessment/app/{self.session.pk}/set-timer/', {'duration_seconds': ''})
 
         self.assertEqual(response.json(), {'ok': True, 'duration_seconds': None})
         self.session.refresh_from_db()
@@ -246,8 +298,8 @@ class SetDefaultTurnSecondsViewTests(TestCase):
 
     def test_persists_across_a_fresh_page_load(self):
         PresentationGroup.objects.create(assessment_session=self.session, name='Group 1', order=1)
-        self.client.post(f'/classroom/app/{self.session.pk}/set-timer/', {'duration_seconds': '180'})
+        self.client.post(f'/assessment/app/{self.session.pk}/set-timer/', {'duration_seconds': '180'})
 
-        data = self.client.get(f'/classroom/app/{self.session.pk}/live-state/').json()
+        data = self.client.get(f'/assessment/app/{self.session.pk}/live-state/').json()
 
         self.assertIn('180', data['groups_html'])  # hidden duration-input carries the saved default forward

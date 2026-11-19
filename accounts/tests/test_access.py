@@ -132,13 +132,13 @@ class HomeAccessTests(TestCase):
 
     def test_a_visitor_sees_the_public_landing_page_with_both_ways_in(self):
         response = self.client.get(reverse('home'))
-        self.assertContains(response, 'Run live peer assessment for class presentations')
+        self.assertContains(response, 'Run better presentations, decisions and events.')
         self.assertContains(response, reverse('oidc_authentication_init') + '?signup=1')
         self.assertContains(response, 'Log in')
 
     def test_a_protected_service_page_starts_sign_in_at_the_service_entry(self):
         response = self.client.get(reverse('assessment_session_list'))
-        self.assertRedirects(response, reverse('service_entry', args=['classroom']), fetch_redirect_response=False)
+        self.assertRedirects(response, reverse('service_entry', args=['assessment']), fetch_redirect_response=False)
 
     def test_a_lecturer_can_choose_a_service_from_the_landing_page(self):
         signed_in(self.client)

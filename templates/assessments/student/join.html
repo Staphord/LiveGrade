@@ -13,10 +13,9 @@
         Joining is closed for this session. Please ask the person running it for help.
       </p>
       {% else %}
-      <h2 class="fw-800 mt-2 s-h2">You're in!</h2>
+      <h2 class="fw-800 mt-2 s-h2">Ready to join</h2>
       <p class="text-muted mb-4 s-text" id="identifier-help">
-        Type {{ field_label }} exactly as it appears on the class roster so we can
-        match you and track your participation.
+        Enter {{ field_label }} as shown on this session's participant list. LiveGrade checks it to confirm access and track participation.
       </p>
 
       {% include 'assessments/student/_evaluator_notice.html' %}
@@ -36,9 +35,8 @@
       </form>
       {% endif %}
     </div>
-
     <div class="text-center text-muted s-text-xs stagger-in mt-2">
-      <i class="bi bi-shield-check me-1" aria-hidden="true"></i>This session checks your {% if session.identify_by == 'student_id' %}student ID{% else %}full name{% endif %} against the class roster. The session owner sees participation information and score results without seeing which learner submitted each score.
+      <i class="bi bi-shield-check me-1" aria-hidden="true"></i>The session owner can see who joined and participated, but not which learner submitted each peer score.
     </div>
   </div>
 </div>

@@ -1,0 +1,70 @@
+{% if competition.status == 'active' %}
+<div class="modal fade" id="competition-advance-modal" tabindex="-1" aria-labelledby="advance-modal-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post" action="{% url 'competition_live_action' competition_id=competition.pk %}" data-competition-live-action-form>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="advance_round">
+        <div class="modal-header">
+          <h2 class="modal-title h5" id="advance-modal-title">Advance to the next round</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-danger small" role="alert" data-live-form-error hidden></div>
+          <p class="text-muted small">{{ next_round_qualifier_count }} qualifying entrants will move forward. The current round will be locked after advancement.</p>
+          <div class="mb-3">
+            <label for="next-round-name" class="form-label small fw-semibold">Next round name</label>
+            <input type="text" class="form-control" id="next-round-name" name="next_round_name" value="Round {% if active_round %}{{ active_round.order|add:1 }}{% else %}2{% endif %}" maxlength="100" required>
+          </div>
+          <div class="alert alert-info small mb-0" role="note">The next round starts with a fresh stage timer and the selected entrants.</div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">Confirm advancement</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% if tie_resolution_groups %}
+<div class="modal fade" id="competition-tie-modal" tabindex="-1" aria-labelledby="tie-modal-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <form method="post" action="{% url 'competition_live_action' competition_id=competition.pk %}" data-competition-live-action-form data-competition-tie-form>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="advance_round">
+        <input type="hidden" name="next_round_name" value="Round {% if active_round %}{{ active_round.order|add:1 }}{% else %}2{% endif %}">
+        {% for group in tie_resolution_groups %}<input type="hidden" name="tie_track_ids" value="{{ group.track.pk }}">{% endfor %}
+        <div class="modal-header">
+          <h2 class="modal-title h5" id="tie-modal-title">Resolve the advancement tie</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-danger small" role="alert" data-live-form-error hidden></div>
+          <p class="text-muted small">Choose the tied entrants who fill the remaining places and record why they advance.</p>
+          {% for group in tie_resolution_groups %}
+          <fieldset class="border rounded p-3 mb-3" data-tie-choice-group data-required-count="{{ group.slots }}">
+            <legend class="form-label small fw-semibold">{{ group.track.name }}: select {{ group.slots }} of the tied entrants</legend>
+            {% for row in group.rows %}
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="ordered_entry_ids_{{ group.track.pk }}" value="{{ row.entry.pk }}" id="tie-entry-{{ group.track.pk }}-{{ row.entry.pk }}">
+              <label class="form-check-label small" for="tie-entry-{{ group.track.pk }}-{{ row.entry.pk }}">{{ row.entry.name }} (score {{ row.effective_score }})</label>
+            </div>
+            {% endfor %}
+            <label for="tie-reason-{{ group.track.pk }}" class="form-label small mt-3">Head-judge reason <span class="text-danger" aria-hidden="true">*</span></label>
+            <textarea class="form-control" id="tie-reason-{{ group.track.pk }}" name="reason_{{ group.track.pk }}" rows="2" maxlength="500" required></textarea>
+          </fieldset>
+          {% endfor %}
+          <p class="small text-muted mb-0">This decision is stored with the round advancement record.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-warning btn-sm">Record decision and advance</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endif %}

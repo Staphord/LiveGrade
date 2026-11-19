@@ -1,0 +1,408 @@
+{% extends 'service_domains/_public_service_base.html' %}
+{% block title %}Panel workspace : {{ session.name }}{% endblock %}
+{% block service_name %}Panel examiner workspace{% endblock %}
+
+{% block content %}
+{% include 'service_domains/_panel_ui_styles.html' %}
+<style nonce="{{ csp_nonce }}">
+.panel-eval-progress-wrap{margin-bottom:1rem}
+.panel-eval-progress-label{display:flex;justify-content:space-between;font-size:.75rem;color:var(--text-muted);font-weight:600;margin-bottom:.35rem}
+.panel-eval-progress-track{height:6px;background:var(--border);border-radius:999px;overflow:hidden}
+.panel-eval-progress-fill{height:100%;width:0;background:var(--accent);border-radius:999px;transition:width .25s ease,background-color .25s ease}
+.panel-eval-progress-fill.is-complete{background:var(--success)}
+.panel-answer-block{padding:.9rem 0;border-bottom:1px solid var(--border)}
+.panel-answer-block:last-child{border-bottom:none}
+.panel-score-row{display:flex;align-items:center;gap:.75rem}
+.panel-score-row input[type=range]{width:100%;min-height:44px;accent-color:var(--accent);scroll-margin-top:5rem}
+.panel-score-num{width:4.4rem;min-width:56px;min-height:44px;flex-shrink:0;text-align:center;font-weight:700;font-size:.95rem;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:.3rem .4rem;color:var(--ink)}
+.panel-score-num:focus{outline:none;border-color:var(--accent);box-shadow:var(--focus-ring)}
+.panel-category-check{color:var(--success);opacity:0;transform:scale(.7);transition:all .2s ease}
+.panel-answer-block.is-answered .panel-category-check{opacity:1;transform:scale(1)}
+.panel-category-error{display:none;align-items:center;gap:.35rem;color:var(--danger);font-size:.78rem;font-weight:600}
+.panel-answer-block.is-flagged .panel-category-error{display:inline-flex}
+.panel-answer-block.is-flagged .panel-score-num{border-color:var(--danger)}
+.panel-member-avatar{width:32px;height:32px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:.82rem;background:var(--accent-soft);color:var(--accent);flex-shrink:0}
+.panel-score-guidance{list-style:none;margin:.35rem 0 .25rem;padding:0;border-left:2px solid var(--border);color:var(--text-muted);font-size:.8rem}
+.panel-score-guidance li{display:flex;gap:.5rem;padding:.12rem .55rem}
+.panel-score-guidance strong{flex:0 0 4.2rem;color:var(--ink);font-weight:700}
+</style>
+
+<main id="public-main" class="public-service-content wide">
+  <header class="panel-hero mb-4">
+    <div class="panel-hero__copy">
+      <p class="panel-eyebrow">Panelist: {{ examiner.display_name }}{% if examiner.is_chair %} (Chair){% endif %}</p>
+      <h1>{{ session.name }}</h1>
+      {% if active_turn and already_done %}
+      <p class="panel-muted mt-2">Evaluation recorded for {{ active_turn.group.name }}. Waiting for the next entry.</p>
+      {% elif active_turn %}
+      <p class="panel-muted mt-2">Drag each bar to score the active entry below. Your marks and notes stay private.</p>
+      {% else %}
+      <p class="panel-muted mt-2">Waiting for the organizer to activate an entry.</p>
+      {% endif %}
+    </div>
+    <div class="panel-hero__actions">
+      <span class="panel-state {% if active_turn or session.status == 'live' %}panel-state--live{% else %}panel-state--done{% endif %}" data-session-status>{{ session.get_status_display }}</span>
+    </div>
+  </header>
+
+  <div class="alert alert-info" role="status" aria-live="polite" data-live-change hidden></div>
+
+  {% if active_turn %}
+    {% if already_done %}
+    <section class="panel-card panel-card--accent mb-4 text-center py-4">
+      <div class="mb-2"><i class="bi bi-check-circle-fill text-success fs-1" aria-hidden="true"></i></div>
+      <h2 class="h4 mb-0">You have already evaluated {{ active_turn.group.name }}</h2>
+    </section>
+    {% else %}
+    <section class="panel-card panel-card--accent mb-4">
+      <div class="panel-card__top mb-3">
+        <div>
+          <p class="panel-eyebrow">Active entry</p>
+          <h2 class="h4 mb-0">{{ active_turn.group.name }}</h2>
+          {% if active_turn.group.topic %}<p class="panel-muted mt-1 mb-0">{{ active_turn.group.topic }}</p>{% endif %}
+        </div>
+        <span class="panel-state panel-state--live">Scoring now</span>
+      </div>
+
+      <form method="post" class="panel-score-form" id="panel-score-form" novalidate>
+        {% csrf_token %}
+
+        {% if session.panel_enable_rubric and group_categories or session.panel_enable_rubric and individual_categories and memberships %}
+        <div class="panel-eval-progress-wrap">
+          <div class="panel-eval-progress-label">
+            <span id="panel-progress-label">0 scored</span>
+            <span id="panel-progress-pct">0%</span>
+          </div>
+          <div class="panel-eval-progress-track" id="panel-evaluation-progress" role="progressbar" aria-label="Scoring progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div class="panel-eval-progress-fill" id="panel-progress-fill"></div>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if session.panel_enable_rubric and group_categories %}
+        <div class="mb-4">
+          <p class="panel-eyebrow mb-1">Entry-level rubric</p>
+          <p class="small panel-muted mb-2">Score the entry and presentation as a whole (0 to 100).</p>
+          {% for cat in group_categories %}
+          <div class="panel-answer-block" data-answer-block>
+            <div class="d-flex align-items-center justify-content-between gap-2">
+              <label for="id_category_{{ cat.pk }}" class="form-label fw-semibold mb-1">{{ cat.name }} <span class="panel-muted fw-normal">({{ cat.weight|floatformat:'-2' }}% weight)</span></label>
+              <i class="bi bi-check-circle-fill panel-category-check" aria-hidden="true"></i>
+            </div>
+            {% if cat.description %}<p class="small panel-muted mb-2">{{ cat.description }}</p>{% endif %}
+            {% if cat.level_descriptors.all %}
+            <details class="mb-2">
+              <summary class="small fw-semibold">View score guidance</summary>
+              <ul class="panel-score-guidance">
+                {% for level in cat.level_descriptors.all %}<li><strong>{{ level.score|floatformat:'-2' }}:</strong><span>{{ level.description }}</span></li>{% endfor %}
+              </ul>
+            </details>
+            {% endif %}
+            <div class="panel-score-row">
+              <input type="range" id="slider_category_{{ cat.pk }}" min="0" max="100" step="0.5" value="0"
+                     aria-label="Adjust {{ cat.name }} score for {{ active_turn.group.name }} with slider"
+                     data-score-slider data-pair="id_category_{{ cat.pk }}">
+              <input type="number" step="0.01" min="0" max="100" inputmode="decimal" placeholder="--"
+                     class="panel-score-num" id="id_category_{{ cat.pk }}" name="category_{{ cat.pk }}" data-score-num>
+            </div>
+            <div class="d-flex align-items-center justify-content-between mt-1">
+              <span class="panel-category-error" id="err_category_{{ cat.pk }}" role="status" aria-live="polite"><i class="bi bi-exclamation-circle-fill"></i>Score this criterion</span>
+              <span class="small panel-muted ms-auto">0 to 100</span>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if session.panel_enable_rubric and individual_categories and memberships %}
+        <div class="mb-4 pt-3 border-top">
+          <p class="panel-eyebrow mb-1">Individual member rubric</p>
+          <p class="small panel-muted mb-3">Score each member's individual contribution (0 to 100).</p>
+
+          {% for cat in individual_categories %}
+            {% if cat.level_descriptors.all %}
+            <details class="mb-2">
+              <summary class="small fw-semibold">{{ cat.name }} score guidance</summary>
+              <ul class="panel-score-guidance">
+                {% for level in cat.level_descriptors.all %}<li><strong>{{ level.score|floatformat:'-2' }}:</strong><span>{{ level.description }}</span></li>{% endfor %}
+              </ul>
+            </details>
+            {% endif %}
+          {% endfor %}
+
+          {% for membership in memberships %}
+          <div class="pt-3 {% if not forloop.last %}pb-2 border-bottom{% endif %}">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <span class="panel-member-avatar">{{ membership.student.full_name|first|upper|default:"?" }}</span>
+              <span class="fw-semibold">{{ membership.student.full_name|default:membership.student.student_id }}</span>
+            </div>
+            {% for cat in individual_categories %}
+            <div class="panel-answer-block" data-answer-block>
+              <div class="d-flex align-items-center justify-content-between gap-2">
+                <label for="id_ind_{{ membership.student.pk }}_{{ cat.pk }}" class="form-label fw-semibold mb-1">{{ cat.name }} <span class="panel-muted fw-normal">({{ cat.weight|floatformat:'-2' }}% weight)</span></label>
+                <i class="bi bi-check-circle-fill panel-category-check" aria-hidden="true"></i>
+              </div>
+              {% if cat.description %}<p class="small panel-muted mb-2">{{ cat.description }}</p>{% endif %}
+              <div class="panel-score-row">
+                <input type="range" id="slider_ind_{{ membership.student.pk }}_{{ cat.pk }}" min="0" max="100" step="0.5" value="0"
+                       aria-label="Adjust {{ cat.name }} score for {{ membership.student.full_name|default:membership.student.student_id }} with slider"
+                       data-score-slider data-pair="id_ind_{{ membership.student.pk }}_{{ cat.pk }}">
+                <input type="number" step="0.01" min="0" max="100" inputmode="decimal" placeholder="--"
+                       class="panel-score-num" id="id_ind_{{ membership.student.pk }}_{{ cat.pk }}" name="ind_{{ membership.student.pk }}_{{ cat.pk }}" data-score-num>
+              </div>
+              <div class="d-flex align-items-center justify-content-between mt-1">
+                <span class="panel-category-error" id="err_ind_{{ membership.student.pk }}_{{ cat.pk }}" role="status" aria-live="polite"><i class="bi bi-exclamation-circle-fill"></i>Score this criterion</span>
+                <span class="small panel-muted ms-auto">0 to 100</span>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="mb-3">
+          <label for="id_qualitative_feedback" class="form-label fw-semibold">Feedback</label>
+          <textarea class="form-control" id="id_qualitative_feedback" name="qualitative_feedback" rows="3"></textarea>
+        </div>
+
+        {% if vote_form and session.panel_enable_vote %}
+        <hr>
+        <h3 class="h6 fw-bold mb-2">Panel recommendation</h3>
+        {% include 'partials/_form_field.html' with field=vote_form.choice %}
+        {% if session.panel_enable_written_review %}{% include 'partials/_form_field.html' with field=vote_form.written_review %}{% endif %}
+        {% if session.panel_enable_private_notes %}{% include 'partials/_form_field.html' with field=vote_form.private_note %}{% endif %}
+        {% endif %}
+
+        <div class="alert alert-danger mt-3" id="panel-validation-msg" role="alert" aria-live="assertive" hidden></div>
+        <button type="submit" class="btn btn-primary fw-semibold w-100 mt-2" id="panel-submit-btn">Submit panel evaluation</button>
+        <p id="panel-submit-hint" class="small panel-muted text-center mt-2 mb-0" aria-live="polite"></p>
+      </form>
+    </section>
+    {% endif %}
+  {% endif %}
+</main>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  const form = document.getElementById('panel-score-form');
+  if (form) {
+    const blocks = form.querySelectorAll('[data-answer-block]');
+    const fill = document.getElementById('panel-progress-fill');
+    const progressBar = document.getElementById('panel-evaluation-progress');
+    const pctLabel = document.getElementById('panel-progress-pct');
+    const countLabel = document.getElementById('panel-progress-label');
+    const submitBtn = document.getElementById('panel-submit-btn');
+    const submitHint = document.getElementById('panel-submit-hint');
+    const validationMsg = document.getElementById('panel-validation-msg');
+    const total = blocks.length;
+    let submitting = false;
+
+    function updateProgress() {
+      if (!total) return;
+      const answered = form.querySelectorAll('[data-answer-block].is-answered').length;
+      const pct = Math.round((answered / total) * 100);
+      if (fill) {
+        fill.style.width = pct + '%';
+        fill.classList.toggle('is-complete', pct === 100);
+      }
+      if (pctLabel) pctLabel.textContent = pct + '%';
+      if (countLabel) countLabel.textContent = answered + ' of ' + total + ' scored';
+      if (progressBar) progressBar.setAttribute('aria-valuenow', String(pct));
+      if (submitHint) {
+        submitHint.textContent = answered < total
+          ? 'Score every criterion before submitting'
+          : 'All criteria scored - ready to submit';
+      }
+    }
+
+    function clampToRange(num) {
+      const max = parseFloat(num.max);
+      const min = parseFloat(num.min) || 0;
+      const raw = (num.value || '').trim();
+      if (!raw) return null;
+      let value = parseFloat(raw);
+      if (isNaN(value)) return null;
+      if (!isNaN(max) && value > max) value = max;
+      if (value < min) value = min;
+      num.value = value;
+      return value;
+    }
+
+    blocks.forEach(function (block) {
+      const slider = block.querySelector('[data-score-slider]');
+      const num = block.querySelector('[data-score-num]');
+      if (!slider || !num) return;
+
+      function markAnswered() {
+        block.classList.add('is-answered');
+        block.classList.remove('is-flagged');
+        slider.removeAttribute('aria-invalid');
+        num.removeAttribute('aria-invalid');
+        if (validationMsg) validationMsg.hidden = true;
+        updateProgress();
+      }
+
+      function markUnanswered() {
+        block.classList.remove('is-answered');
+        updateProgress();
+      }
+
+      slider.addEventListener('input', function () {
+        num.value = slider.value;
+        markAnswered();
+      });
+
+      num.addEventListener('input', function () {
+        const value = clampToRange(num);
+        if (value === null) {
+          markUnanswered();
+          return;
+        }
+        slider.value = value;
+        markAnswered();
+      });
+
+      num.addEventListener('blur', function () { clampToRange(num); });
+      num.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); num.blur(); }
+      });
+    });
+
+    updateProgress();
+
+    form.addEventListener('submit', function (e) {
+      if (submitting) {
+        e.preventDefault();
+        return;
+      }
+
+      if (total > 0) {
+        const unanswered = Array.prototype.filter.call(blocks, function (block) {
+          const num = block.querySelector('[data-score-num]');
+          const hasValue = num && (num.value || '').trim() !== '';
+          return !block.classList.contains('is-answered') || !hasValue;
+        });
+
+        if (unanswered.length) {
+          e.preventDefault();
+          unanswered.forEach(function (block) {
+            block.classList.add('is-flagged');
+            const slider = block.querySelector('[data-score-slider]');
+            const num = block.querySelector('[data-score-num]');
+            if (slider) slider.setAttribute('aria-invalid', 'true');
+            if (num) num.setAttribute('aria-invalid', 'true');
+          });
+          if (validationMsg) {
+            validationMsg.textContent = unanswered.length + (unanswered.length === 1 ? ' criterion still needs' : ' criteria still need') + ' a score before submitting.';
+            validationMsg.hidden = false;
+          }
+          const firstSlider = unanswered[0].querySelector('[data-score-slider]');
+          if (firstSlider) {
+            firstSlider.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            firstSlider.focus();
+          }
+          return;
+        }
+      } else {
+        const feedback = document.getElementById('id_qualitative_feedback');
+        const choice = form.querySelector('select[name="choice"], input[name="choice"]:checked');
+        const hasFeedback = feedback && feedback.value.trim() !== '';
+        const hasChoice = choice && choice.value && choice.value.trim() !== '';
+        if (!hasFeedback && !hasChoice) {
+          e.preventDefault();
+          if (validationMsg) {
+            validationMsg.textContent = 'Please complete the evaluation before submitting.';
+            validationMsg.hidden = false;
+          }
+          return;
+        }
+      }
+
+      submitting = true;
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Submitting...';
+      }
+    });
+  }
+})();
+
+(function () {
+  const sessionUuid = '{{ session.uuid }}';
+  const stateUrl = '{% url "assessment_examiner_portal_state" token %}';
+  let currentStatus = '{{ session.status }}';
+  let currentTurnId = {{ active_turn.pk|default:'null' }};
+  const statusBadge = document.querySelector('[data-session-status]');
+  const noticeEl = document.querySelector('[data-live-change]');
+  let socket = null;
+  let pollTimer = null;
+
+  function syncState() {
+    fetch(stateUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        if (statusBadge && data.status_display) {
+          statusBadge.textContent = data.status_display;
+          statusBadge.classList.toggle('panel-state--live', data.status === 'live' || !!data.active_turn_id);
+          statusBadge.classList.toggle('panel-state--done', data.status !== 'live' && !data.active_turn_id);
+        }
+        if (data.status !== currentStatus || data.active_turn_id !== currentTurnId) {
+          if (noticeEl) {
+            noticeEl.textContent = 'Session updated. Refreshing view...';
+            noticeEl.hidden = false;
+          }
+          window.location.reload();
+        }
+      })
+      .catch(function () {});
+  }
+
+  function startFallbackPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(syncState, 5000);
+  }
+
+  function stopFallbackPolling() {
+    if (!pollTimer) return;
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+
+  function connectSocket() {
+    const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = scheme + '//' + window.location.host + '/ws/assessments/' + sessionUuid + '/';
+    try {
+      socket = new WebSocket(wsUrl);
+    } catch (e) {
+      startFallbackPolling();
+      return;
+    }
+    socket.onopen = function () {
+      stopFallbackPolling();
+    };
+    socket.onmessage = function (event) {
+      let msg = null;
+      try { msg = JSON.parse(event.data); } catch (e) { return; }
+      const relevant = [
+        'session.live', 'session.closed', 'turn.activated', 'turn.closed',
+        'voting.opened', 'voting.closed', 'voting.paused', 'setup.changed', 'lineup.updated'
+      ];
+      if (msg && relevant.indexOf(msg.type) !== -1) {
+        syncState();
+      }
+    };
+    socket.onclose = function () {
+      startFallbackPolling();
+      setTimeout(connectSocket, 4000);
+    };
+    socket.onerror = function () {
+      startFallbackPolling();
+    };
+  }
+
+  connectSocket();
+})();
+</script>
+{% endblock %}

@@ -63,7 +63,7 @@ class ParticipantPrivacyNoticeTests(TestCase):
         self.assertContains(notice_page, 'Notice version 3')
         self.assertContains(notice_page, 'Continue to scoring')
         record.refresh_from_db()
-        first_notice = PrivacyNotice.objects.get(service='classroom', version='3')
+        first_notice = PrivacyNotice.objects.get(service='assessment', version='3')
         self.assertIsNone(record.privacy_notice_id)
 
         response = self.client.get(self.evaluate_url, HTTP_ACCEPT='application/json')
@@ -129,11 +129,11 @@ class ParticipantPrivacyNoticeTests(TestCase):
     def test_each_new_active_version_is_shown_and_recorded(self):
         self.join_without_viewing_notice()
         self.client.get(self.notice_url)
-        first = PrivacyNotice.objects.get(service='classroom', version='3')
+        first = PrivacyNotice.objects.get(service='assessment', version='3')
         first.is_active = False
         first.save(update_fields=['is_active'])
         second = PrivacyNotice.objects.create(
-            service='classroom', version='4', title='Updated privacy notice',
+            service='assessment', version='4', title='Updated privacy notice',
             body='Updated version content.', is_active=True,
         )
 
@@ -160,11 +160,11 @@ class ParticipantPrivacyNoticeTests(TestCase):
         ).privacy_notice_id)
 
     def test_notice_content_is_escaped_and_scoped_to_the_session_service(self):
-        notice = PrivacyNotice.objects.get(service='classroom', version='3')
+        notice = PrivacyNotice.objects.get(service='assessment', version='3')
         notice.is_active = False
         notice.save(update_fields=['is_active'])
         notice = PrivacyNotice.objects.create(
-            service='classroom', version='xss', title='Test notice',
+            service='assessment', version='xss', title='Test notice',
             body='<script>alert(1)</script>', is_active=True,
         )
         self.join_without_viewing_notice()
@@ -184,7 +184,7 @@ class ParticipantPrivacyNoticeTests(TestCase):
         response = self.client.get(self.notice_url)
         self.assertRedirects(response, self.join_url, fetch_redirect_response=False)
         self.join_without_viewing_notice()
-        PrivacyNotice.objects.filter(service='classroom').update(is_active=False)
+        PrivacyNotice.objects.filter(service='assessment').update(is_active=False)
         page = self.client.get(self.notice_url)
         self.assertEqual(page.status_code, 503)
         self.assertContains(page, "can't show the privacy notice", status_code=503)
@@ -196,16 +196,16 @@ class ParticipantPrivacyNoticeTests(TestCase):
         self.join_without_viewing_notice()
         self.client.get(self.notice_url)
         self.client.post(self.notice_url, {'action': 'continue'})
-        notice = PrivacyNotice.objects.get(service='classroom', version='3')
+        notice = PrivacyNotice.objects.get(service='assessment', version='3')
         notice.title = 'Silently replaced'
         with self.assertRaises(ValidationError):
             notice.save()
         with self.assertRaises(ProtectedError):
-            PrivacyNotice.objects.filter(service='classroom', version='3').delete()
+            PrivacyNotice.objects.filter(service='assessment', version='3').delete()
 
     def test_notice_display_name_is_service_and_version(self):
-        notice = PrivacyNotice.objects.get(service='classroom', version='3')
-        self.assertEqual(str(notice), 'classroom privacy notice 3')
+        notice = PrivacyNotice.objects.get(service='assessment', version='3')
+        self.assertEqual(str(notice), 'assessment privacy notice 3')
         self.assertEqual((notice.version, notice.title, notice.body), (
             DEFAULT_PRIVACY_NOTICE_VERSION, DEFAULT_PRIVACY_NOTICE_TITLE, DEFAULT_PRIVACY_NOTICE_BODY,
         ))

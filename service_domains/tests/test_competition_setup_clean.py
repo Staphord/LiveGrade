@@ -7,7 +7,7 @@ from accounts.testing import make_org, make_user, sign_in
 from service_domains.models import Competition, CompetitionCriterion, CompetitionTrack
 
 
-@override_settings(LIVEGRADE_LIVE_SERVICES=['classroom', 'panel', 'polls', 'team', 'showcase', 'competition'])
+@override_settings(LIVEGRADE_LIVE_SERVICES=['assessment', 'panel', 'polls', 'team', 'showcase', 'competition'])
 class CompetitionSetupCleanTests(TestCase):
     def setUp(self):
         suffix = uuid.uuid4().hex[:8]

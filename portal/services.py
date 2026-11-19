@@ -42,16 +42,11 @@ class Service:
 
 
 SERVICES = (
-    Service('classroom', 'Classroom',
-            'Grade presentations in your class, live, from your students’ phones.',
-            'Teachers',
-            _words('session', 'students', 'groups', 'rubric', 'lecturer'),
+    Service('assessment', 'Assessments',
+            'Run peer assessments, panel gradings, or combined co-assessments from one shared rubric and roster.',
+            'Lecturers, panel chairs, coordinators, and organisers',
+            _words('session', 'participants', 'entries', 'rubric', 'organiser'),
             dashboard='assessment_dashboard'),
-    Service('panel', 'Panel',
-            'Run a fair, recorded panel decision: invite examiners, score against agreed criteria, keep the record.',
-            'Chairs and coordinators of defences, committees and interviews',
-            _words('hearing', 'candidates', 'candidates', 'criteria', 'chair'),
-            dashboard='panel_hearing_list'),
     Service('showcase', 'Showcase',
             'Let visitors and judges rate exhibits and posters, and announce winners the same day.',
             'Organisers of fairs, expos, conferences and open days',
@@ -72,11 +67,6 @@ SERVICES = (
             'Teachers, facilitators and event organisers',
             _words('poll', 'respondents', 'responses', 'questions', 'organiser'),
             dashboard='standalone_poll_list'),
-    Service('coassessment', 'Co-Assessment',
-            'Grade presentations with shared rubrics, synchronized peer and panel scoring, and chair moderation.',
-            'Course lecturers, defense coordinators, and panel chairs',
-            _words('session', 'participants', 'groups', 'rubric', 'chair'),
-            dashboard='coassessment_dashboard'),
 )
 
 _BY_SLUG = {service.slug: service for service in SERVICES}

@@ -19,7 +19,7 @@ from service_domains.operations import training_drill_timer
 from service_domains.realtime import broadcast_training_session_event
 
 OWN_ORIGIN = [(b'origin', b'http://localhost')]
-SERVICES = ['classroom', 'panel', 'polls', 'team', 'showcase', 'competition']
+SERVICES = ['assessment', 'panel', 'polls', 'team', 'showcase', 'competition']
 
 
 class Fixture:

@@ -22,8 +22,10 @@ from assessments.forms import PollQuestionImportForm
 from assessments.models import (AnonymousClassroomPollResponse, ClassroomPoll,
                                 ClassroomPollQuestion)
 from assessments.polls import (PollForm, changed, create_imported_standalone_draft,
-                               create_standalone_draft, poll_results,
-                               save_anonymous_response, transition)
+                               poll_results, save_anonymous_response,
+                               save_standalone_draft,
+                               stored_abstained, stored_choice_ids,
+                               text_response_page, transition)
 from assessments.qr import public_url, qr_png
 
 TOKEN_KEY = 'standalone_poll_tokens'
@@ -40,6 +42,13 @@ def _private(response):
     response['Referrer-Policy'] = 'same-origin'
     response['X-Robots-Tag'] = 'noindex, nofollow'
     return response
+
+
+def _poll_question_errors(error):
+    if not hasattr(error, 'error_dict'):
+        return {}
+    return {key: errors[0].message for key, errors in error.error_dict.items()
+            if key.isdigit() and errors}
 
 
 def _owner(view):
@@ -90,6 +99,16 @@ def standalone_poll_list(request):
     if stash and stash.get('poll_owner') != request.user.pk:
         stash = None
     question_import_form = PollQuestionImportForm(auto_id='id_poll_question_import_%s')
+    if request.method == 'GET' and request.GET.get('preview') == '1':
+        if poll is None or poll.status != ClassroomPoll.Status.DRAFT:
+            raise Http404
+        questions = list(poll.questions.prefetch_related('options').all())
+        return _private(render(request, 'assessments/polls/preview.html', {
+            'poll': poll, 'questions': questions, 'preview_mode': True,
+            'has_text_questions': any(question.response_type in {'short_answer', 'paragraph'}
+                                      for question in questions),
+            'return_url': reverse('standalone_poll_list') + '?poll=' + str(poll.uuid),
+        }))
     if request.method == 'POST':
         action = request.POST.get('action')
         error = ''
@@ -103,22 +122,7 @@ def standalone_poll_list(request):
                     form = PollForm(request.POST, instance=poll)
                     form.fields.pop('personal_links_only', None)
                     if form.is_valid():
-                        if poll:
-                            poll = form.save(commit=False)
-                            poll.deadline = form.cleaned_data['deadline']
-                            poll.personal_links_only = False
-                            poll.save(update_fields=['question', 'description', 'allow_multiple',
-                                'personal_links_only', 'allow_abstain', 'timezone_name', 'deadline'])
-                            poll.questions.all().delete()
-                            from assessments.polls import _write_questions
-                            _write_questions(poll, [{'prompt': poll.question,
-                                'allow_multiple': poll.allow_multiple,
-                                'allow_abstain': form.cleaned_data['allow_abstain'],
-                                'options': form.cleaned_data['option_lines']},
-                                *form.cleaned_data.get('extra_questions_json', [])])
-                            changed(poll, request.user, 'Updated standalone draft.')
-                        else:
-                            poll = create_standalone_draft(form, request.organization, request.user)
+                        poll = save_standalone_draft(form, request.organization, request.user)
                     else:
                         error = 'Please correct the poll below.'
                 elif action == 'upload-questions':
@@ -168,7 +172,9 @@ def standalone_poll_list(request):
             }, status=400 if error else 200))
         if error:
             if _poll_json_requested(request) and action == 'save':
-                return JsonResponse({'ok': False, 'error': error}, status=400)
+                return JsonResponse({'ok': False, 'error': error,
+                                     'field_errors': form.errors.get_json_data(),
+                                     'question_errors': form.question_errors}, status=400)
             messages.error(request, error)
         elif action in {'upload-questions', 'cancel-question-import'}:
             return redirect(reverse('standalone_poll_list') + ('?poll=' + str(poll.uuid) if poll else ''))
@@ -189,8 +195,19 @@ def standalone_poll_list(request):
     results = poll_results(poll) if poll and poll.status != 'draft' else None
     state_url = reverse('standalone_poll_state', args=[poll.uuid]) if poll else ''
     vote_url = public_url(request, reverse('standalone_poll_public', args=[poll.uuid])) if poll else ''
+    text_review = (text_response_page(poll, request.GET.get('text_question'),
+                                     request.GET.get('text_page', 1))
+                   if poll and request.GET.get('text_question') else None)
+    text_response_base = (reverse('standalone_poll_list') + '?poll=' + str(poll.uuid)
+                          if poll else '')
     return _private(render(request, 'assessments/polls/standalone_manage.html', {
         'polls': polls, 'poll': poll, 'form': form, 'results': results,
+        'has_text_questions': bool(poll and poll.questions.filter(
+            response_type__in=['short_answer', 'paragraph']).exists()),
+        'poll_storage_key': f'standalone-{request.user.pk}-{poll.uuid if poll else "new"}',
+        'text_response_review': text_review,
+        'text_response_base': text_response_base,
+        'saved': request.GET.get('saved') == '1',
         'pending_question_import': stash, 'poll_url': vote_url, 'state_url': state_url,
         'question_import_form': question_import_form,
         'poll_question_sample_url': reverse('standalone_poll_sample'),
@@ -243,19 +260,29 @@ def standalone_poll_public(request, poll_uuid):
         tokens[str(poll.uuid)] = str(token)
         request.session[TOKEN_KEY] = tokens
     response = AnonymousClassroomPollResponse.objects.filter(poll=poll, token=token).first()
-    error, saved = '', request.GET.get('saved') == '1'
+    error, saved, error_map = '', request.GET.get('saved') == '1', {}
     if request.method == 'POST':
         if request.POST.get('action') != 'vote':
             raise Http404
         answers = {}
         for question in poll.questions.all():
             key = str(question.pk)
-            answers[key] = {'options': request.POST.getlist(f'question-{key}'),
-                'abstained': request.POST.get(f'abstain-{key}') == 'yes'}
+            if question.response_type in {'short_answer', 'paragraph'}:
+                answers[key] = {
+                    'type': question.response_type,
+                    'text': request.POST.get(f'question-{key}', ''),
+                }
+            else:
+                answers[key] = {
+                    'type': question.response_type,
+                    'option_ids': request.POST.getlist(f'question-{key}'),
+                    'abstained': request.POST.get(f'abstain-{key}') == 'yes',
+                }
         try:
             save_anonymous_response(poll.pk, token, answers)
         except ValidationError as exc:
             error = ' '.join(exc.messages)
+            error_map = _poll_question_errors(exc)
         else:
             return _private(redirect(reverse('standalone_poll_public', args=[poll.uuid]) + '?saved=1'))
     if request.GET.get('state') == '1':
@@ -269,11 +296,29 @@ def standalone_poll_public(request, poll_uuid):
     existing = response.answers if response else {}
     for question in questions:
         answer = existing.get(str(question.pk), [])
-        question.user_selections = set(answer or [])
-        question.user_abstained = answer is None
+        is_text = question.response_type in {'short_answer', 'paragraph'}
+        question.user_text = answer.get('text', '') if is_text and isinstance(answer, dict) else ''
+        question.user_selections = set(stored_choice_ids(answer)) if not is_text else set()
+        question.user_abstained = stored_abstained(answer)
+        question.validation_error = ''
         if str(question.pk) in existing:
-            question.user_answer_display = ('None of these options' if answer is None else ', '.join(
-                option.label for option in question.options.all() if option.pk in answer))
+            if is_text and isinstance(answer, dict):
+                question.user_answer_display = answer.get('text', '')
+            elif stored_abstained(answer):
+                question.user_answer_display = 'None of these options'
+            else:
+                selected_ids = set(stored_choice_ids(answer))
+                question.user_answer_display = ', '.join(
+                    option.label for option in question.options.all() if option.pk in selected_ids)
+        if error and request.method == 'POST':
+            key = str(question.pk)
+            question.validation_error = error_map.get(key, '')
+            if question.response_type in {'short_answer', 'paragraph'}:
+                question.user_text = request.POST.get(f'question-{key}', '')
+            else:
+                question.user_selections = {int(value) for value in request.POST.getlist(f'question-{key}')
+                                            if value.isdigit()}
+                question.user_abstained = request.POST.get(f'abstain-{key}') == 'yes'
     return _private(render(request, 'assessments/polls/standalone_respond.html', {
         'poll': poll, 'questions': questions, 'response': response,
         'saved': saved, 'error': error,
@@ -349,4 +394,5 @@ def standalone_poll_state(request, poll_uuid):
     return _private(JsonResponse({'status': poll.status, 'accepting': poll.accepting_responses,
         'html': render_to_string('assessments/polls/_results.html', {
             'poll': poll, **poll_results(poll),
+            'text_response_base': reverse('standalone_poll_list') + '?poll=' + str(poll.uuid),
             'hide_option_bars': True, 'hide_option_percentages': True}, request=request)}))

@@ -85,10 +85,6 @@
     </p>
     {% else %}
     <h2 class="fw-800 s-h2">Waiting for a group to present</h2>
-    <p class="text-muted s-text mb-2">
-      You're checked in as <strong>{{ student.full_name|default:student.student_id }}</strong>.
-      This screen updates the instant a group starts - no need to refresh.
-    </p>
     {% endif %}
 
     {% if next_group and not pending_transition_at %}

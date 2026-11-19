@@ -38,7 +38,7 @@ class RubricFormCoverageTests(LecturerTestCase):
     def test_template_choice_groups_include_starters_and_saved_templates(self):
         saved = SimpleNamespace(pk=27, name='My reusable rubric')
         form = TemplateChoiceForm(starters=CLASSROOM_STARTERS, saved_templates=[saved])
-        self.assertIn(('Classroom starters', [
+        self.assertIn(('Assessment starters', [
             ('starter:' + item.key, item.name) for item in CLASSROOM_STARTERS]),
             form.fields['template'].choices)
         self.assertIn(('Your saved templates', [('saved:27', 'My reusable rubric')]),

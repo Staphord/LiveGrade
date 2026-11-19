@@ -520,7 +520,7 @@ class SharedTabsAndResultsTests(ShowcaseFixture, TestCase):
         self.assertContains(page, 'data-live-enabled="false"')
 
 
-@override_settings(LIVEGRADE_LIVE_SERVICES=['classroom', 'panel', 'showcase'])
+@override_settings(LIVEGRADE_LIVE_SERVICES=['assessment', 'panel', 'showcase'])
 class ShowcaseSocketTests(ShowcaseFixture, TransactionTestCase):
     def setUp(self):
         self.build()

@@ -1,5 +1,4 @@
 """Poll rules at their edges: form input, publishing, approving a result, and hostile ballots."""
-import json
 import uuid
 from datetime import timedelta
 
@@ -15,8 +14,11 @@ from assessments.polls import PollForm
 
 
 def question(prompt='Q', options=('A', 'B'), **extra):
-    return {'prompt': prompt, 'allow_multiple': False, 'allow_abstain': True,
-            'options': list(options), **extra}
+    response_type = extra.pop('response_type', 'checkboxes' if extra.pop('allow_multiple', False)
+                              else 'multiple_choice')
+    return {'id': None, 'prompt': prompt, 'response_type': response_type,
+            'required': extra.pop('required', True), 'allow_abstain': extra.pop('allow_abstain', True),
+            'options': [{'id': None, 'label': option} for option in options], **extra}
 
 
 def imported(prompt):
@@ -34,42 +36,44 @@ class AnswerTypeNameTests(SimpleTestCase):
         self.assertEqual(kinds['One answer'], ('Multiple choice', False))
         self.assertEqual(kinds['Several'], ('Checkbox', True))
         self.assertEqual(kinds['Old name'], ('Multiple choice', False))
-        self.assertEqual(dict(PollForm().fields['allow_multiple'].choices)['true'], 'Checkbox')
+        self.assertIn('questions_json', PollForm().fields)
 
 
 class FormInputTests(SimpleTestCase):
     def form(self, **overrides):
-        data = {'question': 'Where?', 'allow_multiple': 'false', 'option_lines': 'Hall\nLibrary',
-                'timezone_name': 'Africa/Dar_es_Salaam', 'allow_abstain': 'on'}
+        data = {'title': 'Poll title', 'questions_json': '[{"id":null,"prompt":"Where?",'
+                '"response_type":"multiple_choice","required":true,"allow_abstain":true,'
+                '"options":[{"id":null,"label":"Hall"},{"id":null,"label":"Library"}]}]',
+                'timezone_name': 'Africa/Dar_es_Salaam'}
         data.update(overrides)
         return PollForm(data)
 
-    def extra(self, value):
-        form = PollForm()
-        form.cleaned_data = {'extra_questions_json': value if isinstance(value, str) else json.dumps(value)}
-        return form.clean_extra_questions_json()
+    def definition_form(self, definitions):
+        import json
+        return self.form(questions_json=json.dumps(definitions))
 
-    def test_answer_type_is_normalized_however_the_form_was_built(self):
-        self.assertEqual(PollForm({'allow_multiple': 'on'}).data['allow_multiple'], 'true')
-        self.assertEqual(PollForm(data={'question': 'Q'}).data['allow_multiple'], 'false')
-        self.assertEqual(PollForm(data={'allow_multiple': False}).data['allow_multiple'], 'false')
-
-    def test_extra_questions_are_validated_one_rule_at_a_time(self):
+    def test_question_definitions_are_validated_one_rule_at_a_time(self):
         good = question('Second?')
-        self.assertEqual(self.extra(''), [])
-        self.assertEqual(self.extra([good])[0]['prompt'], 'Second?')
+        form = self.definition_form([good])
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data['questions_json'][0]['prompt'], 'Second?')
         bad_inputs = [
-            'not json', {'a': 1}, [good] * 100, ['text'],
+            {'a': 1}, [good] * 101, ['text'],
             [question('')], [question('x' * 251)],
-            [question(allow_multiple='yes')], [question(allow_multiple=False, allow_abstain='no')],
-            [{'prompt': 'Q', 'allow_multiple': False, 'options': 'AB'}],
+            [question(response_type='unavailable')], [question(required='yes')],
+            [question(allow_abstain='no')],
+            [{'id': None, 'prompt': 'Q', 'response_type': 'multiple_choice', 'required': True,
+              'allow_abstain': True, 'options': 'AB'}],
             [question(options=('only one',))], [question(options=('A', 'x' * 251))],
             [question(options=('A', 'a'))],
+            [question(response_type='short_answer', allow_abstain=False, options=('A',))],
         ]
         for value in bad_inputs:
             with self.subTest(value=str(value)[:40]):
-                with self.assertRaises(ValidationError):
-                    self.extra(value)
+                form = self.definition_form(value)
+                self.assertFalse(form.is_valid())
+        self.assertFalse(self.form(questions_json='not json').is_valid())
+        self.assertFalse(self.form(title='   ').is_valid())
 
     def test_deadline_date_and_time_are_checked_together(self):
         future = (timezone.now() + timedelta(days=3)).astimezone().strftime('%d/%m/%Y')
@@ -98,7 +102,7 @@ class PollFlowCase(TestCase):
     def poll(self, questions=None, status=ClassroomPoll.Status.DRAFT, standalone=False, **fields):
         extra = ({'standalone': True, 'organization_id': self.org.pk, 'created_by': self.owner}
                  if standalone else {'assessment_session': self.session})
-        poll = ClassroomPoll.objects.create(question='Q', status=status, **extra, **fields)
+        poll = ClassroomPoll.objects.create(title='Poll title', status=status, **extra, **fields)
         polls._write_questions(poll, questions if questions is not None else [question()])
         return poll
 
@@ -108,8 +112,7 @@ class FormInitialTests(PollFlowCase):
         poll = self.poll(questions=[])
         poll.options.create(label='Left', order=0)
         form = PollForm(instance=poll)
-        self.assertEqual(form.initial['option_lines'], 'Left')
-        self.assertEqual(form.initial['allow_multiple'], 'false')
+        self.assertEqual(form.initial['questions_json'], '[]')
 
 
 class ImportTests(PollFlowCase):
@@ -208,7 +211,7 @@ class ClassroomBallotTests(PollFlowCase):
         poll, voter = self.open_poll([question('One'), question('Two')])
         with self.assertRaisesMessage(ValidationError, 'Answer every question'):
             self.vote(poll, voter, [1])
-        with self.assertRaisesMessage(ValidationError, 'Answer every question'):
+        with self.assertRaisesMessage(ValidationError, 'only for questions in this poll'):
             self.vote(poll, voter, answers={'999999': [1]})
 
 
@@ -238,13 +241,13 @@ class AnonymousBallotTests(PollFlowCase):
         key = str(q.pk)
         cases = [
             ('not-a-uuid', {key: {'options': [a.pk]}}, 'Refresh'),
-            (uuid.uuid4(), {}, 'Answer every question'),
+            (uuid.uuid4(), {}, 'Answer this required question'),
             (uuid.uuid4(), {key: {'abstained': True, 'options': [a.pk]}}, 'not both'),
-            (uuid.uuid4(), {key: {'abstained': True}}, 'Choose an answer for every question'),
+            (uuid.uuid4(), {key: {'abstained': True}}, 'Choose an answer for this question'),
             (uuid.uuid4(), {key: {'options': ['x']}}, 'valid answer options'),
-            (uuid.uuid4(), {key: {'options': []}}, 'valid answer options for every'),
-            (uuid.uuid4(), {key: {'options': [a.pk, b.pk]}}, 'valid answer options for every'),
-            (uuid.uuid4(), {key: {'options': [foreign.pk]}}, 'listed under each question'),
+            (uuid.uuid4(), {key: {'options': []}}, 'Choose an answer or select'),
+            (uuid.uuid4(), {key: {'options': [a.pk, b.pk]}}, 'Choose only one answer'),
+            (uuid.uuid4(), {key: {'options': [foreign.pk]}}, 'listed under this question'),
         ]
         for token, answers, message in cases:
             with self.subTest(message=message):

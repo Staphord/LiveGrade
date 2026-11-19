@@ -3,6 +3,7 @@
 from decimal import Decimal
 from functools import wraps
 import re
+import secrets
 from urllib.parse import quote
 
 from django.conf import settings
@@ -11,7 +12,7 @@ from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Sum
 from django.http import Http404, HttpResponse, JsonResponse, QueryDict
 from .safe_redirects import safe_redirect, user_message
 from django.shortcuts import get_object_or_404, redirect, render
@@ -33,7 +34,7 @@ from .competition_forms import (CompetitionEntryForm, CompetitionFirstRoundForm,
 from .competition_import import (apply_competition_entry_import, parse_competition_entries,
     plan_entries, sample_competition_entries)
 from .models import (Competition, CompetitionAudienceBallot, CompetitionCriterion, CompetitionEntry, CompetitionJudgeInvitation,
-    CompetitionJudgeScore, CompetitionRound, CompetitionRoundEntry, CompetitionTrack)
+    CompetitionJudgeScore, CompetitionLiveState, CompetitionRound, CompetitionRoundEntry, CompetitionTrack)
 from .operations import (create_initial_competition_round,
     compile_competition_judge_scores, delete_competitions, issue_competition_judge_invitation,
     create_next_competition_round, revoke_competition_judge_invitation,
@@ -41,6 +42,7 @@ from .operations import (create_initial_competition_round,
 from .operations import set_competition_public_leaderboard
 from .operations import (competition_final_tie_requirements,
     resolve_competition_final_ties, competition_audience_join_code,
+    competition_audience_minimum_entries,
     competition_audience_ranked_choice, finalize_competition_weighted_scores,
     get_competition_live_state_context, set_competition_stage_entry,
     adjust_competition_pitch_timer, toggle_competition_pitch_pause,
@@ -782,7 +784,7 @@ def competition_manage(request, competition_id):
                 .owned_by(request.user).filter(round=latest_round, track=track)
                 .select_related('entry').order_by('entry__order', 'entry_id'))
             track.audience_ballot_available = bool(track.audience_entries) and (
-                competition.effective_audience_weight > 0 or len(track.audience_entries) >= 2)
+                len(track.audience_entries) >= competition_audience_minimum_entries(competition))
             track.audience_ballot_count = CompetitionAudienceBallot.objects.for_organization(
                 request.organization).filter(round=latest_round, track=track).count()
             track.audience_join_code = (competition_audience_join_code(
@@ -964,10 +966,13 @@ def competition_audience_join(request):
             round_obj, track = routing.round, routing.track
             active = round_obj.competition
             latest_id = active.rounds.order_by('-order').values_list('pk', flat=True).first()
+            voting_open = CompetitionLiveState.objects.filter(
+                competition=active).values_list('audience_voting_open', flat=True).first()
             if (active.status == Competition.Status.ACTIVE
                     and round_obj.pk == latest_id and round_obj.audience_locked_at is None
-                    and track.competition_id == active.pk):
-                minimum = 1 if active.effective_audience_weight > 0 else 2
+                    and track.competition_id == active.pk
+                    and voting_open is not False):
+                minimum = competition_audience_minimum_entries(active)
                 if CompetitionRoundEntry.objects.filter(round=round_obj, track=track).count() >= minimum:
                     return redirect('competition_audience_vote', active.public_id, round_obj.pk, track.pk)
         return render(request, 'service_domains/competition_join.html', {
@@ -1111,12 +1116,21 @@ def _competition_readiness(request, competition):
     """Checklist rows for a draft competition, and whether it can start."""
     tracks = list(CompetitionTrack.objects.for_organization(request.organization)
         .owned_by(request.user).filter(competition=competition).order_by('pk'))
-    entry_counts = {track.pk: CompetitionEntry.objects.filter(track=track).count() for track in tracks}
-    criteria_totals = {track.pk: sum((item.weight for item in CompetitionCriterion.objects.filter(
-        track=track)), Decimal('0')) for track in tracks}
+    track_ids = [track.pk for track in tracks]
+    entry_counts = {
+        row['track_id']: row['count']
+        for row in CompetitionEntry.objects.filter(track_id__in=track_ids)
+        .values('track_id').annotate(count=Count('pk'))
+    }
+    criteria_totals = {
+        row['track_id']: row['total']
+        for row in CompetitionCriterion.objects.filter(track_id__in=track_ids)
+        .values('track_id').annotate(total=Sum('weight'))
+    }
     tracks_ok = bool(tracks)
-    entries_ok = tracks_ok and all(entry_counts[track.pk] > 0 for track in tracks)
-    criteria_ok = all(total in (Decimal('0'), Decimal('100')) for total in criteria_totals.values())
+    entries_ok = tracks_ok and all(entry_counts.get(track.pk, 0) > 0 for track in tracks)
+    criteria_ok = all(criteria_totals.get(track.pk, Decimal('0')) in (Decimal('0'), Decimal('100'))
+                      for track in tracks)
     readiness = [
         {'label': 'Tracks', 'step': 'tracks', 'ok': tracks_ok,
          'detail': f'{len(tracks)} track{"s" if len(tracks) != 1 else ""}' if tracks else 'Add at least one track'},
@@ -1154,6 +1168,21 @@ def competition_live_control(request, competition_id):
 @require_safe
 @never_cache
 @_competition_owner
+def competition_results(request, competition_id):
+    """Render the dedicated organizer standings and round-advancement page."""
+    competition = _owned_competition(request, competition_id)
+    if competition.status == Competition.Status.DRAFT:
+        return redirect('competition_live_control', competition_id=competition.pk)
+    context = get_competition_live_state_context(competition)
+    response = render(request, 'service_domains/competition_results.html', context)
+    response['Cache-Control'] = 'private, no-store'
+    response['Referrer-Policy'] = 'same-origin'
+    return response
+
+
+@require_safe
+@never_cache
+@_competition_owner
 def competition_projector(request, competition_id):
     """Render the full-screen arena presentation display supporting stage pitch, QR voting, standings, and winner modes."""
     competition = _owned_competition(request, competition_id)
@@ -1176,6 +1205,8 @@ def competition_projector_qr(request, competition_id):
     active_round = context.get('active_round')
     active_track = context.get('active_track')
     if active_round and active_track:
+        if not context['audience_ballot_available']:
+            raise Http404
         target_url = request.build_absolute_uri(
             reverse('competition_audience_vote', kwargs={
                 'competition_id': competition.public_id,
@@ -1193,6 +1224,28 @@ def competition_projector_qr(request, competition_id):
 @require_safe
 @never_cache
 @_competition_owner
+def competition_projector_state(request, competition_id):
+    """Return the authorized projector screen fragment for no-reload updates."""
+    competition = _owned_competition(request, competition_id)
+    context = get_competition_live_state_context(competition)
+    return JsonResponse({
+        'ok': True,
+        'competition_status': competition.status,
+        'projector_screen_html': render_to_string(
+            'service_domains/_partials/competition_projector_screen.html',
+            context, request=request),
+        'pitch_seconds_remaining': context['pitch_seconds_remaining'],
+        'pitch_timer_duration_seconds': context['pitch_timer_duration_seconds'],
+        'pitch_timer_state': context['pitch_timer_state'],
+        'timer_paused': context['timer_paused'],
+        'pitch_timer_ends_at_ms': context['pitch_timer_ends_at_ms'],
+        'pitch_timer_server_now_ms': context['pitch_timer_server_now_ms'],
+    })
+
+
+@require_safe
+@never_cache
+@_competition_owner
 def competition_live_state(request, competition_id):
     """Real-time JSON state endpoint returning arena telemetry and HTML fragments."""
     competition = _owned_competition(request, competition_id)
@@ -1200,7 +1253,7 @@ def competition_live_state(request, competition_id):
         return JsonResponse({
             'ok': False,
             'status': competition.status,
-            'redirect': reverse('competition_manage', args=(competition.pk,))
+            'redirect': reverse('competition_results', args=(competition.pk,))
         })
     context = get_competition_live_state_context(competition)
     return JsonResponse({
@@ -1210,6 +1263,10 @@ def competition_live_state(request, competition_id):
         'active_track_id': context['active_track'].pk if context['active_track'] else None,
         'active_entry_id': context['active_entry'].pk if context['active_entry'] else None,
         'pitch_seconds_remaining': context['pitch_seconds_remaining'],
+        'pitch_timer_duration_seconds': context['pitch_timer_duration_seconds'],
+        'pitch_timer_state': context['pitch_timer_state'],
+        'pitch_timer_ends_at_ms': context['pitch_timer_ends_at_ms'],
+        'pitch_timer_server_now_ms': context['pitch_timer_server_now_ms'],
         'timer_paused': context['timer_paused'],
         'audience_voting_open': context['audience_voting_open'],
         'ballots_count': context['ballots_count'],
@@ -1222,6 +1279,7 @@ def competition_live_state(request, competition_id):
         'audience_html': render_to_string('service_domains/_partials/competition_live_audience.html', context, request=request),
         'standings_html': render_to_string('service_domains/_partials/competition_live_standings.html', context, request=request),
         'projector_html': render_to_string('service_domains/_partials/competition_live_projector.html', context, request=request),
+        'rounds_html': render_to_string('service_domains/_partials/competition_round_timeline.html', context, request=request),
     })
 
 
@@ -1250,7 +1308,7 @@ def competition_live_action(request, competition_id):
             entry_id = request.POST.get('entry_id')
             set_competition_stage_entry(competition, entry_id, organization=request.organization, user=request.user)
         elif action == 'adjust_pitch_timer':
-            delta = int(request.POST.get('delta', 30))
+            delta = request.POST.get('delta', 30)
             adjust_competition_pitch_timer(competition, delta, organization=request.organization, user=request.user)
         elif action == 'toggle_pitch_pause':
             toggle_competition_pitch_pause(competition, organization=request.organization, user=request.user)
@@ -1262,40 +1320,78 @@ def competition_live_action(request, competition_id):
                 pk=judge_id, competition=competition, organization_id=competition.organization_id
             ).first()
             if invitation and not invitation.submitted_at and not invitation.revoked_at:
-                messages.info(request, f'Nudge sent to judge {invitation.email}.')
+                token = secrets.token_urlsafe(32)
+                url = request.build_absolute_uri(reverse(
+                    'competition_judge_scorecard', kwargs={'token': token}))
+                with transaction.atomic():
+                    invitation = CompetitionJudgeInvitation.objects.select_for_update().filter(
+                        pk=judge_id, competition=competition,
+                        organization_id=competition.organization_id).first()
+                    if invitation is None or invitation.submitted_at or invitation.revoked_at:
+                        raise ValidationError('This judge invitation is no longer available for a reminder.')
+                    invitation.token_digest = CompetitionJudgeInvitation.digest_token(token)
+                    invitation.save(update_fields=('token_digest', 'updated_at'))
+                    try:
+                        sent = send_mail(
+                            subject=f'Competition judge reminder: {competition.name}',
+                            message=(f'Please complete your scorecard for {invitation.track.name}. '
+                                f'Use this private link before {invitation.expires_at}: {url}'),
+                            from_email=None, recipient_list=[invitation.email], fail_silently=False)
+                    except Exception as exc:
+                        raise ValidationError('The judge reminder could not be delivered.') from exc
+                    if not sent:
+                        raise ValidationError('The judge reminder could not be delivered.')
+                messages.info(request, f'Reminder sent to judge {invitation.email}. The previous link is no longer valid.')
         elif action == 'resolve_tie':
-            track_id = int(request.POST.get('track_id'))
-            tied_score = Decimal(request.POST.get('tied_score'))
-            reason = request.POST.get('reason', '').strip()
-            ordered_ids = [int(eid) for eid in request.POST.getlist('ordered_entry_ids')]
-            active_round = CompetitionRound.objects.filter(competition=competition, organization_id=competition.organization_id).order_by('-order').first()
-            if active_round and reason and len(ordered_ids) >= 2:
-                CompetitionLeaderboardTieDecision.objects.create(
-                    organization_id=competition.organization_id,
-                    created_by=request.user,
-                    round=active_round,
-                    track_id=track_id,
-                    tied_score=tied_score,
-                    ordered_entry_ids=ordered_ids,
-                    reason=reason,
-                    decided_by=request.user,
-                )
-            messages.success(request, 'Boundary tie resolved.')
+            raise ValidationError('Resolve advancement ties when advancing the round.')
+        elif action == 'finalize_weighted_scores':
+            latest_round = (CompetitionRound.objects.filter(
+                competition=competition, organization_id=competition.organization_id)
+                .order_by('-order').first())
+            if latest_round is None:
+                raise ValidationError('Create the first competition round before finalizing weighted scores.')
+            finalize_competition_weighted_scores(
+                competition, latest_round,
+                organization=request.organization, user=request.user)
+            messages.success(request, 'Audience voting is closed and the weighted scores are finalized.')
             if not is_ajax:
-                return redirect('competition_live_control', competition_id=competition.pk)
+                return redirect('competition_results', competition_id=competition.pk)
         elif action == 'advance_round':
             active_round = CompetitionRound.objects.filter(competition=competition, organization_id=competition.organization_id).order_by('-order').first()
+            if active_round is None:
+                raise ValidationError('Create the first competition round before advancing.')
             next_round_name = request.POST.get('next_round_name') or f'Round {active_round.order + 1}'
-            create_next_competition_round(competition, active_round, next_round_name, organization=request.organization, user=request.user)
+            head_judge_decisions = {}
+            head_judge_reasons = {}
+            tie_track_ids = request.POST.getlist('tie_track_ids')
+            if request.POST.get('track_id'):
+                tie_track_ids.append(request.POST['track_id'])
+            for track_id_value in tie_track_ids:
+                track_id = int(track_id_value)
+                head_judge_decisions[track_id] = [int(value) for value in
+                    request.POST.getlist(f'ordered_entry_ids_{track_id}')]
+                if not head_judge_decisions[track_id]:
+                    head_judge_decisions[track_id] = [int(value) for value in
+                        request.POST.getlist('ordered_entry_ids')]
+                head_judge_reasons[track_id] = request.POST.get(
+                    f'reason_{track_id}', request.POST.get('reason', ''))
+            create_next_competition_round(competition, active_round, next_round_name,
+                organization=request.organization, user=request.user,
+                head_judge_decisions=head_judge_decisions,
+                head_judge_reasons=head_judge_reasons)
             messages.success(request, f'Advanced to {next_round_name}. Qualified entrants are ready on the stage docket.')
             if not is_ajax:
                 return redirect('competition_live_control', competition_id=competition.pk)
+            return JsonResponse({
+                'ok': True,
+                'redirect': reverse('competition_live_control', args=(competition.pk,)),
+            })
         elif action == 'conclude_competition':
             complete_competition(competition, organization=request.organization, user=request.user)
             messages.success(request, 'Competition completed. Final leaderboard is ready for review.')
             if not is_ajax:
-                return redirect('competition_manage', competition_id=competition.pk)
-            return JsonResponse({'status': 'complete', 'redirect': reverse('competition_manage', args=(competition.pk,))})
+                return redirect('competition_results', competition_id=competition.pk)
+            return JsonResponse({'status': 'complete', 'redirect': reverse('competition_results', args=(competition.pk,))})
         elif action == 'set_projector_mode':
             mode = request.POST.get('mode', 'stage')
             set_competition_projector_mode(competition, mode, organization=request.organization, user=request.user)
@@ -1303,8 +1399,10 @@ def competition_live_action(request, competition_id):
             if not is_ajax:
                 return redirect('competition_live_control', competition_id=competition.pk)
             return JsonResponse({'error': f'Unknown action: {action}'}, status=400)
-    except (ValidationError, PermissionDenied) as exc:
+    except (ValidationError, PermissionDenied, ValueError, TypeError) as exc:
         msg = user_message(exc)
+        if not isinstance(exc, (ValidationError, PermissionDenied)):
+            msg = 'One or more submitted choices were invalid. Review them and try again.'
         if not is_ajax:
             messages.error(request, msg)
             return redirect('competition_live_control', competition_id=competition.pk)
@@ -1315,6 +1413,10 @@ def competition_live_action(request, competition_id):
         'ok': True,
         'competition_status': competition.status,
         'pitch_seconds_remaining': context['pitch_seconds_remaining'],
+        'pitch_timer_duration_seconds': context['pitch_timer_duration_seconds'],
+        'pitch_timer_state': context['pitch_timer_state'],
+        'pitch_timer_ends_at_ms': context['pitch_timer_ends_at_ms'],
+        'pitch_timer_server_now_ms': context['pitch_timer_server_now_ms'],
         'timer_paused': context['timer_paused'],
         'audience_voting_open': context['audience_voting_open'],
         'ballots_count': context['ballots_count'],
@@ -1327,6 +1429,7 @@ def competition_live_action(request, competition_id):
         'audience_html': render_to_string('service_domains/_partials/competition_live_audience.html', context, request=request),
         'standings_html': render_to_string('service_domains/_partials/competition_live_standings.html', context, request=request),
         'projector_html': render_to_string('service_domains/_partials/competition_live_projector.html', context, request=request),
+        'rounds_html': render_to_string('service_domains/_partials/competition_round_timeline.html', context, request=request),
     })
 
 

@@ -7,7 +7,7 @@ from assessments.polls import poll_results, save_anonymous_response
 
 class PollProjectionTests(TestCase):
     def setUp(self):
-        self.poll = ClassroomPoll.objects.create(question='Choose', standalone=True,
+        self.poll = ClassroomPoll.objects.create(title='Choose poll', standalone=True,
             organization_id=1, created_by=get_user_model().objects.create(username='poll-projection'), status='open')
         self.question = ClassroomPollQuestion.objects.create(poll=self.poll, prompt='Choose')
         self.options = [ClassroomPollOption.objects.create(poll=self.poll, question=self.question,
@@ -17,7 +17,8 @@ class PollProjectionTests(TestCase):
         token = uuid.uuid4()
         key = str(self.question.pk)
         def submit(options, abstained=False):
-            save_anonymous_response(self.poll.pk, token, {key: {'options': options, 'abstained': abstained}})
+            save_anonymous_response(self.poll.pk, token, {key: {
+                'type': 'multiple_choice', 'option_ids': options, 'abstained': abstained}})
         submit([self.options[0].pk])
         submit([self.options[1].pk])
         result = poll_results(self.poll)

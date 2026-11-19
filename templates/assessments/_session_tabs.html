@@ -1,21 +1,32 @@
 <div class="page-tabs mb-3">
-
-  {% if is_owner is not False %}
+  {% if is_owner is not False and session.delivery_mode != 'async_submission' %}
   <a href="{% url 'assessment_session_detail' session.pk %}" class="page-tab {% if active == 'overview' %}active{% endif %}">
     <i class="bi bi-broadcast me-1"></i>Live control
   </a>
   {% endif %}
-  {% if is_owner is not False and session.service == 'classroom' %}
-  <a href="{% url 'assessment_polls' session.pk %}" class="page-tab">Polls</a>
+  {% if is_owner is not False and session.enable_peer %}
+  <a href="{% url 'assessment_polls' session.pk %}" class="page-tab {% if active == 'polls' %}active{% endif %}">Polls</a>
   {% endif %}
-  {% if is_owner is not False and session.status == 'live' %}
-  <a href="{% url 'assessment_setup' session.pk %}" class="page-tab {% if active == 'setup' %}active{% endif %}">
+  {% if is_owner is not False and session.enable_panel %}
+  <a href="{% url 'assessment_panel_examiners' session.pk %}" class="page-tab {% if active == 'panel' %}active{% endif %}">
+    <i class="bi bi-people me-1"></i>Panel Examiners
+  </a>
+  {% endif %}
+  {% if is_owner is not False and session.delivery_mode == 'async_submission' %}
+  <a href="{% url 'assessment_async_console' session.pk %}" class="page-tab {% if active == 'async' %}active{% endif %}">
+    <i class="bi bi-inbox me-1"></i>Submissions &amp; Allocation
+  </a>
+  {% endif %}
+  {% if is_owner is not False and session.status != 'draft' and session.status != 'closed' %}
+  <a href="{% url 'assessment_setup' session.pk %}?from={{ active }}" class="page-tab {% if active == 'setup' %}active{% endif %}">
     <i class="bi bi-sliders me-1"></i>Setup
   </a>
   {% endif %}
+  {% if session.enable_peer %}
   <a href="{% url 'assessment_participation' session.pk %}" class="page-tab {% if active == 'participation' %}active{% endif %}">
     <i class="bi bi-person-check me-1"></i>Participation
   </a>
+  {% endif %}
   <a href="{% url 'assessment_results' session.pk %}" class="page-tab {% if active == 'results' %}active{% endif %}">
     <i class="bi bi-bar-chart-line me-1"></i>Results
   </a>

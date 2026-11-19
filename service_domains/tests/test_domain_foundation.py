@@ -172,7 +172,7 @@ class ScopeAndModelValidationTests(ServiceDomainFixture):
         with self.assertRaises(ValidationError):
             missing.full_clean()
         classroom = AssessmentSession.objects.create(organization_id=self.org.id, created_by=self.owner,
-                                                     service='classroom', name='Classroom')
+                                                     service='assessment', name='Classroom')
         link = self.base(TrainingSeriesSession, series=series, assessment_session=classroom, sequence=1)
         with self.assertRaisesMessage(ValidationError, 'only Team'):
             link.full_clean()
@@ -867,7 +867,7 @@ class TeamNextSessionTests(ServiceDomainFixture):
         with self.assertRaisesMessage(ValidationError, 'needs an identifier'):
             self.create_next(template=id_template)
         wrong_service = SessionTemplate.objects.create(organization_id=self.org.id, created_by=self.owner,
-            service='classroom', name='Class template')
+            service='assessment', name='Class template')
         with self.assertRaisesMessage(ValidationError, 'Team template'):
             self.create_next(template=wrong_service)
         self.assertFalse(AssessmentSession.objects.filter(service='team').exists())

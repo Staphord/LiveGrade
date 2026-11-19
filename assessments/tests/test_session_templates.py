@@ -100,7 +100,7 @@ class SessionTemplateTests(TestCase):
     def test_save_copies_exact_setup_and_no_assessment_records(self):
         template = self.saved()
         self.assertEqual(template.organization_id, self.org.id)
-        self.assertEqual(template.service, 'classroom')
+        self.assertEqual(template.service, 'assessment')
         self.assertEqual(template.created_by, self.owner)
         self.assertEqual(values(template, SESSION_SETTINGS), values(self.source, SESSION_SETTINGS))
         self.assertEqual([values(row, RUBRIC_FIELDS) for row in template.rubric_categories.all()],
@@ -121,7 +121,7 @@ class SessionTemplateTests(TestCase):
         self.assertRedirects(response, reverse('assessment_groups', args=[new.pk]))
         self.assertEqual(new.created_by, self.owner)
         self.assertEqual(new.organization_id, self.org.id)
-        self.assertEqual(new.service, 'classroom')
+        self.assertEqual(new.service, 'assessment')
         self.assertEqual(new.status, 'draft')
         self.assertNotEqual(new.uuid, self.source.uuid)
         self.assertFalse(new.joining_locked)
@@ -217,7 +217,7 @@ class SessionTemplateTests(TestCase):
         self.assertIsNone(response.context['selected_template'])
 
     def test_starters_are_service_specific_valid_and_independent(self):
-        starters = starters_for('classroom')
+        starters = starters_for('assessment')
         self.assertEqual(len(starters), 3)
         self.assertEqual(starters_for('panel'), ())
         self.assertEqual(starters_for(None), ())
@@ -245,7 +245,7 @@ class SessionTemplateTests(TestCase):
         hidden = [
             SessionTemplate.objects.create(name='PRIVATE-COLLEAGUE', organization_id=self.org.id, created_by=other),
             SessionTemplate.objects.create(name='PRIVATE-OTHER-ORG', organization_id=9999, created_by=self.owner),
-            SessionTemplate.objects.create(name='PRIVATE-PANEL', organization_id=self.org.id, created_by=self.owner, service='panel'),
+            SessionTemplate.objects.create(name='PRIVATE-PANEL', organization_id=self.org.id, created_by=self.owner, service='team'),
         ]
         for url in (self.new_url, self.list_url):
             response = self.client.get(url)
@@ -283,10 +283,10 @@ class SessionTemplateTests(TestCase):
 
     def test_caller_cannot_choose_scope_owner_or_runtime_state(self):
         template = self.saved()
-        self.create(template, service='panel', organization_id=9999, created_by=9999, status='live',
+        self.create(template, service='team', organization_id=9999, created_by=9999, status='live',
                     uuid=str(self.source.uuid), joining_locked='on')
         new = self.new_session()
-        self.assertEqual(new.service, 'classroom')
+        self.assertEqual(new.service, 'assessment')
         self.assertEqual(new.organization_id, self.org.id)
         self.assertEqual(new.created_by, self.owner)
         self.assertEqual(new.status, 'draft')
@@ -297,7 +297,7 @@ class SessionTemplateTests(TestCase):
         self.client.post(self.save_url, {'name': 'Saved', 'service': 'panel', 'organization_id': 9999,
                                         'created_by': 9999, 'rubric': 'Ignore client data'})
         template = SessionTemplate.objects.get()
-        self.assertEqual(template.service, 'classroom')
+        self.assertEqual(template.service, 'assessment')
         self.assertEqual(template.organization_id, self.org.id)
         self.assertEqual(template.created_by, self.owner)
         self.assertEqual(template.rubric_categories.count(), 2)
@@ -326,7 +326,7 @@ class SessionTemplateTests(TestCase):
 
     def test_helper_cannot_capture_another_owners_source_from_an_oversight_queryset(self):
         with self.assertRaises(Http404):
-            save_session_template(AssessmentSession.objects.for_organization(self.org.as_claim()).for_service('classroom'),
+            save_session_template(AssessmentSession.objects.for_organization(self.org.as_claim()).for_service('assessment'),
                                   self.source.pk, owner=make_user('other'), name='No')
         self.assertFalse(SessionTemplate.objects.exists())
 
@@ -334,7 +334,7 @@ class SessionTemplateTests(TestCase):
         template = self.saved()
         for overrides in ({'service': 'panel'}, {'organization_id': 9999}, {'created_by': make_user('other')},
                           {'service': ''}):
-            instance = AssessmentSession(name='No', service='classroom', organization_id=self.org.id, created_by=self.owner)
+            instance = AssessmentSession(name='No', service='assessment', organization_id=self.org.id, created_by=self.owner)
             for key, value in overrides.items():
                 setattr(instance, key, value)
             with self.assertRaises(Http404):
@@ -346,8 +346,8 @@ class SessionTemplateTests(TestCase):
         with self.assertRaises(ValidationError):
             save_draft_from_template(AssessmentSession(name='No', organization_id=self.org.id, created_by=self.owner, status='live'), template)
         with self.assertRaises(Http404):
-            save_draft_from_template(AssessmentSession(name='No', service='panel', organization_id=self.org.id, created_by=self.owner),
-                                     starters_for('classroom')[0])
+            save_draft_from_template(AssessmentSession(name='No', service='team', organization_id=self.org.id, created_by=self.owner),
+                                     starters_for('assessment')[0])
         self.assertEqual(AssessmentSession.objects.count(), 1)
 
     def test_invalid_save_fields_and_invalid_source_rubric_do_not_write(self):

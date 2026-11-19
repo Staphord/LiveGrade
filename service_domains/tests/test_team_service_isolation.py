@@ -7,7 +7,7 @@ from accounts.testing import make_org, make_user, sign_in
 from assessments.models import AssessmentSession
 from service_domains.models import TrainingParticipant, TrainingSeries, TrainingSeriesSession
 
-SERVICES = ['classroom', 'panel', 'polls', 'team', 'showcase', 'competition']
+SERVICES = ['assessment', 'panel', 'polls', 'team', 'showcase', 'competition']
 
 
 @override_settings(LIVEGRADE_LIVE_SERVICES=SERVICES)
@@ -17,7 +17,7 @@ class TeamServiceIsolationTests(TestCase):
         self.org = make_org(f'Isolation {suffix}')
         self.owner = make_user(f'iso-owner-{suffix}')
         self.classroom = AssessmentSession.objects.create(
-            organization_id=self.org.id, created_by=self.owner, service='classroom',
+            organization_id=self.org.id, created_by=self.owner, service='assessment',
             name='Private classroom class', status='live')
         self.series = TrainingSeries.objects.create(
             organization_id=self.org.id, created_by=self.owner, name='Isolation series')
@@ -39,7 +39,7 @@ class TeamServiceIsolationTests(TestCase):
             self.assertNotContains(response, 'Private classroom class', status_code=404)
 
     def test_classroom_still_lists_its_own_sessions_only(self):
-        page = self.client.get('/classroom/app/sessions/')
+        page = self.client.get('/assessment/app/sessions/')
         self.assertContains(page, 'Private classroom class')
         self.assertNotContains(page, 'Team demo')
 
@@ -49,7 +49,7 @@ class TeamServiceIsolationTests(TestCase):
             self.assertEqual(response.status_code, 404, suffix)
 
     def test_classroom_cannot_open_a_team_demo_by_id(self):
-        self.assertEqual(self.client.get(f'/classroom/app/{self.demo.pk}/').status_code, 404)
+        self.assertEqual(self.client.get(f'/assessment/app/{self.demo.pk}/').status_code, 404)
 
     def test_demo_pages_go_back_to_the_workshop_not_the_classroom_list(self):
         live = f'/team/series/{self.series.pk}/sessions/{self.link.pk}/live/'
@@ -72,8 +72,8 @@ class TeamServiceIsolationTests(TestCase):
         self.assertIn('Training series', html)
 
     def test_classroom_pages_keep_their_own_back_link(self):
-        html = self.client.get(f'/classroom/app/{self.classroom.pk}/').content.decode()
-        self.assertIn('/classroom/app/sessions/', html)
+        html = self.client.get(f'/assessment/app/{self.classroom.pk}/').content.decode()
+        self.assertIn('/assessment/app/sessions/', html)
         self.assertIn('All sessions', html)
 
     def test_non_session_team_pages_use_the_series_list_as_home(self):

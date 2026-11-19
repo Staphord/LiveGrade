@@ -1,0 +1,238 @@
+<div id="projector-screen-content"
+     data-pitch-timer-state="{{ pitch_timer_state }}"
+     data-pitch-seconds-remaining="{{ pitch_seconds_remaining }}"
+     data-pitch-timer-duration="{{ pitch_timer_duration_seconds }}">
+  <!-- Arena Stage Topbar -->
+  <header class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4 pb-3 border-bottom" style="border-color: var(--proj-border) !important;">
+    <div>
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span class="proj-live-badge"><span class="dot" aria-hidden="true"></span>Live Stage</span>
+        <span class="badge text-bg-secondary">{{ active_round.name|default:"Stage Session" }}</span>
+        {% if active_track %}
+        <span class="badge text-bg-dark border" style="border-color: var(--proj-border) !important;">{{ active_track.name }}</span>
+        {% endif %}
+      </div>
+      <h1 class="h3 fw-bold mb-0 text-white">{{ competition.name }}</h1>
+    </div>
+
+    <div class="d-flex align-items-center gap-2">
+      <div class="proj-stat-pill">
+        <i class="bi bi-display text-info" aria-hidden="true"></i>
+        <span class="text-uppercase small fw-bold" id="proj-mode-label">
+          {% if projector_mode == 'stage' %}Stage Pitch
+          {% elif projector_mode == 'voting' %}Audience Voting
+          {% elif projector_mode == 'standings' %}Live Standings
+          {% elif projector_mode == 'winner' %}Winner Reveal
+          {% else %}Stage Pitch{% endif %}
+        </span>
+      </div>
+      <span class="small text-muted" id="projector-connection-status" role="status" aria-live="polite">Connecting</span>
+      <a href="{% url 'competition_live_control' competition.pk %}" class="btn btn-outline-secondary btn-sm text-light border-secondary">
+        <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>Facilitator Console
+      </a>
+    </div>
+  </header>
+
+  {% if projector_mode == 'stage' or not projector_mode %}
+    <!-- Mode 1: Stage Pitch Presenter Spotlight -->
+    <div class="proj-card flex-grow-1 d-flex flex-column justify-content-center">
+      <span class="text-uppercase small fw-bold text-info" style="letter-spacing: 0.12em;">Presenting on Stage</span>
+      <h2 class="display-3 fw-bold my-2 text-white" id="proj-entrant-name">
+        {% if active_entry %}{{ active_entry.name }}{% else %}Stage Pitch Session{% endif %}
+      </h2>
+      {% if active_entry.reference %}
+      <p class="fs-4 text-muted mb-3" id="proj-entrant-ref">Entrant Ref: {{ active_entry.reference }}</p>
+      {% endif %}
+
+      <div class="my-4">
+        <div class="proj-timer-clock{% if pitch_timer_state == 'running' and pitch_seconds_remaining <= 30 %} is-urgent{% endif %}"
+             id="proj-timer-clock" role="timer" aria-live="off"
+             aria-label="Pitch time remaining {{ pitch_timer_display }}">
+          {{ pitch_timer_display|default:'00:00' }}
+        </div>
+        <div class="mt-2">
+          <span class="badge {% if timer_paused %}text-bg-warning{% elif pitch_timer_state == 'expired' %}text-bg-danger{% else %}text-bg-success{% endif %} fs-6 px-3 py-2" id="proj-timer-badge">
+            {% if timer_paused %}Pitch Timer Paused{% elif pitch_timer_state == 'expired' %}Time elapsed{% else %}Live pitch in progress{% endif %}
+          </span>
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-center gap-3 flex-wrap mt-3">
+        {% if active_track %}
+        <div class="proj-stat-pill">
+          <i class="bi bi-tag text-info" aria-hidden="true"></i>
+          <span>Track: {{ active_track.name }}</span>
+        </div>
+        {% endif %}
+        <div class="proj-stat-pill">
+          <i class="bi bi-people text-success" aria-hidden="true"></i>
+          <span id="proj-ballots-pill">{{ ballots_count }} Audience Ballots</span>
+        </div>
+      </div>
+    </div>
+
+  {% elif projector_mode == 'voting' %}
+    <!-- Mode 2: Audience Voting QR & Join Code -->
+    <div class="proj-card flex-grow-1 d-flex flex-column justify-content-center">
+      {% if audience_ballot_available %}
+      <span class="text-uppercase small fw-bold text-success" style="letter-spacing: 0.12em;">Audience Ranked Ballot</span>
+      <h2 class="display-4 fw-bold my-2 text-white">Cast Your Ballot</h2>
+      <p class="fs-4 text-muted mb-4">Scan the code or visit the link to rank all entrants in this round</p>
+
+      <div class="row g-4 align-items-center justify-content-center my-2">
+        <div class="col-12 col-md-5">
+          <img src="{% url 'competition_projector_qr' competition.pk %}" alt="QR code to vote" class="proj-qr-img">
+          <p class="text-muted small mt-2">Point your smartphone camera to open ballot</p>
+        </div>
+        <div class="col-12 col-md-5 text-center text-md-start ps-md-4">
+          <span class="small text-muted text-uppercase d-block mb-1">Enter Code at Website</span>
+          <p class="fs-5 text-light mb-2"><code>{{ request.scheme }}://{{ request.get_host }}{% url 'competition_audience_join' %}</code></p>
+          <div class="proj-join-code my-3" id="proj-join-code">{{ join_code }}</div>
+          <div class="d-flex align-items-center gap-3 mt-3">
+            <div class="proj-stat-pill">
+              <i class="bi bi-check2-circle text-success" aria-hidden="true"></i>
+              <span id="proj-voting-ballots">{{ ballots_count }} Ballots Received</span>
+            </div>
+            <span class="badge {% if audience_voting_open %}text-bg-success{% else %}text-bg-warning{% endif %} py-2 px-3">
+              {% if audience_voting_open %}Voting Open{% else %}Ballots Locked{% endif %}
+            </span>
+          </div>
+        </div>
+      </div>
+      {% else %}
+      <span class="text-uppercase small fw-bold text-warning" style="letter-spacing: 0.12em;">Audience Ballot Unavailable</span>
+      <h2 class="display-4 fw-bold my-2 text-white">Voting is not available</h2>
+      <p class="fs-4 text-muted mb-0">{{ audience_ballot_unavailable_reason }}</p>
+      {% endif %}
+    </div>
+
+  {% elif projector_mode == 'standings' %}
+    <!-- Mode 3: Live Round Standings Leaderboard -->
+    <div class="proj-card flex-grow-1 text-start">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 pb-2 border-bottom" style="border-color: var(--proj-border) !important;">
+        <div>
+          <span class="text-uppercase small fw-bold text-info" style="letter-spacing: 0.1em;">Round Leaderboard</span>
+          <h2 class="h3 fw-bold mb-0 text-white">{{ active_round.name|default:"Live Standings" }}</h2>
+        </div>
+        <div class="proj-stat-pill">
+          <i class="bi bi-trophy text-warning" aria-hidden="true"></i>
+          <span>Track advancement rules</span>
+        </div>
+      </div>
+
+      {% if standings %}
+      <div class="table-responsive">
+        <table class="table proj-table align-middle mb-0 fs-5">
+          <thead>
+            <tr>
+              <th scope="col" style="width: 70px;">Rank</th>
+              <th scope="col">Entrant</th>
+              <th scope="col">Track</th>
+              <th scope="col" style="text-align: right;">Judge Mean</th>
+              <th scope="col" style="text-align: right;">Audience</th>
+              <th scope="col" style="text-align: right;">Total Score</th>
+              <th scope="col" style="text-align: center; width: 140px;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in standings %}
+            <tr style="{% if row.is_active %}background: rgba(59, 130, 246, 0.15);{% endif %}">
+              <td>
+                <span class="badge {% if row.is_qualified %}text-bg-success{% else %}text-bg-secondary{% endif %} rounded-pill fs-6 px-3">
+                  #{{ row.track_rank }}
+                </span>
+              </td>
+              <td>
+                <span class="fw-bold text-white">{{ row.entry.name }}</span>
+                {% if row.entry.reference %}<span class="text-muted small ms-2">({{ row.entry.reference }})</span>{% endif %}
+              </td>
+              <td><span class="badge text-bg-dark border border-secondary">{{ row.track.name }}</span></td>
+              <td style="text-align: right;">{{ row.judge_score|default:"-" }}</td>
+              <td style="text-align: right;">{{ row.audience_score|default:"-" }}</td>
+              <td style="text-align: right;" class="fw-bold text-white fs-4">
+                {{ row.score|default:row.judge_score|default:"-" }}
+              </td>
+              <td style="text-align: center;">
+                {% if row.is_qualified %}
+                <span class="badge text-bg-success px-3 py-2">Qualifies</span>
+                {% else %}
+                <span class="badge text-bg-secondary px-3 py-2 text-muted">Eliminated</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% if row.is_boundary_tie %}
+            <tr style="background: rgba(245, 158, 11, 0.12);">
+              <td colspan="7" class="text-center py-2 small fw-bold text-warning" style="letter-spacing: 0.08em;">
+                Advancement tie at the cutoff
+              </td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="text-center py-5 text-muted fs-5">
+        No scored entrants recorded in the active round yet.
+      </div>
+      {% endif %}
+    </div>
+
+  {% elif projector_mode == 'winner' %}
+    <!-- Mode 4: Winner Spotlight and Ceremony Podium -->
+    <div class="proj-card flex-grow-1 d-flex flex-column justify-content-center">
+      <span class="text-uppercase small fw-bold text-warning" style="letter-spacing: 0.15em;">Final Awards Presentation</span>
+      <h2 class="display-3 fw-bold my-2 text-white">Tournament Champions</h2>
+      <p class="fs-4 text-muted mb-4">{{ competition.name }} · {{ active_round.name }}</p>
+
+      {% if standings %}
+      <div class="row g-4 justify-content-center align-items-end my-3">
+        <!-- 2nd Place Runner-Up -->
+        {% if standings|length >= 2 %}
+        {% with second=standings.1 %}
+        <div class="col-12 col-md-4 order-2 order-md-1">
+          <div class="proj-podium-card is-second">
+            <span class="badge text-bg-secondary fs-6 px-3 py-2 rounded-pill mb-2">2nd Place · Runner-Up</span>
+            <div class="display-6 fw-bold text-white my-2">{{ second.entry.name }}</div>
+            <p class="text-muted mb-2">{{ second.track.name }}</p>
+            <div class="fs-3 fw-bold text-light">Score: {{ second.score|default:second.judge_score|default:"-" }}</div>
+          </div>
+        </div>
+        {% endwith %}
+        {% endif %}
+
+        <!-- 1st Place Champion -->
+        {% with first=standings.0 %}
+        <div class="col-12 col-md-4 order-1 order-md-2">
+          <div class="proj-podium-card is-first py-4">
+            <i class="bi bi-trophy-fill display-4 text-warning mb-2 d-block" aria-hidden="true"></i>
+            <span class="badge text-bg-warning fs-5 px-4 py-2 rounded-pill mb-2 fw-bold text-dark">1st Place Champion</span>
+            <div class="display-5 fw-bold text-white my-2">{{ first.entry.name }}</div>
+            <p class="text-warning-subtle fs-5 mb-2">{{ first.track.name }}</p>
+            <div class="display-6 fw-bold text-warning">Score: {{ first.score|default:first.judge_score|default:"-" }}</div>
+          </div>
+        </div>
+        {% endwith %}
+
+        <!-- 3rd Place -->
+        {% if standings|length >= 3 %}
+        {% with third=standings.2 %}
+        <div class="col-12 col-md-4 order-3 order-md-3">
+          <div class="proj-podium-card is-third">
+            <span class="badge text-bg-dark border border-warning fs-6 px-3 py-2 rounded-pill mb-2" style="color: var(--proj-bronze) !important;">3rd Place</span>
+            <div class="display-6 fw-bold text-white my-2">{{ third.entry.name }}</div>
+            <p class="text-muted mb-2">{{ third.track.name }}</p>
+            <div class="fs-3 fw-bold text-light">Score: {{ third.score|default:third.judge_score|default:"-" }}</div>
+          </div>
+        </div>
+        {% endwith %}
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="text-center py-5 text-muted fs-5">
+        Final scores are being tabulated. Standby for the awards reveal.
+      </div>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>

@@ -6,7 +6,7 @@ import traceback
 
 
 BEARER_PATH_PATTERN = re.compile(
-    r'(?i)(/(?:panel/(?:examiner|results|display)|competition/judge|showcase/judge|team/(?:feedback|results)|assess/(?:poll-invitation|polls)|polls/(?:vote|live|qr))/)'
+    r'(?i)(/(?:panel/(?:examiner|results|display)|competition/judge|showcase/judge|team/(?:feedback|results)|assess/(?:poll-invitation|polls|examiner|review)|polls/(?:vote|live|qr))/)'
     r'([^/?\s"\'<>]+)'
 )
 

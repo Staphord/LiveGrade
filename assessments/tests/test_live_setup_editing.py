@@ -31,7 +31,7 @@ class SetupTabAndPageTests(LecturerTestCase):
         for step, expected in (('rubric', 'rubric'), ('basics', 'basics'), ('nonsense', 'groups'), (None, 'groups')):
             page = self.client.get(self.url('assessment_setup'), {'step': step} if step else {})
             self.assertEqual(page.context['active_step'], expected)
-        self.assertContains(self.client.get(self.url('assessment_setup')), 'Ready to go live?')
+        self.assertContains(self.client.get(self.url('assessment_setup')), 'Review &amp; launch')
 
     def test_a_closed_session_has_no_setup_page(self):
         self.set_status('closed')

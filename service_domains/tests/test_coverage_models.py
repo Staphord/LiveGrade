@@ -8,8 +8,6 @@ from django.utils import timezone
 from accounts.testing import make_org, make_user
 from assessments.models import AssessmentSession, PresentationGroup
 from service_domains.models import (
-    CoAssessmentCriterion, CoAssessmentExaminer, CoAssessmentGroup, CoAssessmentParticipant,
-    CoAssessmentScorecard, CoAssessmentScoreValue, CoAssessmentSession, CoAssessmentTurn,
     CombinedModerationDecision, CombinedPresentationAssessment, CombinedPresentationMapping,
     Competition, CompetitionCriterion, CompetitionEntry, CompetitionJudgeAbstention,
     CompetitionJudgeInvitation, CompetitionJudgeScore, CompetitionLiveState, CompetitionRound,
@@ -29,7 +27,6 @@ class Invalid(SimpleTestCase):
 class DisplayNameTests(SimpleTestCase):
     def test_records_print_their_names(self):
         session = AssessmentSession(name='Defence')
-        group = CoAssessmentGroup(name='Aurora')
         pairs = [
             (PanelCandidate(display_name='Ada'), 'Ada'),
             (PanelCriterion(name='Rigour'), 'Rigour'),
@@ -46,13 +43,6 @@ class DisplayNameTests(SimpleTestCase):
             (CompetitionRound(name='Final'), 'Final'),
             (CompetitionLiveState(competition=Competition(name='Cup')), 'Cup Live State'),
             (CombinedPresentationAssessment(name='Combined'), 'Combined'),
-            (CoAssessmentSession(name='Viva'), 'Viva'),
-            (CoAssessmentCriterion(name='Clarity', scope='group', weight=Decimal('40')), 'Clarity (Group'),
-            (group, 'Aurora'),
-            (CoAssessmentParticipant(full_name='Ada', student_id='S1'), 'Ada'),
-            (CoAssessmentParticipant(full_name='', student_id='S1'), 'S1'),
-            (CoAssessmentExaminer(display_name='Dr Cho', email='c@example.org'), 'Dr Cho (c@example.org)'),
-            (CoAssessmentTurn(group=group, status='active'), 'Aurora : Active'),
         ]
         for record, text in pairs:
             with self.subTest(record=type(record).__name__):
@@ -97,8 +87,8 @@ class PanelRuleTests(Invalid):
             return PanelCandidate(organization_id=1, created_by_id=1,
                                   source_group=PresentationGroup(pk=1, assessment_session=session))
         self.assertInvalid(candidate('team', 1, 1))
-        self.assertInvalid(candidate('classroom', 2, 1))
-        self.assertInvalid(candidate('classroom', 1, 2))
+        self.assertInvalid(candidate('assessment', 2, 1))
+        self.assertInvalid(candidate('assessment', 1, 2))
 
     def test_written_review_rules(self):
         invitation = PanelInvitation(pk=1, hearing_id=2)
@@ -244,7 +234,7 @@ class CombinedRuleTests(TestCase):
         return CombinedPresentationAssessment(**base)
 
     def test_assessment_source_rules(self):
-        session = lambda **kw: AssessmentSession(pk=1, **{'organization_id': 1, 'created_by_id': 1, 'service': 'classroom', **kw})
+        session = lambda **kw: AssessmentSession(pk=1, **{'organization_id': 1, 'created_by_id': 1, 'service': 'assessment', **kw})
         hearing = lambda **kw: PanelHearing(pk=1, **{'organization_id': 1, 'created_by_id': 1,
                                                     'workflow': PanelHearing.Workflow.SCORED, **kw})
         cases = [
@@ -362,34 +352,3 @@ class CombinedRuleTests(TestCase):
                 organization_id=self.org.pk, created_by=self.owner, name='H3', workflow=PanelHearing.Workflow.SCORED))
         CombinedPresentationAssessment.objects.filter(pk=draft.pk).delete()
         self.assertFalse(CombinedPresentationAssessment.objects.filter(pk=draft.pk).exists())
-
-
-class CoAssessmentScorecardRuleTests(Invalid):
-    def test_scorecard_rules(self):
-        turn = CoAssessmentTurn(pk=1, group_id=5)
-        self.assertInvalid(CoAssessmentScorecard(turn=turn, evaluator_tier=CoAssessmentScorecard.Tier.PEER))
-        self.assertInvalid(CoAssessmentScorecard(
-            turn=turn, evaluator_tier=CoAssessmentScorecard.Tier.PEER,
-            peer_evaluator=CoAssessmentParticipant(pk=1, group_id=5)))
-        self.assertInvalid(CoAssessmentScorecard(turn=turn, evaluator_tier=CoAssessmentScorecard.Tier.PANEL))
-
-    def test_valid_scorecards_and_unknown_tiers_pass(self):
-        turn = CoAssessmentTurn(pk=1, group_id=5)
-        CoAssessmentScorecard(turn=turn, evaluator_tier=CoAssessmentScorecard.Tier.PEER,
-                              peer_evaluator=CoAssessmentParticipant(pk=1, group_id=6)).clean()
-        CoAssessmentScorecard(turn=turn, evaluator_tier=CoAssessmentScorecard.Tier.PANEL,
-                              examiner_evaluator=CoAssessmentExaminer(pk=1)).clean()
-        CoAssessmentScorecard(turn=turn, evaluator_tier='other').clean()
-
-    def test_valid_score_values_pass(self):
-        group = CoAssessmentCriterion(pk=1, scope=CoAssessmentCriterion.Scope.GROUP)
-        individual = CoAssessmentCriterion(pk=2, scope=CoAssessmentCriterion.Scope.INDIVIDUAL)
-        CoAssessmentScoreValue().clean()
-        CoAssessmentScoreValue(criterion=group).clean()
-        CoAssessmentScoreValue(criterion=individual, target_participant=CoAssessmentParticipant(pk=1)).clean()
-
-    def test_score_value_target_rules(self):
-        group = CoAssessmentCriterion(pk=1, scope=CoAssessmentCriterion.Scope.GROUP)
-        individual = CoAssessmentCriterion(pk=2, scope=CoAssessmentCriterion.Scope.INDIVIDUAL)
-        self.assertInvalid(CoAssessmentScoreValue(criterion=group, target_participant=CoAssessmentParticipant(pk=1)))
-        self.assertInvalid(CoAssessmentScoreValue(criterion=individual))

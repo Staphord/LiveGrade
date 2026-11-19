@@ -41,6 +41,7 @@ from assessments.models import AssessmentSession, SessionTemplate
 from assessments.pagination import PAGE_SIZE, PAGE_SIZES, paginate
 from assessments.qr import public_url
 from assessments.session_templates import starters_for
+from assessments.view_routing import request_redirect
 from .forms import ShowcaseRatingForm
 from .models import (
     SHOWCASE_DEVICE_TOKEN_MAX_AGE, ShowcaseCategory, ShowcaseCertificate, ShowcaseEvent,
@@ -51,8 +52,7 @@ from .models import (
 )
 from .models import (Competition, CompetitionAudienceBallot, CompetitionRound,
                      CompetitionRoundEntry, CompetitionTrack)
-from .models import (CombinedPresentationAssessment,
-                     PanelAbstention, PanelAuditEvent, PanelCandidate, PanelConflict, PanelCriterion,
+from .models import (PanelAbstention, PanelAuditEvent, PanelCandidate, PanelConflict, PanelCriterion,
                      PanelCriterionLevel,
                      PanelCommentRedaction, PanelEntrantResultLink, PanelLiveDisplayLink,
                      PanelHearing, PanelInvitation,
@@ -432,9 +432,6 @@ def panel_hearing_table(request):
     query_params['per_page'] = str(paginator.per_page)
     querystring = query_params.urlencode()
 
-    combined_count = (CombinedPresentationAssessment.objects.for_organization(request.organization)
-                      .owned_by(request.user).count())
-
     context = {
         'hearings': annotated_page_hearings,
         'status_counts': status_counts,
@@ -447,9 +444,6 @@ def panel_hearing_table(request):
         'page_sizes': PAGE_SIZES,
         'querystring': querystring,
         'can_oversee_panel': can_oversee(request),
-        'active_tab': 'hearings',
-        'hearing_count': status_counts['total'],
-        'combined_count': combined_count,
     }
 
     if request.headers.get('x-requested-with') == 'XMLHttpRequest':
@@ -1935,19 +1929,27 @@ def panel_hearing_participants(request, hearing_id):
         })
 
     invitations_qs = list(PanelInvitation.objects.filter(hearing=hearing, organization_id=org, revoked_at__isnull=True).select_related('panel').order_by('pk'))
+    invitation_ids = [inv.pk for inv in invitations_qs]
+    score_counts_by_invitation = {
+        row['invitation_id']: row
+        for row in PanelScore.objects.filter(
+            invitation_id__in=invitation_ids, invitation__hearing=hearing, organization_id=org)
+        .values('invitation_id').annotate(
+            total_evaluations=Count('pk'),
+            active_candidate_scored=Count(
+                'pk', filter=Q(candidate_id=active_cand.pk) if active_cand else Q(pk__in=[])),
+        )
+    }
     examiner_rows = []
     for inv in invitations_qs:
-        scored_count = 0
-        if active_cand:
-            scored_count = PanelScore.objects.filter(candidate=active_cand, invitation=inv).count()
-        total_evaluations = PanelScore.objects.filter(invitation=inv).count()
+        score_counts = score_counts_by_invitation.get(inv.pk, {})
         examiner_rows.append({
             'invitation': inv,
             'panel_name': inv.panel.name if inv.panel else 'Default panel',
             'is_conflicted': bool(active_cand and inv.pk in conflicts_by_candidate.get(active_cand.pk, set())),
-            'active_candidate_scored': scored_count,
+            'active_candidate_scored': score_counts.get('active_candidate_scored', 0),
             'total_criteria': total_criteria,
-            'total_evaluations': total_evaluations,
+            'total_evaluations': score_counts.get('total_evaluations', 0),
             'is_bound': bool(inv.device_digest),
         })
 
@@ -3279,7 +3281,7 @@ def training_series_manage(request, series_id):
                 else:
                     messages.success(request,
                         f"Demo session ‘{session.name}’ was created with this series roster and rubric.")
-                    return redirect('assessment_session_detail', pk=session.pk)
+                    return request_redirect(request, 'assessment_session_detail', pk=session.pk)
         else:
             raise Http404
 

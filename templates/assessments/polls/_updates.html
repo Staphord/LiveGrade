@@ -64,9 +64,19 @@
           if (fill) fill.style.width = percent + '%';
         }
       }
-      if (status) status.textContent = 'Live results updated.';
+      if (status) {
+        if (status.classList.contains('poll-connection')) {
+          status.textContent = '';
+          status.hidden = true;
+        } else {
+          status.textContent = 'Auto-updating';
+        }
+      }
     } catch (_) {
-      if (status) status.textContent = 'Connection interrupted. Displayed results may be out of date; retrying…';
+      if (status) {
+        status.textContent = 'Connection interrupted. Retrying…';
+        status.hidden = false;
+      }
     } finally { refreshing = false; }
   }
   let activeSocket = null;

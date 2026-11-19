@@ -15,7 +15,6 @@ from assessments import sheets
 from assessments.models import AssessmentSession, ClassroomPoll
 from service_domains import realtime, throttling
 from service_domains.form_mixins import apply_form_field_styles
-from service_domains.tasks import send_coassessment_examiner_invitation_email
 
 
 def fake_cache(add=True, incr=None, error=None):
@@ -96,33 +95,6 @@ class BroadcastFailurePathTests(SimpleTestCase):
         send.assert_called_once_with('7', True)
 
 
-@override_settings(LIVEGRADE_PUBLIC_BASE_URL='https://grade.example.org',
-                   DEFAULT_FROM_EMAIL='LiveGrade <noreply@example.org>')
-class ExaminerInvitationTaskTests(SimpleTestCase):
-    def examiner(self, token='tok'):
-        return SimpleNamespace(
-            pk=1, invite_token=token, display_name='Dr Cho', email='cho@example.org', is_chair=False,
-            session=SimpleNamespace(name='Defense Day'))
-
-    def run_task(self, examiner, mail):
-        with patch('service_domains.tasks.CoAssessmentExaminer') as model, \
-                patch('service_domains.tasks.send_mail', mail):
-            model.objects.select_related.return_value.filter.return_value.first.return_value = examiner
-            return send_coassessment_examiner_invitation_email.run(1)
-
-    def test_missing_examiner_or_token_is_ignored(self):
-        self.assertEqual(self.run_task(None, MagicMock()), 'ignored')
-        self.assertEqual(self.run_task(self.examiner(token=''), MagicMock()), 'ignored')
-
-    def test_mail_result_is_reported(self):
-        self.assertEqual(self.run_task(self.examiner(), MagicMock(return_value=1)), 'sent')
-        self.assertEqual(self.run_task(self.examiner(), MagicMock(return_value=0)), 'mail_not_accepted')
-
-    def test_mail_errors_are_retried(self):
-        with self.assertRaises(Exception):
-            self.run_task(self.examiner(), MagicMock(side_effect=OSError('smtp down')))
-
-
 class FormStyleTests(SimpleTestCase):
     def test_multi_checkbox_is_styled_like_other_choice_inputs(self):
         fields = {
@@ -189,7 +161,7 @@ class PollModelRuleTests(TestCase):
         self.owner = make_user('poll-rules-owner')
 
     def poll(self, **fields):
-        base = dict(question='Q?', standalone=False)
+        base = dict(title='Q?', standalone=False)
         base.update(fields)
         return ClassroomPoll(**base)
 
@@ -211,8 +183,8 @@ class PollModelRuleTests(TestCase):
 
     def test_confirmed_option_must_belong_to_the_poll(self):
         session = AssessmentSession.objects.create(organization_id=self.org.pk, created_by=self.owner, name='C')
-        first = ClassroomPoll.objects.create(assessment_session=session, question='A?')
-        second = ClassroomPoll.objects.create(assessment_session=session, question='B?')
+        first = ClassroomPoll.objects.create(assessment_session=session, title='First poll')
+        second = ClassroomPoll.objects.create(assessment_session=session, title='Second poll')
         option = second.options.create(label='x', order=1)
         first.confirmed_option = option
         with self.assertRaises(ValidationError):

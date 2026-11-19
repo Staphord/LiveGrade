@@ -1,7 +1,7 @@
 from django.urls import path
 
 from . import views
-from .views import poll_views
+from .views import poll_views, unified_views
 
 urlpatterns = [
     path('polls/<uuid:poll_uuid>/', poll_views.public_poll, name='classroom_poll'),
@@ -18,4 +18,11 @@ urlpatterns = [
     path('<uuid:session_uuid>/join-screen/', views.join_screen, name='assessment_join_screen'),
     path('<uuid:session_uuid>/join-screen/state/', views.join_screen_state, name='assessment_join_screen_state'),
     path('<uuid:session_uuid>/join-screen/qr.png', views.join_screen_qr, name='assessment_join_screen_qr'),
+    path('examiner/<str:token>/', unified_views.examiner_portal, name='assessment_examiner_portal'),
+    path('examiner/<str:token>/state/', unified_views.examiner_portal_state, name='assessment_examiner_portal_state'),
+    path('<uuid:session_uuid>/submit/<int:group_pk>/', unified_views.async_submit_entry, name='assessment_async_submit_entry'),
+    path('review/<str:token>/', unified_views.assignment_review, name='assessment_assignment_review'),
+    path('review/<str:token>/draft/', unified_views.assignment_draft, name='assessment_assignment_draft'),
+    path('review/<str:token>/submit/', unified_views.assignment_submit, name='assessment_assignment_submit'),
+    path('review/<str:token>/recuse/', unified_views.assignment_recuse, name='assessment_assignment_recuse'),
 ]

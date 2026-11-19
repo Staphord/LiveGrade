@@ -1,5 +1,5 @@
 {% if poll.status == 'open' and poll.accepting_responses %}
-  <span class="poll-status-badge poll-status-live"><i class="bi bi-broadcast" aria-hidden="true"></i> Voting open</span>
+  <span class="poll-status-badge poll-status-live"><span class="poll-live-dot" aria-hidden="true"></span> Voting open</span>
 {% elif poll.status == 'open' %}
   <span class="poll-status-badge poll-status-deadline"><i class="bi bi-clock-history" aria-hidden="true"></i> Deadline passed</span>
 {% elif poll.status == 'closed' %}

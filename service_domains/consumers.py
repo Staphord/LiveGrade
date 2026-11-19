@@ -53,6 +53,49 @@ class CompetitionLeaderboardConsumer(AsyncJsonWebsocketConsumer):
         return competition.public_leaderboard_enabled
 
 
+class CompetitionLiveConsumer(AsyncJsonWebsocketConsumer):
+    """Owner-only event stream for the live control and projector screens."""
+
+    async def connect(self):
+        if not is_released('competition'):
+            await self.close(code=4404)
+            return
+        self.competition_id = self.scope['url_route']['kwargs']['competition_id']
+        if not await self._may_manage_competition():
+            await self.close(code=4403)
+            return
+        self.group_name = f'competition_live_{self.competition_id}'
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
+        await self.accept()
+        await self.send_json({'type': 'competition.live.ready'})
+
+    async def disconnect(self, close_code):
+        if hasattr(self, 'group_name'):
+            await self.channel_layer.group_discard(self.group_name, self.channel_name)
+
+    async def competition_live_update(self, event):
+        await self.send_json({'type': 'competition.live.update'})
+
+    @database_sync_to_async
+    def _may_manage_competition(self):
+        user = self.scope.get('user')
+        session = self.scope.get('session')
+        if not user or not user.is_authenticated or session is None:
+            return False
+        competition = Competition.objects.filter(pk=self.competition_id).values(
+            'organization_id', 'created_by_id').first()
+        organizations = session.get(ORGS_KEY) or []
+        if competition is None or not isinstance(organizations, list) or not organizations:
+            return False
+        active_id = session.get(ACTIVE_KEY)
+        organization = next((item for item in organizations
+                             if isinstance(item, dict) and item.get('id') == active_id), None)
+        if organization is None:
+            organization = next((item for item in organizations if isinstance(item, dict)), None)
+        return bool(organization and organization.get('id') == competition['organization_id']
+                    and competition['created_by_id'] == user.pk)
+
+
 class PanelChamberConsumer(AsyncJsonWebsocketConsumer):
     """Authenticated staff event stream for hearing live chamber console."""
 
@@ -279,48 +322,6 @@ class ShowcaseDisplayConsumer(AsyncJsonWebsocketConsumer):
     @database_sync_to_async
     def _resolve_event_id(self, public_id):
         return (ShowcaseEvent.objects.filter(public_id=public_id).values_list('pk', flat=True).first())
-
-
-class CoAssessmentLiveConsumer(AsyncJsonWebsocketConsumer):
-    """Real-time event stream for Co-Assessment stage console, projector, and mobile raters."""
-
-    async def connect(self):
-        if not is_released('coassessment'):
-            await self.close(code=4404)
-            return
-        self.session_id = self.scope['url_route']['kwargs'].get('session_id')
-        if not self.session_id:
-            await self.close(code=4400)
-            return
-        self.group_name = f'coassessment_{self.session_id}'
-        await self.channel_layer.group_add(self.group_name, self.channel_name)
-        await self.accept()
-
-        state = await self._get_initial_state()
-        if state:
-            await self.send_json({'type': 'init', 'state': state})
-
-    async def disconnect(self, close_code):
-        if hasattr(self, 'group_name'):
-            await self.channel_layer.group_discard(self.group_name, self.channel_name)
-
-    async def coassessment_update(self, event):
-        """Forward state broadcast to connected websocket client."""
-        await self.send_json({
-            'type': 'update',
-            'state': event.get('state', {}),
-        })
-
-    @database_sync_to_async
-    def _get_initial_state(self):
-        from .models import CoAssessmentSession
-        from .coassessment_operations import get_coassessment_live_state
-        session = CoAssessmentSession.objects.filter(pk=self.session_id).first()
-        if session:
-            return get_coassessment_live_state(session)
-        return None
-
-
 
 
 class TrainingSessionLiveConsumer(AsyncJsonWebsocketConsumer):

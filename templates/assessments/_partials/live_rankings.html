@@ -3,7 +3,11 @@
 <div class="rank-head">
   <span class="rank-head-badge">Rank</span>
   <span class="rank-head-body"><span>Group</span><span>Score</span></span>
-  <span class="rank-head-votes">Graded by</span>
+  <span class="rank-head-votes">
+    {% if session.enable_peer and session.enable_panel %}Graders
+    {% elif session.enable_panel %}Panelists
+    {% else %}Graded by{% endif %}
+  </span>
 </div>
 <ol class="rank-list">
   {% for row in group_rankings %}
@@ -21,18 +25,39 @@
           {% if row.is_active %}<span class="rank-live-tag"><span class="pulse-dot"></span>Presenting</span>{% endif %}
         </span>
         <span class="rank-score">
-          {% if row.percent is not None %}{{ row.percent }} / {{ group_points_max }}{% else %}<span class="text-muted t-micro">no votes yet</span>{% endif %}
+          {% if row.percent is not None %}
+            {% if session.enable_peer and session.enable_panel %}
+              {{ row.percent|floatformat:'-2' }}%
+              <span class="text-muted fw-normal t-micro ms-1">(Peer {{ row.peer_score|default:'-' }}% · Panel {{ row.panel_score|default:'-' }}%)</span>
+            {% elif session.enable_panel %}
+              {{ row.percent|floatformat:'-2' }}%
+            {% else %}
+              {{ row.percent }} / {{ group_points_max }}
+            {% endif %}
+          {% else %}
+            <span class="text-muted t-micro">{% if session.enable_panel %}no scores yet{% else %}no votes yet{% endif %}</span>
+          {% endif %}
         </span>
       </div>
       {% if row.percent is not None %}
-      <div class="rank-bar"><div class="rank-bar-fill" style="width:{% widthratio row.percent group_points_max 100 %}%"></div></div>
+      <div class="rank-bar">
+        <div class="rank-bar-fill" style="width:{% if session.enable_panel %}{{ row.percent|floatformat:0 }}{% else %}{% widthratio row.percent group_points_max 100 %}{% endif %}%"></div>
+      </div>
       {% endif %}
     </div>
-    <span class="rank-votes text-muted t-micro"><i class="bi bi-person-check me-1"></i>{{ row.votes }}</span>
+    <span class="rank-votes text-muted t-micro">
+      {% if session.enable_peer and session.enable_panel %}
+        <span title="Peer votes / Panelists scored"><i class="bi bi-people me-1"></i>{{ row.votes }} · <i class="bi bi-person-badge me-1"></i>{{ row.panel_count }}</span>
+      {% elif session.enable_panel %}
+        <i class="bi bi-person-badge me-1"></i>{{ row.panel_count }}
+      {% else %}
+        <i class="bi bi-person-check me-1"></i>{{ row.votes }}
+      {% endif %}
+    </span>
   </li>
   {% endfor %}
 </ol>
 {% else %}
-<div class="text-muted t-sm">Add groups on the Groups tab to see rankings here.</div>
+<div class="text-muted t-sm">Add entries in Setup to see rankings here.</div>
 {% endif %}
 </div>

@@ -1,12 +1,13 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block title %}{{ competition.name }} · Arena Live Stage · LiveGrade{% endblock %}
 {% block page_title %}{{ competition.name }}{% endblock %}
 
 {% block topbar_actions %}
 <div class="d-flex align-items-center gap-2">
   {% if competition_status == 'active' %}
-  <span class="live-badge" id="competition-conn-badge"><span class="dot"></span>Live</span>
-  <form method="post" action="{% url 'competition_live_action' competition_id=competition.pk %}" class="d-inline"
+  <span class="live-badge" id="competition-conn-badge" role="status" aria-live="polite"><span class="dot" aria-hidden="true"></span>Connecting</span>
+  <form method="post" action="{% url 'competition_live_action' competition_id=competition.pk %}" class="d-inline" data-competition-live-action-form
         data-confirm="Are you sure you want to conclude {{ competition.name }}? This locks all round scoring and freezes the leaderboard for awards presentation."
         data-confirm-title="Finish Competition?"
         data-confirm-label="Finish Competition"
@@ -42,22 +43,13 @@
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid py-3" style="max-width: 1400px;">
-  <nav class="page-tabs mb-3" aria-label="Competition workspace">
-    <a href="{% url 'competition_live_control' competition_id=competition.pk %}" class="page-tab active" aria-current="page">
-      <i class="bi bi-broadcast me-1" aria-hidden="true"></i>Live arena
-    </a>
-    {% if competition_status != 'draft' %}
-    <a href="{% url 'competition_manage' competition_id=competition.pk %}?step=launch&from=live" class="page-tab">
-      <i class="bi bi-trophy me-1" aria-hidden="true"></i>Results &amp; Standings
-    </a>
-    {% endif %}
-    {% if competition_status != 'closed' %}
-    <a href="{% url 'competition_manage' competition_id=competition.pk %}?from=live" class="page-tab">
-      <i class="bi bi-pencil-square me-1" aria-hidden="true"></i>Edit setup
-    </a>
-    {% endif %}
-  </nav>
+<div class="container-fluid py-3" style="max-width: 1400px;"
+     data-competition-live-console
+     data-live-status="{{ competition_status }}"
+     data-live-state-url="{% url 'competition_live_state' competition_id=competition.pk %}"
+     data-live-action-url="{% url 'competition_live_action' competition_id=competition.pk %}"
+     data-live-websocket-path="/ws/competition/{{ competition.pk }}/live/">
+  {% include 'service_domains/_partials/competition_workspace_tabs.html' with workspace_tab='live' %}
 
   <div class="mb-3">
     {% include 'partials/_inline_message.html' with tone='danger' message_id='competition-live-inline-error' %}
@@ -87,7 +79,7 @@
       <div class="display-6 text-secondary mb-2"><i class="bi bi-flag-fill" aria-hidden="true"></i></div>
       <h2 class="h4 fw-bold" id="arena-closed-heading">This competition is finished</h2>
       <p class="text-muted mb-3">Scoring is locked. Review the final standings{% if competition.status == 'revealed' %}; the leaderboard is public{% endif %}.</p>
-      <a href="{% url 'competition_manage' competition_id=competition.pk %}?step=launch&from=live" class="btn btn-primary btn-lg"><i class="bi bi-trophy me-1" aria-hidden="true"></i>View results and standings</a>
+      <a href="{% url 'competition_results' competition_id=competition.pk %}" class="btn btn-primary btn-lg"><i class="bi bi-trophy me-1" aria-hidden="true"></i>View results and standings</a>
     </div>
   </section>
   {% else %}
@@ -116,281 +108,10 @@
   {% endif %}
 </div>
 
-<!-- Modal: Advance to Next Round -->
-<div class="modal fade" id="competition-advance-modal" tabindex="-1" aria-labelledby="advance-modal-title" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <form method="post" action="{% url 'competition_live_action' competition_id=competition.pk %}">
-        {% csrf_token %}
-        <input type="hidden" name="action" value="advance_round">
-        <div class="modal-header">
-          <h5 class="modal-title" id="advance-modal-title">Advance to Next Round</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body">
-          <p class="text-muted small">
-            Advancing the round will promote qualifying entrants to the next stage based on cutoff thresholds and freeze this round.
-          </p>
-          <div class="mb-3">
-            <label for="next-round-name" class="form-label small fw-semibold">Next Round Name</label>
-            <input type="text" class="form-control" id="next-round-name" name="next_round_name" value="Round {% if active_round %}{{ active_round.order|add:1 }}{% else %}2{% endif %}" required>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-primary btn-sm">Confirm & Advance</button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
-
-<!-- Modal: Resolve Tie -->
-<div class="modal fade" id="competition-tie-modal" tabindex="-1" aria-labelledby="tie-modal-title" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <form method="post" action="{% url 'competition_live_action' competition_id=competition.pk %}">
-        {% csrf_token %}
-        <input type="hidden" name="action" value="resolve_tie">
-        <input type="hidden" name="track_id" value="{{ active_track.pk }}">
-        <input type="hidden" name="tied_score" value="{% if standings %}{{ standings.0.effective_score|default:'0' }}{% else %}0{% endif %}">
-        <div class="modal-header">
-          <h5 class="modal-title" id="tie-modal-title">Resolve Boundary Tie</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body">
-          <p class="text-muted small">
-            Provide a head judge resolution rationale to determine entrant advancement order.
-          </p>
-          <div class="mb-3">
-            <label for="tie-reason" class="form-label small fw-semibold">Resolution Reason <span class="text-danger">*</span></label>
-            <textarea class="form-control" id="tie-reason" name="reason" rows="3" placeholder="Explain the rationale for resolving this tie." required></textarea>
-          </div>
-          {% if standings %}
-          <div class="mb-3">
-            <label class="form-label small fw-semibold">Advancing Entrant Order</label>
-            {% for row in standings %}
-            {% if forloop.counter <= cutoff_rank %}
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="ordered_entry_ids" value="{{ row.entry.pk }}" id="tie-entry-{{ row.entry.pk }}" checked>
-              <label class="form-check-label small" for="tie-entry-{{ row.entry.pk }}">
-                {{ row.entry.name }} (Score: {{ row.effective_score }})
-              </label>
-            </div>
-            {% endif %}
-            {% endfor %}
-          </div>
-          {% endif %}
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-warning btn-sm">Save Tie Resolution</button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
+{% include 'service_domains/_partials/competition_live_round_modals.html' %}
 
 {% endblock %}
 
 {% block scripts %}
-<script nonce="{{ csp_nonce }}">
-(function() {
-  const startBtn = document.getElementById('confirm-competition-start-btn');
-  if (startBtn) {
-    startBtn.addEventListener('click', function(e) {
-      if (startBtn.dataset.confirm && !startBtn.dataset.confirmed) return;
-      e.preventDefault();
-      startBtn.disabled = true;
-      const body = new FormData();
-      body.append('action', 'start_competition');
-      fetch("{% url 'competition_live_action' competition_id=competition.pk %}", {
-        method: 'POST', body, headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || '' }
-      }).then(r => r.json()).then(data => {
-        if (data.redirect) { window.location.href = data.redirect; return; }
-        const box = document.getElementById('competition-live-inline-error');
-        if (box) { const t = box.querySelector('[data-inline-message-text]'); if (t) t.textContent = data.error || 'Could not start.'; box.hidden = false; }
-        startBtn.disabled = false;
-      }).catch(() => { startBtn.disabled = false; });
-    });
-  }
-  if ({% if competition_status == 'active' %}false{% else %}true{% endif %}) return;
-  const stateUrl = "{% url 'competition_live_state' competition_id=competition.pk %}";
-  const actionUrl = "{% url 'competition_live_action' competition_id=competition.pk %}";
-  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
-  let pollInterval = 2500;
-  let activeTimer = null;
-
-  function showInlineError(msg) {
-    const box = document.getElementById("competition-live-inline-error");
-    if (!box) return;
-    const textEl = box.querySelector("[data-inline-message-text]");
-    if (textEl) textEl.textContent = msg;
-    box.hidden = false;
-  }
-
-  function clearInlineError() {
-    const box = document.getElementById("competition-live-inline-error");
-    if (box) box.hidden = true;
-  }
-
-  async function postAction(params) {
-    const body = new FormData();
-    for (const [k, v] of Object.entries(params)) {
-      body.append(k, v);
-    }
-    try {
-      const res = await fetch(actionUrl, {
-        method: "POST",
-        headers: { "X-CSRFToken": csrfToken, "X-Requested-With": "XMLHttpRequest" },
-        body: body,
-      });
-      const data = await res.json();
-      if (data.redirect) {
-        window.location.href = data.redirect;
-        return;
-      }
-      if (!res.ok || data.error) {
-        showInlineError(data.error || "Action could not be completed.");
-        return;
-      }
-      clearInlineError();
-      if (data.hero_html) updateDom(data);
-    } catch (err) {
-      console.error("Action failed", err);
-      showInlineError("Network connection interrupted. Please try again.");
-    }
-  }
-
-  function updateDom(data) {
-    if (data.hero_html) {
-      const el = document.getElementById("competition-live-hero");
-      if (el) el.outerHTML = data.hero_html;
-    }
-    if (data.judges_html) {
-      const el = document.getElementById("competition-live-judges");
-      if (el) el.outerHTML = data.judges_html;
-    }
-    if (data.audience_html) {
-      const el = document.getElementById("competition-live-audience");
-      if (el) el.outerHTML = data.audience_html;
-    }
-    if (data.standings_html) {
-      const el = document.getElementById("competition-live-standings");
-      if (el) el.outerHTML = data.standings_html;
-    }
-    if (data.projector_html) {
-      const el = document.getElementById("competition-live-projector");
-      if (el) el.outerHTML = data.projector_html;
-    }
-  }
-
-  async function pollState() {
-    try {
-      const res = await fetch(stateUrl, {
-        headers: { "X-Requested-With": "XMLHttpRequest" }
-      });
-      if (!res.ok) throw new Error("Poll error");
-      const data = await res.json();
-      if (data.ok) {
-        updateDom(data);
-        const badge = document.getElementById("competition-conn-badge");
-        if (badge) badge.classList.remove("is-offline");
-      }
-    } catch (err) {
-      const badge = document.getElementById("competition-conn-badge");
-      if (badge) badge.classList.add("is-offline");
-    } finally {
-      activeTimer = setTimeout(pollState, pollInterval);
-    }
-  }
-
-  document.addEventListener("click", function(e) {
-    const actionBtn = e.target.closest("[data-competition-action]");
-    if (actionBtn) {
-      e.preventDefault();
-      const action = actionBtn.getAttribute("data-competition-action");
-      const delta = actionBtn.getAttribute("data-delta");
-      const params = { action: action };
-      if (delta) params.delta = delta;
-      postAction(params);
-      return;
-    }
-
-    const nudgeBtn = e.target.closest("[data-competition-nudge]");
-    if (nudgeBtn) {
-      e.preventDefault();
-      const judgeId = nudgeBtn.getAttribute("data-judge-id");
-      postAction({ action: "nudge_judge", judge_id: judgeId });
-      nudgeBtn.disabled = true;
-      nudgeBtn.textContent = "Nudged";
-      return;
-    }
-
-    const projBtn = e.target.closest("[data-competition-projector]");
-    if (projBtn) {
-      e.preventDefault();
-      const mode = projBtn.getAttribute("data-competition-projector");
-      postAction({ action: "set_projector_mode", mode: mode });
-      return;
-    }
-  });
-
-  document.addEventListener("change", function(e) {
-    if (e.target.matches("[data-competition-select-entry]")) {
-      postAction({ action: "set_active_entry", entry_id: e.target.value });
-    }
-  });
-
-  // Intercept modal and action form submissions for zero reload
-  document.addEventListener("submit", async function(e) {
-    const form = e.target.closest("form");
-    if (!form) return;
-    const actionInput = form.querySelector("input[name='action']");
-    if (!actionInput) return;
-    const formActionUrl = form.getAttribute("action") || actionUrl;
-    if (!formActionUrl.includes("live-action")) return;
-
-    e.preventDefault();
-    const modalEl = form.closest(".modal");
-    if (modalEl && window.bootstrap && window.bootstrap.Modal) {
-      const modalInstance = bootstrap.Modal.getInstance(modalEl);
-      if (modalInstance) modalInstance.hide();
-    }
-
-    const body = new FormData(form);
-    try {
-      const res = await fetch(formActionUrl, {
-        method: "POST",
-        headers: { "X-CSRFToken": csrfToken, "X-Requested-With": "XMLHttpRequest" },
-        body: body,
-      });
-      const data = await res.json();
-      if (data.redirect) {
-        window.location.href = data.redirect;
-        return;
-      }
-      if (!res.ok || data.error) {
-        showInlineError(data.error || "Action could not be completed.");
-        return;
-      }
-      clearInlineError();
-      if (data.hero_html) updateDom(data);
-    } catch (err) {
-      console.error("Action failed", err);
-      showInlineError("Network connection interrupted. Please try again.");
-    }
-  });
-
-  // Spacebar hotkey to toggle timer pause
-  document.addEventListener("keydown", function(e) {
-    if (e.code === "Space" && !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) {
-      e.preventDefault();
-      postAction({ action: "toggle_pitch_pause" });
-    }
-  });
-
-  activeTimer = setTimeout(pollState, pollInterval);
-})();
-</script>
+<script src="{% static 'js/competition-live-control.js' %}?v=live-console-20261117"></script>
 {% endblock %}

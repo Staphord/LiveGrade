@@ -18,7 +18,7 @@ from service_domains.models import (
 )
 
 
-@override_settings(LIVEGRADE_LIVE_SERVICES=['classroom', 'panel', 'polls', 'team', 'showcase', 'competition'])
+@override_settings(LIVEGRADE_LIVE_SERVICES=['assessment', 'panel', 'polls', 'team', 'showcase', 'competition'])
 class TrainingLiveControlTests(TestCase):
 
     def setUp(self):

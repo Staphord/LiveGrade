@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+{% block title %}Moderation &amp; Publish : {{ session.name }} : LiveGrade{% endblock %}
+{% block page_title %}{{ session.name }}{% endblock %}
+
+{% block content %}
+{% include 'service_domains/_workspace_styles.html' %}
+{% include 'service_domains/_panel_ui_styles.html' %}
+<div class="container-fluid py-4 service-workspace panel-page--wide">
+  {% include 'assessments/_session_tabs.html' with active='moderation' %}
+
+  <section class="panel-card mb-4">
+    <div class="panel-section-heading d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <div>
+        <h2 class="h5 mb-1">Moderation &amp; result snapshots</h2>
+        <p class="small panel-muted mb-0">{{ session.assessment_mode_label }} | {{ session.peer_weight }}% Peer / {{ session.panel_weight }}% Panel</p>
+      </div>
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="publish_snapshot">
+        <button type="submit" class="btn btn-success fw-semibold" data-confirm="Publish immutable result snapshot revision {{ session.publication_revision|add:1 }}?">Publish snapshot (Rev {{ session.publication_revision|add:1 }})</button>
+      </form>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th>Entry</th>
+            {% if session.enable_peer %}<th>Peer Avg</th>{% endif %}
+            {% if session.enable_panel %}<th>Panel Avg</th>{% endif %}
+            {% if session.enable_peer and session.enable_panel %}<th>Gap</th>{% endif %}
+            <th>Calculated</th>
+            <th>Effective</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in outcomes %}
+          <tr>
+            <td>{{ row.group.name }}</td>
+            {% if session.enable_peer %}<td>{{ row.peer_score|default:'-' }}</td>{% endif %}
+            {% if session.enable_panel %}<td>{{ row.panel_score|default:'-' }}</td>{% endif %}
+            {% if session.enable_peer and session.enable_panel %}
+            <td>
+              {{ row.discrepancy|default:'-' }}
+              {% if row.moderation_required %}<span class="badge text-bg-warning ms-1">Flagged</span>{% endif %}
+            </td>
+            {% endif %}
+            <td>{{ row.combined_score|default:'-' }}</td>
+            <td><strong>{{ row.effective_score|default:'-' }}</strong></td>
+            <td>{% if row.latest_moderation %}<span class="badge text-bg-info">Moderated</span>{% else %}<span class="badge text-bg-secondary">Provisional</span>{% endif %}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="panel-muted">No entries in roster yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {% if publications %}
+  <section class="panel-card">
+    <h3 class="h6 fw-bold mb-2">Published snapshots</h3>
+    <ul class="list-unstyled mb-0 small">
+      {% for pub in publications %}
+      <li>Revision {{ pub.revision }} - {{ pub.published_at }}{% if pub.correction_reason %} ({{ pub.correction_reason }}){% endif %}</li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

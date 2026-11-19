@@ -3,8 +3,6 @@
 {% block page_title %}{{ session.name }}{% endblock %}
 
 {% block topbar_actions %}
-{% if session and session.service == 'classroom' %}<a href="{% url 'assessment_polls' session.pk %}" class="btn btn-outline-primary btn-sm">Classroom polls</a>{% endif %}
-{% if session and session.service == 'classroom' %}<a href="{% url 'combined_assessment_create' %}?classroom_session={{ session.pk }}" class="btn btn-outline-primary btn-sm">Add Panel grading</a>{% endif %}
 {% if request.service == 'team' %}<a href="{% url 'training_session_competencies' session.pk %}" class="btn btn-outline-secondary btn-sm">Competency outcomes</a>{% endif %}
 {% if session %}<div class="dropdown">
   <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Session actions</button>
@@ -334,7 +332,7 @@
 <div class="assess-hero assess-stagger" style="margin-bottom:var(--sp-3)">
   <div class="hero-icon"><i class="bi bi-rocket-takeoff"></i></div>
   <h2>Ready to go live?</h2>
-  <p>Add students, groups and a rubric first - the rubric's weights must add up to exactly 100% before you can start.</p>
+  <p>Complete session setup before launching.</p>
   <form method="post" action="{% url 'assessment_go_live' session.pk %}">
     {% csrf_token %}
     <button type="submit" class="btn btn-primary btn-lg" {% if not session.can_go_live %}disabled{% endif %}>
@@ -362,6 +360,7 @@
 {% include 'assessments/_partials/live_stats.html' %}
 
 <div class="row g-3 mb-3">
+  {% if session.enable_peer %}
   <div class="col-md-4">
     <div class="card assess-stagger h-100">
       <div class="card-body">
@@ -382,7 +381,7 @@
         <div class="card-icon-head">
           <div class="head-left">
             <span class="icon-badge"><i class="bi bi-qr-code"></i></span>
-            <span class="title" id="qr-card-label">Invite students</span>
+            <span class="title" id="qr-card-label">Invite participants</span>
           </div>
           <span class="live-badge is-offline" id="live-badge"><span class="dot"></span><span id="live-badge-text">Connecting…</span></span>
         </div>
@@ -390,6 +389,26 @@
       </div>
     </div>
   </div>
+  {% endif %}
+
+  {% if session.enable_panel %}
+  <div class="col-md-4">
+    <div class="card assess-stagger h-100">
+      <div class="card-body d-flex flex-column">
+        <div class="card-icon-head">
+          <div class="head-left">
+            <span class="icon-badge"><i class="bi bi-person-badge"></i></span>
+            <span class="title">Panelists</span>
+          </div>
+          {% if not session.enable_peer %}
+          <span class="live-badge is-offline" id="live-badge"><span class="dot"></span><span id="live-badge-text">Connecting…</span></span>
+          {% endif %}
+        </div>
+        {% include 'assessments/_partials/live_panelists.html' %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
   <div class="col-md-4">
     <div class="card assess-stagger h-100">
@@ -400,15 +419,13 @@
             <span class="title">Session controls</span>
           </div>
         </div>
-        {% if session.service == 'classroom' %}
+        {% if session.enable_peer %}
         <form method="post" action="{% url 'assessment_leaderboard_scores' session.pk %}" id="public-score-control" class="mb-3">
           {% csrf_token %}
-          <p class="small mb-2">Public rankings update after each group finishes. Numeric scores are hidden by default.</p>
           <input type="hidden" name="action" value="{% if session.public_leaderboard_show_scores %}hide{% else %}show{% endif %}">
           <button class="btn btn-outline-primary w-100" type="submit" aria-pressed="{{ session.public_leaderboard_show_scores|yesno:'true,false' }}">{% if session.public_leaderboard_show_scores %}Hide public scores{% else %}Show public scores{% endif %}</button>
           <span id="public-score-feedback" class="small" role="status"></span>
         </form>
-        {% endif %}
         <div class="control-primary">
           {% include 'assessments/_partials/live_pause_button.html' %}
         </div>
@@ -419,12 +436,13 @@
             <span class="joining-toggle-label">{% if session.joining_locked %}Reopen joining{% else %}Lock new joining{% endif %}</span>
           </button>
         </form>
-        <div class="text-muted t-sm mt-2">{% if session.joining_locked %}New students cannot enter.{% else %}Students can still scan and join.{% endif %}</div>
+        <div class="text-muted t-sm mt-2">{% if session.joining_locked %}New participants cannot enter.{% else %}Participants can still scan and join.{% endif %}</div>
         </div>
+        {% endif %}
         <div class="danger-zone">
           <div class="danger-zone-label"><i class="bi bi-exclamation-triangle-fill"></i>Danger zone</div>
           <form method="post" action="{% url 'assessment_close_session' session.pk %}"
-                data-confirm="Close this session? Students will no longer be able to vote, and this can't be undone."
+                data-confirm="Close this session? Scoring will end, and this can't be undone."
                 data-confirm-label="Close session">
             {% csrf_token %}
             <button type="submit" class="btn btn-danger w-100">
@@ -437,9 +455,11 @@
   </div>
 </div>
 
+{% if session.enable_peer %}
 <div class="card assess-stagger mb-3"><div class="card-body">
   {% include 'assessments/_partials/live_roster.html' %}
 </div></div>
+{% endif %}
 
 <div class="card assess-stagger mb-3">
   <div class="card-body">
@@ -461,7 +481,7 @@
       <div class="turn-setting-field">
         <div class="turn-setting-head">
           <span class="turn-setting-label"><i class="bi bi-camera-video"></i>Presentation time</span>
-          <span class="turn-setting-sub">Target duration for the group's actual presentation - shown as an on-screen countdown. Does not auto-close anything.</span>
+          <span class="turn-setting-sub">On-screen countdown duration</span>
         </div>
         <div class="turn-setting-controls">
           <div class="btn-group btn-group-sm" role="group" id="pres-picker">
@@ -483,12 +503,13 @@
         </span>
       </div>
 
+      {% if session.enable_peer %}
       <div class="turn-setting-divider"></div>
 
       <div class="turn-setting-field">
         <div class="turn-setting-head">
           <span class="turn-setting-label"><i class="bi bi-stopwatch"></i>Voting timer</span>
-          <span class="turn-setting-sub">With a presentation timer, voting opens and closes automatically during the presentation. Without one, voting opens immediately and this timer closes voting only.</span>
+          <span class="turn-setting-sub">Auto-close window for voting</span>
         </div>
         <div class="turn-setting-controls">
           <div class="btn-group btn-group-sm" role="group" id="duration-picker">
@@ -515,7 +536,7 @@
       <div class="turn-setting-field">
         <div class="turn-setting-head">
           <span class="turn-setting-label"><i class="bi bi-pause-circle"></i>Gap between groups</span>
-          <span class="turn-setting-sub">Breather after an automatic presentation ends, before the next group starts</span>
+          <span class="turn-setting-sub">Pause before next auto-start</span>
         </div>
         <div class="turn-setting-controls">
           <div class="btn-group btn-group-sm" role="group" id="gap-picker">
@@ -536,11 +557,7 @@
           <i class="bi bi-check2"></i><span class="note-text">Saved: {% if session.transition_gap_seconds %}{{ session.transition_gap_seconds }}s{% else %}no gap{% endif %}</span>
         </span>
       </div>
-    </div>
-
-    <div class="turn-settings-hint">
-      <i class="bi bi-info-circle-fill"></i>
-      <span>With a <strong>presentation timer</strong>, voting opens and closes automatically during the presentation, then the next group starts after the <strong>gap</strong>. With only a <strong>voting timer</strong>, voting closes on expiry but you remain in control. With no timers, the turn is fully manual.</span>
+      {% endif %}
     </div>
 
     {% include 'assessments/_partials/live_groups_summary.html' %}
@@ -595,10 +612,12 @@
      a session doesn't drop a lecturer onto a screen with nothing on it but
      a single button. -->
 <div class="groups-stat-strip assess-stagger">
+  {% if session.enable_peer %}
   <div class="groups-stat-pill">
     <span class="stat-icon"><i class="bi bi-people-fill"></i></span>
     <div><div class="stat-val">{{ joined_count }}<span class="stat-of">/{{ student_count }}</span></div><div class="stat-lbl">Joined</div></div>
   </div>
+  {% endif %}
   <div class="groups-stat-pill is-ok">
     <span class="stat-icon"><i class="bi bi-diagram-3-fill"></i></span>
     <div><div class="stat-val">{{ presented_count }}<span class="stat-of">/{{ group_count }}</span></div><div class="stat-lbl">Groups presented</div></div>
@@ -613,7 +632,7 @@
   </div>
 </div>
 
-{% if participation_counts %}
+{% if session.enable_peer and participation_counts %}
 <div class="groups-stat-strip assess-stagger">
   <a href="{% url 'assessment_participation' session.pk %}?status=full" class="groups-stat-pill filter-pill is-ok">
     <span class="stat-icon"><i class="bi bi-check2-all"></i></span>
@@ -670,6 +689,7 @@
     'live-groups-summary': 'groups_summary_html', 'live-groups': 'groups_html',
     'live-activity': 'activity_html', 'live-participation': 'participation_html', 'live-roster': 'roster_html',
     'live-pause-btn': 'pause_html', 'live-qr': 'qr_html', 'live-rankings': 'rankings_html',
+    'live-panelists': 'panel_status_html',
   };
 
   const liveGradingState = new Map();

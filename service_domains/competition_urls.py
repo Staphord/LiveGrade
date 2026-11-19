@@ -8,6 +8,7 @@ from .competition_views import (
     competition_public_leaderboard, competition_results_export, competition_table,
     competition_live_control, competition_live_state, competition_live_action,
     competition_live_projector_toggle, competition_projector, competition_projector_qr,
+    competition_projector_state, competition_results,
 )
 from .views import competition_audience_vote
 from .competition_judge_views import competition_judge_scorecard
@@ -29,6 +30,8 @@ urlpatterns = [
          name='competition_criteria_import_sample'),
     path('app/<int:competition_id>/live/', competition_live_control,
          name='competition_live_control'),
+    path('app/<int:competition_id>/results/', competition_results,
+         name='competition_results'),
     path('app/<int:competition_id>/live-state/', competition_live_state,
          name='competition_live_state'),
     path('app/<int:competition_id>/live-action/', competition_live_action,
@@ -39,6 +42,8 @@ urlpatterns = [
          name='competition_projector'),
     path('app/<int:competition_id>/projector/qr/', competition_projector_qr,
          name='competition_projector_qr'),
+    path('app/<int:competition_id>/projector-state/', competition_projector_state,
+         name='competition_projector_state'),
     path('app/<int:competition_id>/', competition_manage, name='competition_manage'),
     path('results/<uuid:competition_id>/', competition_public_leaderboard,
          name='competition_public_leaderboard'),

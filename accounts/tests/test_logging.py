@@ -16,15 +16,17 @@ class BearerUrlRedactionTests(SimpleTestCase):
             'GET /panel/examiner/panel-secret/ 404; '
             'GET /panel/results/result-secret/ 200; '
             'GET /competition/judge/judge-secret/ 403; '
-            'GET /team/feedback/123e4567-e89b-12d3-a456-426614174000/ 200'
+            'GET /team/feedback/123e4567-e89b-12d3-a456-426614174000/ 200; '
+            'GET /assess/examiner/examiner-secret/ 404; '
+            'GET /assess/review/review-secret/draft/ 403'
         )
 
         redacted = redact_bearer_paths(message)
 
         for secret in ('poll-secret', 'panel-secret', 'result-secret', 'judge-secret',
-                       '123e4567-e89b-12d3-a456-426614174000'):
+                       '123e4567-e89b-12d3-a456-426614174000', 'examiner-secret', 'review-secret'):
             self.assertNotIn(secret, redacted)
-        self.assertEqual(redacted.count('[redacted]'), 5)
+        self.assertEqual(redacted.count('[redacted]'), 7)
 
     def test_filter_redacts_message_exception_and_removes_structured_request(self):
         record = logging.LogRecord('django.request', logging.ERROR, __file__, 1,
@@ -78,6 +80,16 @@ class BearerUrlRequestLogTests(TestCase):
         with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
             with self.assertLogs('django.request', level='WARNING') as captured:
                 response = Client().get(f'/panel/examiner/{token}/')
+
+        self.assertEqual(response.status_code, 404)
+        self.assertNotIn(token, '\n'.join(captured.output))
+        self.assertTrue(all(getattr(record, 'request', None) is None
+                            for record in captured.records))
+
+    def test_unknown_async_review_token_is_not_in_django_request_log(self):
+        token = 'unissued-review-capability-should-not-be-logged'
+        with self.assertLogs('django.request', level='WARNING') as captured:
+            response = Client().get(f'/assess/review/{token}/')
 
         self.assertEqual(response.status_code, 404)
         self.assertNotIn(token, '\n'.join(captured.output))

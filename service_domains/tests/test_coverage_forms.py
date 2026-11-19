@@ -8,8 +8,6 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, TestCase
 
 from accounts.testing import make_org, make_user
-from service_domains.coassessment_forms import (
-    CoAssessmentMemberForm, CoAssessmentModerationForm, CoAssessmentPolicyForm)
 from service_domains.competition_forms import (
     CompetitionCriterionForm, CompetitionEntryForm, CompetitionJudgeInvitationForm,
     CompetitionJudgeScorecardForm)
@@ -24,24 +22,6 @@ from service_domains.team_forms import CreateTrainingSessionForm, TrainingSeries
 def cleaned(form, **values):
     form.cleaned_data = values
     return form
-
-
-class CoAssessmentFormTests(SimpleTestCase):
-    def test_policy_weights_are_only_checked_when_both_are_given(self):
-        form = cleaned(CoAssessmentPolicyForm(), panel_weight=None, peer_weight=Decimal('30'))
-        self.assertEqual(form.clean()['peer_weight'], Decimal('30'))
-        self.assertFalse(form.errors)
-
-    def test_member_name_must_not_be_blank(self):
-        form = cleaned(CoAssessmentMemberForm(), full_name='   ')
-        with self.assertRaises(forms.ValidationError):
-            form.clean_full_name()
-        self.assertEqual(cleaned(CoAssessmentMemberForm(), full_name=' Ada ').clean_full_name(), 'Ada')
-
-    def test_moderation_needs_a_justification(self):
-        with self.assertRaises(forms.ValidationError):
-            cleaned(CoAssessmentModerationForm(), justification='  ').clean_justification()
-        self.assertEqual(cleaned(CoAssessmentModerationForm(), justification=' ok ').clean_justification(), 'ok')
 
 
 class CompetitionOrderDefaultTests(TestCase):
@@ -161,7 +141,7 @@ class TeamFormTests(TestCase):
 
     def test_unknown_or_foreign_rubric_templates_are_refused(self):
         form = CreateTrainingSessionForm.__new__(CreateTrainingSessionForm)
-        foreign = SessionTemplate(name='x', service='classroom')
+        foreign = SessionTemplate(name='x', service='assessment')
         form._template_objects = {'known': SessionTemplate(name='y', service='team'), 'foreign': foreign}
         for choice in ('missing', 'foreign'):
             form.cleaned_data = {'template': choice}

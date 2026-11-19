@@ -18,7 +18,8 @@
       <div class="meta-row">
         {% if active_turn.presentation_ends_at and not active_turn.voting_opened_at %}<span class="phase-chip" id="presentation-opens-countdown" data-started-at="{{ active_turn.opened_at|date:'c' }}" data-presentation-ends-at="{{ active_turn.presentation_ends_at|date:'c' }}"><i class="bi bi-mic-fill me-1"></i><span id="presentation-opens-text">Voting opens soon</span></span>{% elif active_turn.presentation_ends_at and active_turn.is_voting_open %}<span class="phase-chip is-voting"><i class="bi bi-pencil-fill me-1"></i>Voting open</span>{% endif %}
         <span><i class="bi bi-clock me-1"></i>Started {{ active_turn.opened_at|time:'H:i' }}</span>
-        <span><i class="bi bi-person-check me-1"></i>{{ voted_count }} of {{ joined_count }} eligible voted</span>
+        {% if session.enable_peer %}<span><i class="bi bi-person-check me-1"></i>{{ voted_count }} of {{ joined_count }} eligible voted</span>{% endif %}
+        {% if session.enable_panel %}<span><i class="bi bi-person-badge me-1"></i>{{ panel_submitted_count }} of {{ panel_examiners_count }} panelists scored</span>{% endif %}
         {% if active_turn.voting_ends_at and active_turn.is_voting_open %}
         <span id="turn-countdown" data-ends-at="{{ active_turn.voting_ends_at|date:'c' }}">
           <i class="bi bi-hourglass-split me-1"></i><span id="turn-countdown-text">--:--</span>
@@ -87,6 +88,9 @@
   {% else %}
   <div class="eyebrow">No group presenting</div>
   <div class="group-name is-idle">Select a group below to start the next round</div>
-  <div class="meta-row"><span><i class="bi bi-people me-1"></i>{{ joined_count }} of {{ student_count }} students already in the room</span></div>
+  <div class="meta-row">
+    {% if session.enable_peer %}<span><i class="bi bi-people me-1"></i>{{ joined_count }} of {{ student_count }} participants in the room</span>{% endif %}
+    {% if session.enable_panel %}<span><i class="bi bi-person-badge me-1"></i>{{ panel_examiners_count }} panelist{{ panel_examiners_count|pluralize }} invited</span>{% endif %}
+  </div>
   {% endif %}
 </div>

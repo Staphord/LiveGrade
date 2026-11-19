@@ -71,6 +71,14 @@ class EvaluatorNoticeTests(TestCase):
         response = self.participant.get(reverse('student_join', args=[self.session.uuid]))
         self.assertNotContains(response, 'id="evaluator-notice-heading"')
 
+    def test_basics_only_edit_keeps_notice_when_notice_field_is_not_submitted(self):
+        self.edit(name='Renamed class')
+        self.session.refresh_from_db()
+        self.assertEqual(
+            self.session.instructions,
+            'Use evidence from the presentation.\nScore each criterion independently.',
+        )
+
     def test_closed_record_notice_cannot_be_changed(self):
         original = self.session.instructions
         self.session.status = 'closed'
@@ -132,7 +140,7 @@ class EvaluatorNoticeMigrationTests(TransactionTestCase):
     def test_existing_sessions_and_scores_survive_forward_and_reverse(self):
         before = self.migrate('0005_session_service')
         session = before.get_model('assessments', 'AssessmentSession').objects.create(
-            organization_id=7, name='Existing class', service='classroom', status='closed')
+            organization_id=7, name='Existing class', service='assessment', status='closed')
         group = before.get_model('assessments', 'PresentationGroup').objects.create(assessment_session=session, name='Group')
         student = before.get_model('assessments', 'Student').objects.create(assessment_session=session, full_name='Student')
         category = before.get_model('assessments', 'RubricCategory').objects.create(assessment_session=session, name='Rubric', weight=100)

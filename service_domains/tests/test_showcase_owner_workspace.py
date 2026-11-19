@@ -1219,7 +1219,7 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
     def test_enterprise_service_dashboard_states_across_services(self):
         from django.test import override_settings
         from assessments.models import AssessmentSession
-        from service_domains.models import Competition, PanelHearing, TrainingSeries
+        from service_domains.models import Competition, TrainingSeries
 
         self.sign_in()
 
@@ -1243,15 +1243,15 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
         self.assertContains(empty_sc, 'Start event setup')
 
         # 2. Classroom dashboard: empty, between/scheduled, and live states
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'classroom'):
+        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'assessment'):
             empty_cls = self.client.get(reverse('assessment_dashboard'))
             self.assertEqual(empty_cls.status_code, 200)
-            self.assertContains(empty_cls, 'You haven’t created a classroom session yet')
+            self.assertContains(empty_cls, 'You have not created an assessment session yet')
             self.assertContains(empty_cls, 'Session stages')
 
             cls_session = AssessmentSession.objects.create(
                 organization_id=self.org.id, created_by=self.owner,
-                service='classroom', name='Capstone Defense',
+                service='assessment', name='Capstone Defense',
                 status=AssessmentSession.Status.DRAFT,
             )
             between_cls = self.client.get(reverse('assessment_dashboard'))
@@ -1265,27 +1265,11 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
             cls_session.status = AssessmentSession.Status.LIVE
             cls_session.save(update_fields=('status',))
             live_cls = self.client.get(reverse('assessment_dashboard'))
-            self.assertContains(live_cls, 'Live in the classroom')
+            self.assertContains(live_cls, 'Live now')
             self.assertContains(live_cls, '1 active session')
             self.assertContains(live_cls, 'Capstone Defense')
 
-        # 3. Panel dashboard: empty, draft attention, and live states
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            empty_pnl = self.client.get(reverse('panel_hearing_list'))
-            self.assertEqual(empty_pnl.status_code, 200)
-            self.assertContains(empty_pnl, 'empty-hero')
-
-            hearing = PanelHearing.objects.create(
-                organization_id=self.org.id, created_by=self.owner,
-                name='Doctoral Defense Chamber', status=PanelHearing.Status.OPEN,
-            )
-            live_pnl = self.client.get(reverse('panel_hearing_list'))
-            self.assertContains(live_pnl, 'Panel dashboard')
-            self.assertContains(live_pnl, 'Live in Panel')
-            self.assertContains(live_pnl, 'Doctoral Defense Chamber')
-            self.assertEqual(live_pnl.context['dashboard_stats']['total'], 1)
-
-        # 4. Team and Training dashboard: empty and active cohort states
+        # 3. Team and Training dashboard: empty and active cohort states
         with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'team'):
             empty_tm = self.client.get(reverse('training_series_list'))
             self.assertEqual(empty_tm.status_code, 200)
@@ -1299,7 +1283,7 @@ class ShowcaseOwnerWorkspaceTests(TestCase):
             self.assertContains(active_tm, 'Team and Training dashboard')
             self.assertEqual(active_tm.context['dashboard_stats']['total_series'], 1)
 
-        # 5. Competition dashboard: empty, scheduled, and active attention states
+        # 4. Competition dashboard: empty, scheduled, and active attention states
         with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'competition'):
             empty_cmp = self.client.get(reverse('competition_list'))
             self.assertEqual(empty_cmp.status_code, 200)

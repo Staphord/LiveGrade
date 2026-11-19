@@ -13,7 +13,7 @@ from service_domains.tests import test_competition_live_control as live_control
 AJAX = {'HTTP_X_REQUESTED_WITH': 'XMLHttpRequest'}
 
 
-@override_settings(LIVEGRADE_LIVE_SERVICES=['classroom', 'panel', 'polls', 'team', 'showcase', 'competition'])
+@override_settings(LIVEGRADE_LIVE_SERVICES=['assessment', 'panel', 'polls', 'team', 'showcase', 'competition'])
 class ArenaCase(TestCase):
     setUp = live_control.CompetitionLiveControlTests.setUp
 
@@ -63,35 +63,35 @@ class LiveActionTests(ArenaCase):
         super().setUp()
         self.start()
 
-    def test_nudging_a_judge_who_has_not_finished_confirms(self):
+    def test_nudging_a_judge_sends_a_reminder(self):
         response = self.act({'action': 'nudge_judge', 'judge_id': self.judge.pk})
-        self.assertIn('Nudge sent to judge judge@arena.org.', [str(m) for m in get_messages(response.wsgi_request)])
+        self.assertIn('Reminder sent to judge judge@arena.org. The previous link is no longer valid.',
+                      [str(m) for m in get_messages(response.wsgi_request)])
 
     def test_nudging_an_unknown_judge_changes_nothing(self):
         response = self.act({'action': 'nudge_judge', 'judge_id': '999999'}, **AJAX)
         self.assertTrue(response.json()['ok'])
 
-    def test_a_boundary_tie_is_recorded_with_its_reason(self):
+    def test_boundary_tie_cannot_be_recorded_as_a_final_results_decision(self):
         response = self.act({
             'action': 'resolve_tie', 'track_id': self.track.pk, 'tied_score': '85.50',
-            'reason': 'Panel discussion', 'ordered_entry_ids': [self.entry1.pk, self.entry2.pk]})
-        self.assertRedirects(response, self.route('competition_live_control'), fetch_redirect_response=False)
-        self.assertEqual(CompetitionLeaderboardTieDecision.objects.count(), 1)
-        ajax = self.act({'action': 'resolve_tie', 'track_id': self.track.pk, 'tied_score': '85.50',
-                         'reason': '', 'ordered_entry_ids': []}, **AJAX)
-        self.assertEqual(CompetitionLeaderboardTieDecision.objects.count(), 1)
-        self.assertIn(ajax.status_code, (200, 400))
+            'reason': 'Panel discussion', 'ordered_entry_ids': [self.entry1.pk, self.entry2.pk]}, **AJAX)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Resolve advancement ties when advancing', response.json()['error'])
+        self.assertEqual(CompetitionLeaderboardTieDecision.objects.count(), 0)
 
     def test_advancing_and_concluding_follow_the_request_style(self):
         with patch('service_domains.competition_views.create_next_competition_round'):
             plain = self.act({'action': 'advance_round', 'next_round_name': 'Semi'})
         self.assertRedirects(plain, self.route('competition_live_control'), fetch_redirect_response=False)
         with patch('service_domains.competition_views.create_next_competition_round'):
-            self.assertTrue(self.act({'action': 'advance_round'}, **AJAX).json()['ok'])
+            advanced_ajax = self.act({'action': 'advance_round'}, **AJAX)
+        self.assertTrue(advanced_ajax.json()['ok'])
+        self.assertEqual(advanced_ajax.json()['redirect'], self.route('competition_live_control'))
         with patch('service_domains.competition_views.complete_competition'):
             redirected = self.act({'action': 'conclude_competition'})
             ajax = self.act({'action': 'conclude_competition'}, **AJAX)
-        self.assertRedirects(redirected, self.route('competition_manage'), fetch_redirect_response=False)
+        self.assertRedirects(redirected, self.route('competition_results'), fetch_redirect_response=False)
         self.assertEqual(ajax.json()['status'], 'complete')
 
     def test_unknown_actions_are_refused(self):

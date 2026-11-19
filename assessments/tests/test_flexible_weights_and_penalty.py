@@ -150,7 +150,7 @@ class FlexibleWeightPageTests(LecturerTestCase):
         response = self.client.post(self.url('assessment_go_live'))
         self.session.refresh_from_db()
         self.assertEqual(self.session.status, 'draft')
-        self.assertTrue(any('exactly 100%' in m for m in _messages(response)))
+        self.assertTrue(any('must equal 100%' in m for m in _messages(response)))
 
     def test_over_100_is_flagged_for_removal(self):
         self.category('Project', 'group', 80)

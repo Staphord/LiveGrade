@@ -1,19 +1,38 @@
 <section class="card border-0 shadow-sm" id="competition-live-standings">
   <div class="card-header bg-transparent border-0 pt-3 pb-0 d-flex flex-wrap justify-content-between align-items-center gap-2">
     <div>
-      <h3 class="h6 mb-0 fw-bold">Live Round Standings & Advancement Engine</h3>
-      <p class="text-muted small mb-0">Rankings compute from submitted judge scores and audience ballots.</p>
+      <h3 class="h6 mb-0 fw-bold">{% if competition.status == 'active' %}{{ active_round.name|default:'Round' }} standings{% else %}Final standings{% endif %}</h3>
+      <p class="text-muted small mb-0">Rankings use finalized judge scores and any weighted audience results.</p>
     </div>
-    <div>
-      {% if can_advance %}
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      {% if competition.status == 'active' and can_finalize_weighted %}
+      <form method="post" action="{% url 'competition_live_action' competition_id=competition.pk %}"
+            data-competition-live-action-form
+            data-confirm="This closes audience voting and freezes the weighted scores for this round. This action cannot be reversed."
+            data-confirm-title="Close voting and finalize scores?"
+            data-confirm-label="Finalize weighted scores">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="finalize_weighted_scores">
+        <button type="submit" class="btn btn-outline-primary btn-sm">
+          <i class="bi bi-calculator me-1" aria-hidden="true"></i>Close voting and finalize results
+        </button>
+      </form>
+      {% endif %}
+      {% if competition.status == 'active' and can_advance %}
       <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#competition-advance-modal">
         <i class="bi bi-arrow-right-circle me-1" aria-hidden="true"></i>Advance to Next Round
       </button>
-      {% elif active_round.advancement_locked_at %}
-      <span class="badge text-bg-secondary">Round Completed & Advanced</span>
+      {% elif competition.status == 'active' and active_round.advancement_locked_at %}
+      <span class="badge text-bg-secondary">Round advanced</span>
+      {% elif competition.status != 'active' %}
+      <span class="badge text-bg-secondary">Scoring closed</span>
+      {% elif has_boundary_tie %}
+      <button type="button" class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#competition-tie-modal">
+        <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>Resolve boundary tie
+      </button>
       {% else %}
-      <button type="button" class="btn btn-outline-secondary btn-sm" disabled title="Awaiting judge scoring completion or tie resolution">
-        <i class="bi bi-lock me-1" aria-hidden="true"></i>Advancement Locked
+      <button type="button" class="btn btn-outline-secondary btn-sm" disabled>
+        <i class="bi bi-lock me-1" aria-hidden="true"></i>Advancement locked
       </button>
       {% endif %}
     </div>
@@ -25,17 +44,29 @@
       <div class="d-flex align-items-center gap-2">
         <i class="bi bi-exclamation-triangle-fill fs-5" aria-hidden="true"></i>
         <div>
-          <strong>Boundary Tie Detected:</strong> Two or more entrants on the advancement threshold share identical scores.
+          <strong>Boundary tie:</strong> {{ advancement_block_reason }}
         </div>
       </div>
-      <button type="button" class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#competition-tie-modal">
-        Resolve Tie
-      </button>
+    </div>
+    {% elif competition.status == 'active' and weighted_finalize_block_reason %}
+    <p class="alert alert-info py-2 mb-3" role="status">
+      {{ weighted_finalize_block_reason }}
+      <a class="ms-1" href="{% url 'competition_manage' competition_id=competition.pk %}?step=launch&amp;from=live">Review scoring and ballot readiness</a>
+    </p>
+    {% elif competition.status == 'active' and not can_advance and advancement_block_reason %}
+    <p class="alert alert-info py-2 mb-3" role="status">{{ advancement_block_reason }}</p>
+    {% endif %}
+
+    {% if competition.status == 'active' and can_advance %}
+    <div class="alert alert-success py-2 mb-3" role="status">
+      Next round preview: {{ next_round_qualifier_count }} qualifying entrant{{ next_round_qualifier_count|pluralize }} across {{ tracks|length }} track{{ tracks|length|pluralize }}. Review the selection before advancing.
     </div>
     {% endif %}
 
     {% if standings %}
-    <div class="table-responsive">
+    <div class="table-responsive" role="region"
+         aria-label="Round standings. Scroll horizontally to view every score column."
+         tabindex="0">
       <table class="table table-hover align-middle mb-0">
         <thead class="table-light">
           <tr>
@@ -52,8 +83,8 @@
           {% for row in standings %}
           <tr class="{% if row.is_active %}table-primary{% endif %}">
             <td>
-              <span class="badge {% if row.rank <= cutoff_rank %}text-bg-success{% else %}text-bg-light border text-muted{% endif %} rounded-pill">
-                #{{ row.rank }}
+              <span class="badge {% if row.is_qualified %}text-bg-success{% else %}text-bg-light border text-muted{% endif %} rounded-pill">
+                #{{ row.track_rank }}
               </span>
             </td>
             <td>
@@ -77,7 +108,7 @@
               {% endif %}
             </td>
             <td style="text-align: center;">
-              {% if row.rank <= cutoff_rank %}
+              {% if row.is_qualified %}
               <span class="badge text-bg-success-subtle text-success-emphasis border border-success-subtle">
                 Qualifies
               </span>
@@ -88,10 +119,10 @@
               {% endif %}
             </td>
           </tr>
-          {% if row.rank == cutoff_rank and not forloop.last %}
+          {% if row.is_boundary_tie %}
           <tr class="table-warning border-top border-bottom">
             <td colspan="7" class="text-center py-1 small fw-semibold text-warning-emphasis" style="letter-spacing: .04em; background: rgba(255, 193, 7, 0.15);">
-              ↑ TOP {{ cutoff_rank }} ADVANCE TO NEXT ROUND · CUTOFF THRESHOLD ↓
+              Advancement tie at the cutoff
             </td>
           </tr>
           {% endif %}

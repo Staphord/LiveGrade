@@ -13,7 +13,7 @@ class EvaluatorIdentityParityCommandTests(TestCase):
         owner = make_user('parity-owner')
         self.session = AssessmentSession.objects.create(
             organization_id=organization.id, created_by=owner,
-            service='classroom', name='Parity session')
+            service='assessment', name='Parity session')
         self.student = self.session.students.create(full_name='Amina')
         self.group = self.session.groups.create(name='Group 1')
         self.turn = self.session.presentation_turns.create(
@@ -43,7 +43,7 @@ class EvaluatorIdentityParityCommandTests(TestCase):
         other_session = AssessmentSession.objects.create(
             organization_id=self.session.organization_id,
             created_by=self.session.created_by,
-            service='classroom', name='Other session')
+            service='assessment', name='Other session')
         other_student = other_session.students.create(full_name='Other')
         wrong_identity = other_student.evaluator_identities.get()
         Evaluation.objects.create(presentation_turn=self.turn,
@@ -81,7 +81,7 @@ class EvaluatorBackfillPreflightCommandTests(TestCase):
         owner = make_user('backfill-preflight-owner')
         self.session = AssessmentSession.objects.create(
             organization_id=organization.id, created_by=owner,
-            service='classroom', name='Preflight session')
+            service='assessment', name='Preflight session')
         self.student = self.session.students.create(full_name='Roster evaluator')
         self.group = self.session.groups.create(name='Group 1')
         self.turn = self.session.presentation_turns.create(
@@ -102,7 +102,7 @@ class EvaluatorBackfillPreflightCommandTests(TestCase):
         other_session = AssessmentSession.objects.create(
             organization_id=self.session.organization_id,
             created_by=self.session.created_by,
-            service='classroom', name='Other session')
+            service='assessment', name='Other session')
         foreign_student = other_session.students.create(full_name='Private learner name')
         evaluation = Evaluation.objects.create(
             presentation_turn=self.turn, evaluator=foreign_student)

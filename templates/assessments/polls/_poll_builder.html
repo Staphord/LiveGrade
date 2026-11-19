@@ -1,0 +1,59 @@
+<form method="post" novalidate data-poll-deadline-form data-poll-editor data-unsaved-async-save
+      data-dirty-initial="{% if form.errors %}true{% else %}false{% endif %}"
+      data-storage-key="{{ poll_storage_key }}">
+  {% csrf_token %}
+  {% if poll %}<input type="hidden" name="poll" value="{{ poll.uuid }}">{% endif %}
+  <input type="hidden" name="action" value="save">
+  <input type="hidden" name="leave_to" value="">
+  {{ form.questions_json }}
+  {{ form.question_errors|json_script:'poll-question-errors' }}
+  {{ form.deadline_local }}
+  {{ form.timezone_name }}
+
+  {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+  <div class="mb-3 poll-title-field">
+    <label class="form-label" for="{{ form.title.id_for_label }}">Title <span class="text-danger" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span></label>
+    <div class="poll-input-with-count">
+      {{ form.title }}
+      <span class="poll-char-count" data-title-count>0/250</span>
+    </div>
+    <div id="poll-title-error" class="field-error" role="alert" hidden></div>
+    {% for error in form.title.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}
+  </div>
+
+  <section class="poll-builder-questions" aria-labelledby="poll-questions-heading">
+    <div class="mb-3">
+      <h3 class="h5 mb-0" id="poll-questions-heading">Questions</h3>
+    </div>
+    <div id="poll-question-list" class="poll-question-list" aria-live="polite"></div>
+    <div class="poll-add-row">
+      <button type="button" class="poll-add-btn" id="add-poll-question" aria-label="Add question" data-tip="Add question" title="Add question"><i class="bi bi-plus-lg" aria-hidden="true"></i></button>
+    </div>
+    <div id="poll-question-form-error" class="field-error" role="alert" tabindex="-1" hidden></div>
+    {% for error in form.questions_json.errors %}<div class="alert alert-danger mt-2" role="alert">{{ error }}</div>{% endfor %}
+    <p id="poll-question-limit" class="form-text" role="status" aria-live="polite"></p>
+  </section>
+
+  {% if form.timezone_name.errors %}<div class="alert alert-danger" role="alert">{{ form.timezone_name.errors }}</div>{% endif %}
+  <section class="border rounded-3 p-3 mb-3" aria-labelledby="poll-settings-heading">
+    <h3 class="h6" id="poll-settings-heading">Poll settings</h3>
+    {% if form.personal_links_only %}{% include 'partials/_form_field.html' with field=form.personal_links_only %}{% endif %}
+    {% include 'partials/_deadline_picker.html' with field=form.deadline_local date_field=form.deadline_date time_field=form.deadline_time %}
+  </section>
+
+  <div class="d-flex align-items-center flex-wrap gap-2">
+    <button class="btn btn-primary" type="submit">Save draft</button>
+    <button class="btn btn-outline-primary" type="button" data-preview-poll>Preview</button>
+  </div>
+  <div class="alert alert-danger mt-3" data-poll-save-error role="alert" hidden></div>
+</form>
+
+{% if poll %}
+  <hr>
+  <p>Publishing opens voting and locks the questions. Existing Classroom roster and deadline requirements still apply.</p>
+  {% if has_text_questions %}<p class="small text-muted">Written answers may include details that identify a learner. The poll owner can review them without respondent names. Public results show totals and choice counts only.</p>{% endif %}
+  <form method="post" data-confirm="Publishing opens voting and locks the questions. {% if has_text_questions %}Learners will be told that written answers may identify them and can be reviewed without their names. {% endif %}Continue?" data-confirm-title="Publish poll?" data-confirm-label="Publish poll" data-confirm-tone="primary" data-poll-publish-form>
+    {% csrf_token %}<input type="hidden" name="poll" value="{{ poll.uuid }}"><input type="hidden" name="action" value="publish">
+    <button class="btn btn-success" type="submit" {% if form.errors %}disabled{% endif %}>Publish poll</button>
+  </form>
+{% endif %}

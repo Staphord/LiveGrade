@@ -2,7 +2,7 @@
 {% block title %}{% if session %}{{ session.name }} - Setup{% elif request.service == 'team' %}New Team demo setup{% else %}New assessment session{% endif %} - LiveGrade{% endblock %}
 {% block page_title %}{% if session %}{{ session.name }}{% elif request.service == 'team' %}New Team demo setup{% else %}New assessment session{% endif %}{% endblock %}
 {% block topbar_actions %}
-{% if session and session.service == 'classroom' %}<a href="{% url 'assessment_polls' session.pk %}" class="btn btn-outline-primary btn-sm">Classroom polls</a>{% endif %}
+{% if session and session.service == 'assessment' %}<a href="{% url 'assessment_polls' session.pk %}" class="btn btn-outline-primary btn-sm">Session polls</a>{% endif %}
 {% if session and request.service == 'team' and session.training_series_link %}<a href="{% url 'training_session_competencies' session.pk %}" class="btn btn-outline-secondary btn-sm">Competency outcomes</a>{% endif %}
 {% if session %}<div class="dropdown">
   <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Session actions</button>
@@ -12,7 +12,7 @@
     {% if not active_org.public %}<li><button class="dropdown-item" type="button" aria-haspopup="dialog" aria-controls="session-action-modal" data-session-action-modal data-action-url="{% url 'assessment_transfer' session.pk %}" data-action-modal-title="Transfer ownership"><i class="bi bi-arrow-left-right me-2" aria-hidden="true"></i>Transfer ownership</button></li>{% endif %}
   </ul>
 </div>{% endif %}
-<a href="{{ sessions_home.url }}" class="btn btn-outline-secondary btn-sm">{{ sessions_home.label }}</a>
+<a href="{{ setup_return_url|default:sessions_home.url }}" class="btn btn-outline-secondary btn-sm">{{ setup_return_label|default:sessions_home.label }}</a>
 {% endblock %}
 
 {% block extra_css %}
@@ -264,8 +264,8 @@
 
 {% block content %}
 <h1 class="visually-hidden">{% if session %}{{ session.name }} - Setup{% elif request.service == 'team' %}New Team demo setup{% else %}New assessment session{% endif %}</h1>
-<a href="{{ sessions_home.url }}" class="back-link">
-  <i class="bi bi-chevron-left"></i>{{ sessions_home.label }}
+<a href="{{ setup_return_url|default:sessions_home.url }}" class="back-link">
+  <i class="bi bi-chevron-left"></i>{{ setup_return_label|default:sessions_home.label }}
 </a>
 
 <div class="row g-4">
@@ -288,8 +288,8 @@
       <div class="d-flex flex-wrap align-items-center gap-2">
         <span class="live-dot"></span>
         <strong>This session is live.</strong>
-        <span>Changes apply straight away. Anything students have already graded stays fixed.</span>
-        <a href="{% url 'assessment_session_detail' session.pk %}" class="btn btn-sm btn-outline-primary ms-auto"><i class="bi bi-broadcast me-1"></i>Back to live control</a>
+        <span>Changes apply straight away. Updating the penalty recalculates everyone’s results, including earlier groups.</span>
+        <a href="{{ setup_return_url|default:sessions_home.url }}" class="btn btn-sm btn-outline-primary ms-auto"><i class="bi bi-arrow-left me-1"></i>{{ setup_return_label|default:'Back to live control' }}</a>
       </div>
       {% include 'assessments/_partials/live_recent_changes.html' %}
     </div>
@@ -302,8 +302,8 @@
           <div class="head-left">
             <span class="icon-badge"><i class="bi bi-signpost-split"></i></span>
             <div>
-              <div class="title">{% if request.service == 'team' %}Team demo basics{% else %}Session basics{% endif %}</div>
-              <div class="sub">{% if request.service == 'team' %}Name this reusable setup, add your team members, then define the demo rubric.{% else %}Set up the basics, then add your groups and students, then a rubric{% endif %}</div>
+              <div class="title">{% if request.service == 'team' %}Team demo basics{% else %}Mode &amp; basics{% endif %}</div>
+              {% if request.service == 'team' %}<div class="sub">Name this reusable setup, add your team members, then define the demo rubric.</div>{% endif %}
             </div>
           </div>
         </div>
@@ -315,7 +315,6 @@
             <a href="{% url 'assessment_template_list' %}" class="btn btn-link">Manage templates</a>
           </div>
           {% for error in template_picker.template.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}
-          <div class="form-text">Loading a template replaces the values below. You can edit them before creating the draft.</div>
         </form>
         {% if selected_template %}
         <section class="mb-4" aria-label="Selected template">
@@ -332,12 +331,11 @@
             <label class="form-label fw-600 t-body" for="{{ form.name.id_for_label }}">{% if request.service == 'team' %}Demo setup name{% else %}Session name{% endif %}</label>
             {{ form.name }}
             {% if form.name.errors %}<div class="field-error">{{ form.name.errors|join:", " }}</div>{% endif %}
-            <div class="text-muted t-micro mt-1">e.g. "Sprint Demo - Q1 2026" or "Final-Year Project Presentations"</div>
           </div>
+          {% if request.service != 'team' %}{% include 'assessments/_partials/session_mode_fields.html' with form=form %}{% else %}
           <div class="mb-4">
-            <label class="form-label fw-600 t-body" for="{{ form.identify_by.id_for_label }}">Identify {% if request.service == 'team' %}team members{% else %}students{% endif %} by</label>
+            <label class="form-label fw-600 t-body" for="{{ form.identify_by.id_for_label }}">Identify team members by</label>
             {{ form.identify_by }}
-            <div class="text-muted t-micro mt-1">Whichever field {% if request.service == 'team' %}team members{% else %}students{% endif %} type in on their phone to join - pick whatever's on your roster.</div>
           </div>
           <div class="mb-2">
             <label class="form-label fw-600 t-body" for="{{ form.ungraded_penalty.id_for_label }}">{{ form.ungraded_penalty.label }}</label>
@@ -346,22 +344,20 @@
               <span class="input-group-text">points</span>
             </div>
             {% if form.ungraded_penalty.errors %}<div class="field-error">{{ form.ungraded_penalty.errors|join:", " }}</div>{% endif %}
-            <div class="text-muted t-micro mt-1">Taken off a student's final score for every other group they did not grade. Use 0 for no penalty.{% if live_mode %} Changing it now recalculates everyone's results, including groups that have already presented.{% endif %}</div>
           </div>
+          {% endif %}
           {% include 'assessments/_partials/instructions_field.html' with field=form.instructions %}
           <div class="d-flex gap-2 mt-4">
-            <button type="submit" class="btn btn-primary"><i class="bi bi-arrow-right-circle me-1"></i>{% if request.service == 'team' %}Create setup and add team members{% else %}Create session and add groups{% endif %}</button>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-arrow-right-circle me-1"></i>{% if request.service == 'team' %}Create setup and add team members{% else %}Create session and continue{% endif %}</button>
             <a href="{{ sessions_home.url }}" class="btn btn-outline-secondary">Cancel</a>
           </div>
         </form>
         {% elif editing %}
-        {# Edit mode: show the same form fields, pre-filled via AssessmentSessionForm(instance=session) #}
         <div class="card-icon-head mb-3">
           <div class="head-left">
             <span class="icon-badge"><i class="bi bi-pencil-square"></i></span>
             <div>
-              <div class="title">Edit session basics</div>
-              <div class="sub">Changes are saved immediately and apply to this session</div>
+              <div class="title">Edit session</div>
             </div>
           </div>
         </div>
@@ -372,10 +368,10 @@
             {{ form.name }}
             {% if form.name.errors %}<div class="field-error">{{ form.name.errors|join:", " }}</div>{% endif %}
           </div>
+          {% if request.service != 'team' %}{% include 'assessments/_partials/session_mode_fields.html' with form=form %}{% else %}
           <div class="mb-4">
-            <label class="form-label fw-600 t-body" for="{{ form.identify_by.id_for_label }}">Identify students by</label>
+            <label class="form-label fw-600 t-body" for="{{ form.identify_by.id_for_label }}">Identify participants by</label>
             {{ form.identify_by }}
-            <div class="text-muted t-micro mt-1">Whichever field students type in on their phone to join.{% if live_mode %} Students already in the room stay in; this only changes how new students join.{% endif %}</div>
           </div>
           <div class="mb-2">
             <label class="form-label fw-600 t-body" for="{{ form.ungraded_penalty.id_for_label }}">{{ form.ungraded_penalty.label }}</label>
@@ -384,8 +380,8 @@
               <span class="input-group-text">points</span>
             </div>
             {% if form.ungraded_penalty.errors %}<div class="field-error">{{ form.ungraded_penalty.errors|join:", " }}</div>{% endif %}
-            <div class="text-muted t-micro mt-1">Taken off a student's final score for every other group they did not grade. Use 0 for no penalty.{% if live_mode %} Changing it now recalculates everyone's results, including groups that have already presented.{% endif %}</div>
           </div>
+          {% endif %}
           {% include 'assessments/_partials/instructions_field.html' with field=form.instructions %}
           <div class="d-flex gap-2 mt-4">
             <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-1"></i>Save changes</button>
@@ -397,8 +393,7 @@
           <div class="head-left">
             <span class="icon-badge"><i class="bi bi-pencil-square"></i></span>
             <div>
-              <div class="title">Session basics</div>
-              <div class="sub">Edit these any time, including while the session is live</div>
+              <div class="title">Mode &amp; basics</div>
             </div>
           </div>
         </div>
@@ -409,11 +404,11 @@
             <label class="form-label fw-600 t-body" for="{{ basics_form.name.id_for_label }}">Session name</label>
             {{ basics_form.name }}
           </div>
+          {% if request.service != 'team' %}{% include 'assessments/_partials/session_mode_fields.html' with form=basics_form %}{% else %}
           <div class="row g-3 mb-2">
             <div class="col-md-6">
-              <label class="form-label fw-600 t-body" for="{{ basics_form.identify_by.id_for_label }}">Identify students by</label>
+              <label class="form-label fw-600 t-body" for="{{ basics_form.identify_by.id_for_label }}">Identify team members by</label>
               {{ basics_form.identify_by }}
-              <div class="text-muted t-micro mt-1">Whichever field students type in on their phone to join.{% if live_mode %} Students already in the room stay in; this only changes how new students join.{% endif %}</div>
             </div>
             <div class="col-md-6">
               <label class="form-label fw-600 t-body" for="{{ basics_form.ungraded_penalty.id_for_label }}">{{ basics_form.ungraded_penalty.label }}</label>
@@ -421,13 +416,13 @@
                 {{ basics_form.ungraded_penalty }}
                 <span class="input-group-text">points</span>
               </div>
-              <div class="text-muted t-micro mt-1">Taken off a student's final score for every other group they did not grade. Use 0 for no penalty.{% if live_mode %} Changing it now recalculates everyone's results, including groups that have already presented.{% endif %}</div>
             </div>
           </div>
+          {% endif %}
           {% include 'assessments/_partials/instructions_field.html' with field=basics_form.instructions %}
           <div class="d-flex flex-wrap justify-content-between gap-2 mt-3">
             <button type="submit" class="btn btn-outline-primary btn-sm"><i class="bi bi-check-circle me-1"></i>Save basics</button>
-            <a href="#groups-section" data-step="groups" class="btn btn-primary btn-sm step-nav-next">Next: Groups &amp; students</a>
+            <a href="#groups-section" data-step="groups" class="btn btn-primary btn-sm step-nav-next">Next: Entries &amp; participants</a>
           </div>
         </form>
         {% endif %}
@@ -443,7 +438,7 @@
           <span class="step-num {% if step_groups_done %}is-done{% endif %}">
             {% if step_groups_done %}<i class="bi bi-check-lg"></i>{% else %}2{% endif %}
           </span>
-          <h3>Groups &amp; students</h3>
+          <h3>Entries &amp; participants</h3>
         </div>
         {% include 'assessments/_partials/group_stats.html' %}
 
@@ -456,8 +451,8 @@
                   <div class="head-left">
                     <span class="icon-badge"><i class="bi bi-file-earmark-excel"></i></span>
                     <div>
-                      <div class="title">Import groups &amp; students</div>
-                      <div class="sub">One Excel file creates both</div>
+                      <div class="title">Import from Excel</div>
+
                     </div>
                   </div>
                 </div>
@@ -470,7 +465,7 @@
                   <summary>What should the file look like?</summary>
                   <div class="table-responsive mt-2">
                     <table class="table table-sm import-format-table mb-2">
-                      <thead><tr><th>Group Name</th><th>Name</th><th>Student ID</th><th>Topic</th><th>Presentation Location</th></tr></thead>
+                      <thead><tr><th>Group Name</th><th>Name</th><th>Participant ID</th><th>Topic</th><th>Presentation Location</th></tr></thead>
                       <tbody>
                         <tr><td>Aurora</td><td>Ann Lee, Bo Ng, Cy Oh</td><td>A101, A102, A103</td><td>Campus map</td><td>Room 1</td></tr>
                         <tr><td>Meridian</td><td>Di Park, Ed Roy</td><td>B201, B202</td><td></td><td></td></tr>
@@ -479,7 +474,7 @@
                   </div>
                   <ul class="import-format-notes">
                     <li>One row per group. Put every member in the <strong>Name</strong> column, separated by commas.</li>
-                    <li><strong>Student ID</strong> is optional. If you use it, list the IDs in the same order as the names.</li>
+                    <li><strong>Participant ID</strong> is optional. If you use it, list the IDs in the same order as the names.</li>
                     <li><strong>Topic</strong> and <strong>Presentation Location</strong> are optional.</li>
                     <li>Students are created from this file, so there is no separate roster to import.</li>
                     <li>You review everything before it is saved. A group with a problem is skipped whole.</li>
@@ -498,8 +493,8 @@
                   <div class="head-left">
                     <span class="icon-badge" id="group-form-icon"><i class="bi bi-plus-square"></i></span>
                     <div>
-                      <div class="title" id="group-form-title">Create group manually</div>
-                      <div class="sub" id="group-form-sub">Name it, cap its size, add members</div>
+                      <div class="title" id="group-form-title">Add entry</div>
+
                     </div>
                   </div>
                   <a href="#" class="t-sm d-none" id="group-form-cancel">Cancel</a>
@@ -529,7 +524,7 @@
                       {% if group_form.topic.errors %}<div class="field-error">{{ group_form.topic.errors|join:", " }}</div>{% endif %}
                     </div>
                     <div class="col-12">
-                      <label class="form-label t-sm fw-600" for="{{ group_form.location.id_for_label }}">Presentation location <span class="text-muted fw-400">(optional)</span></label>
+                      <label class="form-label t-sm fw-600" for="{{ group_form.location.id_for_label }}">Location <span class="text-muted fw-400">(optional)</span></label>
                       {{ group_form.location }}
                       {% if group_form.location.errors %}<div class="field-error">{{ group_form.location.errors|join:", " }}</div>{% endif %}
                     </div>
@@ -541,7 +536,7 @@
                     {% for error in group_form.is_practice.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}
                   </div>
                   {% if ungrouped_students %}
-                  <div class="form-label t-sm fw-600 mt-3 mb-1" id="group-members-label">Members (optional - add now or later)</div>
+                  <div class="form-label t-sm fw-600 mt-3 mb-1" id="group-members-label">Members (optional)</div>
                   <div class="border rounded p-2" style="max-height:220px;overflow-y:auto" id="group-members-list" role="group" aria-labelledby="group-members-label">
                     {% for student in ungrouped_students %}
                     <div class="form-check">
@@ -554,7 +549,7 @@
                   </div>
                   {% else %}
                   <div class="text-muted t-micro mt-2" id="group-members-empty-note">
-                    Every student is already in a group.
+                    All participants assigned.
                   </div>
                   {% endif %}
                   <button type="submit" class="btn btn-primary btn-sm w-100 mt-2" id="group-form-submit">
@@ -607,7 +602,7 @@
               aria-expanded="{% if students_open or form.errors or query %}true{% else %}false{% endif %}" aria-controls="students-body">
         <span class="icon-badge"><i class="bi bi-people-fill"></i></span>
         <span class="flex-grow-1 text-start">
-          <span class="title">Manage students</span>
+          <span class="title">Participants</span>
           <span class="sub d-block">{{ roster_total }} student{{ roster_total|pluralize }} - correct a name or ID, add one person, or remove someone</span>
         </span>
         <i class="bi bi-chevron-down toggle-caret"></i>
@@ -619,7 +614,7 @@
             <span class="stat-icon"><i class="bi bi-people-fill"></i></span>
             <div>
               <div class="stat-val">{{ roster_total }}</div>
-              <div class="stat-lbl">Total students</div>
+              <div class="stat-lbl">Total participants</div>
             </div>
           </div>
           <div class="roster-stat-pill">
@@ -644,10 +639,10 @@
               <div class="card-body">
                 <div class="card-icon-head">
                   <span class="icon-badge" id="roster-form-icon"><i class="bi bi-person-plus"></i></span>
-                  <span class="title" id="roster-form-title">Add student</span>
+                  <span class="title" id="roster-form-title">Add participant</span>
                 </div>
                 <div class="roster-form-mode-banner" id="roster-form-mode-banner">
-                  <i class="bi bi-pencil-square"></i><span>Editing an existing student</span>
+                  <i class="bi bi-pencil-square"></i><span>Edit participant</span>
                 </div>
                 <div class="text-muted t-micro mb-2">
                   <i class="bi bi-info-circle me-1"></i>This session identifies students by
@@ -667,7 +662,7 @@
                   </div>
                   <div class="mb-2">
                     <label class="form-label t-sm fw-600" for="{{ form.student_id.id_for_label }}">
-                      Student ID
+                      Participant ID
                       {% if session.identify_by == 'student_id' %}<span class="badge bg-primary-subtle text-primary-emphasis">used to join</span>{% endif %}
                     </label>
                     {{ form.student_id }}
@@ -707,7 +702,7 @@
                     <form method="get" class="roster-search" role="search" id="roster-search-form">
                       <div class="input-group input-group-sm">
                         <span class="input-group-text bg-transparent border-end-0"><i class="bi bi-search"></i></span>
-                        <input type="search" name="q" class="form-control border-start-0" placeholder="Find a student…"
+                        <input type="search" name="q" class="form-control border-start-0" placeholder="Search participants…"
                                value="{{ query }}" aria-label="Search roster" id="roster-search-input" autocomplete="off">
                         <button type="button" class="btn btn-outline-secondary {% if not query %}d-none{% endif %}"
                                 id="roster-search-clear" title="Clear search" aria-label="Clear search"><i class="bi bi-x-lg"></i></button>
@@ -746,8 +741,7 @@
         <div class="rubric-status-banner assess-stagger">
           <i class="bi bi-exclamation-triangle-fill icon"></i>
           <div class="msg">
-            Weights are at {{ weight_total|floatformat:'-2' }}% -
-            {% if weight_remaining > 0 %}add {{ weight_remaining|floatformat:'-2' }}% more{% else %}remove {{ weight_remaining|cut:"-"|floatformat:'-2' }}% of weight{% endif %}
+            Weights are at {{ weight_total|floatformat:'-2' }}% - {% if weight_remaining > 0 %}add {{ weight_remaining|floatformat:'-2' }}% more{% else %}remove {{ weight_remaining|cut:"-"|floatformat:'-2' }}% of weight{% endif %}
             so the rubric adds up to exactly 100% before it can go live.
           </div>
         </div>
@@ -789,7 +783,7 @@
                     <span class="icon-badge"><i class="bi bi-file-earmark-excel"></i></span>
                     <div>
                       <div class="title">Import rubric</div>
-                      <div class="sub">Build the whole rubric from Excel</div>
+
                     </div>
                   </div>
                 </div>
@@ -834,7 +828,7 @@
                     <span class="icon-badge"><i class="bi bi-table"></i></span>
                     <div>
                       <div class="title">Edit as a table</div>
-                      <div class="sub">All categories and weights at once</div>
+
                     </div>
                   </div>
                 </div>
@@ -854,7 +848,7 @@
                     <span class="icon-badge" id="rubric-form-icon">{% if editing_category %}<i class="bi bi-pencil-square"></i>{% else %}<i class="bi bi-plus-square"></i>{% endif %}</span>
                     <div>
                       <div class="title" id="rubric-form-title">{% if editing_category %}Edit rubric category{% else %}Add rubric category{% endif %}</div>
-                      <div class="sub">Students score it from 0 up to its weight</div>
+
                     </div>
                   </div>
                   <a href="#" class="t-sm{% if not editing_category %} d-none{% endif %}" id="rubric-form-cancel">Cancel</a>
@@ -922,8 +916,8 @@
                   <div class="head-left">
                     <span class="icon-badge"><i class="bi bi-people-fill"></i></span>
                     <div>
-                      <div class="title">Group / project categories</div>
-                      <div class="sub">Scored once per presenting group</div>
+                      <div class="title">Entry criteria</div>
+
                     </div>
                   </div>
                 </div>
@@ -970,8 +964,8 @@
                   <div class="head-left">
                     <span class="icon-badge" style="background:var(--tone-info-bg);color:var(--tone-info-fg)"><i class="bi bi-person-check-fill"></i></span>
                     <div>
-                      <div class="title">Individual student categories</div>
-                      <div class="sub">Scored per student</div>
+                      <div class="title">Individual criteria</div>
+
                     </div>
                   </div>
                 </div>
@@ -1015,28 +1009,117 @@
         </div>
         <div class="d-flex justify-content-between mt-3">
           <a href="#groups-section" data-step="groups" class="btn btn-outline-secondary btn-sm step-nav-back">Back</a>
-          {% if live_mode %}<a href="{% url 'assessment_session_detail' session.pk %}" class="btn btn-primary btn-sm">Back to live control</a>{% else %}<a href="#go-live-section" data-step="go-live" class="btn btn-primary btn-sm step-nav-next">Next: Go live</a>{% endif %}
+          {% if live_mode %}<a href="{% url 'assessment_session_detail' session.pk %}" class="btn btn-primary btn-sm">Back to live control</a>{% elif session.enable_panel and request.service != 'team' %}<a href="#panel-section" data-step="panel" class="btn btn-primary btn-sm step-nav-next">Next: Panel</a>{% else %}<a href="#go-live-section" data-step="go-live" class="btn btn-primary btn-sm step-nav-next">Next: Review &amp; launch</a>{% endif %}
         </div>
       </div>
     </div>
+
+    {% if session.enable_panel and request.service != 'team' %}
+    {# ----------------------------------------------------------- Panel -- #}
+    <div class="card mb-3 setup-section" id="panel-section" data-step="panel">
+      <div class="card-body">
+        <div class="card-icon-head mb-3">
+          <div class="head-left">
+            <span class="icon-badge"><i class="bi bi-people"></i></span>
+            <div>
+              <div class="title">Panel examiners ({{ panel_examiners|length }})</div>
+            </div>
+          </div>
+          <a href="{% url 'assessment_panel_examiners' session.pk %}" class="btn btn-outline-primary btn-sm">Full panel view</a>
+        </div>
+
+        <form method="post" action="{% url 'assessment_panel_examiners' session.pk %}" class="row g-2 align-items-end mb-3 pb-3 border-bottom">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="setup">
+          <div class="col-12 col-md-4">
+            <label class="form-label t-sm fw-600" for="{{ panel_examiner_form.display_name.id_for_label }}">Name</label>
+            {{ panel_examiner_form.display_name }}
+          </div>
+          <div class="col-12 col-md-4">
+            <label class="form-label t-sm fw-600" for="{{ panel_examiner_form.email.id_for_label }}">Email</label>
+            {{ panel_examiner_form.email }}
+          </div>
+          <div class="col-6 col-md-2">
+            <div class="form-check mb-2">
+              {{ panel_examiner_form.is_chair }}
+              <label class="form-check-label t-sm" for="{{ panel_examiner_form.is_chair.id_for_label }}">Chair</label>
+            </div>
+          </div>
+          <div class="col-6 col-md-2">
+            <button type="submit" class="btn btn-primary btn-sm w-100">Add panelist</button>
+          </div>
+        </form>
+
+        {% if panel_examiners %}
+        <ul class="list-group list-group-flush mb-3">
+          {% for ex in panel_examiners %}
+          <li class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2 px-0">
+            <span>
+              {{ ex.display_name }} <span class="text-muted small">({{ ex.email }})</span>
+              {% if ex.is_chair %}<span class="badge text-bg-primary ms-1">Chair</span>{% endif %}
+              <span class="badge {% if ex.delivery_status == 'sent' %}text-bg-success{% elif ex.delivery_status == 'failed' %}text-bg-danger{% else %}text-bg-secondary{% endif %} ms-1">{{ ex.get_delivery_status_display }}</span>
+              {% if ex.delivery_status == 'failed' %}<div class="text-danger small mt-1">{{ ex.delivery_error_message }}</div>{% endif %}
+            </span>
+            <div class="d-flex gap-2">
+              <form method="post" action="{% url 'assessment_panel_examiners' session.pk %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="setup">
+                <input type="hidden" name="action" value="resend_examiner">
+                <input type="hidden" name="examiner_id" value="{{ ex.pk }}">
+                <button type="submit" class="btn btn-sm btn-outline-secondary">Resend</button>
+              </form>
+              <form method="post" action="{% url 'assessment_panel_examiners' session.pk %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="setup">
+                <input type="hidden" name="action" value="remove_examiner">
+                <input type="hidden" name="examiner_id" value="{{ ex.pk }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="Remove {{ ex.display_name }} from the panel?">Remove</button>
+              </form>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted t-sm mb-3">No panelists invited yet.</p>
+        {% endif %}
+        <div class="d-flex justify-content-between mt-3">
+          <a href="#rubric-section" data-step="rubric" class="btn btn-outline-secondary btn-sm step-nav-back">Back</a>
+          {% if live_mode %}<a href="{% url 'assessment_session_detail' session.pk %}" class="btn btn-primary btn-sm">Back to live control</a>{% else %}<a href="#go-live-section" data-step="go-live" class="btn btn-primary btn-sm step-nav-next">Next: Review &amp; launch</a>{% endif %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
 
     {# --------------------------------------------------------- Go live -- #}
     {% if not live_mode %}
     <div class="assess-hero assess-stagger setup-section" id="go-live-section" data-step="go-live">
       <div class="hero-icon"><i class="bi bi-rocket-takeoff"></i></div>
-      <h2>Ready to go live?</h2>
-      <p>Add your groups (with their students) and a rubric first - the rubric's weights must add up to exactly 100% before you can start.</p>
+      <h2>Review &amp; launch</h2>
+      <div class="d-flex flex-wrap justify-content-center gap-2 mb-3">
+        <span class="badge text-bg-light border text-dark">{{ session.assessment_mode_label }}</span>
+        <span class="badge text-bg-light border text-dark">{{ session.get_delivery_mode_display }}</span>
+        {% if session.enable_peer and session.enable_panel %}
+        <span class="badge text-bg-light border text-dark">{{ session.peer_weight }}% Peer / {{ session.panel_weight }}% Panel</span>
+        {% endif %}
+      </div>
+      {% if readiness.blockers %}
+      <div class="alert alert-danger text-start mx-auto" style="max-width:520px" role="alert">
+        <ul class="mb-0">{% for b in readiness.blockers %}<li>{{ b }}</li>{% endfor %}</ul>
+      </div>
+      {% endif %}
+      {% if readiness.warnings %}
+      <div class="alert alert-warning text-start mx-auto" style="max-width:520px" role="status">
+        <ul class="mb-0">{% for w in readiness.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+      </div>
+      {% endif %}
       <form method="post" action="{% url 'assessment_go_live' session.pk %}">
         {% csrf_token %}
-        <button type="submit" class="btn btn-primary btn-lg" {% if not session.can_go_live %}disabled{% endif %}>
-          <i class="bi bi-broadcast me-1"></i>Go live
+        <button type="submit" class="btn btn-primary btn-lg" {% if not readiness.ready %}disabled{% endif %}>
+          <i class="bi bi-broadcast me-1"></i>{% if session.delivery_mode == 'async_submission' %}Open submissions{% else %}Go live{% endif %}
         </button>
       </form>
-      {% if not session.can_go_live %}
-      <div class="text-danger t-sm mt-2">Needs at least one group and a rubric whose weights add up to exactly 100%.</div>
-      {% endif %}
       <div class="mt-3">
-        <a href="#rubric-section" data-step="rubric" class="btn btn-outline-secondary btn-sm step-nav-back">Back</a>
+        <a href="{% if session.enable_panel and request.service != 'team' %}#panel-section{% else %}#rubric-section{% endif %}" data-step="{% if session.enable_panel and request.service != 'team' %}panel{% else %}rubric{% endif %}" class="btn btn-outline-secondary btn-sm step-nav-back">Back</a>
       </div>
     </div>
     {% endif %}
@@ -1071,7 +1154,7 @@
 // backward, or via a "Next"/"Back" button - is a pure show/hide toggle
 // with no navigation, no reload and no re-scroll to the top of the page.
 (function () {
-  const steps = ['basics', 'groups', 'rubric', 'go-live'];
+  const steps = ['basics', 'groups', 'rubric', 'panel', 'go-live'];
   const sections = {};
   steps.forEach(function (step) {
     sections[step] = document.querySelector('.setup-section[data-step="' + step + '"]');
@@ -1084,7 +1167,7 @@
     window.DevPerfStepper.setCurrent(document, step);
   }
 
- 
+
   document.querySelectorAll('.stepper-nav [data-step], .step-nav-next[data-step], .step-nav-back[data-step]').forEach(function (el) {
     el.addEventListener('click', function (e) {
       if (!sections[el.dataset.step]) return;

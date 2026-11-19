@@ -7,15 +7,16 @@ def create_first_question(apps, schema_editor):
     Question = apps.get_model('assessments', 'ClassroomPollQuestion')
     Option = apps.get_model('assessments', 'ClassroomPollOption')
     Response = apps.get_model('assessments', 'ClassroomPollResponse')
-    for poll in Poll.objects.all().iterator():
-        question = Question.objects.create(
+    alias = schema_editor.connection.alias
+    for poll in Poll.objects.using(alias).all().iterator():
+        question = Question.objects.using(alias).create(
             poll_id=poll.pk, prompt=poll.question,
             allow_multiple=poll.allow_multiple, order=0)
-        Option.objects.filter(poll_id=poll.pk).update(question_id=question.pk)
-        for response in Response.objects.filter(voter__poll_id=poll.pk).iterator():
-            choices = list(response.options.values_list('pk', flat=True))
+        Option.objects.using(alias).filter(poll_id=poll.pk).update(question_id=question.pk)
+        for response in Response.objects.using(alias).filter(voter__poll_id=poll.pk).iterator():
+            choices = list(response.options.using(alias).values_list('pk', flat=True))
             response.answers = {str(question.pk): None if response.abstained else choices}
-            response.save(update_fields=['answers'])
+            response.save(using=alias, update_fields=['answers'])
         if poll.confirmed_option_id:
             question.confirmed_option_id = poll.confirmed_option_id
             question.decision_note = poll.decision_note

@@ -1,5 +1,5 @@
 {% extends 'assessments/student/_student_base.html' %}
-{% block title %}Poll access - {{ poll.question }}{% endblock %}
+{% block title %}Poll access - {{ poll.title }}{% endblock %}
 {% block hero_sub %}Public poll display{% endblock %}
 {% block main_class %} public-poll-main public-poll-qr-main{% endblock %}
 {% block extra_css %}{% include 'assessments/polls/_participant_ui_styles.html' %}
@@ -29,7 +29,7 @@
   <section class="s-card public-poll-qr-card" aria-labelledby="public-poll-qr-title">
     <div class="public-poll-screen-status"><span id="public-poll-qr-badge">{% include 'assessments/polls/_status_badge.html' %}</span><span id="public-poll-qr-live-state" class="public-poll-qr-live-state" role="status" aria-live="polite">{% if poll.accepting_responses %}Ready to vote{% else %}Voting has ended{% endif %}</span></div>
     <header class="public-poll-qr-heading">
-      <h2 id="public-poll-qr-title">{{ poll.question }}</h2>
+      <h2 id="public-poll-qr-title">{{ poll.title }}</h2>
       <div class="public-poll-qr-meta">
         {% if poll.questions.count > 1 %}<span><i class="bi bi-list-ol" aria-hidden="true"></i>{{ poll.questions.count }} questions</span>{% endif %}
         {% if poll.deadline %}<span><i class="bi bi-clock" aria-hidden="true"></i>Closes <time data-local-deadline datetime="{{ poll.deadline|date:'c' }}">{{ poll.deadline|date:'j M Y, H:i' }}</time></span>{% endif %}
@@ -38,7 +38,7 @@
 
     {% if poll.accepting_responses and qr_available %}
       <div class="public-poll-qr-content" id="public-poll-qr-active">
-        <div class="public-poll-qr-instructions"><h3>Scan to vote</h3><p>Open your phone camera and scan the code. {% if poll.standalone %}Anyone with the link can respond anonymously.{% else %}Students can enter their class roster name or ID to respond.{% endif %}</p><a class="public-poll-qr-voting-link" href="{{ voting_url }}">Open the voting page</a></div>
+        <div class="public-poll-qr-instructions"><h3>Scan to vote</h3><p>{% if poll.standalone %}Anyone with the link can respond anonymously.{% else %}Enter your class roster name or ID to respond.{% endif %}</p><a class="public-poll-qr-voting-link" href="{{ voting_url }}">Open voting page</a></div>
         <div class="public-poll-qr-image-wrap"><img src="{{ qr_image_url }}" width="416" height="416" fetchpriority="high" alt="QR code to open the poll voting page"></div>
       </div>
     {% elif poll.accepting_responses %}

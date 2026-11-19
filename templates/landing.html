@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LiveGrade - live assessment for your classroom, panel, or event</title>
-<meta name="description" content="Choose your LiveGrade service: Classroom, Panel, Showcase, Team and Training, or Competition.">
+<title>LiveGrade - live and structured assessment for your event or organisation</title>
+<meta name="description" content="Choose your LiveGrade service: Assessments, Showcase, Team and Training, Competition, or Anonymous Polls.">
 {% include 'partials/_vendor_styles.html' %}
 {% include 'partials/_design_system.html' %}
 <style nonce="{{ csp_nonce }}">
@@ -258,7 +258,7 @@ body{background:var(--surface);color:var(--text);font-size:1rem;overflow-x:hidde
   <div class="container">
     <span class="lp-kicker">Choose by the work you need to do</span>
     <h2 class="lp-h2" id="services-heading">Which workflow fits your event?</h2>
-    <p class="lp-sub mx-0">Every workspace has its own setup and result rules. Choose the closest match; you can link Classroom and Panel when both peer and examiner grading are needed.</p>
+    <p class="lp-sub mx-0">Every workspace has its own setup and result rules. Use Assessments for peer grading, panel grading, or combined co-assessment from one shared rubric and roster.</p>
     {% if used_services %}
     <div class="lp-shortcuts" aria-labelledby="return-heading">
       <h3 class="h5" id="return-heading">Continue to a workspace</h3>
@@ -272,10 +272,8 @@ body{background:var(--surface);color:var(--text);font-size:1rem;overflow-x:hidde
       <article class="lp-card">
         {% if not card.released %}<span class="badge text-bg-secondary">Coming soon</span>{% endif %}
         <h3>{{ card.service.name }}</h3>
-        {% if card.service.slug == 'classroom' %}
-          <p>Run live peer assessment for class presentations. Students join with a room QR code and submit structured feedback.</p>
-        {% elif card.service.slug == 'panel' %}
-          <p>Manage formal hearings: invite examiners, record conflicts, score active candidates against agreed criteria, and review results.</p>
+        {% if card.service.slug == 'assessment' %}
+          <p>Run peer assessments, panel gradings, or combined co-assessments with one shared rubric, participant roster, live or asynchronous review, and moderation.</p>
         {% elif card.service.slug == 'showcase' %}
           <p>Collect visitor star ratings and invited-judge scorecards for exhibits. Publish category awards and a separate Audience Favorite.</p>
         {% elif card.service.slug == 'team' %}
@@ -284,8 +282,6 @@ body{background:var(--surface);color:var(--text);font-size:1rem;overflow-x:hidde
           <p>Manage judge-scored rounds and audience ballots, resolve ties, and reveal the final leaderboard when the event is ready.</p>
         {% elif card.service.slug == 'polls' %}
           <p>Create anonymous polls, share a link or QR code, and display the live results as people vote.</p>
-        {% elif card.service.slug == 'coassessment' %}
-          <p>Grade presentations with shared rubrics, synchronized peer and panel scoring, and chair moderation.</p>
         {% else %}
           <p>{{ card.service.promise }}</p>
         {% endif %}

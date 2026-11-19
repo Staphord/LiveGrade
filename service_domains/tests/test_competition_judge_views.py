@@ -272,7 +272,7 @@ class CompetitionJudgeScorecardViewTests(TestCase):
 
         invitation, token = self.invite()
         request = RequestFactory().get(self.score_url(token))
-        request.service = 'panel'
+        request.service = 'assessment'
         with self.assertRaises(Http404):
             competition_judge_scorecard(request, token)
 

@@ -1,7 +1,16 @@
+from datetime import timedelta
+from email.utils import formataddr, parseaddr
+import hashlib
 import logging
-from django.utils import timezone
+import secrets
 
 from celery import shared_task
+from django.conf import settings
+from django.core.mail import send_mail
+from django.db import transaction
+from django.template.loader import render_to_string
+from django.urls import reverse
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -80,3 +89,69 @@ def activate_pending_group(self, session_pk):
     except Exception as exc:
         logger.exception('activate_pending_group failed for session %s', session_pk)
         raise self.retry(exc=exc)
+
+
+@shared_task
+def send_assessment_panel_invitation_email(examiner_id, public_base_url=''):
+    """Generate/rotate a panel examiner capability token and send the invitation email."""
+    from .models import PanelExaminer
+
+    with transaction.atomic():
+        examiner = (
+            PanelExaminer.objects.select_for_update()
+            .select_related('session')
+            .filter(pk=examiner_id)
+            .first()
+        )
+        if examiner is None:
+            return 'ignored'
+        token = examiner.invite_token or secrets.token_urlsafe(32)
+        examiner.invite_token = token
+        examiner.token_digest = hashlib.sha256(token.encode('utf-8')).hexdigest()
+        if not examiner.expires_at:
+            examiner.expires_at = timezone.now() + timedelta(days=14)
+        examiner.delivery_error = ''
+        examiner.save(update_fields=['invite_token', 'token_digest', 'expires_at', 'delivery_error'])
+        email = examiner.email
+        session_name = examiner.session.name
+        expiry = examiner.expires_at
+
+    path = reverse('assessment_examiner_portal', kwargs={'token': token})
+    configured_base = settings.LIVEGRADE_PUBLIC_BASE_URL or public_base_url or settings.LIVEGRADE_BASE_URL
+    invitation_url = f'{configured_base.rstrip("/")}{path}'
+    _display_name, sender_address = parseaddr(settings.DEFAULT_FROM_EMAIL)
+    from_email = formataddr(('LiveGrade', sender_address or settings.DEFAULT_FROM_EMAIL))
+    expiry_label = timezone.localtime(expiry).strftime('%d %b %Y at %H:%M %Z')
+    email_context = {
+        'hearing_name': session_name,
+        'invitation_url': invitation_url,
+        'expiry_label': expiry_label,
+    }
+    try:
+        sent = send_mail(
+            subject=f'LiveGrade Panel invitation: {session_name}',
+            message=render_to_string('emails/panel_examiner_invitation.txt', email_context),
+            from_email=from_email,
+            recipient_list=[email],
+            fail_silently=False,
+            html_message=render_to_string('emails/panel_examiner_invitation.html', email_context),
+        )
+        error = '' if sent == 1 else 'mail_not_accepted'
+    except Exception:
+        logger.exception('send_assessment_panel_invitation_email failed for examiner %s', examiner_id)
+        error = 'mail_backend_error'
+
+    with transaction.atomic():
+        current = PanelExaminer.objects.select_for_update().filter(pk=examiner_id).first()
+        if current is None:
+            return 'ignored'
+        if error:
+            current.delivery_status = PanelExaminer.DeliveryStatus.FAILED
+            current.delivery_error = error
+            current.save(update_fields=['delivery_status', 'delivery_error'])
+            return 'failed'
+        current.delivery_status = PanelExaminer.DeliveryStatus.SENT
+        current.sent_at = timezone.now()
+        current.delivery_error = ''
+        current.save(update_fields=['delivery_status', 'sent_at', 'delivery_error'])
+    return 'sent'

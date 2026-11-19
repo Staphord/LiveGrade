@@ -1,0 +1,15 @@
+<div id="live-panelists" class="d-flex flex-column h-100">
+  <div class="stat-strip mb-3">
+    <div class="stat-pill">
+      <div class="lbl">Invited</div>
+      <div class="val">{{ panel_examiners_count }}</div>
+    </div>
+    <div class="stat-pill">
+      <div class="lbl">{% if active_turn %}Scored this turn{% else %}Active turn{% endif %}</div>
+      <div class="val">{% if active_turn %}{{ panel_submitted_count }}/{{ panel_examiners_count }}{% else %}-{% endif %}</div>
+    </div>
+  </div>
+  <a href="{% url 'assessment_panel_examiners' session.pk %}" class="btn btn-outline-primary btn-sm mt-auto">
+    <i class="bi bi-people me-1"></i>Manage panelists &amp; links
+  </a>
+</div>

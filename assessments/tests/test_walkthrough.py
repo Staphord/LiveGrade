@@ -70,6 +70,8 @@ class ClassroomWalkthroughTests(TestCase):
         completed = self.guide(completed_page, 4, 100)
         self.assertTrue(completed['completed'])
         self.assertContains(completed_page, 'Walkthrough complete')
+        self.assertContains(completed_page, 'Your session is live; share its QR code')
+        self.assertContains(completed_page, 'View session')
 
         self.assertEqual(self.client.get(reverse('assessment_walkthrough_dismiss')).status_code, 405)
         dismissed = self.client.post(reverse('assessment_walkthrough_dismiss'))
@@ -88,7 +90,7 @@ class ClassroomWalkthroughTests(TestCase):
         other_owner = make_user('walkthrough-other-owner')
         private = AssessmentSession.objects.create(
             organization_id=self.org.pk, name='Secret other-owner draft', created_by=other_owner,
-            service='panel',
+            service='team',
         )
         session = self.client.session
         session[CLASSROOM_WALKTHROUGHS_KEY][str(self.org.pk)] = {'session_id': private.pk}
@@ -119,22 +121,22 @@ class ClassroomWalkthroughTests(TestCase):
 
         sign_in(self.client, self.owner, self.org)
         session = self.client.session
-        session['active_service'] = 'panel'
+        session['active_service'] = 'team'
         session.save()
         # Service middleware derives scope from the route, so exercise the context
         # processor boundary directly for a non-Classroom request.
-        request = RequestFactory().get('/panel/')
+        request = RequestFactory().get('/team/')
         request.user = self.owner
         request.session = self.client.session
-        request.service = 'panel'
+        request.service = 'team'
         organization = {'id': self.org.pk, 'name': self.org.name, 'slug': self.org.slug}
         self.assertIsNone(_classroom_walkthrough(request, organization))
 
     def test_context_builder_fails_closed_for_ineligible_or_malformed_state(self):
         organization = {'id': self.org.pk, 'name': self.org.name, 'slug': self.org.slug}
-        request = RequestFactory().get('/classroom/app/')
+        request = RequestFactory().get('/assessment/app/')
         request.user = self.owner
-        request.service = 'classroom'
+        request.service = 'assessment'
         request.session = {}
         self.assertIsNone(_classroom_walkthrough(request, organization))
         request.session[CLASSROOM_WALKTHROUGHS_KEY] = []
@@ -167,6 +169,10 @@ class ClassroomWalkthroughTests(TestCase):
         complete = self.client.get(self.list_url).context['classroom_walkthrough']
         self.assertTrue(complete['completed'])
         self.assertEqual((complete['current_step'], complete['progress_percent']), (4, 100))
+        closed_page = self.client.get(self.list_url)
+        self.assertContains(closed_page, 'Your session has ended')
+        self.assertNotContains(closed_page, 'Your session is live')
+        self.assertContains(closed_page, 'View session')
 
     def test_dismiss_handles_malformed_stored_state(self):
         browser = self.client.session
@@ -177,19 +183,19 @@ class ClassroomWalkthroughTests(TestCase):
         self.assertEqual(self.client.session[CLASSROOM_WALKTHROUGHS_KEY], {})
 
     def test_actions_reject_non_classroom_service_and_start_normalizes_state(self):
-        request = RequestFactory().post('/panel/walkthrough/start/')
+        request = RequestFactory().post('/team/walkthrough/start/')
         request.user = self.owner
         request.session = {ORGS_KEY: [self.org.as_claim()], CLASSROOM_WALKTHROUGHS_KEY: []}
-        request.service = 'panel'
+        request.service = 'team'
         with self.assertRaises(Http404):
             assessment_walkthrough_start(request)
         with self.assertRaises(Http404):
             assessment_walkthrough_dismiss(request)
 
-        request = RequestFactory().post('/classroom/app/walkthrough/start/')
+        request = RequestFactory().post('/assessment/app/walkthrough/start/')
         request.user = self.owner
         request.session = {ORGS_KEY: [self.org.as_claim()], CLASSROOM_WALKTHROUGHS_KEY: []}
-        request.service = 'classroom'
+        request.service = 'assessment'
         response = assessment_walkthrough_start(request)
         self.assertEqual(response.status_code, 302)
         self.assertEqual(request.session[CLASSROOM_WALKTHROUGHS_KEY], {str(self.org.pk): {'session_id': None}})
