@@ -324,48 +324,6 @@ class ShowcaseDisplayConsumer(AsyncJsonWebsocketConsumer):
         return (ShowcaseEvent.objects.filter(public_id=public_id).values_list('pk', flat=True).first())
 
 
-class CoAssessmentLiveConsumer(AsyncJsonWebsocketConsumer):
-    """Real-time event stream for Co-Assessment stage console, projector, and mobile raters."""
-
-    async def connect(self):
-        if not is_released('coassessment'):
-            await self.close(code=4404)
-            return
-        self.session_id = self.scope['url_route']['kwargs'].get('session_id')
-        if not self.session_id:
-            await self.close(code=4400)
-            return
-        self.group_name = f'coassessment_{self.session_id}'
-        await self.channel_layer.group_add(self.group_name, self.channel_name)
-        await self.accept()
-
-        state = await self._get_initial_state()
-        if state:
-            await self.send_json({'type': 'init', 'state': state})
-
-    async def disconnect(self, close_code):
-        if hasattr(self, 'group_name'):
-            await self.channel_layer.group_discard(self.group_name, self.channel_name)
-
-    async def coassessment_update(self, event):
-        """Forward state broadcast to connected websocket client."""
-        await self.send_json({
-            'type': 'update',
-            'state': event.get('state', {}),
-        })
-
-    @database_sync_to_async
-    def _get_initial_state(self):
-        from .models import CoAssessmentSession
-        from .coassessment_operations import get_coassessment_live_state
-        session = CoAssessmentSession.objects.filter(pk=self.session_id).first()
-        if session:
-            return get_coassessment_live_state(session)
-        return None
-
-
-
-
 class TrainingSessionLiveConsumer(AsyncJsonWebsocketConsumer):
     """Owner-only socket for the workshop console and projector of one demo."""
 
