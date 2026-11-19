@@ -26,8 +26,8 @@ class ClassroomPollPageTests(TestCase):
         self.assertFalse(response.json()['ok'])
 
     def test_saving_can_return_to_the_page_the_organizer_was_leaving(self):
-        response = self.client.post(self.manage, self.data(leave_to='/classroom/app/sessions/'))
-        self.assertRedirects(response, '/classroom/app/sessions/', fetch_redirect_response=False)
+        response = self.client.post(self.manage, self.data(leave_to='/assessment/app/sessions/'))
+        self.assertRedirects(response, '/assessment/app/sessions/', fetch_redirect_response=False)
 
     def test_imported_questions_are_added_to_the_selected_draft(self):
         poll = self.create()

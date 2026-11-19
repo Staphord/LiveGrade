@@ -584,7 +584,7 @@ class ClassroomPollTests(TestCase):
                 'assessments.views.poll_views.cache.incr', return_value=31):
             self.assertFalse(_may_identify(request, poll))
 
-    @override_settings(LIVEGRADE_LIVE_SERVICES=['classroom', 'team'])
+    @override_settings(LIVEGRADE_LIVE_SERVICES=['assessment', 'team'])
     def test_classroom_only_controls_are_refused_on_team_origin(self):
         self.session.service = 'team'
         self.session.save(update_fields=['service'])

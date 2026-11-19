@@ -383,7 +383,7 @@ class StandalonePollsEndToEndTests(TestCase):
         req.session.save()
         req.user = self.user
         req.organization = {'id': self.org.pk, 'name': self.org.name}
-        req.service = 'classroom'
+        req.service = 'assessment'
 
         with self.assertRaises(Http404):
             standalone_poll_list(req)
@@ -439,7 +439,7 @@ class StandalonePollsEndToEndTests(TestCase):
 
         from assessments.views.standalone_poll_views import standalone_poll_public
         req = rf.get(vote_url)
-        req.service = 'classroom'
+        req.service = 'assessment'
         with self.assertRaises(Http404):
             standalone_poll_public(req, poll.uuid)
 

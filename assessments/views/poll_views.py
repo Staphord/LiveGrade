@@ -30,6 +30,7 @@ from ..polls import (PollForm, append_imported_questions, changed,
 from ..qr import public_url, qr_png
 from ..realtime import broadcast_session_event
 from ..spreadsheet_safety import spreadsheet_safe_text
+from ..view_routing import request_redirect, request_reverse
 from .lecturer_views import _session
 
 POLL_IDENTITIES = 'classroom_poll_voters'
@@ -85,7 +86,7 @@ def leaderboard_scores(request, pk):
             transaction.on_commit(lambda: broadcast_session_event(session, 'public.results.changed', {}))
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({'public_show_scores': show})
-    return redirect('assessment_session_detail', pk=pk)
+    return request_redirect(request, 'assessment_session_detail', pk=pk)
 
 
 @never_cache
@@ -111,7 +112,7 @@ def classroom_polls(request, pk):
             'has_text_questions': any(question.response_type in {'short_answer', 'paragraph'}
                                       for question in questions),
             'preview_mode': True,
-            'return_url': reverse('assessment_polls', args=[session.pk]) + '?poll=' + str(poll.uuid),
+            'return_url': request_reverse(request, 'assessment_polls', args=[session.pk]) + '?poll=' + str(poll.uuid),
         }))
     if request.method == 'POST':
         action = request.POST.get('action')
@@ -196,14 +197,14 @@ def classroom_polls(request, pk):
                                      'question_errors': form.question_errors}, status=400)
             messages.error(request, error)
         elif action in {'upload-questions', 'cancel-question-import'}:
-            url = reverse('assessment_polls', args=[pk])
+            url = request_reverse(request, 'assessment_polls', args=[pk])
             return redirect(url + ('?poll=' + str(poll.uuid) if poll else ''))
         elif action == 'apply-question-import' and stash and not stash.get('errors'):
             if stash.get('target_poll'):
                 messages.success(request, f'Added {len(stash["questions"])} questions to the poll draft.')
             else:
                 messages.success(request, f'Created one poll draft with {len(stash["questions"])} questions.')
-            return redirect(reverse('assessment_polls', args=[pk]) + '?poll=' + str(imported_poll.uuid))
+            return redirect(request_reverse(request, 'assessment_polls', args=[pk]) + '?poll=' + str(imported_poll.uuid))
         else:
             if action == 'save' and _poll_json_requested(request):
                 return JsonResponse({'ok': True, 'message': 'Poll saved.', 'uuid': str(poll.uuid)})
@@ -212,7 +213,7 @@ def classroom_polls(request, pk):
             if action == 'save' and leave_to and url_has_allowed_host_and_scheme(
                     leave_to, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
                 return redirect(leave_to)
-            return redirect(reverse('assessment_polls', args=[pk]) + '?poll=' + str(poll.uuid))
+            return redirect(request_reverse(request, 'assessment_polls', args=[pk]) + '?poll=' + str(poll.uuid))
     results = poll_results(poll) if poll else None
     polls = session.polls.annotate(
         question_count=Count('questions', distinct=True),
@@ -223,12 +224,12 @@ def classroom_polls(request, pk):
         return _private(JsonResponse({'status': poll.status, 'accepting': poll.accepting_responses,
             'html': render_to_string('assessments/polls/_results.html',
                 {'poll': poll, **results, 'text_response_base':
-                 reverse('assessment_polls', args=[session.pk]) + '?poll=' + str(poll.uuid),
+                 request_reverse(request, 'assessment_polls', args=[session.pk]) + '?poll=' + str(poll.uuid),
                  'hide_option_bars': True, 'hide_option_percentages': True}, request=request),
             'responded_voters': list(poll.voters.filter(response__isnull=False).values_list('pk', flat=True))}))
     voters = list(poll.voters.select_related('response')) if poll else []
     for voter in voters:
-        voter.link = public_url(request, reverse('classroom_poll_invitation', args=[voter.token]))
+        voter.link = public_url(request, request_reverse(request, 'classroom_poll_invitation', args=[voter.token]))
     if poll and request.GET.get('download') == '1':
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="poll-invitations.csv"'
@@ -236,12 +237,17 @@ def classroom_polls(request, pk):
         writer.writerow(['Name', 'Roster identifier', 'Personal voting link'])
         for voter in voters:
             # nosemgrep: python.django.security.injection.csv-writer-injection.csv-writer-injection
-            writer.writerow([spreadsheet_safe_text(voter.name), spreadsheet_safe_text(voter.identifier), voter.link])
+            # All text cells, including the generated invitation URL, are spreadsheet-escaped.
+            writer.writerow([
+                spreadsheet_safe_text(voter.name),
+                spreadsheet_safe_text(voter.identifier),
+                spreadsheet_safe_text(voter.link),
+            ])
         return _private(response)
     text_review = (text_response_page(poll, request.GET.get('text_question'),
                                       request.GET.get('text_page', 1))
                    if poll and request.GET.get('text_question') else None)
-    text_response_base = (reverse('assessment_polls', args=[session.pk]) + '?poll=' + str(poll.uuid)
+    text_response_base = (request_reverse(request, 'assessment_polls', args=[session.pk]) + '?poll=' + str(poll.uuid)
                           if poll else '')
     return _private(render(request, 'assessments/polls/manage.html', {
         'session': session, 'polls': polls, 'poll': poll, 'form': form,
@@ -254,8 +260,8 @@ def classroom_polls(request, pk):
         'text_response_base': text_response_base,
         'saved': request.GET.get('saved') == '1',
         'question_import_form': question_import_form,
-        'poll_question_sample_url': reverse('assessment_poll_questions_sample', args=[session.pk]),
-        'poll_url': public_url(request, reverse('classroom_poll', args=[poll.uuid])) if poll else '',
+        'poll_question_sample_url': request_reverse(request, 'assessment_poll_questions_sample', args=[session.pk]),
+        'poll_url': public_url(request, request_reverse(request, 'classroom_poll', args=[poll.uuid])) if poll else '',
     }))
 
 
@@ -278,7 +284,7 @@ def classroom_poll_delete(request, pk):
         count = polls.count()
         polls.delete()
     messages.success(request, f'{count} poll{"s" if count != 1 else ""} deleted.')
-    return redirect(reverse('assessment_polls', args=[pk]))
+    return redirect(request_reverse(request, 'assessment_polls', args=[pk]))
 
 
 @lecturer_required
@@ -307,7 +313,7 @@ def public_poll_results(request, poll_uuid):
     results = poll_results(poll)
     return _private(render(request, 'assessments/polls/public_results.html', {
         'poll': poll, **results, 'public_results': True,
-        'state_url': reverse('classroom_poll', args=[poll.uuid]) + '?public_state=1',
+        'state_url': request_reverse(request, 'classroom_poll', args=[poll.uuid]) + '?public_state=1',
     }))
 
 
@@ -319,10 +325,10 @@ def poll_qr_screen(request, poll_uuid):
     poll = _public_poll(poll_uuid)
     return _private(render(request, 'assessments/polls/qr_screen.html', {
         'poll': poll,
-        'qr_image_url': reverse('classroom_poll_qr', args=[poll.uuid]),
-        'voting_url': reverse('classroom_poll', args=[poll.uuid]),
-        'results_url': reverse('classroom_poll_results', args=[poll.uuid]),
-        'state_url': reverse('classroom_poll', args=[poll.uuid]) + '?public_state=1',
+        'qr_image_url': request_reverse(request, 'classroom_poll_qr', args=[poll.uuid]),
+        'voting_url': request_reverse(request, 'classroom_poll', args=[poll.uuid]),
+        'results_url': request_reverse(request, 'classroom_poll_results', args=[poll.uuid]),
+        'state_url': request_reverse(request, 'classroom_poll', args=[poll.uuid]) + '?public_state=1',
         'qr_available': poll.accepting_responses and not poll.personal_links_only,
     }))
 
@@ -336,7 +342,7 @@ def poll_invitation(request, token):
     identities = request.session.get(POLL_IDENTITIES, {})
     identities[str(voter.poll.uuid)] = str(voter.token)
     request.session[POLL_IDENTITIES] = identities
-    return _private(redirect('classroom_poll', poll_uuid=voter.poll.uuid), bearer=True)
+    return _private(request_redirect(request, 'classroom_poll', poll_uuid=voter.poll.uuid), bearer=True)
 
 
 def _may_identify(request, poll):
@@ -378,7 +384,7 @@ def public_poll(request, poll_uuid):
                 identities = request.session.get(POLL_IDENTITIES, {})
                 identities[str(poll.uuid)] = str(matches[0].token)
                 request.session[POLL_IDENTITIES] = identities
-                return _private(redirect('classroom_poll', poll_uuid=poll.uuid))
+                return _private(request_redirect(request, 'classroom_poll', poll_uuid=poll.uuid))
             error = 'We could not identify you uniquely. Check your roster name or ID, or ask the teacher for your personal voting link.'
         elif action == 'vote' and voter:
             try:
@@ -405,7 +411,7 @@ def public_poll(request, poll_uuid):
                     }
                 save_response(poll.pk, voter.pk, [], token=token,
                               question_answers=question_answers)
-                return _private(redirect(reverse('classroom_poll', args=[poll.uuid]) + '?saved=1'))
+                return _private(redirect(request_reverse(request, 'classroom_poll', args=[poll.uuid]) + '?saved=1'))
             except ValidationError as exc:
                 error = ' '.join(exc.messages)
                 error_map = _poll_question_errors(exc)
@@ -413,7 +419,7 @@ def public_poll(request, poll_uuid):
             identities = request.session.get(POLL_IDENTITIES, {})
             identities.pop(str(poll.uuid), None)
             request.session[POLL_IDENTITIES] = identities
-            return _private(redirect('classroom_poll', poll_uuid=poll.uuid))
+            return _private(request_redirect(request, 'classroom_poll', poll_uuid=poll.uuid))
         else:
             error = 'Open your voting link or identify yourself before responding.'
     results = poll_results(poll)
@@ -459,7 +465,7 @@ def public_poll(request, poll_uuid):
     return _private(render(request, 'assessments/polls/respond.html', {
         'session': poll.assessment_session, 'poll': poll, 'voter': voter,
         'questions': questions, 'results': results, 'public_results': True,
-        'results_url': reverse('classroom_poll_results', args=[poll.uuid]),
+        'results_url': request_reverse(request, 'classroom_poll_results', args=[poll.uuid]),
         'error': error, 'saved': saved, 'response': response,
         'global_error': bool(error and (request.POST.get('action') != 'vote'
                                          or not voter or not poll.accepting_responses)),
@@ -473,4 +479,4 @@ def public_poll(request, poll_uuid):
 @public_poll_budget
 def poll_qr(request, poll_uuid):
     poll = _public_poll(poll_uuid)
-    return _private(HttpResponse(qr_png(public_url(request, reverse('classroom_poll', args=[poll.uuid]))), content_type='image/png'))
+    return _private(HttpResponse(qr_png(public_url(request, request_reverse(request, 'classroom_poll', args=[poll.uuid]))), content_type='image/png'))
