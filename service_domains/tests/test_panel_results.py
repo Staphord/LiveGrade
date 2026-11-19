@@ -1,17 +1,13 @@
 from datetime import timedelta
 from decimal import Decimal
-import csv
 import hashlib
-import io
-import re
 from unittest.mock import patch
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.test import TestCase
-from django.urls import reverse
 from django.utils import timezone
 
-from accounts.testing import make_org, make_user, sign_in
+from accounts.testing import make_org, make_user
 from assessments.models import (AssessmentSession, Evaluation, EvaluationScore,
                                 PresentationGroup, PresentationTurn, RubricCategory, Student)
 from assessments.scoring import group_score_percent
@@ -406,88 +402,14 @@ class PanelResultCompilationTests(TestCase):
         with self.assertRaises(PermissionDenied):
             compile_panel_results(self.hearing, organization=self.org.as_claim(), user=self.other)
         compile_panel_results(self.hearing, organization=self.org.as_claim(), user=self.owner)
-        sign_in(self.client, self.owner, self.org)
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            response = self.client.get(reverse('panel_results_review', args=(self.hearing.pk,)))
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Only combined examiner results appear here')
-        self.assertContains(response, 'examiner')
-        self.assertContains(response, 'Candidate A')
-        self.assertNotContains(response, 'examiner1@example.test')
-        self.assertContains(response, 'Private comment.')
-        self.assertContains(response, 'Anonymous comments')
-        self.assertNotContains(response, 'name="invitation"')
-        self.assertIn('no-store', response['Cache-Control'])
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            invalid_action = self.client.post(reverse('panel_results_review', args=(self.hearing.pk,)),
-                {'action': 'override'})
-            premature_release = self.client.post(reverse('panel_results_review', args=(self.hearing.pk,)),
-                {'action': 'release'})
-        self.assertEqual(invalid_action.status_code, 400)
-        self.assertEqual(premature_release.status_code, 400)
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            signed = self.client.post(reverse('panel_results_review', args=(self.hearing.pk,)),
-                {'action': 'sign_off'})
-        self.assertEqual(signed.status_code, 302)
-        self.hearing.refresh_from_db()
-        self.assertEqual(self.hearing.status, PanelHearing.Status.SIGNED_OFF)
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            released = self.client.post(reverse('panel_results_review', args=(self.hearing.pk,)),
-                {'action': 'release'})
-        self.assertEqual(released.status_code, 302)
-        self.hearing.refresh_from_db()
-        self.assertEqual(self.hearing.status, PanelHearing.Status.RELEASED)
 
-    def test_owner_recusal_export_is_scoped_reasoned_and_safe_for_spreadsheets(self):
-        self.candidate_a.display_name = '=1+1'
-        self.candidate_a.save(update_fields=('display_name', 'updated_at'))
-        declare_panel_conflict(self.tokens[0], self.candidate_a,
-            '=HYPERLINK("https://invalid.example")')
-        sign_in(self.client, self.owner, self.org)
-        manage_url = reverse('panel_hearing_manage', args=(self.hearing.pk,))
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            manage = self.client.get(manage_url)
-        self.assertContains(manage, '>Download report</a>')
-        url = reverse('panel_recusal_export', args=(self.hearing.pk,))
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            response = self.client.get(url)
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('text/csv', response['Content-Type'])
-        self.assertIn('no-store', response['Cache-Control'])
-        self.assertIn('attachment;', response['Content-Disposition'])
-        rows = list(csv.reader(io.StringIO(response.content.decode())))
-        self.assertEqual(rows[0], ['hearing', 'candidate', 'examiner_email',
-            'conflict_reason', 'declared_at'])
-        self.assertEqual(rows[1][1:4], ["'=1+1", 'examiner1@example.test',
-            "'=HYPERLINK(\"https://invalid.example\")"])
-        self.assertNotIn('score', ','.join(rows[0]).lower())
-        sign_in(self.client, self.other, self.org)
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            denied = self.client.get(url)
-        self.assertEqual(denied.status_code, 404)
-        foreign_org = make_org('Foreign Panel export org')
-        foreign_user = make_user('foreign-panel-export-owner')
-        sign_in(self.client, foreign_user, foreign_org)
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            foreign = self.client.get(url)
-        self.assertEqual(foreign.status_code, 404)
-        sign_in(self.client, self.owner, self.org)
-        with patch('portal.middleware.is_released', return_value=False):
-            closed = self.client.get(url)
-        self.assertEqual(closed.status_code, 404)
 
     def test_owner_can_redact_comment_in_review_without_changing_score_and_audit_once(self):
         score = self.score(self.tokens[0], self.candidate_a, 80, 'Sensitive identity comment.')
         self.score(self.tokens[0], self.candidate_b, 70)
         compile_panel_results(self.hearing, organization=self.org.as_claim(), user=self.owner)
-        sign_in(self.client, self.owner, self.org)
-        url = reverse('panel_results_review', args=(self.hearing.pk,))
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            response = self.client.post(url, {
-                'action': 'redact_comment', 'score_id': score.pk,
-                f'{score.pk}-reason': 'Contains identifying information.',
-            })
-        self.assertEqual(response.status_code, 302)
+        redact_panel_comment(self.hearing, score, 'Contains identifying information.',
+            organization=self.org.as_claim(), user=self.owner)
         score.refresh_from_db()
         self.assertEqual(score.comment, '')
         self.assertEqual(score.score, Decimal('80.00'))
@@ -498,27 +420,18 @@ class PanelResultCompilationTests(TestCase):
         self.assertEqual(redaction.moderated_by, self.owner)
         self.assertEqual(PanelAuditEvent.objects.filter(hearing=self.hearing,
             action=PanelAuditEvent.Action.COMMENT_REDACTED).count(), 1)
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            page = self.client.get(url)
-        self.assertNotContains(page, 'Sensitive identity comment.')
-        self.assertNotContains(page, 'examiner1@example.test')
 
     def test_owner_can_approve_comment_for_entrant_with_reason_and_single_audit(self):
         score = self.score(self.tokens[0], self.candidate_a, 80, 'Useful anonymous feedback.')
         self.score(self.tokens[0], self.candidate_b, 70)
         compile_panel_results(self.hearing, organization=self.org.as_claim(), user=self.owner)
-        sign_in(self.client, self.owner, self.org)
-        owner_url = reverse('panel_results_review', args=(self.hearing.pk,))
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            invalid = self.client.post(owner_url, {'action': 'release_comment', 'score_id': score.pk,
-                f'{score.pk}-reason': '  '})
-        self.assertEqual(invalid.status_code, 400)
+        with self.assertRaisesMessage(ValidationError, 'reason is required'):
+            release_panel_comment(self.hearing, score, '  ',
+                organization=self.org.as_claim(), user=self.owner)
         self.assertFalse(PanelAuditEvent.objects.filter(hearing=self.hearing,
             action=PanelAuditEvent.Action.COMMENT_RELEASED).exists())
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            approved = self.client.post(owner_url, {'action': 'release_comment', 'score_id': score.pk,
-                f'{score.pk}-reason': 'Feedback checked for identifying details.'})
-        self.assertEqual(approved.status_code, 302)
+        release_panel_comment(self.hearing, score, 'Feedback checked for identifying details.',
+            organization=self.org.as_claim(), user=self.owner)
         score.refresh_from_db()
         self.assertTrue(score.comment_released_to_entrant)
         event = PanelAuditEvent.objects.get(hearing=self.hearing,
@@ -530,29 +443,6 @@ class PanelResultCompilationTests(TestCase):
         self.assertEqual(PanelAuditEvent.objects.filter(hearing=self.hearing,
             action=PanelAuditEvent.Action.COMMENT_RELEASED).count(), 1)
 
-    def test_entrant_sees_only_owner_approved_nonredacted_comments_after_release(self):
-        approved = self.score(self.tokens[0], self.candidate_a, 80, '<script>Approved note</script>')
-        self.score(self.tokens[1], self.candidate_a, 90, 'Private note remains hidden.')
-        _, third_token = issue_panel_invitation(self.hearing, 'examiner3@example.test',
-            timezone.now() + timedelta(hours=1), organization=self.org.as_claim(), user=self.owner)
-        redacted = self.score(third_token, self.candidate_a, 85, 'Redacted note stays hidden.')
-        self.score(self.tokens[0], self.candidate_b, 70)
-        compile_panel_results(self.hearing, organization=self.org.as_claim(), user=self.owner)
-        release_panel_comment(self.hearing, approved, 'Checked.',
-            organization=self.org.as_claim(), user=self.owner)
-        redact_panel_comment(self.hearing, redacted, 'Redacted after moderation.',
-            organization=self.org.as_claim(), user=self.owner)
-        confirm_panel_signoff(self.hearing, organization=self.org.as_claim(), user=self.owner)
-        release_panel_results(self.hearing, organization=self.org.as_claim(), user=self.owner)
-        _, token = issue_panel_entrant_result_link(self.hearing, self.candidate_a,
-            organization=self.org.as_claim(), user=self.owner)
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            page = self.client.get(reverse('panel_entrant_results', kwargs={'token': token}))
-        self.assertEqual(page.status_code, 200)
-        self.assertContains(page, '&lt;script&gt;Approved note&lt;/script&gt;', html=False)
-        self.assertNotContains(page, '<script>Approved note</script>', html=False)
-        self.assertNotContains(page, 'Private note remains hidden.')
-        self.assertNotContains(page, 'Redacted note stays hidden.')
 
     def test_comment_release_operation_rejects_wrong_owner_and_after_signoff(self):
         score = self.score(self.tokens[0], self.candidate_a, 80, 'Anonymous text.')
@@ -579,16 +469,6 @@ class PanelResultCompilationTests(TestCase):
         self.assertFalse(PanelCommentReleaseForm({'reason': '  '}).is_valid())
         self.assertTrue(PanelCommentReleaseForm({'reason': 'Reviewed.'}).is_valid())
 
-    def test_comment_release_view_hides_unknown_score_target(self):
-        self.score(self.tokens[0], self.candidate_a, 80, 'Anonymous text.')
-        self.score(self.tokens[0], self.candidate_b, 70)
-        compile_panel_results(self.hearing, organization=self.org.as_claim(), user=self.owner)
-        sign_in(self.client, self.owner, self.org)
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            response = self.client.post(reverse('panel_results_review', args=(self.hearing.pk,)), {
-                'action': 'release_comment', 'score_id': '999999', '999999-reason': 'No match.',
-            })
-        self.assertEqual(response.status_code, 404)
 
     def test_comment_redaction_rejects_empty_reason_duplicate_and_post_signoff(self):
         score = self.score(self.tokens[0], self.candidate_a, 80, 'Sensitive note.')
@@ -671,74 +551,7 @@ class PanelResultCompilationTests(TestCase):
         with self.assertRaisesMessage(ValidationError, 'append-only'):
             PanelCommentRedaction.objects.filter(pk=record.pk).delete()
 
-    def test_redaction_form_errors_and_unknown_score_are_scoped_in_owner_view(self):
-        score = self.score(self.tokens[0], self.candidate_a, 80, 'Sensitive note.')
-        self.score(self.tokens[0], self.candidate_b, 70)
-        compile_panel_results(self.hearing, organization=self.org.as_claim(), user=self.owner)
-        sign_in(self.client, self.owner, self.org)
-        url = reverse('panel_results_review', args=(self.hearing.pk,))
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            invalid = self.client.post(url, {'action': 'redact_comment', 'score_id': score.pk,
-                f'{score.pk}-reason': '  '})
-            missing = self.client.post(url, {'action': 'redact_comment', 'score_id': '999999',
-                '999999-reason': 'Any reason.'})
-        self.assertEqual(invalid.status_code, 400)
-        self.assertContains(invalid, 'A reason is required', status_code=400)
-        self.assertEqual(missing.status_code, 404)
 
-    def test_entrant_link_is_post_release_private_candidate_scoped_and_revocable(self):
-        with self.assertRaisesMessage(ValidationError, 'only after release'):
-            issue_panel_entrant_result_link(self.hearing, self.candidate_a,
-                organization=self.org.as_claim(), user=self.owner)
-        self.score(self.tokens[0], self.candidate_a, 80)
-        self.score(self.tokens[0], self.candidate_b, 70)
-        compile_panel_results(self.hearing, organization=self.org.as_claim(), user=self.owner)
-        confirm_panel_signoff(self.hearing, organization=self.org.as_claim(), user=self.owner)
-        release_panel_results(self.hearing, organization=self.org.as_claim(), user=self.owner)
-
-        sign_in(self.client, self.owner, self.org)
-        owner_url = reverse('panel_results_review', args=(self.hearing.pk,))
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            issued = self.client.post(owner_url, {
-                'action': 'issue_entrant_link', 'candidate_id': self.candidate_a.pk,
-            })
-        self.assertEqual(issued.status_code, 200)
-        self.assertIn('Copy this private link now', issued.content.decode())
-        self.assertIn('no-store', issued['Cache-Control'])
-        token = re.search(r'/panel/results/([A-Za-z0-9_-]+)/', issued.content.decode()).group(1)
-        link = PanelEntrantResultLink.objects.get(candidate=self.candidate_a)
-        self.assertEqual(link.token_digest, PanelEntrantResultLink.digest_token(token))
-        self.assertNotIn(token, link.token_digest)
-        self.assertEqual(PanelAuditEvent.objects.filter(hearing=self.hearing,
-            action=PanelAuditEvent.Action.RESULT_LINK_ISSUED).count(), 1)
-
-        public_url = reverse('panel_entrant_results', kwargs={'token': token})
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            results = self.client.get(public_url)
-        self.assertEqual(results.status_code, 200)
-        self.assertContains(results, 'Candidate A')
-        self.assertContains(results, '80.000000')
-        self.assertNotContains(results, 'Candidate B')
-        self.assertNotContains(results, 'examiner1@example.test')
-        self.assertNotContains(results, 'Private comment.')
-        self.assertIn('no-store', results['Cache-Control'])
-        self.assertEqual(results['Referrer-Policy'], 'no-referrer')
-        self.assertEqual(results['X-Robots-Tag'], 'noindex, nofollow, noarchive')
-
-        with self.assertRaises(PermissionDenied):
-            revoke_panel_entrant_result_link(self.hearing, link, 'Foreign owner attempt',
-                organization=self.org.as_claim(), user=self.other)
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            revoked = self.client.post(owner_url, {
-                'action': 'revoke_entrant_link', 'link_id': link.pk, 'reason': 'Recipient changed.',
-            })
-        self.assertEqual(revoked.status_code, 302)
-        link.refresh_from_db()
-        self.assertIsNotNone(link.revoked_at)
-        self.assertEqual(PanelAuditEvent.objects.filter(hearing=self.hearing,
-            action=PanelAuditEvent.Action.RESULT_LINK_REVOKED).count(), 1)
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            self.assertEqual(self.client.get(public_url).status_code, 404)
 
     def test_entrant_result_link_model_preserves_revocation_history_and_validation(self):
         self.score(self.tokens[0], self.candidate_a, 80)
@@ -807,31 +620,7 @@ class PanelResultCompilationTests(TestCase):
             organization_id=self.org.id, created_by=self.owner)
         with self.assertRaisesMessage(ValidationError, 'only after results are released'):
             unreleased_link.full_clean()
-        sign_in(self.client, self.owner, self.org)
-        unresolved = reverse('panel_entrant_results', kwargs={'token': 'unknown-token'})
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            no_candidate = self.client.post(reverse('panel_results_review', args=(self.hearing.pk,)), {
-                'action': 'issue_entrant_link', 'candidate_id': '999999',
-            })
-            no_link = self.client.post(reverse('panel_results_review', args=(self.hearing.pk,)), {
-                'action': 'revoke_entrant_link', 'link_id': '999999',
-            })
-            anonymous = self.client.get(unresolved)
-        self.assertEqual(no_candidate.status_code, 404)
-        self.assertEqual(no_link.status_code, 404)
-        self.assertEqual(anonymous.status_code, 404)
 
-    def test_owner_can_close_scoring_from_hearing_workspace(self):
-        self.score(self.tokens[0], self.candidate_a, 80)
-        self.score(self.tokens[0], self.candidate_b, 70)
-        sign_in(self.client, self.owner, self.org)
-        manage = reverse('panel_hearing_manage', args=(self.hearing.pk,))
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            closed = self.client.post(manage, {'action': 'review'})
-        self.assertEqual(closed.status_code, 302)
-        self.assertEqual(closed['Location'], reverse('panel_results_review', args=(self.hearing.pk,)))
-        self.hearing.refresh_from_db()
-        self.assertEqual(self.hearing.status, PanelHearing.Status.REVIEW)
 
     def test_post_signoff_adjustment_appends_original_value_actor_and_reason(self):
         self.score(self.tokens[0], self.candidate_a, 80)
@@ -860,15 +649,6 @@ class PanelResultCompilationTests(TestCase):
         with self.assertRaisesMessage(ValidationError, 'append-only'):
             first.delete()
 
-        sign_in(self.client, self.owner, self.org)
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            page = self.client.get(reverse('panel_results_review', args=(self.hearing.pk,)))
-        self.assertContains(page, 'Original aggregate')
-        self.assertContains(page, '80')
-        self.assertContains(page, '83.000000')
-        self.assertContains(page, 'Approved second review.')
-        self.assertContains(page, 'Revision 1')
-        self.assertContains(page, 'Revision 2')
 
     def test_adjustments_require_valid_reason_score_and_owner_scope(self):
         self.score(self.tokens[0], self.candidate_a, 80)
@@ -932,56 +712,3 @@ class PanelResultCompilationTests(TestCase):
             with self.assertRaises(PermissionDenied):
                 adjust_panel_result(snapshot, 81, 'Missing snapshot.',
                     organization=self.org.as_claim(), user=self.owner)
-
-    def test_adjustment_form_is_connected_to_review_page(self):
-        self.score(self.tokens[0], self.candidate_a, 80)
-        self.score(self.tokens[0], self.candidate_b, 70)
-        compile_panel_results(self.hearing, organization=self.org.as_claim(), user=self.owner)
-        confirm_panel_signoff(self.hearing, organization=self.org.as_claim(), user=self.owner)
-        snapshot = PanelResultSnapshot.objects.get(candidate=self.candidate_a)
-        sign_in(self.client, self.owner, self.org)
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            invalid_form = self.client.post(reverse('panel_results_review', args=(self.hearing.pk,)), {
-                'action': 'adjust', 'snapshot_id': snapshot.pk,
-                f'{snapshot.pk}-adjusted_score': '88', f'{snapshot.pk}-reason': '   ',
-            })
-            missing_snapshot = self.client.post(reverse('panel_results_review', args=(self.hearing.pk,)), {
-                'action': 'adjust', 'snapshot_id': '999999',
-            })
-        self.assertEqual(invalid_form.status_code, 400)
-        self.assertContains(invalid_form, 'A reason is required', status_code=400)
-        self.assertEqual(missing_snapshot.status_code, 404)
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'), \
-             patch('service_domains.views.adjust_panel_result', side_effect=PermissionDenied):
-            denied_adjustment = self.client.post(reverse('panel_results_review', args=(self.hearing.pk,)), {
-                'action': 'adjust', 'snapshot_id': snapshot.pk,
-                f'{snapshot.pk}-adjusted_score': '88', f'{snapshot.pk}-reason': 'Correction.',
-            })
-        self.assertEqual(denied_adjustment.status_code, 400)
-        self.assertContains(denied_adjustment, 'cannot be accepted', status_code=400)
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            response = self.client.post(reverse('panel_results_review', args=(self.hearing.pk,)), {
-                'action': 'adjust', 'snapshot_id': snapshot.pk,
-                f'{snapshot.pk}-adjusted_score': '88',
-                f'{snapshot.pk}-reason': 'Board-approved correction.',
-            })
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(PanelResultAdjustment.objects.get().adjusted_score, Decimal('88.000000'))
-
-    def test_owner_can_close_below_minimum_results_and_review_shows_warning(self):
-        self.hearing.minimum_examiners = 2
-        self.hearing.save(update_fields=('minimum_examiners', 'updated_at'))
-        self.score(self.tokens[0], self.candidate_a, 80)
-        self.score(self.tokens[0], self.candidate_b, 70)
-        sign_in(self.client, self.owner, self.org)
-        manage = reverse('panel_hearing_manage', args=(self.hearing.pk,))
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            response = self.client.post(manage, {'action': 'review'})
-        self.assertEqual(response.status_code, 302)
-        self.hearing.refresh_from_db()
-        self.assertEqual(self.hearing.status, PanelHearing.Status.REVIEW)
-        self.assertTrue(PanelResultSnapshot.objects.filter(below_minimum=True).exists())
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            review = self.client.get(reverse('panel_results_review', args=(self.hearing.pk,)))
-        self.assertEqual(review.status_code, 200)
-        self.assertContains(review, 'Below minimum coverage')

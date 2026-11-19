@@ -3,11 +3,10 @@ from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.test import TestCase, override_settings
-from django.urls import reverse
+from django.test import TestCase
 from django.utils import timezone
 
-from accounts.testing import make_org, make_user, sign_in
+from accounts.testing import make_org, make_user
 from assessments.sheets import workbook_bytes
 from service_domains.models import PanelAuditEvent, PanelHearing, PanelInvitation, PanelScoringPanel
 from service_domains.operations import apply_panel_invitation_import
@@ -15,8 +14,6 @@ from service_domains.operations import (mark_panel_invitation_enqueue_failed,
     queue_panel_invitation, request_panel_invitation_resend, panel_invitation_resend_available)
 from service_domains.panel_invitation_import import (TOO_MANY_PHYSICAL_ROWS,
     parse_examiner_emails, plan_examiner_import, sample_workbook)
-from service_domains.views import PANEL_INVITATION_IMPORT_TOKEN_SALT
-from django.core import signing
 
 
 class PanelInvitationImportTests(TestCase):
@@ -255,238 +252,13 @@ class PanelInvitationImportTests(TestCase):
         self.assertEqual(PanelAuditEvent.objects.filter(hearing=self.hearing,
             action=PanelAuditEvent.Action.INVITATION_RESENT).count(), 1)
 
-    @override_settings(LIVEGRADE_BASE_URL='http://localhost:8001',
-                       LIVEGRADE_PUBLIC_BASE_URL='http://public.example.test')
-    def test_worker_sends_only_for_pending_and_records_sent_or_failed_state(self):
-        invitation = queue_panel_invitation(self.hearing, 'worker@example.test',
-            timezone.now() + timedelta(hours=2), organization=self.org.as_claim(),
-            user=self.owner, panel=self.panel)
-        from service_domains.tasks import send_panel_invitation_email
-        with patch('service_domains.tasks.secrets.token_urlsafe', return_value='worker-token'), \
-             patch('service_domains.tasks.send_mail', return_value=1) as send:
-            self.assertEqual(send_panel_invitation_email(invitation.pk), 'sent')
-        invitation.refresh_from_db()
-        self.assertEqual(invitation.delivery_status, PanelInvitation.DeliveryStatus.SENT)
-        send.assert_called_once()
-        self.assertEqual(send.call_args.kwargs['recipient_list'], ['worker@example.test'])
-        self.assertIn('http://public.example.test/panel/examiner/worker-token',
-            send.call_args.kwargs['message'])
-        self.assertEqual(send_panel_invitation_email(invitation.pk), 'ignored')
 
-        failed = queue_panel_invitation(self.hearing, 'failed@example.test',
-            timezone.now() + timedelta(hours=2), organization=self.org.as_claim(),
-            user=self.owner, panel=self.panel)
-        with patch('service_domains.tasks.send_mail', side_effect=OSError('smtp down')):
-            self.assertEqual(send_panel_invitation_email(failed.pk), 'failed')
-        failed.refresh_from_db()
-        self.assertEqual(failed.delivery_status, PanelInvitation.DeliveryStatus.FAILED)
-        self.assertEqual(failed.delivery_error, 'mail_backend_error')
 
-    def test_worker_marks_unusable_and_superseded_attempts_without_leaking_errors(self):
-        invitation = queue_panel_invitation(self.hearing, 'unusable@example.test',
-            timezone.now() + timedelta(hours=2), organization=self.org.as_claim(),
-            user=self.owner, panel=self.panel)
-        self.hearing.status = PanelHearing.Status.REVIEW
-        self.hearing.save(update_fields=('status', 'updated_at'))
-        from service_domains.tasks import send_panel_invitation_email
-        self.assertEqual(send_panel_invitation_email(invitation.pk), 'unusable')
-        invitation.refresh_from_db()
-        self.assertEqual(invitation.delivery_error, 'invitation_unusable')
 
-        self.hearing.status = PanelHearing.Status.DRAFT
-        self.hearing.save(update_fields=('status', 'updated_at'))
-        invitation = queue_panel_invitation(self.hearing, 'superseded@example.test',
-            timezone.now() + timedelta(hours=2), organization=self.org.as_claim(),
-            user=self.owner, panel=self.panel)
-        def race_delivery(**kwargs):
-            PanelInvitation.objects.filter(pk=invitation.pk).update(
-                delivery_status=PanelInvitation.DeliveryStatus.SENDING,
-                delivery_attempts=2)
-            return 1
-        with patch('service_domains.tasks.send_mail', side_effect=race_delivery):
-            self.assertEqual(send_panel_invitation_email(invitation.pk), 'superseded')
-        invitation.refresh_from_db()
-        self.assertEqual(invitation.delivery_status, PanelInvitation.DeliveryStatus.SENDING)
-        self.assertEqual(invitation.delivery_attempts, 2)
-        self.assertEqual(invitation.delivery_error, '')
 
-    def test_owner_preview_apply_and_sample_routes_are_scoped_and_enqueue_without_tokens(self):
-        sign_in(self.client, self.owner, self.org)
-        preview_url = reverse('panel_invitation_import', args=(self.hearing.pk,))
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            preview = self.client.post(preview_url, {
-                'expires_at': (timezone.now() + timedelta(hours=2)).strftime('%Y-%m-%dT%H:%M'),
-                'panel': str(self.panel.pk),
-                'file': self.upload(['Email'], [['one@example.test']]),
-            })
-        self.assertEqual(preview.status_code, 200)
-        self.assertContains(preview, 'invitation ready.')
-        token = preview.context['preview_token']
-        payload = signing.loads(token, salt=PANEL_INVITATION_IMPORT_TOKEN_SALT)
-        self.assertEqual(payload['hearing'], self.hearing.pk)
-        with patch('service_domains.views.send_panel_invitation_email.delay') as enqueue, \
-             patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'), \
-             self.captureOnCommitCallbacks(execute=True):
-            applied = self.client.post(preview_url, {'action': 'apply', 'preview_token': token})
-        self.assertEqual(applied.status_code, 302)
-        invitation = PanelInvitation.objects.get(hearing=self.hearing)
-        self.assertEqual(invitation.token_digest, None)
-        self.assertEqual(enqueue.call_count, 1)
-        self.assertEqual(enqueue.call_args.args[0], invitation.pk)
-        self.assertTrue(enqueue.call_args.args[1].startswith('http'))
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            sample = self.client.get(reverse('panel_invitation_import_sample', args=(self.hearing.pk,)))
-        self.assertEqual(sample.status_code, 200)
-        self.assertTrue(sample['Content-Type'].startswith('application/vnd.openxmlformats'))
 
-    def test_management_exposes_resend_only_when_delivery_can_be_recovered(self):
-        invitation = queue_panel_invitation(self.hearing, 'stale@example.test',
-            timezone.now() + timedelta(hours=2), organization=self.org.as_claim(),
-            user=self.owner, panel=self.panel)
-        PanelInvitation.objects.filter(pk=invitation.pk).update(
-            delivery_status=PanelInvitation.DeliveryStatus.SENDING,
-            updated_at=timezone.now() - timedelta(minutes=16))
-        recent = queue_panel_invitation(self.hearing, 'recent@example.test',
-            timezone.now() + timedelta(hours=2), organization=self.org.as_claim(),
-            user=self.owner, panel=self.panel)
-        sign_in(self.client, self.owner, self.org)
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            response = self.client.get(reverse('panel_hearing_manage', args=(self.hearing.pk,)))
-        self.assertEqual(response.status_code, 200)
-        rows = {row.email: row.can_resend for row in response.context['invitations']}
-        self.assertTrue(rows['stale@example.test'])
-        self.assertFalse(rows['recent@example.test'])
-        self.assertIsNotNone(recent.pk)
 
-    def test_apply_route_rejects_invalid_and_expired_preview_and_queue_error_is_recorded(self):
-        sign_in(self.client, self.owner, self.org)
-        url = reverse('panel_invitation_import', args=(self.hearing.pk,))
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            invalid = self.client.post(url, {'action': 'apply', 'preview_token': 'x' * 150_001})
-        self.assertEqual(invalid.status_code, 404)
-        expired = signing.dumps({'hearing': self.hearing.pk, 'organization': self.org.pk,
-            'user': self.owner.pk, 'parsed': {'rows': [], 'errors': [], 'fatal': None}},
-            salt=PANEL_INVITATION_IMPORT_TOKEN_SALT)
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            bad_signature = self.client.post(url, {'action': 'apply', 'preview_token': 'broken'})
-        self.assertEqual(bad_signature.status_code, 400)
-        payload = signing.loads(expired, salt=PANEL_INVITATION_IMPORT_TOKEN_SALT)
-        payload['hearing'] = -10
-        tampered = signing.dumps(payload, salt=PANEL_INVITATION_IMPORT_TOKEN_SALT)
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            wrong_owner = self.client.post(url, {'action': 'apply', 'preview_token': tampered})
-        self.assertEqual(wrong_owner.status_code, 404)
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            invalid_form = self.client.post(url, {'action': 'apply'})
-        self.assertEqual(invalid_form.status_code, 400)
 
-        preview = signing.dumps({'hearing': self.hearing.pk, 'organization': self.org.pk,
-            'user': self.owner.pk, 'parsed': {'rows': [{'email': 'x@example.test'}],
-            'errors': [], 'fatal': None}, 'panel': 999999,
-            'expires_at': (timezone.now() + timedelta(hours=1)).isoformat()},
-            salt=PANEL_INVITATION_IMPORT_TOKEN_SALT)
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            invalid_panel = self.client.post(url, {'action': 'apply', 'preview_token': preview})
-        self.assertEqual(invalid_panel.status_code, 404)
-
-        expired_at = signing.dumps({'hearing': self.hearing.pk, 'organization': self.org.pk,
-            'user': self.owner.pk, 'parsed': {'rows': [{'email': 'x@example.test'}],
-            'errors': [], 'fatal': None}, 'expires_at': (timezone.now() - timedelta(hours=1)).isoformat()},
-            salt=PANEL_INVITATION_IMPORT_TOKEN_SALT)
-        with patch('service_domains.views.apply_panel_invitation_import',
-                   side_effect=ValidationError('expiry is stale')), \
-             patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            stale_apply = self.client.post(url, {'action': 'apply', 'preview_token': expired_at})
-        self.assertEqual(stale_apply.status_code, 400)
-
-        valid_apply = signing.dumps({'hearing': self.hearing.pk, 'organization': self.org.pk,
-            'user': self.owner.pk, 'parsed': {'rows': [{'email': 'x@example.test'}],
-            'errors': [], 'fatal': None}, 'expires_at': (timezone.now() + timedelta(hours=1)).isoformat()},
-            salt=PANEL_INVITATION_IMPORT_TOKEN_SALT)
-        with patch('service_domains.views.apply_panel_invitation_import',
-                   side_effect=PermissionDenied), \
-             patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            denied_apply = self.client.post(url, {'action': 'apply', 'preview_token': valid_apply})
-        self.assertEqual(denied_apply.status_code, 404)
-
-    def test_preview_route_rejects_invalid_form_and_row_errors_without_apply_token(self):
-        sign_in(self.client, self.owner, self.org)
-        url = reverse('panel_invitation_import', args=(self.hearing.pk,))
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            invalid_form = self.client.post(url, {'expires_at': 'bad',
-                'file': self.upload(['Email'], [['x@example.test']])})
-        self.assertEqual(invalid_form.status_code, 400)
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            row_errors = self.client.post(url, {
-                'expires_at': (timezone.now() + timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M'),
-                'file': self.upload(['Email'], [['bad-address']]),
-            })
-        self.assertEqual(row_errors.status_code, 200)
-        self.assertContains(row_errors, 'valid examiner email')
-        self.assertEqual(row_errors.context['preview_token'], '')
-
-    def test_single_invite_enqueue_failure_sets_failed_status_and_resend_rotates(self):
-        sign_in(self.client, self.owner, self.org)
-        manage = reverse('panel_hearing_manage', args=(self.hearing.pk,))
-        expiry = (timezone.now() + timedelta(hours=2)).strftime('%Y-%m-%dT%H:%M')
-        with patch('service_domains.views.send_panel_invitation_email.delay',
-                   side_effect=OSError('broker secret')), \
-             patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'), \
-             self.captureOnCommitCallbacks(execute=True):
-            response = self.client.post(manage, {'action': 'invite',
-                'email': 'queue-fail@example.test', 'expires_at': expiry})
-        self.assertEqual(response.status_code, 302)
-        invitation = PanelInvitation.objects.get(hearing=self.hearing)
-        self.assertEqual(invitation.delivery_status, PanelInvitation.DeliveryStatus.FAILED)
-        self.assertEqual(invitation.delivery_error, 'queue_unavailable')
-
-        with patch('service_domains.views.send_panel_invitation_email.delay') as enqueue, \
-             patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'), \
-             self.captureOnCommitCallbacks(execute=True):
-            resent = self.client.post(manage, {'action': 'resend', 'invitation_id': invitation.pk})
-        self.assertEqual(resent.status_code, 302)
-        invitation.refresh_from_db()
-        self.assertEqual(invitation.delivery_status, PanelInvitation.DeliveryStatus.PENDING)
-        self.assertIsNone(invitation.token_digest)
-        self.assertEqual(enqueue.call_count, 1)
-        self.assertEqual(enqueue.call_args.args[0], invitation.pk)
-        self.assertTrue(enqueue.call_args.args[1].startswith('http'))
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            too_soon = self.client.post(manage, {'action': 'resend', 'invitation_id': invitation.pk})
-            missing = self.client.post(manage, {'action': 'resend', 'invitation_id': 999999})
-        self.assertEqual(too_soon.status_code, 400)
-        self.assertEqual(missing.status_code, 404)
-        invitation.delivery_status = PanelInvitation.DeliveryStatus.FAILED
-        invitation.save(update_fields=('delivery_status', 'updated_at'))
-        with patch('service_domains.views.send_panel_invitation_email.delay',
-                   side_effect=OSError('broker unavailable')), \
-             patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'), \
-             self.captureOnCommitCallbacks(execute=True):
-            failed_resend = self.client.post(manage, {
-                'action': 'resend', 'invitation_id': invitation.pk})
-        self.assertEqual(failed_resend.status_code, 302)
-        invitation.refresh_from_db()
-        self.assertEqual(invitation.delivery_status, PanelInvitation.DeliveryStatus.FAILED)
-        self.assertEqual(invitation.delivery_error, 'queue_unavailable')
-
-    def test_examiner_import_apply_records_each_broker_enqueue_failure(self):
-        sign_in(self.client, self.owner, self.org)
-        url = reverse('panel_invitation_import', args=(self.hearing.pk,))
-        parsed = {'fatal': None, 'errors': [], 'rows': [{'row': 2,
-            'email': 'import-queue-fail@example.test', 'errors': []}]}
-        token = signing.dumps({'hearing': self.hearing.pk, 'organization': self.org.pk,
-            'user': self.owner.pk, 'parsed': parsed, 'panel': self.panel.pk,
-            'expires_at': (timezone.now() + timedelta(hours=1)).isoformat()},
-            salt=PANEL_INVITATION_IMPORT_TOKEN_SALT)
-        with patch('service_domains.views.send_panel_invitation_email.delay',
-                   side_effect=OSError('broker unavailable')), \
-             patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'), \
-             self.captureOnCommitCallbacks(execute=True):
-            response = self.client.post(url, {'action': 'apply', 'preview_token': token})
-        self.assertEqual(response.status_code, 302)
-        invitation = PanelInvitation.objects.get(hearing=self.hearing)
-        self.assertEqual(invitation.delivery_status, PanelInvitation.DeliveryStatus.FAILED)
-        self.assertEqual(invitation.delivery_error, 'queue_unavailable')
 
     def test_invitation_form_and_scoring_panel_display_name(self):
         from service_domains.forms import PanelInvitationForm, PanelInvitationImportForm

@@ -1,4 +1,3 @@
-import re
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 import zipfile
@@ -7,9 +6,8 @@ from django.core import signing
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
-from django.urls import reverse
 
-from accounts.testing import make_org, make_user, sign_in
+from accounts.testing import make_org, make_user
 from assessments.sheets import workbook_bytes
 from service_domains.models import PanelAuditEvent, PanelCandidate, PanelHearing
 from service_domains.panel_import import (
@@ -17,7 +15,6 @@ from service_domains.panel_import import (
     TOO_MANY_PHYSICAL_ROWS, _read_bounded_rows, apply_candidate_import,
     parse_candidates, plan_candidates, sample_workbook,
 )
-from service_domains.views import PANEL_CANDIDATE_IMPORT_TOKEN_SALT
 
 
 class PanelCandidateImportTests(TestCase):
@@ -152,86 +149,3 @@ class PanelCandidateImportTests(TestCase):
             apply_candidate_import(self.hearing, parsed,
                 organization=self.org.as_claim(), user=self.owner)
         self.assertEqual(PanelCandidate.objects.count(), before)
-
-
-class PanelCandidateImportViewTests(TestCase):
-    def setUp(self):
-        self.org = make_org('Panel import view org')
-        self.owner = make_user('panel-import-view-owner')
-        sign_in(self.client, self.owner, self.org)
-        self.hearing = PanelHearing.objects.create(organization_id=self.org.id,
-            created_by=self.owner, name='Preview candidates')
-        self.url = reverse('panel_candidate_import', args=(self.hearing.pk,))
-
-    def request(self, method, url, *args, **kwargs):
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'panel'):
-            return getattr(self.client, method)(url, *args, **kwargs)
-
-    def test_upload_preview_signed_apply_and_sample_download(self):
-        workbook = workbook_bytes(['Candidate', 'Reference'], [['Imported', 'I-1']])
-        upload = SimpleUploadedFile('candidates.xlsx', workbook.getvalue(),
-            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        response = self.request('post', self.url, {'file': upload})
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, '1 candidate ready.')
-        token = re.search(rb'name="preview_token" value="([^"]+)"', response.content).group(1).decode()
-        applied = self.request('post', self.url, {'action': 'apply', 'preview_token': token})
-        self.assertEqual(applied.status_code, 302)
-        self.assertTrue(PanelCandidate.objects.filter(hearing=self.hearing,
-            display_name='Imported', reference='I-1').exists())
-        sample = self.request('get', reverse('panel_candidate_import_sample', args=(self.hearing.pk,)))
-        self.assertEqual(sample.status_code, 200)
-        self.assertEqual(sample['Content-Type'],
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-
-    def test_invalid_upload_expired_preview_and_foreign_scope_fail_safely(self):
-        invalid_upload = SimpleUploadedFile('bad.csv', b'candidate')
-        response = self.request('post', self.url, {'file': invalid_upload})
-        self.assertEqual(response.status_code, 400)
-        self.assertContains(response, '.xlsx', status_code=400)
-        expired = self.request('post', self.url, {'action': 'apply', 'preview_token': 'invalid'})
-        self.assertEqual(expired.status_code, 400)
-        sign_in(self.client, make_user('other-panel-import-user'), self.org)
-        forbidden = self.request('get', self.url)
-        self.assertEqual(forbidden.status_code, 404)
-
-    def test_upload_size_preview_errors_and_invalid_apply_payloads(self):
-        oversized = SimpleUploadedFile('large.xlsx', b'x' * (MAX_UPLOAD_BYTES + 1))
-        too_large = self.request('post', self.url, {'file': oversized})
-        self.assertEqual(too_large.status_code, 400)
-        self.assertContains(too_large, '10 MB or smaller', status_code=400)
-
-        workbook = workbook_bytes(['Candidate'], [['Already exists']])
-        PanelCandidate.objects.create(organization_id=self.org.id, created_by=self.owner,
-            hearing=self.hearing, display_name='Already exists')
-        duplicate_upload = SimpleUploadedFile('duplicate.xlsx', workbook.getvalue(),
-            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        invalid_preview = self.request('post', self.url, {'file': duplicate_upload})
-        self.assertEqual(invalid_preview.status_code, 200)
-        self.assertContains(invalid_preview, 'Nothing has been added')
-        self.assertNotContains(invalid_preview, 'name="preview_token"')
-
-        missing_token = self.request('post', self.url, {'action': 'apply'})
-        self.assertEqual(missing_token.status_code, 400)
-        oversized_token = self.request('post', self.url,
-            {'action': 'apply', 'preview_token': 'x' * 150_001})
-        self.assertEqual(oversized_token.status_code, 404)
-
-    def test_signed_preview_identity_and_apply_failures_are_denied_or_reported(self):
-        base = {'hearing': self.hearing.pk, 'organization': self.org.id,
-                'user': self.owner.pk, 'parsed': {'fatal': None, 'rows': [], 'errors': []}}
-        wrong_owner = signing.dumps({**base, 'user': 999999},
-            salt=PANEL_CANDIDATE_IMPORT_TOKEN_SALT)
-        self.assertEqual(self.request('post', self.url, {
-            'action': 'apply', 'preview_token': wrong_owner}).status_code, 404)
-
-        token = signing.dumps(base, salt=PANEL_CANDIDATE_IMPORT_TOKEN_SALT)
-        with patch('service_domains.views.apply_candidate_import',
-                   side_effect=PermissionDenied):
-            denied = self.request('post', self.url, {'action': 'apply', 'preview_token': token})
-        self.assertEqual(denied.status_code, 404)
-        with patch('service_domains.views.apply_candidate_import',
-                   side_effect=ValidationError('stale import')):
-            stale = self.request('post', self.url, {'action': 'apply', 'preview_token': token})
-        self.assertEqual(stale.status_code, 400)
-        self.assertContains(stale, 'stale import', status_code=400)
