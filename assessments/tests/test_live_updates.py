@@ -141,7 +141,7 @@ class AssessmentLiveStateViewTests(TestCase):
     def test_returns_fragments_reflecting_the_active_turn(self, mock_apply_async):
         activate_turn(self.session, self.group1, duration_seconds=90)
 
-        response = self.client.get(f'/classroom/app/{self.session.pk}/live-state/')
+        response = self.client.get(f'/assessment/app/{self.session.pk}/live-state/')
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -175,7 +175,7 @@ class AssessmentLiveStateViewTests(TestCase):
         Evaluation.objects.create(presentation_turn=group2_turn, evaluator=partially_graded)
         Evaluation.objects.create(presentation_turn=group2_turn, evaluator=waiting)
 
-        response = self.client.get(f'/classroom/app/{self.session.pk}/live-state/')
+        response = self.client.get(f'/assessment/app/{self.session.pk}/live-state/')
 
         self.assertEqual(response.status_code, 200)
         html = response.json()['roster_html']
@@ -210,7 +210,7 @@ class AssessmentLiveStateViewTests(TestCase):
         turn.presentation_ends_at = timezone.now() - timedelta(seconds=1)
         turn.save(update_fields=['presentation_ends_at'])
 
-        data = self.client.get(f'/classroom/app/{self.session.pk}/live-state/').json()
+        data = self.client.get(f'/assessment/app/{self.session.pk}/live-state/').json()
 
         self.assertEqual(data['active_turn']['group_id'], self.group2.pk)
         self.assertIn('Group 1 finished presenting', data['activity_html'])
@@ -218,12 +218,12 @@ class AssessmentLiveStateViewTests(TestCase):
     def test_reports_closed_status_for_a_closed_session(self):
         self.session.status = AssessmentSession.Status.CLOSED
         self.session.save(update_fields=['status'])
-        data = self.client.get(f'/classroom/app/{self.session.pk}/live-state/').json()
+        data = self.client.get(f'/assessment/app/{self.session.pk}/live-state/').json()
         self.assertEqual(data['status'], 'closed')
 
     def test_requires_admin(self):
         self.client.logout()
-        response = self.client.get(f'/classroom/app/{self.session.pk}/live-state/')
+        response = self.client.get(f'/assessment/app/{self.session.pk}/live-state/')
         self.assertNotEqual(response.status_code, 200)
 
 
@@ -279,7 +279,7 @@ class SetDefaultTurnSecondsViewTests(TestCase):
 
     def test_saves_the_chosen_duration_as_the_session_default(self):
         response = self.client.post(
-            f'/classroom/app/{self.session.pk}/set-timer/', {'duration_seconds': '600'})
+            f'/assessment/app/{self.session.pk}/set-timer/', {'duration_seconds': '600'})
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {'ok': True, 'duration_seconds': 600})
@@ -290,7 +290,7 @@ class SetDefaultTurnSecondsViewTests(TestCase):
         self.session.default_turn_seconds = 90
         self.session.save(update_fields=['default_turn_seconds'])
 
-        response = self.client.post(f'/classroom/app/{self.session.pk}/set-timer/', {'duration_seconds': ''})
+        response = self.client.post(f'/assessment/app/{self.session.pk}/set-timer/', {'duration_seconds': ''})
 
         self.assertEqual(response.json(), {'ok': True, 'duration_seconds': None})
         self.session.refresh_from_db()
@@ -298,8 +298,8 @@ class SetDefaultTurnSecondsViewTests(TestCase):
 
     def test_persists_across_a_fresh_page_load(self):
         PresentationGroup.objects.create(assessment_session=self.session, name='Group 1', order=1)
-        self.client.post(f'/classroom/app/{self.session.pk}/set-timer/', {'duration_seconds': '180'})
+        self.client.post(f'/assessment/app/{self.session.pk}/set-timer/', {'duration_seconds': '180'})
 
-        data = self.client.get(f'/classroom/app/{self.session.pk}/live-state/').json()
+        data = self.client.get(f'/assessment/app/{self.session.pk}/live-state/').json()
 
         self.assertIn('180', data['groups_html'])  # hidden duration-input carries the saved default forward

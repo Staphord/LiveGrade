@@ -2504,8 +2504,8 @@ class CombinedPresentationAssessment(OwnedDomainRecord):
             raise ValidationError({'classroom_session': 'Choose a session in this organization.'})
         if self.classroom_session.created_by_id != self.created_by_id:
             raise ValidationError({'classroom_session': 'The linked sources must have the same owner.'})
-        if self.classroom_session.service != 'classroom':
-            raise ValidationError({'classroom_session': 'Only Classroom sessions can be linked.'})
+        if self.classroom_session.service != 'assessment':
+            raise ValidationError({'classroom_session': 'Only Assessment sessions can be linked.'})
         if self.result_policy == self.ResultPolicy.WEIGHTED:
             if self.peer_weight + self.panel_weight != Decimal('100'):
                 raise ValidationError('Peer and Panel weights must total 100%.')

@@ -125,6 +125,6 @@ class PrivateLearnerReportTests(TestCase):
         from service_domains.team_reports import training_learner_report
         rf = RequestFactory()
         req = rf.get(url)
-        req.service = 'classroom'
+        req.service = 'assessment'
         with self.assertRaises(Http404):
             training_learner_report(req, token)

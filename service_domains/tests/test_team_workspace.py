@@ -385,7 +385,7 @@ class TrainingSeriesWorkspaceTests(TestCase):
         self.assertContains(console, 'Week 1 demo')
         self.assertContains(console, f'/team/app/{session.pk}/groups/')
         self.assertContains(console, f'/team/app/{session.pk}/rubric/')
-        classroom_path = f'/classroom/app/{session.pk}/'
+        classroom_path = f'/assessment/app/{session.pk}/'
         self.assertEqual(self.request('get', classroom_path).status_code, 404)
         self.assertEqual(list(session.students.values_list('full_name', flat=True)), ['Amina', 'Juma'])
         self.assertEqual(session.groups.get().name, 'Team North')
@@ -1403,7 +1403,7 @@ class TrainingCompetencyDecisionOperationTests(TestCase):
 
     def test_template_form_rejects_non_team_template_if_queryset_is_broadened(self):
         template = SessionTemplate.objects.create(organization_id=self.org.id,
-            created_by=self.owner, service='classroom', name='Classroom template')
+            created_by=self.owner, service='assessment', name='Classroom template')
         form = CreateTrainingSessionForm({'name': 'Week 1', 'template': f'saved:{template.pk}'},
             organization=self.org.as_claim(), user=self.owner)
         self.assertFalse(form.is_valid())

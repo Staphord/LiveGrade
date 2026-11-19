@@ -18,6 +18,9 @@ row that joins an evaluator identity to a raw score. See
 ``assessments/scoring.py`` and ``test_lecturer_cannot_see_individual_scores``.
 """
 
+from datetime import timedelta
+import hashlib
+import secrets
 import uuid
 
 from decimal import Decimal
@@ -408,30 +411,6 @@ class PresentationGroup(models.Model):
     def __str__(self):
         return self.name
 
-    @property
-    def assessment_mode_label(self):
-        """Human-readable label for the enabled assessment modes."""
-        if self.enable_peer and self.enable_panel:
-            return 'Peer + Panel'
-        if self.enable_panel:
-            return 'Panel only'
-        return 'Peer only'
-
-    def clean(self):
-        super().clean()
-        if not self.enable_peer and not self.enable_panel:
-            raise ValidationError('Enable at least one assessment mode (Peer or Panel).')
-        if self.enable_peer and not self.enable_panel:
-            self.peer_weight = Decimal('100.00')
-            self.panel_weight = Decimal('0.00')
-        elif self.enable_panel and not self.enable_peer:
-            self.panel_weight = Decimal('100.00')
-            self.peer_weight = Decimal('0.00')
-        elif (self.panel_weight + self.peer_weight) != Decimal('100.00'):
-            raise ValidationError({'peer_weight': 'Panel and Peer weights must total exactly 100%.'})
-        if self.panel_aggregation == self.PanelAggregation.TRIMMED_MEAN and self.panel_trim_fraction is None:
-            raise ValidationError({'panel_trim_fraction': 'Trimmed mean requires an explicit trim fraction.'})
-
     def clean(self):
         super().clean()
         if self.pk and self.turns.exists():
@@ -739,30 +718,6 @@ class SessionTemplate(OrganizationScopedModel):
     def __str__(self):
         return self.name
 
-    @property
-    def assessment_mode_label(self):
-        """Human-readable label for the enabled assessment modes."""
-        if self.enable_peer and self.enable_panel:
-            return 'Peer + Panel'
-        if self.enable_panel:
-            return 'Panel only'
-        return 'Peer only'
-
-    def clean(self):
-        super().clean()
-        if not self.enable_peer and not self.enable_panel:
-            raise ValidationError('Enable at least one assessment mode (Peer or Panel).')
-        if self.enable_peer and not self.enable_panel:
-            self.peer_weight = Decimal('100.00')
-            self.panel_weight = Decimal('0.00')
-        elif self.enable_panel and not self.enable_peer:
-            self.panel_weight = Decimal('100.00')
-            self.peer_weight = Decimal('0.00')
-        elif (self.panel_weight + self.peer_weight) != Decimal('100.00'):
-            raise ValidationError({'peer_weight': 'Panel and Peer weights must total exactly 100%.'})
-        if self.panel_aggregation == self.PanelAggregation.TRIMMED_MEAN and self.panel_trim_fraction is None:
-            raise ValidationError({'panel_trim_fraction': 'Trimmed mean requires an explicit trim fraction.'})
-
 
 class TemplateRubricCategory(models.Model):
     template = models.ForeignKey(SessionTemplate, on_delete=models.CASCADE, related_name='rubric_categories')
@@ -778,30 +733,6 @@ class TemplateRubricCategory(models.Model):
 
     def __str__(self):
         return self.name
-
-    @property
-    def assessment_mode_label(self):
-        """Human-readable label for the enabled assessment modes."""
-        if self.enable_peer and self.enable_panel:
-            return 'Peer + Panel'
-        if self.enable_panel:
-            return 'Panel only'
-        return 'Peer only'
-
-    def clean(self):
-        super().clean()
-        if not self.enable_peer and not self.enable_panel:
-            raise ValidationError('Enable at least one assessment mode (Peer or Panel).')
-        if self.enable_peer and not self.enable_panel:
-            self.peer_weight = Decimal('100.00')
-            self.panel_weight = Decimal('0.00')
-        elif self.enable_panel and not self.enable_peer:
-            self.panel_weight = Decimal('100.00')
-            self.peer_weight = Decimal('0.00')
-        elif (self.panel_weight + self.peer_weight) != Decimal('100.00'):
-            raise ValidationError({'peer_weight': 'Panel and Peer weights must total exactly 100%.'})
-        if self.panel_aggregation == self.PanelAggregation.TRIMMED_MEAN and self.panel_trim_fraction is None:
-            raise ValidationError({'panel_trim_fraction': 'Trimmed mean requires an explicit trim fraction.'})
 
 
 class TemplateLevelDescriptor(models.Model):
@@ -1175,6 +1106,9 @@ class ReviewAssignment(models.Model):
         Student, null=True, blank=True, on_delete=models.CASCADE, related_name='review_assignments')
     examiner_evaluator = models.ForeignKey(
         PanelExaminer, null=True, blank=True, on_delete=models.CASCADE, related_name='review_assignments')
+    invite_token = models.CharField(max_length=64, blank=True, default='', unique=True, editable=False)
+    token_digest = models.CharField(max_length=64, blank=True, default='', unique=True, editable=False)
+    expires_at = models.DateTimeField(null=True, blank=True)
     status = models.CharField(
         max_length=16, choices=Status.choices, default=Status.ACTIVE, db_index=True)
     row_version = models.PositiveIntegerField(default=1)
@@ -1196,6 +1130,17 @@ class ReviewAssignment(models.Model):
                 condition=models.Q(examiner_evaluator__isnull=False, status__in=('active', 'draft', 'submitted')),
                 name='assessment_panel_assignment_unique'),
         ]
+
+    def rotate_invite_token(self):
+        """Issue a fresh, time-limited bearer link for this reviewer."""
+        self.invite_token = secrets.token_urlsafe(32)
+        self.token_digest = hashlib.sha256(self.invite_token.encode('utf-8')).hexdigest()
+        self.expires_at = timezone.now() + timedelta(days=14)
+
+    def save(self, *args, **kwargs):
+        if self._state.adding:
+            self.rotate_invite_token()
+        return super().save(*args, **kwargs)
 
 
 class ResultPublication(models.Model):

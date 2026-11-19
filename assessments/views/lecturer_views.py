@@ -46,6 +46,7 @@ from ..turns import (
     activate_turn, adjust_timer, ensure_turn_progressed, open_voting, pause_timer, resume_timer,
 )
 from ..turns import close_turn as close_turn_service
+from ..view_routing import request_redirect, request_reverse
 
 __all__ = [
     'assessment_dashboard', 'assessment_session_list', 'assessment_session_create', 'assessment_session_edit',
@@ -93,7 +94,7 @@ def _closed(request, session):
     if reason is None:
         return None
     messages.error(request, reason)
-    return redirect('assessment_session_detail', pk=session.pk)
+    return request_redirect(request, 'assessment_session_detail', pk=session.pk)
 
 
 @lecturer_required
@@ -293,8 +294,8 @@ def assessment_walkthrough_start(request):
     walkthroughs[str(organization['id'])] = {'session_id': existing.pk if existing else None}
     request.session[CLASSROOM_WALKTHROUGHS_KEY] = walkthroughs
     if existing:
-        return redirect('assessment_groups', pk=existing.pk)
-    return redirect('assessment_session_create')
+        return request_redirect(request, 'assessment_groups', pk=existing.pk)
+    return request_redirect(request, 'assessment_session_create')
 
 
 @lecturer_required
@@ -309,7 +310,7 @@ def assessment_walkthrough_dismiss(request):
     else:
         walkthroughs = {}
     request.session[CLASSROOM_WALKTHROUGHS_KEY] = walkthroughs
-    return redirect('assessment_session_list')
+    return request_redirect(request, 'assessment_session_list')
 
 
 @lecturer_required
@@ -348,7 +349,7 @@ def assessment_session_create(request):
                 walkthroughs[str(organization['id'])] = {'session_id': session.pk}
                 request.session[CLASSROOM_WALKTHROUGHS_KEY] = walkthroughs
             messages.success(request, f'"{session.name}" created - add your groups next.')
-            return redirect('assessment_groups', pk=session.pk)
+            return request_redirect(request, 'assessment_groups', pk=session.pk)
     return render(request, 'assessments/session_setup.html', {
         'session': None, 'active_step': 'basics', 'form': form, 'template_picker': picker,
         'selected_template': selected, 'template_selection': selection,
@@ -372,7 +373,7 @@ def assessment_session_duplicate(request, pk):
                 form.add_error(None, error)
             else:
                 messages.success(request, f'"{duplicate.name}" created as a new draft. Review its setup before going live.')
-                return redirect('assessment_groups', pk=duplicate.pk)
+                return request_redirect(request, 'assessment_groups', pk=duplicate.pk)
     else:
         form = DuplicateSessionForm(initial={'name': f'{source.name[:143]} (copy)'})
     return render(request, 'assessments/_session_duplicate_modal.html', {
@@ -380,7 +381,30 @@ def assessment_session_duplicate(request, pk):
     })
 
 
-BASICS_LABELS = {'name': 'name', 'identify_by': 'how students join', 'ungraded_penalty': 'penalty per group not graded', 'instructions': 'evaluator notice'}
+BASICS_LABELS = {
+    'name': 'name',
+    'identify_by': 'how participants join',
+    'ungraded_penalty': 'penalty per group not graded',
+    'instructions': 'evaluator notice',
+    'enable_peer': 'peer grading',
+    'enable_panel': 'panel grading',
+    'delivery_mode': 'delivery format',
+    'entry_mode': 'entry format',
+    'timezone_name': 'session timezone',
+    'peer_weight': 'peer score share',
+    'panel_weight': 'panel score share',
+    'minimum_peer_evaluators': 'minimum peer reviews',
+    'minimum_panel_evaluators': 'minimum panel reviews',
+    'moderation_threshold': 'discrepancy threshold',
+    'avoid_reciprocal_pairs': 'reciprocal review rule',
+    'panel_aggregation': 'panel score aggregation',
+    'panel_trim_fraction': 'panel trimming rule',
+    'panel_enable_rubric': 'panel rubric scoring',
+    'panel_enable_vote': 'panel vote',
+    'panel_enable_written_review': 'written panel reviews',
+    'panel_enable_private_notes': 'private panel notes',
+    'require_chair_approval': 'chair sign-off rule',
+}
 
 
 @lecturer_required
@@ -401,7 +425,9 @@ def assessment_session_edit(request, pk):
     if request.method == 'POST':
         form = AssessmentSessionForm(request.POST, instance=session)
         if form.is_valid():
-            changed = list(form.changed_data)
+            changed = [field for field in form.changed_data if field in BASICS_LABELS]
+            if not form.mode_fields_included:
+                changed = [field for field in changed if field in request.POST]
             form.save()
             if changed:
                 record_change(session, request.user,
@@ -409,8 +435,8 @@ def assessment_session_edit(request, pk):
             messages.success(request, f'"{session.name}" updated.')
             # nosemgrep: python.django.security.django-using-request-post-after-is-valid.django-using-request-post-after-is-valid (compared with a fixed word, never used as an address)
             if request.POST.get('next') == 'setup':
-                return redirect(reverse('assessment_setup', args=[session.pk]) + '?step=basics')
-            return redirect('assessment_session_detail', pk=session.pk)
+                return redirect(request_reverse(request, 'assessment_setup', args=[session.pk]) + '?step=basics')
+            return request_redirect(request, 'assessment_session_detail', pk=session.pk)
     else:
         form = AssessmentSessionForm(instance=session)
 
@@ -613,7 +639,7 @@ def assessment_session_detail(request, pk):
         session.delivery_mode == AssessmentSession.DeliveryMode.ASYNC_SUBMISSION
         and session.status != AssessmentSession.Status.DRAFT
     ):
-        return redirect('assessment_async_console', pk=session.pk)
+        return request_redirect(request, 'assessment_async_console', pk=session.pk)
     if session.status == AssessmentSession.Status.DRAFT:
         # A draft session has no live console to show yet - render the same
         # merged setup screen the groups/rubric steps render, opened
@@ -676,7 +702,7 @@ def assessment_session_delete(request, pk):
     name = session.name
     session.delete()
     messages.success(request, f'"{name}" deleted.')
-    return redirect('assessment_session_list')
+    return request_redirect(request, 'assessment_session_list')
 
 
 @lecturer_required
@@ -728,7 +754,7 @@ def _session_bulk_delete_redirect(request):
     params['per_page'] = str(per_page)
     if request.POST.get('scope') == 'all' and can_oversee(request):
         params['scope'] = 'all'
-    url = reverse('assessment_session_list')
+    url = request_reverse(request, 'assessment_session_list')
     return redirect(f'{url}?{params.urlencode()}' if params else url)
 
 
@@ -863,7 +889,7 @@ def _setup_context(request, session, active_step, roster_form=None, rubric_form=
         )
         source_key = request.GET.get('from') if request.GET.get('from') in source_map else default_source
         url_name, setup_return_label = source_map[source_key]
-        setup_return_url = reverse(url_name, args=[session.pk])
+        setup_return_url = request_reverse(request, url_name, args=[session.pk])
 
     context.update({
         'step_rubric_done': rubric_ready,
@@ -901,7 +927,7 @@ def roster(request, pk):
                 student.save()
                 record_change(session, request.user, f'Added student {student}.')
                 messages.success(request, f'{student.full_name or student.student_id} added.')
-                return redirect('assessment_roster', pk=session.pk)
+                return request_redirect(request, 'assessment_roster', pk=session.pk)
 
     return render(request, 'assessments/session_setup.html',
                   {**_setup_context(request, session, 'groups', roster_form=form), 'students_open': True})
@@ -944,7 +970,7 @@ def roster_edit(request, pk, student_pk):
         for field_errors in form.errors.values():
             for error in field_errors:
                 messages.error(request, error)
-    return redirect('assessment_roster', pk=session.pk)
+    return request_redirect(request, 'assessment_roster', pk=session.pk)
 
 
 @lecturer_required
@@ -958,12 +984,12 @@ def roster_delete(request, pk, student_pk):
     reason = student_delete_lock(student)
     if reason:
         messages.error(request, reason)
-        return redirect('assessment_roster', pk=session.pk)
+        return request_redirect(request, 'assessment_roster', pk=session.pk)
     name = str(student)
     student.delete()
     record_change(session, request.user, f'Removed student {name}.')
     messages.success(request, 'Student removed.')
-    return redirect('assessment_roster', pk=session.pk)
+    return request_redirect(request, 'assessment_roster', pk=session.pk)
 
 
 # ---------------------------------------------------------------- Rubric ----
@@ -979,12 +1005,12 @@ def rubric(request, pk):
         lock = live_rubric_lock(session)
         if lock:
             messages.error(request, lock)
-            return redirect('assessment_rubric', pk=session.pk)
+            return request_redirect(request, 'assessment_rubric', pk=session.pk)
         form = RubricCategoryForm(request.POST, assessment_session=session, auto_id='id_rubric_%s')
         if form.is_valid():
             category = form.save()
             messages.success(request, f'"{category.name}" added to the rubric.')
-            return redirect('assessment_rubric', pk=session.pk)
+            return request_redirect(request, 'assessment_rubric', pk=session.pk)
 
     return render(request, 'assessments/session_setup.html',
                   _setup_context(request, session, 'rubric', rubric_form=form))
@@ -1000,14 +1026,14 @@ def rubric_edit(request, pk, category_pk):
     lock = live_rubric_lock(session)
     if lock:
         messages.error(request, lock)
-        return redirect('assessment_rubric', pk=session.pk)
+        return request_redirect(request, 'assessment_rubric', pk=session.pk)
     category = get_object_or_404(RubricCategory, pk=category_pk, assessment_session=session)
     form = RubricCategoryForm(request.POST, instance=category, assessment_session=session,
                               auto_id='id_rubric_%s')
     if form.is_valid():
         form.save()
         messages.success(request, f'"{category.name}" updated.')
-        return redirect('assessment_rubric', pk=session.pk)
+        return request_redirect(request, 'assessment_rubric', pk=session.pk)
     # Show the edit form again with what was typed and each problem under its own
     # field, rather than clearing it and reporting the errors in a toast.
     context = _setup_context(request, session, 'rubric', rubric_form=form)
@@ -1025,11 +1051,11 @@ def rubric_delete(request, pk, category_pk):
     lock = live_rubric_lock(session)
     if lock:
         messages.error(request, lock)
-        return redirect('assessment_rubric', pk=session.pk)
+        return request_redirect(request, 'assessment_rubric', pk=session.pk)
     category = get_object_or_404(RubricCategory, pk=category_pk, assessment_session=session)
     category.delete()
     messages.success(request, 'Rubric category removed.')
-    return redirect('assessment_rubric', pk=session.pk)
+    return request_redirect(request, 'assessment_rubric', pk=session.pk)
 
 
 # ---------------------------------------------------------------- Groups ----
@@ -1084,7 +1110,7 @@ def groups(request, pk):
                     request,
                     f'"{group.name}" created with {len(member_ids)} member(s).'
                     if member_ids else f'"{group.name}" created.')
-                return redirect('assessment_groups', pk=session.pk)
+                return request_redirect(request, 'assessment_groups', pk=session.pk)
 
     return render(request, 'assessments/session_setup.html',
                   _setup_context(request, session, 'groups', group_form=form))
@@ -1157,7 +1183,7 @@ def group_members(request, pk, group_pk):
             'stats_html': render_to_string(
                 'assessments/_partials/group_stats.html', context, request=request),
         })
-    return redirect('assessment_groups', pk=session.pk)
+    return request_redirect(request, 'assessment_groups', pk=session.pk)
 
 
 @lecturer_required
@@ -1178,7 +1204,7 @@ def group_edit(request, pk, group_pk):
         for field_errors in form.errors.values():
             for error in field_errors:
                 messages.error(request, error)
-    return redirect('assessment_groups', pk=session.pk)
+    return request_redirect(request, 'assessment_groups', pk=session.pk)
 
 
 @lecturer_required
@@ -1190,7 +1216,7 @@ def group_delete(request, pk, group_pk):
         return blocked
     group = get_object_or_404(PresentationGroup, pk=group_pk, assessment_session=session)
     delete_groups(request, session, [group])
-    return redirect('assessment_groups', pk=session.pk)
+    return request_redirect(request, 'assessment_groups', pk=session.pk)
 
 
 def delete_groups(request, session, groups):
@@ -1235,18 +1261,18 @@ def go_live(request, pk):
     readiness = compute_session_readiness(session)
     if not readiness['ready']:
         messages.error(request, readiness['blockers'][0])
-        return redirect('assessment_setup', pk=session.pk)
+        return request_redirect(request, 'assessment_setup', pk=session.pk)
     if session.delivery_mode == AssessmentSession.DeliveryMode.ASYNC_SUBMISSION:
         session.status = AssessmentSession.Status.SUBMISSIONS_OPEN
         session.save(update_fields=['status'])
         broadcast_session_event(session, 'session.live', {'status': session.status})
         messages.success(request, 'Submissions are now open.')
-        return redirect('assessment_async_console', pk=session.pk)
+        return request_redirect(request, 'assessment_async_console', pk=session.pk)
     session.status = AssessmentSession.Status.LIVE
     session.save(update_fields=['status'])
     broadcast_session_event(session, 'session.live', {'status': session.status})
     messages.success(request, 'Session is now live.')
-    return redirect('assessment_session_detail', pk=session.pk)
+    return request_redirect(request, 'assessment_session_detail', pk=session.pk)
 
 
 @lecturer_required
@@ -1273,7 +1299,7 @@ def activate_group(request, pk, group_pk):
             f'in {duration_seconds // 60}m {duration_seconds % 60:02d}s.')
     else:
         messages.success(request, f'"{group.name}" is now presenting.')
-    return redirect('assessment_session_detail', pk=session.pk)
+    return request_redirect(request, 'assessment_session_detail', pk=session.pk)
 
 
 @lecturer_required
@@ -1348,7 +1374,7 @@ def toggle_pause(request, pk):
 
     broadcast_session_event(session, 'voting.paused', {'paused': session.voting_paused})
     messages.success(request, 'Voting paused.' if session.voting_paused else 'Voting resumed.')
-    return redirect('assessment_session_detail', pk=session.pk)
+    return request_redirect(request, 'assessment_session_detail', pk=session.pk)
 
 
 @lecturer_required
@@ -1370,7 +1396,7 @@ def toggle_joining(request, pk):
     messages.success(
         request,
         'New joining is locked.' if session.joining_locked else 'New joining is open.')
-    return redirect('assessment_session_detail', pk=session.pk)
+    return request_redirect(request, 'assessment_session_detail', pk=session.pk)
 
 
 @lecturer_required
@@ -1390,7 +1416,7 @@ def set_designated_next_group(request, pk):
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return JsonResponse({'ok': True, 'cleared': True, 'effective_next': effective.name if effective else ''})
         messages.success(request, 'Upcoming queue order reset to default.')
-        return redirect('assessment_session_detail', pk=session.pk)
+        return request_redirect(request, 'assessment_session_detail', pk=session.pk)
 
     group = get_object_or_404(PresentationGroup, pk=group_pk_raw, assessment_session=session)
     session.designated_next_group = group
@@ -1402,7 +1428,7 @@ def set_designated_next_group(request, pk):
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({'ok': True, 'group_id': group.pk, 'group_name': group.name})
     messages.success(request, f'"{group.name}" designated as next up.')
-    return redirect('assessment_session_detail', pk=session.pk)
+    return request_redirect(request, 'assessment_session_detail', pk=session.pk)
 
 
 @lecturer_required
@@ -1415,11 +1441,11 @@ def adjust_turn_timer(request, pk):
         delta_seconds = int(delta_raw)
     except ValueError:
         messages.error(request, 'Invalid time adjustment.')
-        return redirect('assessment_session_detail', pk=session.pk)
+        return request_redirect(request, 'assessment_session_detail', pk=session.pk)
 
     if turn is None:
         messages.error(request, 'No group is currently presenting.')
-        return redirect('assessment_session_detail', pk=session.pk)
+        return request_redirect(request, 'assessment_session_detail', pk=session.pk)
 
     try:
         result = adjust_timer(turn, delta_seconds)
@@ -1433,7 +1459,7 @@ def adjust_turn_timer(request, pk):
                 request,
                 f'Timer {"extended" if delta_seconds > 0 else "reduced"} '
                 f'by {abs(delta_seconds)}s.')
-    return redirect('assessment_session_detail', pk=session.pk)
+    return request_redirect(request, 'assessment_session_detail', pk=session.pk)
 
 
 @lecturer_required
@@ -1444,7 +1470,7 @@ def close_turn(request, pk):
     if turn:
         close_turn_service(turn)
         messages.success(request, f'Voting closed for "{turn.group.name}".')
-    return redirect('assessment_session_detail', pk=session.pk)
+    return request_redirect(request, 'assessment_session_detail', pk=session.pk)
 
 
 @lecturer_required
@@ -1460,7 +1486,7 @@ def close_session(request, pk):
     session.save(update_fields=['status', 'closed_at'])
     broadcast_session_event(session, 'session.closed', {})
     messages.success(request, 'Session closed. Results are ready.')
-    return redirect('assessment_results', pk=session.pk)
+    return request_redirect(request, 'assessment_results', pk=session.pk)
 
 
 @lecturer_required
@@ -1476,20 +1502,20 @@ def toggle_public_results(request, pk):
         locked = _session(request, pk, lock=True)
         if locked.status != AssessmentSession.Status.CLOSED:
             messages.error(request, 'Close the session before releasing a public leaderboard.')
-            return redirect('assessment_results', pk=locked.pk)
+            return request_redirect(request, 'assessment_results', pk=locked.pk)
         if release and not locked.public_results_released_at:
             groups = list(locked.groups.filter(is_practice=False).order_by('order', 'pk'))
             scores = group_score_percents(locked, groups)
             if not groups or any(scores.get(group.pk) is None for group in groups):
                 messages.error(request,
                     'Complete scoring for every presentation group before release.')
-                return redirect('assessment_results', pk=locked.pk)
+                return request_redirect(request, 'assessment_results', pk=locked.pk)
         elif not release and not locked.public_leaderboard_show_scores:
             messages.info(request, 'Public scores are already hidden.')
-            return redirect('assessment_results', pk=locked.pk)
+            return request_redirect(request, 'assessment_results', pk=locked.pk)
         elif release and locked.public_leaderboard_show_scores:
             messages.info(request, 'Public scores are already visible.')
-            return redirect('assessment_results', pk=locked.pk)
+            return request_redirect(request, 'assessment_results', pk=locked.pk)
         if release:
             locked.public_results_released_at = timezone.now()
             locked.public_results_released_by = request.user
@@ -1506,7 +1532,7 @@ def toggle_public_results(request, pk):
         transaction.on_commit(lambda: broadcast_session_event(locked, 'public.results.changed', {}))
     messages.success(request, 'Public leaderboard released.' if release
                      else 'Public scores hidden; rankings remain visible.')
-    return redirect('assessment_results', pk=locked.pk)
+    return request_redirect(request, 'assessment_results', pk=locked.pk)
 
 
 # --------------------------------------------------------- Reporting views --
@@ -1766,7 +1792,7 @@ def results(request, pk):
                 messages.success(request, f'Published immutable result snapshot (Revision {pub.revision}).')
         except (ValidationError, ValueError, TypeError) as exc:
             messages.error(request, getattr(exc, 'message', str(exc)))
-        return redirect('assessment_results', pk=session.pk)
+        return request_redirect(request, 'assessment_results', pk=session.pk)
 
     context = _results_context(request, session)
     context['is_owner'] = is_owner
@@ -1867,7 +1893,7 @@ def session_transfer(request, pk):
                 # different person's session stays on the organization-wide list,
                 # unless they took ownership themselves.
                 show_all = can_oversee(request) and not is_owner and chosen.pk != request.user.pk
-                back = reverse('assessment_session_list') + ('?scope=all' if show_all else '')
+                back = request_reverse(request, 'assessment_session_list') + ('?scope=all' if show_all else '')
                 messages.success(
                     request, f'"{session.name}" now belongs to {chosen.get_full_name() or chosen.username}.')
                 if request.headers.get('x-requested-with') == 'XMLHttpRequest':

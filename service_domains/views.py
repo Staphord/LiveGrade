@@ -41,6 +41,7 @@ from assessments.models import AssessmentSession, SessionTemplate
 from assessments.pagination import PAGE_SIZE, PAGE_SIZES, paginate
 from assessments.qr import public_url
 from assessments.session_templates import starters_for
+from assessments.view_routing import request_redirect
 from .forms import ShowcaseRatingForm
 from .models import (
     SHOWCASE_DEVICE_TOKEN_MAX_AGE, ShowcaseCategory, ShowcaseCertificate, ShowcaseEvent,
@@ -3280,7 +3281,7 @@ def training_series_manage(request, series_id):
                 else:
                     messages.success(request,
                         f"Demo session ‘{session.name}’ was created with this series roster and rubric.")
-                    return redirect('assessment_session_detail', pk=session.pk)
+                    return request_redirect(request, 'assessment_session_detail', pk=session.pk)
         else:
             raise Http404
 

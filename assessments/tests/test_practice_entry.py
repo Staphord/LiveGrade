@@ -215,7 +215,7 @@ class PracticeEntryTests(TestCase):
 
     def test_other_owner_and_other_service_cannot_set_practice_flag(self):
         edit = reverse('assessment_group_edit', args=[self.session.pk, self.a.pk])
-        for service, owner in [('classroom', make_user('colleague')), ('panel', self.owner)]:
+        for service, owner in [('assessment', make_user('colleague')), ('panel', self.owner)]:
             self.session.service = service
             self.session.save()
             sign_in(self.client, owner, self.org)

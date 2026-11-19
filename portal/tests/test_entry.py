@@ -1,4 +1,4 @@
-"""The entry address: opening /classroom/ is the act of choosing Classroom."""
+"""Service entry behavior for the current service registry and route layout."""
 from django.conf import settings
 from django.http import Http404
 from django.test import RequestFactory, TestCase, override_settings
@@ -7,245 +7,183 @@ from django.urls import reverse
 from accounts.testing import make_org, make_user, sign_in
 from portal import views
 from portal.models import ServiceAccess
-from portal.views import CHOICE_KEY
+from portal.services import CHOICE_KEY, SERVICES
 
-SIGN_IN = '/oidc/authenticate/'
-UNRELEASED = ('panel', 'showcase', 'team', 'competition')
+SIGN_IN = reverse('oidc_authentication_init')
+ALL_SERVICES = [service.slug for service in SERVICES]
+RELEASED_BY_DEFAULT = ['assessment', 'polls']
+NOT_RELEASED_BY_DEFAULT = ['showcase', 'team', 'competition']
 
 
-@override_settings(LIVEGRADE_LIVE_SERVICES=['classroom'])
+@override_settings(LIVEGRADE_LIVE_SERVICES=RELEASED_BY_DEFAULT)
 class EntryTestCase(TestCase):
 
     def setUp(self):
         self.org = make_org('Uni')
-        self.ann = make_user('ann')
+        self.user = make_user('ann')
+
+    def entry_url(self, slug='assessment'):
+        return reverse('service_entry', kwargs={'slug': slug})
 
 
 class VisitorTests(EntryTestCase):
 
-    def test_a_visitor_is_sent_to_sign_in_and_on_to_the_dashboard(self):
-        response = self.client.get('/classroom/')
+    def test_a_visitor_is_sent_to_sign_in_from_the_selected_service(self):
+        response = self.client.get(self.entry_url())
         self.assertRedirects(response, SIGN_IN, fetch_redirect_response=False)
 
-    def test_the_choice_is_remembered_for_the_sign_in_that_follows(self):
-        self.client.get('/classroom/')
-        self.assertEqual(self.client.session[CHOICE_KEY], 'classroom')
+    def test_the_service_choice_is_remembered_for_sign_in(self):
+        self.client.get(self.entry_url('polls'))
+        self.assertEqual(self.client.session[CHOICE_KEY], 'polls')
 
-    def test_registration_keeps_the_choice_and_passes_only_the_signup_hint(self):
-        response = self.client.get('/classroom/?signup=1&next=https://evil.example/')
-        self.assertRedirects(response, '/oidc/authenticate/?signup=1', fetch_redirect_response=False)
-        self.assertEqual(self.client.session[CHOICE_KEY], 'classroom')
+    def test_registration_keeps_the_choice_and_ignores_a_supplied_destination(self):
+        response = self.client.get(self.entry_url() + '?signup=1&next=https://evil.example/')
+        self.assertRedirects(response, SIGN_IN + '?signup=1', fetch_redirect_response=False)
+        self.assertEqual(self.client.session[CHOICE_KEY], 'assessment')
 
-    def test_nothing_is_recorded_for_somebody_who_is_not_signed_in(self):
-        self.client.get('/classroom/')
-        self.assertEqual(ServiceAccess.objects.count(), 0)
-
-    def test_the_address_works_with_the_name_from_the_url_helper(self):
-        self.assertEqual(reverse('service_entry', kwargs={'slug': 'classroom'}), '/classroom/')
-
-    def test_a_returned_address_in_the_query_is_ignored(self):
-        for hostile in ('https://evil.example/', '//evil.example/', '/assess/x/', 'javascript:alert(1)'):
+    def test_a_return_address_in_the_query_is_ignored(self):
+        for hostile in ('https://evil.example/', '//evil.example/', '/assess/x/',
+                        'javascript:alert(1)'):
             with self.subTest(hostile=hostile):
-                response = self.client.get('/classroom/', {'next': hostile})
+                response = self.client.get(self.entry_url(), {'next': hostile})
                 self.assertEqual(response['Location'], SIGN_IN)
 
-    def test_the_destination_never_comes_from_the_request(self):
-        response = self.client.get('/classroom/?service=panel&slug=panel', HTTP_REFERER='https://evil.example/')
-        self.assertEqual(response['Location'], SIGN_IN)
-        self.assertEqual(self.client.session[CHOICE_KEY], 'classroom')
+    def test_nothing_is_recorded_for_a_visitor(self):
+        self.client.get(self.entry_url())
+        self.assertEqual(ServiceAccess.objects.count(), 0)
 
 
 class SignedInTests(EntryTestCase):
 
-    def test_a_lecturer_goes_straight_to_the_dashboard(self):
-        sign_in(self.client, self.ann, self.org)
-        response = self.client.get('/classroom/')
-        self.assertRedirects(response, '/classroom/app/', fetch_redirect_response=False)
+    def setUp(self):
+        super().setUp()
+        sign_in(self.client, self.user, self.org)
 
-    def test_the_choice_is_recorded(self):
-        sign_in(self.client, self.ann, self.org)
-        self.client.get('/classroom/')
+    def test_a_lecturer_goes_to_the_assessment_dashboard(self):
+        response = self.client.get(self.entry_url())
+        self.assertRedirects(response, reverse('assessment_dashboard'), fetch_redirect_response=False)
+
+    def test_the_service_choice_is_recorded(self):
+        self.client.get(self.entry_url())
         access = ServiceAccess.objects.get()
-        self.assertEqual((access.user, access.service), (self.ann, 'classroom'))
+        self.assertEqual((access.user, access.service), (self.user, 'assessment'))
 
-    def test_coming_back_refreshes_the_one_row(self):
-        sign_in(self.client, self.ann, self.org)
-        self.client.get('/classroom/')
+    def test_returning_to_the_service_refreshes_its_existing_record(self):
+        self.client.get(self.entry_url())
         first = ServiceAccess.objects.get()
-        self.client.get('/classroom/')
+        self.client.get(self.entry_url())
         self.assertEqual(ServiceAccess.objects.count(), 1)
         self.assertGreaterEqual(ServiceAccess.objects.get().last_used, first.last_used)
 
-    def test_the_dashboard_it_leads_to_opens(self):
-        sign_in(self.client, self.ann, self.org)
-        self.assertEqual(self.client.get('/classroom/', follow=True).status_code, 200)
+    def test_the_destination_dashboard_opens(self):
+        response = self.client.get(self.entry_url(), follow=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.redirect_chain[-1][0], reverse('assessment_dashboard'))
 
-    def test_somebody_with_no_right_to_run_livegrade_is_refused_and_nothing_is_recorded(self):
-        sign_in(self.client, self.ann)
-        response = self.client.get('/classroom/')
+    def test_a_person_without_a_livegrade_organization_is_refused(self):
+        other_client = self.client_class()
+        sign_in(other_client, self.user)
+        response = other_client.get(self.entry_url())
         self.assertEqual(response.status_code, 403)
         self.assertEqual(ServiceAccess.objects.count(), 0)
 
 
 class ComingSoonTests(EntryTestCase):
 
-    def test_a_service_that_is_not_open_shows_its_own_page_to_a_visitor(self):
-        for slug in UNRELEASED:
+    def test_registered_services_without_a_release_switch_show_coming_soon(self):
+        for slug in NOT_RELEASED_BY_DEFAULT:
             with self.subTest(slug=slug):
-                response = self.client.get(f'/{slug}/')
+                response = self.client.get(self.entry_url(slug))
                 self.assertEqual(response.status_code, 200)
                 self.assertTemplateUsed(response, 'portal/coming_soon.html')
                 self.assertContains(response, 'is coming soon')
 
-    def test_it_names_the_service_and_says_what_it_will_do(self):
-        response = self.client.get('/panel/')
-        self.assertContains(response, 'Panel is coming soon')
-        self.assertContains(response, 'invite examiners')
-
-    def test_a_signed_in_person_sees_the_same_page_and_nothing_is_recorded(self):
-        sign_in(self.client, self.ann, self.org)
-        for slug in UNRELEASED:
-            self.assertContains(self.client.get(f'/{slug}/'), 'is coming soon')
+    def test_a_signed_in_person_sees_the_same_page_without_a_service_record(self):
+        sign_in(self.client, self.user, self.org)
+        for slug in NOT_RELEASED_BY_DEFAULT:
+            with self.subTest(slug=slug):
+                self.assertContains(self.client.get(self.entry_url(slug)), 'is coming soon')
         self.assertEqual(ServiceAccess.objects.count(), 0)
 
-    def test_no_choice_is_remembered_for_a_service_that_cannot_be_entered(self):
-        self.client.get('/panel/')
+    def test_no_choice_is_saved_for_a_service_that_is_not_open(self):
+        self.client.get(self.entry_url('showcase'))
         self.assertNotIn(CHOICE_KEY, self.client.session)
 
     @override_settings(LIVEGRADE_LIVE_SERVICES=[])
-    def test_classroom_too_shows_coming_soon_when_it_is_switched_off(self):
-        self.assertContains(self.client.get('/classroom/'), 'Classroom is coming soon')
+    def test_an_open_service_shows_coming_soon_when_switched_off(self):
+        response = self.client.get(self.entry_url())
+        self.assertContains(response, 'Assessments is coming soon')
 
-    @override_settings(LIVEGRADE_LIVE_SERVICES=['classroom'])
-    def test_a_service_dashboard_remains_closed_until_its_release_switch_is_set(self):
-        self.assertContains(self.client.get('/panel/'), 'Panel is coming soon')
-
-    def test_the_page_offers_a_way_back_and_names_no_other_service(self):
-        response = self.client.get('/panel/')
+    def test_the_page_links_back_to_livegrade(self):
+        response = self.client.get(self.entry_url('showcase'))
         self.assertContains(response, 'href="/"')
-        for other in ('Classroom', 'Showcase', 'Competition'):
-            self.assertNotContains(response, other)
+        self.assertContains(response, 'Showcase is coming soon')
 
 
-@override_settings(LIVEGRADE_LIVE_SERVICES=['classroom', 'panel', 'competition', 'team', 'showcase'])
+@override_settings(LIVEGRADE_LIVE_SERVICES=ALL_SERVICES)
 class ServiceEntryAvailabilityTests(EntryTestCase):
 
-    def test_signed_in_owner_can_enter_real_service_dashboard_from_service_card(self):
-        sign_in(self.client, self.ann, self.org)
-        response = self.client.get('/panel/', follow=True)
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.redirect_chain[-1][0], '/panel/app/hearings/')
-        self.assertContains(response, 'Panel assessments')
-        self.assertTrue(ServiceAccess.objects.filter(user=self.ann, service='panel').exists())
-
-    def test_anonymous_service_choice_survives_sign_in_redirect(self):
-        response = self.client.get('/showcase/')
-        self.assertEqual(response.status_code, 302)
-        self.assertIn('/oidc/authenticate/', response['Location'])
-        self.assertEqual(self.client.session[CHOICE_KEY], 'showcase')
-
-    def test_each_service_entry_reaches_its_real_owner_workspace(self):
-        sign_in(self.client, self.ann, self.org)
-        expected = {
-            'panel': ('/panel/app/hearings/', 'Panel assessments'),
-            'competition': ('/competition/app/', 'Your competitions'),
-            'team': ('/team/series/', 'Your training series'),
-            'showcase': ('/showcase/organizer/', 'Showcase'),
-        }
-        for slug, (path, heading) in expected.items():
-            with self.subTest(service=slug):
-                response = self.client.get(f'/{slug}/', follow=True)
+    def test_every_released_service_reaches_its_registered_dashboard(self):
+        sign_in(self.client, self.user, self.org)
+        for service in SERVICES:
+            with self.subTest(service=service.slug):
+                response = self.client.get(self.entry_url(service.slug), follow=True)
                 self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.redirect_chain[-1][0], path)
-                self.assertContains(response, heading)
+                self.assertEqual(response.redirect_chain[-1][0], reverse(service.dashboard))
+                self.assertTrue(ServiceAccess.objects.filter(
+                    user=self.user, service=service.slug).exists())
+
+    def test_an_enabled_service_entry_is_not_chosen_from_request_data(self):
+        sign_in(self.client, self.user, self.org)
+        response = self.client.get(
+            self.entry_url('assessment') + '?service=competition&slug=competition',
+            HTTP_REFERER='https://evil.example/')
+        self.assertRedirects(response, reverse('assessment_dashboard'), fetch_redirect_response=False)
+        self.assertTrue(ServiceAccess.objects.filter(user=self.user, service='assessment').exists())
+        self.assertFalse(ServiceAccess.objects.filter(user=self.user, service='competition').exists())
 
 
 class RouteTests(EntryTestCase):
 
-    def test_an_address_that_is_not_a_service_is_not_found(self):
-        for path in ('/nope/', '/Classroom/', '/classrooms/', '/class/'):
+    def test_only_registered_service_slugs_are_entry_routes(self):
+        self.assertEqual(set(ALL_SERVICES), {'assessment', 'showcase', 'team', 'competition', 'polls'})
+        for path in ('/nope/', '/Assessment/', '/assessments/', '/classroom/', '/panel/',
+                     '/coassessment/'):
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, 404)
 
-    def test_the_entry_cannot_be_posted_to(self):
-        self.assertEqual(self.client.post('/classroom/').status_code, 405)
-        self.assertEqual(self.client.post('/panel/').status_code, 405)
+    def test_the_entry_address_does_not_accept_post(self):
+        self.assertEqual(self.client.post(self.entry_url()).status_code, 405)
 
-    def test_the_address_without_its_trailing_slash_is_sent_to_the_one_with_it(self):
-        response = self.client.get('/classroom')
-        self.assertRedirects(response, '/classroom/', status_code=301, fetch_redirect_response=False)
+    def test_the_entry_address_accepts_head_like_get(self):
+        self.assertEqual(self.client.head(self.entry_url()).status_code, 302)
 
-    def test_a_head_request_is_answered_like_a_get(self):
-        self.assertEqual(self.client.head('/classroom/').status_code, 302)
+    def test_the_address_without_its_trailing_slash_is_canonicalized(self):
+        self.assertRedirects(self.client.get('/assessment'), '/assessment/',
+                             status_code=301, fetch_redirect_response=False)
 
-    def test_the_answers_are_not_cached(self):
-        for path in ('/classroom/', '/panel/'):
+    def test_service_entry_responses_are_not_cached(self):
+        for path in (self.entry_url(), self.entry_url('showcase')):
             with self.subTest(path=path):
                 self.assertIn('no-store', self.client.get(path)['Cache-Control'])
 
-    def test_the_other_routes_are_not_shadowed(self):
+    def test_other_application_routes_are_not_shadowed(self):
         self.assertEqual(self.client.get('/healthz').status_code, 200)
-        self.assertEqual(self.client.get('/no-access/').status_code, 403)
-        self.assertTrue(self.client.get('/oidc/authenticate/')['Location'].startswith(settings.OIDC_OP_AUTHORIZATION_ENDPOINT))
-        self.assertEqual(self.client.get('/assess/00000000-0000-4000-8000-000000000000/join/').status_code, 404)
+        self.assertEqual(self.client.get(reverse('no_access')).status_code, 403)
+        self.assertTrue(self.client.get(SIGN_IN)['Location'].startswith(
+            settings.OIDC_OP_AUTHORIZATION_ENDPOINT))
+        self.assertEqual(
+            self.client.get('/assess/00000000-0000-4000-8000-000000000000/join/').status_code,
+            404)
 
-    def test_the_view_refuses_a_slug_the_registry_does_not_know(self):
-        # The route only matches registered slugs; the view does not rely on that alone.
+    def test_the_view_rejects_a_slug_outside_the_registry(self):
         with self.assertRaises(Http404):
             views.entry(RequestFactory().get('/nope/'), 'nope')
 
-    def test_the_standard_security_headers_are_on_the_answers(self):
-        response = self.client.get('/panel/')
+    def test_standard_security_headers_are_on_entry_responses(self):
+        response = self.client.get(self.entry_url('showcase'))
         self.assertEqual(response['X-Frame-Options'], 'DENY')
         self.assertEqual(response['X-Content-Type-Options'], 'nosniff')
         policy_header = ('Content-Security-Policy' if settings.CSP_ENFORCE
                          else 'Content-Security-Policy-Report-Only')
         self.assertIn('frame-ancestors', response[policy_header])
-
-
-class LegacyClassroomRouteTests(EntryTestCase):
-
-    def test_every_owner_route_has_a_method_preserving_legacy_redirect(self):
-        from assessments.urls import urlpatterns
-
-        for pattern in urlpatterns:
-            arguments = {name: 123 for name in pattern.pattern.converters}
-            destination = reverse(pattern.name, kwargs=arguments)
-            legacy = destination.replace('/classroom/app/', '/assessments/', 1)
-            with self.subTest(route=pattern.name):
-                response = self.client.get(legacy)
-                self.assertEqual(response.status_code, 308)
-                self.assertEqual(response['Location'], destination)
-
-    def test_an_arbitrary_legacy_suffix_cannot_choose_a_new_destination(self):
-        for path in ('/assessments/../panel/', '/assessments/https://evil.example/',
-                     '/assessments//evil.example/'):
-            with self.subTest(path=path):
-                self.assertEqual(self.client.get(path).status_code, 404)
-
-    def test_old_classroom_paths_permanently_redirect_and_keep_the_query(self):
-        for old_path, new_path in (
-            ('/assessments/', '/classroom/app/'),
-            ('/assessments/12/results/?page=2&status=full',
-             '/classroom/app/12/results/?page=2&status=full'),
-            ('/assessments?scope=all', '/classroom/app/?scope=all'),
-        ):
-            with self.subTest(old_path=old_path):
-                response = self.client.get(old_path)
-                self.assertEqual(response.status_code, 308)
-                self.assertEqual(response['Location'], new_path)
-
-    def test_post_redirect_preserves_the_method_body_and_query(self):
-        from assessments.models import AssessmentSession
-
-        session = AssessmentSession.objects.create(
-            organization_id=self.org.pk, name='Demo day', created_by=self.ann)
-        sign_in(self.client, self.ann, self.org)
-        response = self.client.post(
-            f'/assessments/{session.pk}/set-timer/?source=legacy',
-            {'duration_seconds': '300'}, follow=True)
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.redirect_chain,
-                         [(f'/classroom/app/{session.pk}/set-timer/?source=legacy', 308)])
-        session.refresh_from_db()
-        self.assertEqual(session.default_turn_seconds, 300)

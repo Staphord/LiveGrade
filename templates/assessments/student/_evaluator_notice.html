@@ -4,6 +4,6 @@
   <p class="mb-0 s-text">{{ session.instructions|linebreaksbr }}</p>
 </section>
 {% endif %}
-{% if session.service == 'classroom' %}
-<!-- <p class="s-text-sm text-muted">Peer grading supplies 100% of the assessment score.{% if session.ungraded_penalty %} Configured participation penalties still apply.{% endif %}</p> -->
+{% if session.service == 'assessment' and session.enable_peer and not session.enable_panel %}
+<p class="s-text-sm text-muted">Peer grading supplies 100% of the assessment score.{% if session.ungraded_penalty %} Configured participation penalties still apply.{% endif %}</p>
 {% endif %}

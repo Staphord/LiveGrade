@@ -1,5 +1,6 @@
 {% comment %}Clean, tiered mode, delivery, score split, and advanced rules for AssessmentSessionForm.{% endcomment %}
 <div class="mb-3 p-3 border rounded bg-light-subtle" data-mode-block>
+  <input type="hidden" name="assessment_modes_present" value="1">
   <div class="row g-3 align-items-end">
     <div class="col-12 col-md-4">
       <div class="form-label fw-600 t-sm mb-2">Graders</div>
@@ -23,6 +24,12 @@
       {{ form.entry_mode }}
     </div>
   </div>
+
+  {% if request.service != 'team' %}
+  <p class="form-text mt-2 mb-0" data-peer-only-disclosure {% if not form.instance.enable_peer or form.instance.enable_panel %}hidden{% endif %}>
+    Peer grading supplies 100% of the assessment score.
+  </p>
+  {% endif %}
 
   <div class="mt-3 pt-3 border-top" data-blend-section>
     <div class="fw-600 t-sm mb-2">Score split</div>
@@ -110,10 +117,14 @@
     const blendSecs = block.querySelectorAll('[data-blend-section]');
     const asyncOnly = block.querySelector('[data-async-only]');
     const trimOnly = block.querySelector('[data-trim-only]');
+    const peerOnlyDisclosure = block.querySelector('[data-peer-only-disclosure]');
 
     function sync(changedMode) {
       const peerOn = !!(peerCb && peerCb.checked);
       const panelOn = !!(panelCb && panelCb.checked);
+      if (peerOnlyDisclosure) {
+        peerOnlyDisclosure.hidden = !(peerOn && !panelOn);
+      }
       peerSecs.forEach(function (el) { el.hidden = !peerOn; });
       panelSecs.forEach(function (el) { el.hidden = !panelOn; });
       blendSecs.forEach(function (el) { el.hidden = !(peerOn && panelOn); });

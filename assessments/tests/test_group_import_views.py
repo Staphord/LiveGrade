@@ -174,8 +174,9 @@ class GroupImportFlowTests(LecturerTestCase):
 
     def test_the_groups_page_offers_the_one_file_import_and_no_roster_import(self):
         page = self.client.get(self.url('assessment_groups'))
-        self.assertContains(page, 'Import groups &amp; students')
-        self.assertContains(page, 'Manage students')
+        self.assertContains(page, 'Import from Excel')
+        self.assertContains(page, 'Students are created from this file, so there is no separate roster to import.')
+        self.assertContains(page, 'Participants')
         self.assertContains(page, self.url('assessment_group_import_sample'))
         self.assertNotContains(page, 'roster/import')
 

@@ -13,7 +13,7 @@ from service_domains.tests import test_competition_live_control as live_control
 AJAX = {'HTTP_X_REQUESTED_WITH': 'XMLHttpRequest'}
 
 
-@override_settings(LIVEGRADE_LIVE_SERVICES=['classroom', 'panel', 'polls', 'team', 'showcase', 'competition'])
+@override_settings(LIVEGRADE_LIVE_SERVICES=['assessment', 'panel', 'polls', 'team', 'showcase', 'competition'])
 class ArenaCase(TestCase):
     setUp = live_control.CompetitionLiveControlTests.setUp
 

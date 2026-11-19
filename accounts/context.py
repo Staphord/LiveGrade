@@ -10,7 +10,7 @@ CLASSROOM_WALKTHROUGHS_KEY = 'livegrade_classroom_walkthroughs'
 
 
 def _classroom_walkthrough(request, organization):
-    if (getattr(request, 'service', None) != 'classroom'
+    if (getattr(request, 'service', None) != 'assessment'
             or not getattr(request.user, 'is_authenticated', False)
             or not organization):
         return None
@@ -29,7 +29,7 @@ def _classroom_walkthrough(request, organization):
         # organization and service scope before showing any session detail.
         session = AssessmentSession.objects.filter(
             organization_id=organization['id'], created_by_id=request.user.pk,
-            service='classroom', pk=session_id,
+            service='assessment', pk=session_id,
         ).first()
     if session is None:
         progress = [False, False, False, False]

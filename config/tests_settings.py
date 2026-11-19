@@ -231,21 +231,21 @@ class ServiceSettingsTests(SimpleTestCase):
         self.assertEqual(cache['LOCATION'], 'redis://cache:6379/5')
         self.assertIn('locmem', load({}, argv=['manage.py', 'test'])['CACHES']['default']['BACKEND'])
 
-    def test_only_classroom_is_open_unless_told_otherwise(self):
-        self.assertEqual(load({})['LIVEGRADE_LIVE_SERVICES'], ['classroom', 'polls'])
-        self.assertEqual(load(production())['LIVEGRADE_LIVE_SERVICES'], ['classroom', 'polls'])
+    def test_assessment_and_polls_are_open_unless_told_otherwise(self):
+        self.assertEqual(load({})['LIVEGRADE_LIVE_SERVICES'], ['assessment', 'polls'])
+        self.assertEqual(load(production())['LIVEGRADE_LIVE_SERVICES'], ['assessment', 'polls'])
 
     def test_the_open_services_come_from_the_environment(self):
-        namespace = load({'LIVEGRADE_LIVE_SERVICES': 'classroom, panel ,'})
-        self.assertEqual(namespace['LIVEGRADE_LIVE_SERVICES'], ['classroom', 'panel'])
+        namespace = load({'LIVEGRADE_LIVE_SERVICES': 'assessment, team ,'})
+        self.assertEqual(namespace['LIVEGRADE_LIVE_SERVICES'], ['assessment', 'team'])
 
     def test_every_service_can_be_switched_off(self):
         self.assertEqual(load({'LIVEGRADE_LIVE_SERVICES': ''})['LIVEGRADE_LIVE_SERVICES'], [])
 
     def test_test_runner_ignores_local_service_switches(self):
-        namespace = load({'LIVEGRADE_LIVE_SERVICES': 'classroom,panel,competition,team,showcase'},
+        namespace = load({'LIVEGRADE_LIVE_SERVICES': 'assessment,competition,team,showcase'},
                          argv=['manage.py', 'test'])
-        self.assertEqual(namespace['LIVEGRADE_LIVE_SERVICES'], ['classroom', 'polls'])
+        self.assertEqual(namespace['LIVEGRADE_LIVE_SERVICES'], ['assessment', 'polls'])
 
     def test_the_portal_app_is_installed(self):
         self.assertIn('portal', load({})['INSTALLED_APPS'])

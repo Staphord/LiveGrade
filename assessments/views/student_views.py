@@ -25,6 +25,7 @@ from ..services import (
 )
 from ..scoring import group_score_percents
 from ..turns import ensure_turn_progressed
+from ..view_routing import request_redirect, request_reverse
 
 __all__ = [
     'join', 'privacy_notice', 'evaluate', 'submitted', 'check_turn_expiry', 'grading_ping',
@@ -40,7 +41,7 @@ def join(request, session_uuid):
     session = _get_session(session_uuid)
     existing = student_from_request(request, session)
     if existing:
-        return redirect('student_evaluate', session_uuid=session.uuid)
+        return request_redirect(request, 'student_evaluate', session_uuid=session.uuid)
 
     error = None
     if request.method == 'POST':
@@ -60,7 +61,7 @@ def join(request, session_uuid):
                 broadcast_session_event(session, 'participation.updated', {
                     'joined_count': session.participation_records.count(),
                 })
-                return redirect('student_evaluate', session_uuid=session.uuid)
+                return request_redirect(request, 'student_evaluate', session_uuid=session.uuid)
     else:
         form = JoinForm()
 
@@ -81,7 +82,7 @@ def privacy_notice(request, session_uuid):
     session = _get_session(session_uuid)
     student = student_from_request(request, session)
     if student is None:
-        return redirect('student_join', session_uuid=session.uuid)
+        return request_redirect(request, 'student_join', session_uuid=session.uuid)
     notice = active_privacy_notice(session)
     if notice is None:
         return render(request, 'assessments/student/privacy_unavailable.html',
@@ -103,10 +104,10 @@ def privacy_notice(request, session_uuid):
         ParticipationRecord.objects.filter(pk=participation.pk).update(privacy_notice=notice)
         seen.pop(marker, None)
         request.session[NOTICE_SHOWN_SESSION_KEY] = seen
-        return redirect('student_evaluate', session_uuid=session.uuid)
+        return request_redirect(request, 'student_evaluate', session_uuid=session.uuid)
 
     if participation.privacy_notice_id == notice.pk:
-        return redirect('student_evaluate', session_uuid=session.uuid)
+        return request_redirect(request, 'student_evaluate', session_uuid=session.uuid)
     seen[marker] = notice.pk
     request.session[NOTICE_SHOWN_SESSION_KEY] = seen
     return render(request, 'assessments/student/privacy_notice.html', {
@@ -122,8 +123,8 @@ def evaluate(request, session_uuid):
     if student is None:
         if as_json:
             return JsonResponse({'status': 'join_required', 'message': 'Join the session again to continue.',
-                'next_url': reverse('student_join', args=[session.uuid])}, status=403)
-        return redirect('student_join', session_uuid=session.uuid)
+                'next_url': request_reverse(request, 'student_join', args=[session.uuid])}, status=403)
+        return request_redirect(request, 'student_join', session_uuid=session.uuid)
     if session.status != AssessmentSession.Status.CLOSED:
         notice = active_privacy_notice(session)
         if notice is None:
@@ -134,10 +135,10 @@ def evaluate(request, session_uuid):
         participation = ParticipationRecord.objects.filter(
             assessment_session=session, student=student).first()
         if participation is None or participation.privacy_notice_id != notice.pk:
-            next_url = reverse('student_privacy_notice', args=[session.uuid])
+            next_url = request_reverse(request, 'student_privacy_notice', args=[session.uuid])
             if as_json:
                 return JsonResponse({'status': 'privacy_notice_required', 'next_url': next_url}, status=428)
-            return redirect('student_privacy_notice', session_uuid=session.uuid)
+            return request_redirect(request, 'student_privacy_notice', session_uuid=session.uuid)
     if session.status == AssessmentSession.Status.LIVE:
         ensure_turn_progressed(session)
     turn = session.active_turn()
@@ -179,9 +180,9 @@ def evaluate(request, session_uuid):
                         'group_id': post_turn.group_id, 'student_id': student.pk})
                 if as_json:
                     return JsonResponse({'status': 'accepted', 'replayed': receipt.was_replayed,
-                        'next_url': reverse('student_submitted', args=[session.uuid])},
+                        'next_url': request_reverse(request, 'student_submitted', args=[session.uuid])},
                         status=200 if receipt.was_replayed else 201)
-                return redirect('student_submitted', session_uuid=session.uuid)
+                return request_redirect(request, 'student_submitted', session_uuid=session.uuid)
         except (ValidationError, InvalidOperation, TypeError, ValueError) as exc:
             error = exc.messages[0] if hasattr(exc, 'messages') and exc.messages else 'Invalid submission.'
             if as_json:
@@ -246,7 +247,7 @@ def submitted(request, session_uuid):
     session = _get_session(session_uuid)
     student = student_from_request(request, session)
     if student is None:
-        return redirect('student_join', session_uuid=session.uuid)
+        return request_redirect(request, 'student_join', session_uuid=session.uuid)
     last_was_practice = (Evaluation.objects.filter(evaluator=student,
         presentation_turn__assessment_session=session).order_by('-submitted_at', '-pk')
         .values_list('presentation_turn__group__is_practice', flat=True).first())

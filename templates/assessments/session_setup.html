@@ -288,7 +288,7 @@
       <div class="d-flex flex-wrap align-items-center gap-2">
         <span class="live-dot"></span>
         <strong>This session is live.</strong>
-        <span>Changes apply straight away. Anything students have already graded stays fixed.</span>
+        <span>Changes apply straight away. Updating the penalty recalculates everyone’s results, including earlier groups.</span>
         <a href="{{ setup_return_url|default:sessions_home.url }}" class="btn btn-sm btn-outline-primary ms-auto"><i class="bi bi-arrow-left me-1"></i>{{ setup_return_label|default:'Back to live control' }}</a>
       </div>
       {% include 'assessments/_partials/live_recent_changes.html' %}
@@ -741,8 +741,7 @@
         <div class="rubric-status-banner assess-stagger">
           <i class="bi bi-exclamation-triangle-fill icon"></i>
           <div class="msg">
-            Weights are at {{ weight_total|floatformat:'-2' }}% -
-            {% if weight_remaining > 0 %}add {{ weight_remaining|floatformat:'-2' }}% more{% else %}remove {{ weight_remaining|cut:"-"|floatformat:'-2' }}% of weight{% endif %}
+            Weights are at {{ weight_total|floatformat:'-2' }}% - {% if weight_remaining > 0 %}add {{ weight_remaining|floatformat:'-2' }}% more{% else %}remove {{ weight_remaining|cut:"-"|floatformat:'-2' }}% of weight{% endif %}
             so the rubric adds up to exactly 100% before it can go live.
           </div>
         </div>

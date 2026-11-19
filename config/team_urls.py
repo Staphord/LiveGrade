@@ -5,6 +5,8 @@ from .urls import urlpatterns as platform_patterns
 
 
 urlpatterns = [
-    path('team/app/', include('assessments.urls')),
     *platform_patterns,
+    # Keep the shared assessment route names bound to their Team paths inside
+    # this URLconf, rather than the later-added generic Assessment paths.
+    path('team/app/', include('assessments.urls')),
 ]

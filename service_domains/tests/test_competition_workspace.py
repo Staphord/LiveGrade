@@ -1667,7 +1667,7 @@ class CompetitionWorkspaceTests(TestCase):
 
     def test_competition_service_scoping_and_join_edge_cases(self):
         # Service scoping rejection (404) when service is not competition
-        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'classroom'):
+        with patch('portal.middleware.is_released', side_effect=lambda slug: slug == 'assessment'):
             res = self.client.get(reverse('competition_audience_join'))
             self.assertEqual(res.status_code, 404)
             res = self.client.get(reverse('competition_public_leaderboard', args=(self.competition.public_id,)))
@@ -2022,7 +2022,7 @@ class CompetitionWorkspaceTests(TestCase):
             track__competition=self.competition, name='Wind Farm', reference='W-1').exists())
         self.assertNotContains(self.request('get', manage_url), 'data-panel-form data-panel-import-form')
 
-@override_settings(LIVEGRADE_LIVE_SERVICES=['classroom', 'panel', 'polls', 'team', 'showcase', 'competition'])
+@override_settings(LIVEGRADE_LIVE_SERVICES=['assessment', 'panel', 'polls', 'team', 'showcase', 'competition'])
 class CompetitionWorkspaceUiTests(TestCase):
     def setUp(self):
         self.org = make_org('Competition UI Org')

@@ -119,7 +119,7 @@ class AssessmentSocketTests(TransactionTestCase):
 
     async def test_staff_socket_denies_sessions_from_another_service(self):
         panel = await sync_to_async(AssessmentSession.objects.create)(
-            organization_id=self.org_id, name='Panel session', created_by=self.owner, service='panel')
+            organization_id=self.org_id, name='Panel session', created_by=self.owner, service='team')
         headers = await sync_to_async(self.staff_headers)()
         communicator, connected = await self.open(self.staff_path(panel), headers=headers)
         self.assertFalse(connected)
@@ -166,7 +166,7 @@ class AssessmentSocketTests(TransactionTestCase):
         connected, _ = await communicator.connect()
         self.assertFalse(connected)
 
-    @override_settings(LIVEGRADE_LIVE_SERVICES=['classroom', 'team'])
+    @override_settings(LIVEGRADE_LIVE_SERVICES=['assessment', 'team'])
     async def test_team_staff_socket_preserves_owner_and_organization_boundary(self):
         team = await sync_to_async(AssessmentSession.objects.create)(
             organization_id=self.org_id, name='Training demo', created_by=self.owner, service='team')
@@ -184,7 +184,7 @@ class AssessmentSocketTests(TransactionTestCase):
         self.assertFalse(connected)
         await denied.disconnect()
 
-    @override_settings(LIVEGRADE_LIVE_SERVICES=['classroom'])
+    @override_settings(LIVEGRADE_LIVE_SERVICES=['assessment'])
     async def test_disabled_team_service_rejects_staff_socket(self):
         team = await sync_to_async(AssessmentSession.objects.create)(
             organization_id=self.org_id, name='Disabled training', created_by=self.owner, service='team')

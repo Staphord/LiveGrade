@@ -10,6 +10,7 @@ from accounts.access import lecturer_required
 from ..forms import SaveSessionTemplateForm
 from ..models import AssessmentSession
 from ..session_templates import save_session_template, starters_for, template_queryset
+from ..view_routing import request_redirect
 from .lecturer_views import _session
 
 __all__ = ['session_template_list', 'session_template_save', 'session_template_delete']
@@ -50,4 +51,4 @@ def session_template_delete(request, template_pk):
     template = get_object_or_404(template_queryset(request), pk=template_pk)
     template.delete()
     messages.success(request, 'Template deleted. Sessions created from it are unchanged.')
-    return redirect('assessment_template_list')
+    return request_redirect(request, 'assessment_template_list')

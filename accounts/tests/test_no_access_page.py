@@ -73,7 +73,7 @@ class SwitchAccountTests(TestCase):
     def test_an_ordinary_visit_to_the_home_page_still_shows_the_landing_page(self):
         self.assertContains(
             self.client.get(reverse('home'), {'state': 'something-else'}),
-            'Run live peer assessment for class presentations',
+            'Run better presentations, decisions and events.',
         )
 
     def test_an_ordinary_sign_out_link_carries_no_marker(self):

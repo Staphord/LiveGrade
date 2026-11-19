@@ -37,7 +37,7 @@ class ServiceTestCase(TestCase):
 class DefaultServiceTests(ServiceTestCase):
 
     def test_a_session_is_classroom_unless_it_says_otherwise(self):
-        self.assertEqual(self.classroom.service, 'classroom')
+        self.assertEqual(self.classroom.service, 'assessment')
 
     def test_the_service_is_stored_and_indexed(self):
         field = AssessmentSession._meta.get_field('service')
@@ -150,7 +150,7 @@ class CreateTests(ServiceTestCase):
         response = self.client.post(reverse('assessment_session_create'),
                                     {'name': 'New one', 'identify_by': 'full_name', 'ungraded_penalty': '1'})
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(AssessmentSession.objects.get(name='New one').service, 'classroom')
+        self.assertEqual(AssessmentSession.objects.get(name='New one').service, 'assessment')
 
     def test_the_form_page_opens(self):
         self.assertEqual(self.client.get(reverse('assessment_session_create')).status_code, 200)
@@ -206,7 +206,7 @@ class FailClosedTests(ServiceTestCase):
             _session(self.request(service=None), self.classroom.pk)
 
     def test_the_right_service_finds_it(self):
-        self.assertEqual(_session(self.request(service='classroom'), self.classroom.pk), self.classroom)
+        self.assertEqual(_session(self.request(service='assessment'), self.classroom.pk), self.classroom)
 
     def test_the_wrong_service_does_not(self):
         with self.assertRaises(Http404):
@@ -218,15 +218,15 @@ class FailClosedTests(ServiceTestCase):
                 self.assertEqual(list(AssessmentSession.objects.for_service(empty)), [])
 
     def test_the_queryset_filter_returns_one_services_rows(self):
-        self.assertEqual(list(AssessmentSession.objects.for_service('classroom')), [self.classroom])
+        self.assertEqual(list(AssessmentSession.objects.for_service('assessment')), [self.classroom])
         self.assertEqual(list(AssessmentSession.objects.for_service(OTHER)), [self.hearing])
 
     def test_it_chains_with_the_organization_and_the_owner(self):
         rows = (AssessmentSession.objects.for_organization(self.org.as_claim())
-                .for_service('classroom').owned_by(self.ann))
+                .for_service('assessment').owned_by(self.ann))
         self.assertEqual(list(rows), [self.classroom])
         other_org = make_org('Elsewhere')
-        self.assertEqual(list(AssessmentSession.objects.for_organization(other_org.as_claim()).for_service('classroom')), [])
+        self.assertEqual(list(AssessmentSession.objects.for_organization(other_org.as_claim()).for_service('assessment')), [])
 
 
 class ParticipantsAreNotScopedTests(TestCase):
@@ -234,7 +234,7 @@ class ParticipantsAreNotScopedTests(TestCase):
 
     def test_a_participant_reaches_a_session_of_any_service_by_its_link(self):
         org = make_org('Uni')
-        for service in ('classroom', 'panel', 'showcase'):
+        for service in ('assessment', 'panel', 'showcase'):
             session = AssessmentSession.objects.create(organization_id=org.pk, name=service, service=service)
             with self.subTest(service=service):
                 self.assertNotEqual(self.client.get(reverse('student_join', args=[session.uuid])).status_code, 404)

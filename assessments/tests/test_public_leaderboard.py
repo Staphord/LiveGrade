@@ -16,7 +16,7 @@ class ClassroomPublicLeaderboardTests(TestCase):
         sign_in(self.client, self.owner, self.org)
         self.session = AssessmentSession.objects.create(
             organization_id=self.org.pk, created_by=self.owner,
-            service='classroom', name='Room session', status='closed')
+            service='assessment', name='Room session', status='closed')
         self.red_rater = self.session.students.create(full_name='Private rater Red')
         self.blue_rater = self.session.students.create(full_name='Private rater Blue')
         self.red = self.session.groups.create(name='Red presentation team', order=1)

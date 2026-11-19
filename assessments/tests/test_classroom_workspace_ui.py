@@ -19,7 +19,7 @@ class ClassroomWorkspaceUiTests(TestCase):
         self.other = make_user('classroom-ui-other', first_name='Ben')
         sign_in(self.client, self.user, self.org)
 
-    def create_session(self, name, status=AssessmentSession.Status.DRAFT, owner=None, service='classroom'):
+    def create_session(self, name, status=AssessmentSession.Status.DRAFT, owner=None, service='assessment'):
         return AssessmentSession.objects.create(
             organization_id=self.org.pk, created_by=owner or self.user,
             name=name, status=status, service=service)
@@ -41,10 +41,10 @@ class ClassroomWorkspaceUiTests(TestCase):
 
         response = self.client.get(reverse('assessment_dashboard'))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, '<span class="topbar-title">Classroom dashboard</span>', html=False)
+        self.assertContains(response, '<span class="topbar-title">Assessment dashboard</span>', html=False)
         self.assertNotContains(response, 'CLASSROOM OVERVIEW')
         self.assertNotContains(response, '<h1>Classroom dashboard</h1>', html=False)
-        self.assertContains(response, 'A live summary of your sessions, rosters, and current classroom activity.')
+        self.assertContains(response, 'A live summary of your sessions, rosters, and current assessment activity.')
         stats = response.context['dashboard_stats']
         self.assertEqual(stats, {
             'total': 3, 'live_count': 1, 'draft_count': 1, 'closed_count': 1,
@@ -60,14 +60,14 @@ class ClassroomWorkspaceUiTests(TestCase):
         self.assertEqual(response.context['largest_roster'], 2)
         self.assertEqual(response.context['live_sessions'][0].live_active_group, live_group)
         self.assertEqual(response.context['live_sessions'][0].live_joined_count, 1)
-        self.assertContains(response, 'Live in the classroom')
-        self.assertContains(response, f'class="classroom-live-card-link" href="/classroom/app/{live.pk}/"')
+        self.assertContains(response, 'Live now')
+        self.assertContains(response, f'class="classroom-live-card-link" href="/assessment/app/{live.pk}/"')
         self.assertContains(response, 'class="classroom-stage-pie"')
         self.assertContains(response, '.classroom-dashboard a,.classroom-dashboard a:hover{text-decoration:none}')
-        self.assertContains(response, '0 students')
-        self.assertContains(response, '2 students</span>')
+        self.assertContains(response, '0 participants')
+        self.assertContains(response, '2 participants</span>')
         self.assertNotContains(response, 'role="progressbar"')
-        self.assertContains(response, 'Students on rosters')
+        self.assertContains(response, 'Participants on rosters')
         self.assertNotContains(response, 'Roster ready')
         self.assertNotContains(response, 'Verified')
         self.assertContains(response, 'data-session-row-href="' + reverse('assessment_session_detail', args=[live.pk]) + '"')
@@ -81,7 +81,7 @@ class ClassroomWorkspaceUiTests(TestCase):
     def test_dashboard_is_limited_to_owned_classroom_sessions_in_the_active_organization(self):
         mine = self.create_session('My classroom')
         self.create_session('Colleague classroom', owner=self.other)
-        self.create_session('Other service', service='panel')
+        self.create_session('Other service', service='team')
         other_org = make_org('Different organization')
         AssessmentSession.objects.create(organization_id=other_org.pk, created_by=self.user,
             name='Different organization session')
@@ -91,10 +91,10 @@ class ClassroomWorkspaceUiTests(TestCase):
         self.assertEqual([session.pk for session in response.context['recent_sessions']], [mine.pk])
 
     def test_dashboard_rejects_a_non_classroom_service_context(self):
-        request = RequestFactory().get('/classroom/app/')
+        request = RequestFactory().get('/assessment/app/')
         request.user = self.user
         request.session = self.client.session
-        request.service = 'panel'
+        request.service = 'team'
         with self.assertRaises(Http404):
             assessment_dashboard(request)
 
@@ -113,7 +113,7 @@ class ClassroomWorkspaceUiTests(TestCase):
         response = self.client.get(reverse('assessment_session_detail', args=[session.pk]))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Classroom polls')
+        self.assertContains(response, 'Session polls')
         self.assertNotContains(response, 'Add Panel grading')
 
     def test_empty_dashboard_has_real_zero_state_and_zero_distribution(self):
@@ -121,7 +121,7 @@ class ClassroomWorkspaceUiTests(TestCase):
         self.assertEqual(response.context['dashboard_stats']['total'], 0)
         self.assertEqual(response.context['dashboard_stats']['student_count'], 0)
         self.assertEqual(response.context['stage_distribution'][0]['percentage'], 0)
-        self.assertContains(response, 'You haven’t created a classroom session yet')
+        self.assertContains(response, 'You have not created an assessment session yet')
         self.assertContains(response, 'Create a session')
 
     def test_session_table_search_status_filter_and_actions(self):
@@ -209,7 +209,7 @@ class ClassroomWorkspaceUiTests(TestCase):
         second = self.create_session('Biology second')
         keep = self.create_session('Keep this session')
         colleague = self.create_session('Colleague session', owner=self.other)
-        other_service = self.create_session('Other service', service='panel')
+        other_service = self.create_session('Other service', service='team')
 
         response = self.client.post(reverse('assessment_session_bulk_delete'), {
             'session_ids': [str(first.pk), str(second.pk)],
@@ -228,7 +228,7 @@ class ClassroomWorkspaceUiTests(TestCase):
     def test_bulk_delete_rejects_a_mixed_owned_and_unowned_selection_atomically(self):
         mine = self.create_session('My session')
         colleague = self.create_session('Colleague session', owner=self.other)
-        other_service = self.create_session('Other service', service='panel')
+        other_service = self.create_session('Other service', service='team')
 
         response = self.client.post(reverse('assessment_session_bulk_delete'), {
             'session_ids': [str(mine.pk), str(colleague.pk), str(other_service.pk)],
@@ -267,7 +267,7 @@ class ClassroomWorkspaceUiTests(TestCase):
     def test_dashboard_uses_an_empty_roster_state_when_rosters_have_no_students(self):
         self.create_session('Empty roster')
         response = self.client.get(reverse('assessment_dashboard'))
-        self.assertContains(response, 'Roster data will appear after students are added to a session.')
+        self.assertContains(response, 'Roster data will appear after participants are added to a session.')
         self.assertNotContains(response, 'class="classroom-roster-list"')
 
     def test_overseer_can_search_all_sessions_by_owner_but_regular_user_cannot_expand_scope(self):

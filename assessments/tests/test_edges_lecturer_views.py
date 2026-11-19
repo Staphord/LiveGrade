@@ -95,6 +95,10 @@ class SessionPagesTests(LecturerTestCase):
 
     def test_a_live_session_can_change_all_of_its_basics(self):
         self.set_status('live')
+        saved_modes = (
+            self.session.enable_peer, self.session.enable_panel,
+            self.session.delivery_mode, self.session.peer_weight, self.session.panel_weight,
+        )
         response = self.client.post(self.url('assessment_session_edit'), {
             'name': 'Renamed live', 'identify_by': 'full_name', 'ungraded_penalty': '2.5'})
         self.assertRedirects(response, self.url('assessment_session_detail'),
@@ -102,9 +106,13 @@ class SessionPagesTests(LecturerTestCase):
         self.session.refresh_from_db()
         self.assertEqual((self.session.name, self.session.identify_by, self.session.ungraded_penalty),
                          ('Renamed live', 'full_name', Decimal('2.5')))
+        self.assertEqual((
+            self.session.enable_peer, self.session.enable_panel,
+            self.session.delivery_mode, self.session.peer_weight, self.session.panel_weight,
+        ), saved_modes)
         self.assertEqual(self.session.status, 'live')
         summary = SessionChange.objects.get().summary
-        self.assertEqual(summary, 'Changed the name, how students join, penalty per group not graded.')
+        self.assertEqual(summary, 'Changed the name, how participants join, penalty per group not graded.')
         page = self.client.get(self.url('assessment_session_edit'))
         self.assertEqual(page.status_code, 200)
         self.assertContains(page, 'name="ungraded_penalty"')
@@ -338,9 +346,11 @@ class LiveControlTests(LecturerTestCase):
 
     def test_a_session_that_is_not_ready_cannot_go_live(self):
         self.set_status('draft')
-        RubricCategory.objects.all().delete()
+        self.teamwork.delete()
+        self.quality.weight = Decimal('99.00')
+        self.quality.save(update_fields=['weight'])
         response = self.client.post(self.url('assessment_go_live'))
-        self.assertTrue(any('add up to exactly 100%' in m for m in _messages(response)))
+        self.assertTrue(any('must equal 100%' in m for m in _messages(response)))
         self.session.refresh_from_db()
         self.assertEqual(self.session.status, 'draft')
 

@@ -32,6 +32,14 @@ class AssessmentSessionForm(forms.ModelForm):
     and panel/moderation rules. Backward-compatible when legacy callers omit
     the new mode/panel fields."""
 
+    MODE_CONFIGURATION_FIELDS = (
+        'enable_peer', 'enable_panel', 'delivery_mode', 'entry_mode', 'timezone_name',
+        'peer_weight', 'panel_weight', 'minimum_peer_evaluators', 'minimum_panel_evaluators',
+        'moderation_threshold', 'avoid_reciprocal_pairs', 'panel_aggregation',
+        'panel_trim_fraction', 'panel_enable_rubric', 'panel_enable_vote',
+        'panel_enable_written_review', 'panel_enable_private_notes', 'require_chair_approval',
+    )
+
     enable_peer = forms.BooleanField(required=False, initial=True, label='Peer')
     enable_panel = forms.BooleanField(required=False, initial=False, label='Panel')
     delivery_mode = forms.ChoiceField(
@@ -102,6 +110,20 @@ class AssessmentSessionForm(forms.ModelForm):
         widget=forms.Select(attrs={'class': 'form-select'}),
     )
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.mode_fields_included = (
+            'assessment_modes_present' in self.data
+            or 'enable_peer' in self.data
+            or 'enable_panel' in self.data
+        )
+        if self.is_bound and not self.mode_fields_included:
+            # Older basics-only clients submit just the fields on their page.
+            # Missing scoring controls keep their saved values instead of
+            # making the basics update invalid.
+            for field_name in self.MODE_CONFIGURATION_FIELDS:
+                self.fields[field_name].required = False
+
     class Meta:
         model = AssessmentSession
         fields = [
@@ -122,8 +144,8 @@ class AssessmentSessionForm(forms.ModelForm):
                 'class': 'form-control', 'step': '0.001', 'min': '0', 'max': '0.499'}),
         }
         labels = {
-            'ungraded_penalty': 'Missed-review penalty',
-            'instructions': 'Instructions (optional)',
+            'ungraded_penalty': 'Penalty for each group not graded',
+            'instructions': 'Evaluator notice',
             'identify_by': 'Participant join field',
             'panel_enable_rubric': 'Include rubric scoring',
             'panel_enable_vote': 'Panel vote (Pass / Revise / Fail)',
@@ -134,30 +156,39 @@ class AssessmentSessionForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
-        # Preserve backward compatibility when legacy callers omit mode fields entirely.
-        mode_keys_present = 'enable_peer' in self.data or 'enable_panel' in self.data
-        if not mode_keys_present and not self.instance.pk:
-            cleaned['enable_peer'] = True
-            cleaned['enable_panel'] = False
+        # Older basics-only forms omit the mode controls. Preserve the saved
+        # configuration on edits, and keep the historical peer-only default on
+        # creation. The marker distinguishes a submitted full form with both
+        # mode checkboxes cleared from a legacy partial form.
+        mode_fields_included = self.mode_fields_included
+        if not mode_fields_included:
+            if self.instance.pk:
+                for field_name in self.MODE_CONFIGURATION_FIELDS:
+                    cleaned[field_name] = getattr(self.instance, field_name)
+                if 'instructions' not in self.data:
+                    cleaned['instructions'] = self.instance.instructions
+            else:
+                cleaned['enable_peer'] = True
+                cleaned['enable_panel'] = False
         enable_peer = bool(cleaned.get('enable_peer'))
         enable_panel = bool(cleaned.get('enable_panel'))
         if not enable_peer and not enable_panel:
             raise forms.ValidationError('Select at least one assessment mode: Peer assessment or Panel grading.')
 
-        cleaned['delivery_mode'] = cleaned.get('delivery_mode') or AssessmentSession.DeliveryMode.LIVE_STAGE
-        cleaned['entry_mode'] = cleaned.get('entry_mode') or AssessmentSession.EntryMode.GROUP
-        cleaned['timezone_name'] = (cleaned.get('timezone_name') or 'Africa/Dar_es_Salaam').strip()
-        cleaned['minimum_peer_evaluators'] = cleaned.get('minimum_peer_evaluators') or 1
-        cleaned['minimum_panel_evaluators'] = cleaned.get('minimum_panel_evaluators') or 1
-        cleaned['moderation_threshold'] = (
-            cleaned.get('moderation_threshold')
-            if cleaned.get('moderation_threshold') is not None
-            else Decimal('15.00')
-        )
-        cleaned['panel_aggregation'] = cleaned.get('panel_aggregation') or AssessmentSession.PanelAggregation.MEAN
-        if 'panel_enable_rubric' not in self.data:
+        if mode_fields_included or not self.instance.pk:
+            cleaned['delivery_mode'] = cleaned.get('delivery_mode') or AssessmentSession.DeliveryMode.LIVE_STAGE
+            cleaned['entry_mode'] = cleaned.get('entry_mode') or AssessmentSession.EntryMode.GROUP
+            cleaned['timezone_name'] = (cleaned.get('timezone_name') or 'Africa/Dar_es_Salaam').strip()
+            cleaned['minimum_peer_evaluators'] = cleaned.get('minimum_peer_evaluators') or 1
+            cleaned['minimum_panel_evaluators'] = cleaned.get('minimum_panel_evaluators') or 1
+            cleaned['moderation_threshold'] = (
+                cleaned.get('moderation_threshold')
+                if cleaned.get('moderation_threshold') is not None
+                else Decimal('15.00')
+            )
+            cleaned['panel_aggregation'] = cleaned.get('panel_aggregation') or AssessmentSession.PanelAggregation.MEAN
+        if not mode_fields_included and not self.instance.pk:
             cleaned['panel_enable_rubric'] = True
-        if 'panel_enable_private_notes' not in self.data:
             cleaned['panel_enable_private_notes'] = True
 
         if enable_peer and not enable_panel:
