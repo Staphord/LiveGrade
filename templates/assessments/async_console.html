@@ -72,7 +72,7 @@
         {% endif %}
         <div class="table-responsive">
           <table class="table table-sm align-middle">
-            <thead><tr><th>Track</th><th>Entry</th><th>Reviewer</th><th>Status</th></tr></thead>
+            <thead><tr><th>Track</th><th>Entry</th><th>Reviewer</th><th>Status</th><th>Review link</th></tr></thead>
             <tbody>
               {% for a in assignments %}
               <tr>
@@ -80,9 +80,21 @@
                 <td>{{ a.submission_version.submission.group.name }}</td>
                 <td>{% if a.peer_evaluator %}{{ a.peer_evaluator.full_name }}{% else %}{{ a.examiner_evaluator.display_name }}{% endif %}</td>
                 <td><span class="badge text-bg-info">{{ a.get_status_display }}</span></td>
+                <td>
+                  {% if a.status == 'active' or a.status == 'draft' %}
+                  <a href="{% url 'assessment_assignment_review' a.invite_token %}" target="_blank" rel="noopener noreferrer">Open review link</a>
+                  <form method="post" class="mt-1">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="refresh_assignment_link">
+                    <input type="hidden" name="assignment_id" value="{{ a.pk }}">
+                    <button type="submit" class="btn btn-link btn-sm p-0">Refresh link</button>
+                  </form>
+                  {% elif a.status == 'submitted' %}Submitted{% else %}No active link{% endif %}
+                  <div><small class="text-muted">Expires {{ a.expires_at|date:'Y-m-d' }}</small></div>
+                </td>
               </tr>
               {% empty %}
-              <tr><td colspan="4" class="panel-muted">No assignments committed yet.</td></tr>
+              <tr><td colspan="5" class="panel-muted">No assignments committed yet.</td></tr>
               {% endfor %}
             </tbody>
           </table>

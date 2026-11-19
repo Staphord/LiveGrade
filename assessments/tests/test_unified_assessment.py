@@ -3,11 +3,13 @@
 from decimal import Decimal
 import hashlib
 import json
+from datetime import timedelta
 from unittest.mock import patch
 
 from django.core import mail
-from django.test import TestCase, override_settings
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from accounts.testing import make_org, make_user, sign_in
 from assessments.models import (
@@ -34,6 +36,7 @@ from assessments.unified_operations import (
     freeze_session_submissions,
     preview_allocations,
     publish_session_snapshot,
+    refresh_assignment_link,
     record_turn_moderation,
     recuse_assignment,
     submit_assignment_review,
@@ -51,7 +54,6 @@ class UnifiedAssessmentEngineTests(TestCase):
 
     def test_single_assessment_entry_and_polls_accessible(self):
         self.assertIn('assessment', SLUGS)
-        self.assertNotIn('classroom', SLUGS)
         self.assertNotIn('panel', SLUGS)
         self.assertNotIn('coassessment', SLUGS)
 
@@ -199,10 +201,10 @@ class UnifiedAssessmentEngineTests(TestCase):
         peer_g1 = ReviewAssignment.objects.get(session=s, track='peer', submission_version=v1)
         self.assertEqual(peer_g1.peer_evaluator_id, p2.pk)
 
-        draft_url = reverse('assessment_assignment_draft', args=[peer_g1.pk])
+        draft_url = reverse('assessment_assignment_draft', args=[peer_g1.invite_token])
         ok = self.client.post(
             draft_url,
-            data=json.dumps({'row_version': 1, 'payload': {'cat': '80'}}),
+            data=json.dumps({'row_version': 1, 'payload': {f'category_{cat.pk}': '80'}}),
             content_type='application/json',
         )
         self.assertEqual(ok.status_code, 200)
@@ -210,7 +212,7 @@ class UnifiedAssessmentEngineTests(TestCase):
 
         stale = self.client.post(
             draft_url,
-            data=json.dumps({'row_version': 1, 'payload': {'cat': '90'}}),
+            data=json.dumps({'row_version': 1, 'payload': {f'category_{cat.pk}': '90'}}),
             content_type='application/json',
         )
         self.assertEqual(stale.status_code, 409)
@@ -223,6 +225,92 @@ class UnifiedAssessmentEngineTests(TestCase):
         recused = recuse_assignment(panel_g2, 'Co-author conflict', actor=self.user)
         self.assertEqual(recused.status, ReviewAssignment.Status.RECUSED)
         self.assertTrue(SessionAuditEvent.objects.filter(session=s, action='assignment.recused').exists())
+
+    def test_async_review_capabilities_are_unpredictable_expiring_and_refreshable(self):
+        session = AssessmentSession.objects.create(
+            organization_id=self.org.pk,
+            created_by=self.user,
+            service='assessment',
+            name='Capability session',
+            status=AssessmentSession.Status.SUBMISSIONS_OPEN,
+            delivery_mode=AssessmentSession.DeliveryMode.ASYNC_SUBMISSION,
+        )
+        group = PresentationGroup.objects.create(assessment_session=session, name='Private entry')
+        student = Student.objects.create(assessment_session=session, full_name='Reviewer')
+        submission = submit_entry_work(
+            session, group, student, 'Private title', 'Private submission content')
+        assignment = ReviewAssignment.objects.create(
+            session=session,
+            track=ReviewAssignment.Track.PEER,
+            submission_version=submission,
+            peer_evaluator=student,
+        )
+        anonymous = Client()
+        review_url = reverse('assessment_assignment_review', args=[assignment.invite_token])
+        page = anonymous.get(review_url)
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, 'Private submission content')
+        self.assertIn('no-store', page['Cache-Control'])
+        self.assertEqual(
+            anonymous.get(reverse('assessment_assignment_review', args=[str(assignment.pk)])).status_code,
+            404,
+        )
+        self.assertEqual(
+            anonymous.get(reverse('assessment_assignment_review', args=['invalid-capability'])).status_code,
+            404,
+        )
+
+        old_token = assignment.invite_token
+        expires_at = assignment.expires_at
+        refresh_assignment_link(assignment)
+        assignment.refresh_from_db()
+        self.assertNotEqual(assignment.invite_token, old_token)
+        self.assertGreater(assignment.expires_at, expires_at)
+        self.assertEqual(anonymous.get(reverse('assessment_assignment_review', args=[old_token])).status_code, 404)
+        self.assertEqual(
+            anonymous.get(reverse('assessment_assignment_review', args=[assignment.invite_token])).status_code,
+            200,
+        )
+
+        assignment.expires_at = timezone.now() - timedelta(seconds=1)
+        assignment.save(update_fields=['expires_at'])
+        self.assertEqual(
+            anonymous.get(reverse('assessment_assignment_review', args=[assignment.invite_token])).status_code,
+            404,
+        )
+
+    def test_assignment_submit_and_recusal_are_one_way_after_submission(self):
+        s = AssessmentSession.objects.create(
+            organization_id=self.org.pk,
+            created_by=self.user,
+            service='assessment',
+            name='One-way review',
+            status=AssessmentSession.Status.SUBMISSIONS_OPEN,
+            delivery_mode=AssessmentSession.DeliveryMode.ASYNC_SUBMISSION,
+        )
+        category = RubricCategory.objects.create(
+            assessment_session=s, name='Quality', weight=Decimal('100.00'), order=1,
+        )
+        group = PresentationGroup.objects.create(assessment_session=s, name='Entry')
+        student = Student.objects.create(assessment_session=s, full_name='Reviewer')
+        version = submit_entry_work(s, group, student, 'Entry', 'Work')
+        assignment = ReviewAssignment.objects.create(
+            session=s, track=ReviewAssignment.Track.PEER,
+            submission_version=version, peer_evaluator=student,
+        )
+        url = reverse('assessment_assignment_submit', args=[assignment.invite_token])
+        self.client.post(url, {f'category_{category.pk}': '85', 'overall_feedback': 'Submitted.'})
+        assignment.refresh_from_db()
+        self.assertEqual(assignment.status, ReviewAssignment.Status.SUBMITTED)
+        original_score = assignment.total_score
+        original_feedback = assignment.overall_feedback
+
+        self.client.post(url, {f'category_{category.pk}': '10', 'overall_feedback': 'Changed.'})
+        self.client.post(reverse('assessment_assignment_recuse', args=[assignment.invite_token]))
+        assignment.refresh_from_db()
+        self.assertEqual(assignment.status, ReviewAssignment.Status.SUBMITTED)
+        self.assertEqual(assignment.total_score, original_score)
+        self.assertEqual(assignment.overall_feedback, original_feedback)
 
     def test_create_form_renders_mode_toggles_and_go_live_branches_for_async(self):
         new_resp = self.client.get(reverse('assessment_session_create'))

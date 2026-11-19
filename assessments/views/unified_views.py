@@ -30,6 +30,7 @@ from ..models import (
     Student,
 )
 from ..tasks import send_assessment_panel_invitation_email
+from ..view_routing import request_redirect
 from ..unified_operations import (
     ConflictError,
     commit_allocations,
@@ -37,6 +38,7 @@ from ..unified_operations import (
     freeze_session_submissions,
     preview_allocations,
     publish_session_snapshot,
+    refresh_assignment_link,
     record_turn_moderation,
     recuse_assignment,
     save_assignment_draft,
@@ -66,13 +68,26 @@ def _dispatch_examiner_invitation(request, examiner_id):
     transaction.on_commit(_enqueue)
 
 
+def _assignment_for_token(token):
+    """Resolve an unexpired, active review capability without exposing row ids."""
+    digest = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    return get_object_or_404(
+        ReviewAssignment.objects.select_related(
+            'session', 'submission_version__submission__group',
+            'peer_evaluator', 'examiner_evaluator',
+        ).exclude(status__in=(ReviewAssignment.Status.RECUSED, ReviewAssignment.Status.SUPERSEDED)),
+        token_digest=digest,
+        expires_at__gt=timezone.now(),
+    )
+
+
 @lecturer_required
 @require_http_methods(['GET', 'POST'])
 def panel_examiners(request, pk):
     """Manage invited panel examiners for a session (skipped if Panel mode is off)."""
     session = _session(request, pk)
     if not session.enable_panel:
-        return redirect('assessment_session_detail', pk=session.pk)
+        return request_redirect(request, 'assessment_session_detail', pk=session.pk)
 
     form = PanelExaminerForm(request.POST or None)
     if request.method == 'POST':
@@ -82,8 +97,8 @@ def panel_examiners(request, pk):
             session.panel_examiners.filter(pk=ex_id).delete()
             messages.info(request, 'Examiner removed.')
             if request.POST.get('next') == 'setup':
-                return redirect(f"{redirect('assessment_setup', pk=session.pk).url}?step=panel")
-            return redirect('assessment_panel_examiners', pk=session.pk)
+                return redirect(f"{request_redirect(request, 'assessment_setup', pk=session.pk).url}?step=panel")
+            return request_redirect(request, 'assessment_panel_examiners', pk=session.pk)
         if action == 'resend_examiner':
             ex_id = request.POST.get('examiner_id')
             examiner = session.panel_examiners.filter(pk=ex_id).first()
@@ -95,8 +110,8 @@ def panel_examiners(request, pk):
                 _dispatch_examiner_invitation(request, examiner.pk)
                 messages.success(request, f'Invitation resent to {examiner.email}.')
             if request.POST.get('next') == 'setup':
-                return redirect(f"{redirect('assessment_setup', pk=session.pk).url}?step=panel")
-            return redirect('assessment_panel_examiners', pk=session.pk)
+                return redirect(f"{request_redirect(request, 'assessment_setup', pk=session.pk).url}?step=panel")
+            return request_redirect(request, 'assessment_panel_examiners', pk=session.pk)
         if form.is_valid():
             examiner = form.save(commit=False)
             examiner.session = session
@@ -109,8 +124,8 @@ def panel_examiners(request, pk):
             _dispatch_examiner_invitation(request, examiner.pk)
             messages.success(request, f'Invited panelist "{examiner.display_name}" and queued email.')
             if request.POST.get('next') == 'setup':
-                return redirect(f"{redirect('assessment_setup', pk=session.pk).url}?step=panel")
-            return redirect('assessment_panel_examiners', pk=session.pk)
+                return redirect(f"{request_redirect(request, 'assessment_setup', pk=session.pk).url}?step=panel")
+            return request_redirect(request, 'assessment_panel_examiners', pk=session.pk)
 
     examiners = list(session.panel_examiners.all())
     readiness = compute_session_readiness(session)
@@ -169,7 +184,7 @@ def examiner_portal(request, token):
     if request.method == 'POST' and active_turn:
         if already_done:
             messages.error(request, f'You have already evaluated {active_turn.group.name}.')
-            return redirect('assessment_examiner_portal', token=token)
+            return request_redirect(request, 'assessment_examiner_portal', token=token)
 
         qualitative_feedback = request.POST.get('qualitative_feedback', '').strip()[:2000]
         choice = (request.POST.get('choice') or '').strip()
@@ -196,7 +211,7 @@ def examiner_portal(request, token):
                 raise ValidationError('Please select a recommendation or enter feedback before submitting.')
         except ValidationError as exc:
             messages.error(request, exc.messages[0])
-            return redirect('assessment_examiner_portal', token=token)
+            return request_redirect(request, 'assessment_examiner_portal', token=token)
 
         try:
             with transaction.atomic():
@@ -232,13 +247,13 @@ def examiner_portal(request, token):
                     )
         except IntegrityError:
             messages.error(request, f'You have already evaluated {active_turn.group.name}.')
-            return redirect('assessment_examiner_portal', token=token)
+            return request_redirect(request, 'assessment_examiner_portal', token=token)
 
         from ..realtime import broadcast_session_event
         broadcast_session_event(session, 'activity.updated', {'group_id': active_turn.group_id})
 
         messages.success(request, f'Saved panel evaluation for {active_turn.group.name}.')
-        return redirect('assessment_examiner_portal', token=token)
+        return request_redirect(request, 'assessment_examiner_portal', token=token)
 
     return render(request, 'assessments/examiner_portal.html', {
         'session': session,
@@ -300,7 +315,7 @@ def session_moderation(request, pk):
                 messages.success(request, f'Published immutable result snapshot (Revision {pub.revision}).')
         except (ValidationError, ValueError, TypeError) as exc:
             messages.error(request, getattr(exc, 'message', str(exc)))
-        return redirect('assessment_moderation', pk=session.pk)
+        return request_redirect(request, 'assessment_moderation', pk=session.pk)
 
     publications = list(session.publications.all()[:10])
     return render(request, 'assessments/session_moderation.html', {
@@ -329,9 +344,16 @@ def async_console(request, pk):
                 seed = int(request.POST.get('seed') or 42)
                 created = commit_allocations(session, request.user, seed=seed)
                 messages.success(request, f'Created {created} review assignment(s).')
+            elif action == 'refresh_assignment_link':
+                assignment = get_object_or_404(
+                    session.review_assignments,
+                    pk=request.POST.get('assignment_id'),
+                )
+                refresh_assignment_link(assignment)
+                messages.success(request, 'Review link refreshed.')
         except (ValidationError, ValueError) as exc:
             messages.error(request, getattr(exc, 'message', str(exc)))
-        return redirect('assessment_async_console', pk=session.pk)
+        return request_redirect(request, 'assessment_async_console', pk=session.pk)
 
     preview = preview_allocations(session)
     submissions = list(session.entry_submissions.select_related('group', 'frozen_version').all())
@@ -371,7 +393,7 @@ def async_submit_entry(request, session_uuid, group_pk):
                 form.cleaned_data.get('external_url', ''),
             )
             messages.success(request, f'Submission revision {version.revision} saved.')
-            return redirect('assessment_async_submit_entry', session_uuid=session_uuid, group_pk=group.pk)
+            return request_redirect(request, 'assessment_async_submit_entry', session_uuid=session_uuid, group_pk=group.pk)
         except ValidationError as exc:
             form.add_error(None, getattr(exc, 'message', str(exc)))
 
@@ -384,30 +406,36 @@ def async_submit_entry(request, session_uuid, group_pk):
     })
 
 
+@never_cache
 @require_http_methods(['GET'])
-def assignment_review(request, assignment_id):
+def assignment_review(request, token):
     """Independent review workspace for an assigned peer or panelist."""
-    assignment = get_object_or_404(
-        ReviewAssignment.objects.select_related(
-            'session', 'submission_version__submission__group',
-            'peer_evaluator', 'examiner_evaluator',
-        ),
-        pk=assignment_id,
-    )
+    assignment = _assignment_for_token(token)
     categories = list(assignment.session.rubric_categories.prefetch_related('descriptors').all())
+    rubric_rows = [
+        {
+            'category': category,
+            'value': assignment.draft_payload.get(f'category_{category.pk}', ''),
+        }
+        for category in categories
+    ]
     return render(request, 'assessments/assignment_review.html', {
         'assignment': assignment,
         'session': assignment.session,
         'submission_version': assignment.submission_version,
-        'categories': categories,
+        'rubric_rows': rubric_rows,
+        'draft_feedback': assignment.draft_payload.get('overall_feedback', ''),
         'vote_form': PanelVoteForm() if assignment.track == ReviewAssignment.Track.PANEL else None,
     })
 
 
+@never_cache
 @require_POST
-def assignment_draft(request, assignment_id):
+def assignment_draft(request, token):
     """Optimistic-locked draft autosave endpoint for review assignments."""
-    assignment = get_object_or_404(ReviewAssignment, pk=assignment_id)
+    assignment = _assignment_for_token(token)
+    if len(request.body) > 65536:
+        return JsonResponse({'code': 'payload_too_large', 'message': 'Draft payload is too large.'}, status=413)
     try:
         body = json.loads(request.body.decode('utf-8') or '{}')
     except json.JSONDecodeError:
@@ -435,13 +463,14 @@ def assignment_draft(request, assignment_id):
     return JsonResponse({'status': 'saved', 'row_version': updated.row_version})
 
 
+@never_cache
 @require_POST
-def assignment_submit(request, assignment_id):
+def assignment_submit(request, token):
     """Final submission of an independent review assignment."""
-    assignment = get_object_or_404(
-        ReviewAssignment.objects.select_related('session'),
-        pk=assignment_id,
-    )
+    assignment = _assignment_for_token(token)
+    if assignment.status == ReviewAssignment.Status.SUBMITTED:
+        messages.info(request, 'This review has already been submitted.')
+        return request_redirect(request, 'assessment_assignment_review', token=token)
     categories = list(assignment.session.rubric_categories.filter(scope=RubricCategory.Scope.GROUP))
     if not categories:
         categories = list(assignment.session.rubric_categories.all())
@@ -472,14 +501,24 @@ def assignment_submit(request, assignment_id):
         messages.success(request, f'Review submitted (Total: {submitted.total_score}).')
     except ValidationError as exc:
         messages.error(request, getattr(exc, 'message', str(exc)))
-    return redirect('assessment_assignment_review', assignment_id=assignment.pk)
+    return request_redirect(request, 'assessment_assignment_review', token=token)
 
 
+@never_cache
 @require_POST
-def assignment_recuse(request, assignment_id):
+def assignment_recuse(request, token):
     """Recuse an active review assignment with a documented reason."""
-    assignment = get_object_or_404(ReviewAssignment, pk=assignment_id)
+    assignment = _assignment_for_token(token)
+    if assignment.status == ReviewAssignment.Status.SUBMITTED:
+        messages.info(request, 'A submitted review cannot be recused.')
+        return request_redirect(request, 'assessment_assignment_review', token=token)
     reason = request.POST.get('reason', 'Conflict of interest')
-    recuse_assignment(assignment, reason, actor=request.user if request.user.is_authenticated else None)
-    messages.info(request, 'Assignment recused and excluded from calculations.')
-    return redirect('assessment_assignment_review', assignment_id=assignment.pk)
+    recused = False
+    try:
+        recuse_assignment(assignment, reason, actor=request.user if request.user.is_authenticated else None)
+        recused = True
+    except ValidationError as exc:
+        messages.error(request, getattr(exc, 'message', str(exc)))
+    if recused:
+        messages.info(request, 'Assignment recused and excluded from calculations.')
+    return request_redirect(request, 'assessment_assignment_review', token=token)

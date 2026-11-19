@@ -21,8 +21,8 @@ urlpatterns = [
     path('examiner/<str:token>/', unified_views.examiner_portal, name='assessment_examiner_portal'),
     path('examiner/<str:token>/state/', unified_views.examiner_portal_state, name='assessment_examiner_portal_state'),
     path('<uuid:session_uuid>/submit/<int:group_pk>/', unified_views.async_submit_entry, name='assessment_async_submit_entry'),
-    path('review/<int:assignment_id>/', unified_views.assignment_review, name='assessment_assignment_review'),
-    path('review/<int:assignment_id>/draft/', unified_views.assignment_draft, name='assessment_assignment_draft'),
-    path('review/<int:assignment_id>/submit/', unified_views.assignment_submit, name='assessment_assignment_submit'),
-    path('review/<int:assignment_id>/recuse/', unified_views.assignment_recuse, name='assessment_assignment_recuse'),
+    path('review/<str:token>/', unified_views.assignment_review, name='assessment_assignment_review'),
+    path('review/<str:token>/draft/', unified_views.assignment_draft, name='assessment_assignment_draft'),
+    path('review/<str:token>/submit/', unified_views.assignment_submit, name='assessment_assignment_submit'),
+    path('review/<str:token>/recuse/', unified_views.assignment_recuse, name='assessment_assignment_recuse'),
 ]

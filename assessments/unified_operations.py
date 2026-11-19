@@ -428,6 +428,17 @@ def commit_allocations(session, actor, seed=42):
 
 
 @transaction.atomic
+def refresh_assignment_link(assignment):
+    """Rotate an active review capability and its expiry under a row lock."""
+    locked = ReviewAssignment.objects.select_for_update().get(pk=assignment.pk)
+    if locked.status not in (ReviewAssignment.Status.ACTIVE, ReviewAssignment.Status.DRAFT):
+        raise ValidationError('Only an active review assignment can receive a new link.')
+    locked.rotate_invite_token()
+    locked.save(update_fields=['invite_token', 'token_digest', 'expires_at'])
+    return locked
+
+
+@transaction.atomic
 def save_assignment_draft(assignment, expected_row_version, payload):
     """Save an in-progress review draft with optimistic row_version locking."""
     locked = ReviewAssignment.objects.select_for_update().get(pk=assignment.pk)
@@ -437,6 +448,20 @@ def save_assignment_draft(assignment, expected_row_version, payload):
         raise ValidationError('This assignment is no longer active.')
     if locked.row_version != expected_row_version:
         raise ConflictError('Your draft is out of date. Reload the latest version before saving.')
+    if not isinstance(payload, dict):
+        raise ValidationError('Draft payload must be an object.')
+
+    allowed_fields = {'overall_feedback'}
+    allowed_fields.update(
+        f'category_{category_id}'
+        for category_id in locked.session.rubric_categories.values_list('pk', flat=True)
+    )
+    if len(payload) > len(allowed_fields) or set(payload) - allowed_fields:
+        raise ValidationError('Draft contains an unrecognized rubric field.')
+    for field, value in payload.items():
+        max_length = 2000 if field == 'overall_feedback' else 32
+        if not isinstance(value, str) or len(value) > max_length:
+            raise ValidationError('Draft fields must be text within the allowed length.')
 
     locked.draft_payload = payload
     locked.status = ReviewAssignment.Status.DRAFT
@@ -487,6 +512,10 @@ def submit_assignment_review(assignment, scores_by_category_id, overall_feedback
 def recuse_assignment(assignment, reason, actor=None):
     """Mark an assignment as recused with an explicit reason."""
     locked = ReviewAssignment.objects.select_for_update().get(pk=assignment.pk)
+    if locked.status == ReviewAssignment.Status.SUBMITTED:
+        raise ValidationError('A submitted review cannot be recused.')
+    if locked.status in (ReviewAssignment.Status.RECUSED, ReviewAssignment.Status.SUPERSEDED):
+        raise ValidationError('This assignment is no longer active.')
     locked.status = ReviewAssignment.Status.RECUSED
     locked.recusal_reason = (reason or 'Conflict of interest').strip()[:300]
     locked.row_version += 1

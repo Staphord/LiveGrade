@@ -28,17 +28,22 @@
     <div class="col-12 col-lg-5">
       <section class="panel-card">
         <div class="panel-section-heading"><div><h2 class="h5 mb-0">Rubric scoring</h2></div></div>
-        <form method="post" action="{% url 'assessment_assignment_submit' assignment.pk %}" id="assignment-review-form" data-draft-url="{% url 'assessment_assignment_draft' assignment.pk %}" data-row-version="{{ assignment.row_version }}">
+        {% if assignment.status == 'submitted' %}
+        <p class="mb-3">This review has been submitted and is read-only.</p>
+        <p class="mb-2"><strong>Score:</strong> {{ assignment.total_score|default:'Not scored' }}</p>
+        {% if assignment.overall_feedback %}<p>{{ assignment.overall_feedback|linebreaks }}</p>{% endif %}
+        {% else %}
+        <form method="post" action="{% url 'assessment_assignment_submit' assignment.invite_token %}" id="assignment-review-form" data-draft-url="{% url 'assessment_assignment_draft' assignment.invite_token %}" data-row-version="{{ assignment.row_version }}">
           {% csrf_token %}
-          {% for cat in categories %}
+          {% for row in rubric_rows %}
           <div class="mb-3 pb-2 border-bottom">
-            <label for="id_category_{{ cat.pk }}" class="form-label fw-semibold">{{ cat.name }} ({{ cat.weight|floatformat:'-2' }}%)</label>
-            <input type="number" step="0.01" min="0" max="100" inputmode="decimal" class="form-control" id="id_category_{{ cat.pk }}" name="category_{{ cat.pk }}" data-autosave-field="category_{{ cat.pk }}" required>
+            <label for="id_category_{{ row.category.pk }}" class="form-label fw-semibold">{{ row.category.name }} ({{ row.category.weight|floatformat:'-2' }}%)</label>
+            <input type="number" step="0.01" min="0" max="100" inputmode="decimal" class="form-control" id="id_category_{{ row.category.pk }}" name="category_{{ row.category.pk }}" data-autosave-field="category_{{ row.category.pk }}" value="{{ row.value }}" required>
           </div>
           {% endfor %}
           <div class="mb-3">
             <label for="id_overall_feedback" class="form-label fw-semibold">Overall feedback</label>
-            <textarea class="form-control" id="id_overall_feedback" name="overall_feedback" rows="3" data-autosave-field="overall_feedback"></textarea>
+            <textarea class="form-control" id="id_overall_feedback" name="overall_feedback" rows="3" data-autosave-field="overall_feedback">{{ draft_feedback }}</textarea>
           </div>
           {% if vote_form and session.panel_enable_vote %}
           <hr>
@@ -49,11 +54,12 @@
           {% endif %}
           <button type="submit" class="btn btn-primary fw-semibold w-100">Submit review</button>
         </form>
-        <form method="post" action="{% url 'assessment_assignment_recuse' assignment.pk %}" class="mt-3">
+        <form method="post" action="{% url 'assessment_assignment_recuse' assignment.invite_token %}" class="mt-3">
           {% csrf_token %}
           <input type="hidden" name="reason" value="Declared conflict of interest">
           <button type="submit" class="btn btn-outline-danger btn-sm w-100" data-confirm="Recuse yourself from reviewing this entry?">Recuse (Conflict of Interest)</button>
         </form>
+        {% endif %}
       </section>
     </div>
   </div>
