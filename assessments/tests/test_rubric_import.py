@@ -242,7 +242,7 @@ class RubricImportViewTests(LecturerTestCase):
         self.assertContains(page, 'Import rubric')
         self.assertContains(page, 'Edit rubric as a table')
         self.assertContains(page, self.url('assessment_rubric_import_sample'))
-        self.assertContains(page, 'add up to exactly')
+        self.assertContains(page, 'Weights must total')
 
     def test_ajax_preview_returns_modal_html_and_cancel_clears_session(self):
         headers = {'HTTP_X_REQUESTED_WITH': 'XMLHttpRequest', 'HTTP_ACCEPT': 'application/json'}
