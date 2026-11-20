@@ -440,13 +440,8 @@ def assessment_session_edit(request, pk):
     else:
         form = AssessmentSessionForm(instance=session)
 
-    if is_live(session):
-        return render(request, 'assessments/session_setup.html',
-                      {**_setup_context(request, session, 'basics'), 'form': form, 'editing': True})
-    return render(request, 'assessments/session_setup.html', {
-        'session': session, 'active_step': 'basics', 'form': form, 'editing': True,
-        'stepper_steps': _setup_stepper(request, session, 'basics'),
-    })
+    return render(request, 'assessments/session_setup.html',
+                  {**_setup_context(request, session, 'basics'), 'form': form, 'editing': True})
 
 
 def _live_context(session):
@@ -785,7 +780,7 @@ def _roster_context(request, session):
 
 
 
-def _setup_stepper(request, session, active_step, groups_done=None, rubric_done=None, live_mode=False):
+def _setup_stepper(request, session, active_step, groups_done=None, rubric_done=None, live_mode=False, readiness=None):
     """Steps for the unified assessment setup screen."""
     if session is not None:
         if groups_done is None:
@@ -805,7 +800,8 @@ def _setup_stepper(request, session, active_step, groups_done=None, rubric_done=
             'done': session.panel_examiners.exists(),
         })
     if not live_mode:
-        readiness = compute_session_readiness(session) if session is not None else {'ready': False}
+        if readiness is None:
+            readiness = compute_session_readiness(session) if session is not None else {'ready': False}
         specs.append({'key': 'go-live', 'label': 'Review & launch',
                       'final': True, 'icon': 'bi-rocket-takeoff', 'locked': not readiness['ready'],
                       'disabled': session is None})
@@ -891,14 +887,15 @@ def _setup_context(request, session, active_step, roster_form=None, rubric_form=
         url_name, setup_return_label = source_map[source_key]
         setup_return_url = request_reverse(request, url_name, args=[session.pk])
 
+    groups_done = bool(context['groups'])
     context.update({
         'step_rubric_done': rubric_ready,
-        'step_groups_done': session.groups.exists(),
+        'step_groups_done': groups_done,
         'readiness': readiness,
         'panel_examiner_form': PanelExaminerForm(auto_id='id_panel_%s'),
         'panel_examiners': list(session.panel_examiners.all()),
-        'stepper_steps': _setup_stepper(request, session, active_step, session.groups.exists(),
-                                        rubric_ready, context['live_mode']),
+        'stepper_steps': _setup_stepper(request, session, active_step, groups_done,
+                                        rubric_ready, context['live_mode'], readiness=readiness),
         'setup_return_url': setup_return_url,
         'setup_return_label': setup_return_label,
     })

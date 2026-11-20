@@ -175,10 +175,50 @@ class GroupImportFlowTests(LecturerTestCase):
     def test_the_groups_page_offers_the_one_file_import_and_no_roster_import(self):
         page = self.client.get(self.url('assessment_groups'))
         self.assertContains(page, 'Import from Excel')
-        self.assertContains(page, 'Students are created from this file, so there is no separate roster to import.')
+        self.assertContains(page, 'One row per entry. Separate multiple member names with commas.')
         self.assertContains(page, 'Participants')
         self.assertContains(page, self.url('assessment_group_import_sample'))
         self.assertNotContains(page, 'roster/import')
+
+    def test_ajax_preview_returns_modal_html_and_cancel_clears_session(self):
+        headers = {'HTTP_X_REQUESTED_WITH': 'XMLHttpRequest', 'HTTP_ACCEPT': 'application/json'}
+        response = self.client.post(
+            self.url('assessment_group_import'),
+            {'file': groups_file(['Green', 'Eve Fox', 'E1'])},
+            **headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Cache-Control'], 'private, no-store')
+        data = response.json()
+        self.assertTrue(data['ok'])
+        self.assertIn('group-import-modal', data['html'])
+        self.assertIn('Green', data['html'])
+        self.assertFalse(PresentationGroup.objects.filter(name='Green').exists())
+
+        cancel = self.client.post(
+            self.url('assessment_group_import_preview'),
+            {'action': 'cancel'},
+            **headers,
+        )
+        self.assertEqual(cancel.status_code, 200)
+        self.assertTrue(cancel.json()['ok'])
+        self.assertNotIn('group_import', self.client.session)
+
+    def test_ajax_preview_rejects_invalid_upload_and_closed_session_with_json(self):
+        headers = {'HTTP_X_REQUESTED_WITH': 'XMLHttpRequest', 'HTTP_ACCEPT': 'application/json'}
+        bad = self.client.post(self.url('assessment_group_import'), {}, **headers)
+        self.assertEqual(bad.status_code, 400)
+        self.assertEqual(bad['Cache-Control'], 'private, no-store')
+        self.assertFalse(bad.json()['ok'])
+
+        self.set_status('closed')
+        closed = self.client.post(
+            self.url('assessment_group_import'),
+            {'file': groups_file(['Green', 'Eve Fox', 'E1'])},
+            **headers,
+        )
+        self.assertEqual(closed.status_code, 400)
+        self.assertFalse(closed.json()['ok'])
 
 
 class LandingPageMatchesTheFlowTests(LecturerTestCase):

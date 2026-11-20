@@ -129,7 +129,8 @@ class FlexibleWeightPageTests(LecturerTestCase):
         self.assertEqual(page.context['weight_total'], Decimal('100'))
         self.assertContains(page, 'Total weight')
         self.assertContains(page, 'Balanced')
-        self.assertNotContains(page, 'class="rubric-status-banner')
+        self.assertContains(page, 'weight-meter is-ready')
+        self.assertNotContains(page, 'weight-meter is-blocked')
         self.assertTrue(self.session.can_go_live())
         response = self.client.post(self.url('assessment_go_live'))
         self.session.refresh_from_db()
@@ -144,8 +145,8 @@ class FlexibleWeightPageTests(LecturerTestCase):
         self.category('Project', 'group', 80)
         self.category('Teamwork', 'individual', 19)
         page = self.rubric_page()
-        self.assertContains(page, 'class="rubric-status-banner')
-        self.assertContains(page, 'add 1% more')
+        self.assertContains(page, 'weight-meter is-blocked')
+        self.assertContains(page, '1 to add')
         self.assertFalse(self.session.can_go_live())
         response = self.client.post(self.url('assessment_go_live'))
         self.session.refresh_from_db()
@@ -156,7 +157,8 @@ class FlexibleWeightPageTests(LecturerTestCase):
         self.category('Project', 'group', 80)
         self.category('Teamwork', 'individual', 30)  # saved around the form, e.g. an old draft
         page = self.rubric_page()
-        self.assertContains(page, 'remove 10% of weight')
+        self.assertContains(page, 'weight-meter is-blocked')
+        self.assertContains(page, '10 to remove')
         self.assertFalse(self.session.can_go_live())
 
     def test_the_setup_pages_no_longer_ask_for_max_points(self):
@@ -167,7 +169,7 @@ class FlexibleWeightPageTests(LecturerTestCase):
 
     def test_the_add_form_shows_how_much_weight_is_free(self):
         self.category('Project', 'group', 70)
-        self.assertContains(self.rubric_page(), '30% of the 100% is still free')
+        self.assertContains(self.rubric_page(), '30% remaining')
 
     def test_the_table_totals_are_one_pool_with_a_split(self):
         self.category('Project', 'group', 70)
