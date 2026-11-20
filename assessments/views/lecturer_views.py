@@ -859,6 +859,7 @@ def _setup_context(request, session, active_step, roster_form=None, rubric_form=
     context['group_form'] = group_form or PresentationGroupForm(auto_id='id_group_%s')
     context['group_import_form'] = GroupImportForm(auto_id='id_group_import_%s')
     context['rubric_import_form'] = RubricImportForm(auto_id='id_rubric_import_%s')
+    context['students_open'] = True
     context['live_mode'] = is_live(session)
     context['recent_changes'] = list(session.changes.select_related('by_user')[:8]) if is_live(session) else []
     context['rubric_live_lock'] = live_rubric_lock(session)

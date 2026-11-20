@@ -1,7 +1,7 @@
 """The classroom setup screen renders through the shared stepper partial."""
 from django.urls import reverse
 
-from assessments.models import AssessmentSession
+from assessments.models import AssessmentSession, PanelExaminer
 from assessments.tests.test_edges_lecturer_views import LecturerTestCase
 
 
@@ -46,6 +46,34 @@ class ClassroomSetupStepperTests(LecturerTestCase):
         self.assertFalse(steps['go-live']['disabled'])
         self.assertTrue(steps['go-live']['final'])
         self.assertEqual(steps['go-live']['icon'], 'bi-rocket-takeoff')
+
+    def test_setup_opens_the_participant_roster_on_the_entries_step(self):
+        response = self.client.get(self.url('assessment_setup'), {'step': 'groups'})
+
+        self.assertTrue(response.context['students_open'])
+        self.assertContains(response, 'class="collapse show" id="students-body"')
+        self.assertContains(response, 'Ann Able')
+        self.assertContains(response, 'Cat Cole')
+
+    def test_setup_renders_saved_entries_participants_rubric_and_panelists(self):
+        AssessmentSession.objects.filter(pk=self.session.pk).update(enable_panel=True)
+        self.session.refresh_from_db()
+        PanelExaminer.objects.create(
+            session=self.session,
+            display_name='Dr Example',
+            email='examiner@example.test',
+            token_digest='d' * 64,
+        )
+
+        response = self.client.get(self.url('assessment_setup'), {'step': 'panel'})
+
+        for saved_value in ('Red', 'Blue', 'Ann Able', 'Cat Cole', 'Quality', 'Teamwork',
+                            'Dr Example', 'examiner@example.test'):
+            self.assertContains(response, saved_value)
+        steps = by_key(response)
+        self.assertTrue(steps['groups']['done'])
+        self.assertTrue(steps['rubric']['done'])
+        self.assertTrue(steps['panel']['done'])
 
     def test_live_session_hides_the_go_live_step(self):
         self.set_status(AssessmentSession.Status.LIVE)
