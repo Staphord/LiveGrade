@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block title %}Sign in to LiveGrade Desktop{% endblock %}
+{% block page_title %}Choose an account{% endblock %}
+
+{% block content %}
+<div class="container py-5" style="max-width:520px">
+  <div class="card shadow-sm">
+    <div class="card-body p-4 text-center">
+      <div class="mb-3 text-primary" style="font-size:2.2rem"><i class="bi bi-person-check-fill"></i></div>
+      <h1 class="h4 fw-bold mb-2">Sign in to LiveGrade Desktop</h1>
+      <p class="text-muted mb-3">
+        You are currently signed in to LiveGrade in this browser as:
+      </p>
+      <div class="border rounded p-3 mb-4 text-start bg-body-tertiary">
+        <div class="fw-semibold">{{ display_name }}</div>
+        {% if account_email and account_email != display_name %}
+        <div class="small text-muted">{{ account_email }}</div>
+        {% endif %}
+        {% if active_org %}
+        <div class="small text-muted mt-1">Organization: {{ active_org.name }}</div>
+        {% endif %}
+      </div>
+      <form method="post" action="{% url 'desktop_login' %}" class="d-grid gap-2">
+        {% csrf_token %}
+        <button type="submit" name="action" value="continue" class="btn btn-primary fw-semibold">
+          Continue as {{ display_name }}
+        </button>
+        <button type="submit" name="action" value="switch" class="btn btn-outline-secondary">
+          Use a different account
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+

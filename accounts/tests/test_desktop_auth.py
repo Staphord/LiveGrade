@@ -10,7 +10,7 @@ from django.urls import reverse
 
 from accounts.access import ORGS_KEY
 from accounts.models import User
-from accounts.oidc import CallbackView
+from accounts.oidc import DESKTOP_SWITCH_ACCOUNT_STATE, CallbackView
 
 
 @override_settings(SESSION_COOKIE_SECURE=False)
@@ -85,4 +85,112 @@ class DesktopAuthHandoffTests(TestCase):
         self.assertTrue(code)
         digest = hashlib.sha256(code.encode('utf-8')).hexdigest()
         self.assertIsNotNone(cache.get(f'desktop_auth_handoff:{digest}'))
+
+    def test_authenticated_desktop_login_prompts_to_continue_or_switch(self):
+        user = User.objects.create(
+            sub='sub-confirm-1',
+            username='devperf-sub-confirm-1',
+            email='lecturer@example.com',
+            first_name='Ada',
+            last_name='Lovelace',
+        )
+        self.client.force_login(user)
+
+        resp = self.client.get(reverse('desktop_login'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp['Cache-Control'], 'no-store')
+        self.assertContains(resp, 'Continue as Ada Lovelace')
+        self.assertContains(resp, 'Use a different account')
+
+    def test_authenticated_desktop_login_continue_issues_handoff_code(self):
+        user = User.objects.create(
+            sub='sub-continue-1',
+            username='devperf-sub-continue-1',
+            email='continue@example.com',
+        )
+        orgs = [{'id': 3, 'name': 'Org Three', 'role': 'owner', 'public': False}]
+        self.client.force_login(user)
+        session = self.client.session
+        session[ORGS_KEY] = orgs
+        session.save()
+
+        resp = self.client.post(reverse('desktop_login'), {'action': 'continue'})
+        self.assertEqual(resp.status_code, 302)
+        parsed = urlsplit(resp['Location'])
+        self.assertEqual(parsed.path, reverse('desktop_handoff'))
+        code = parse_qs(parsed.query).get('code', [''])[0]
+        self.assertTrue(code)
+        digest = hashlib.sha256(code.encode('utf-8')).hexdigest()
+        payload = cache.get(f'desktop_auth_handoff:{digest}')
+        self.assertEqual(payload['user_id'], user.pk)
+        self.assertEqual(payload['orgs'], orgs)
+
+    @override_settings(
+        OIDC_RP_CLIENT_ID='lg-client',
+        OIDC_OP_LOGOUT_ENDPOINT='https://devperf.example.test/o/logout/',
+        LIVEGRADE_BASE_URL='https://lg.example.test',
+    )
+    def test_authenticated_desktop_login_switch_logs_out_and_returns_to_desktop_flow(self):
+        user = User.objects.create(
+            sub='sub-switch-1',
+            username='devperf-sub-switch-1',
+            email='switch@example.com',
+        )
+        self.client.force_login(user)
+
+        resp = self.client.post(reverse('desktop_login'), {'action': 'switch'})
+        self.assertEqual(resp.status_code, 302)
+        parsed = urlsplit(resp['Location'])
+        self.assertEqual(f'{parsed.scheme}://{parsed.netloc}{parsed.path}', 'https://devperf.example.test/o/logout/')
+        self.assertEqual(parse_qs(parsed.query).get('state'), [DESKTOP_SWITCH_ACCOUNT_STATE])
+        self.assertNotIn('_auth_user_id', self.client.session)
+
+    def test_unauthenticated_desktop_login_post_redirects_back_to_login(self):
+        resp = self.client.post(reverse('desktop_login'), {'action': 'continue'})
+        self.assertRedirects(resp, reverse('desktop_login'), fetch_redirect_response=False)
+
+    def test_home_redirects_desktop_switch_state_back_to_desktop_oidc(self):
+        resp = self.client.get(f"{reverse('home')}?state={DESKTOP_SWITCH_ACCOUNT_STATE}")
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resp['Location'], f"{reverse('oidc_authentication_init')}?desktop=1")
+
+    @override_settings(
+        OIDC_RP_CLIENT_ID='lg-client',
+        OIDC_OP_LOGOUT_ENDPOINT='https://devperf.example.test/o/logout/',
+        LIVEGRADE_BASE_URL='https://lg.example.test',
+    )
+    def test_desktop_user_agent_logout_stays_in_app_and_redirects_home(self):
+        user = User.objects.create(
+            sub='sub-logout-1',
+            username='devperf-sub-logout-1',
+            email='logout@example.com',
+        )
+        self.client.force_login(user)
+
+        resp = self.client.post(
+            reverse('oidc_logout'),
+            HTTP_USER_AGENT='Mozilla/5.0 LiveGradeDesktop/1.0.0',
+        )
+        self.assertRedirects(resp, reverse('home'), fetch_redirect_response=False)
+        self.assertNotIn('_auth_user_id', self.client.session)
+
+    @override_settings(
+        OIDC_RP_CLIENT_ID='lg-client',
+        OIDC_OP_LOGOUT_ENDPOINT='https://devperf.example.test/o/logout/',
+        LIVEGRADE_BASE_URL='https://lg.example.test',
+    )
+    def test_browser_user_agent_logout_still_redirects_to_devperf(self):
+        user = User.objects.create(
+            sub='sub-logout-2',
+            username='devperf-sub-logout-2',
+            email='browser@example.com',
+        )
+        self.client.force_login(user)
+
+        resp = self.client.post(
+            reverse('oidc_logout'),
+            HTTP_USER_AGENT='Mozilla/5.0 Chrome/130.0.0.0',
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(resp['Location'].startswith('https://devperf.example.test/o/logout/'))
 
