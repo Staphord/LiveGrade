@@ -1,0 +1,47 @@
+appId: com.gilgaltech.livegrade
+productName: LiveGrade
+directories:
+  buildResources: build
+  output: dist
+files:
+  - src/**/*
+  - package.json
+protocols:
+  - name: LiveGrade
+    schemes:
+      - livegrade
+publish:
+  - provider: github
+    owner: Staphord
+    repo: LiveGrade
+mac:
+  category: public.app-category.education
+  icon: build/icon.png
+  identity: null
+  target:
+    - target: dmg
+      arch:
+        - universal
+    - target: zip
+      arch:
+        - universal
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+linux:
+  icon: build/icon.png
+  category: Education
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+
