@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "LiveGrade Desktop Client for macOS, Windows, and Linux",
   "main": "src/main.js",
-  "author": "GilgalTech",
+  "homepage": "https://livegrade.gilgaltech.com",
+  "author": "GilgalTech <help@gilgaltech.com>",
   "license": "PROPRIETARY",
   "scripts": {
     "start": "electron .",

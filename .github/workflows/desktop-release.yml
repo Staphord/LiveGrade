@@ -47,9 +47,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BUILD_SCRIPT: ${{ matrix.script }}
-          GITHUB_REF_NAME: ${{ github.ref }}
+          TARGET_REF: ${{ github.ref }}
         run: |
-          if [[ "$GITHUB_REF_NAME" == refs/tags/v* ]]; then
+          if [[ "$TARGET_REF" == refs/tags/v* ]]; then
             PUBLISH_MODE="always"
           else
             PUBLISH_MODE="never"
