@@ -5,9 +5,13 @@ belong to, each marked with whether they may run LiveGrade there. Everything
 here trusts that list and nothing else: who may do what is decided once, in
 DevPerf, never reimplemented in this service.
 """
+from datetime import timedelta
+import hashlib
+import secrets
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from django.conf import settings
+from django.core.cache import cache
 from django.urls import reverse
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 from mozilla_django_oidc.views import OIDCAuthenticationCallbackView, OIDCAuthenticationRequestView
@@ -63,6 +67,7 @@ class SignInStartView(OIDCAuthenticationRequestView):
         state = parse_qs(urlsplit(response.url).query)['state'][0]
         states = request.session['oidc_states']
         states[state][CHOICE_KEY] = selected_slug if is_released(selected_slug) else None
+        states[state]['desktop'] = request.GET.get('desktop') == '1'
         request.session['oidc_states'] = states
         request.session.pop('oidc_login_next', None)
         return response
@@ -83,11 +88,16 @@ class CallbackView(OIDCAuthenticationCallbackView):
         state = request.session.get('oidc_states', {}).get(request.GET.get('state'), {})
         slug = state.get(CHOICE_KEY)
         self.chosen_service = get_service(slug) if is_released(slug) else None
+        self.is_desktop = bool(state.get('desktop'))
+        self.desktop_handoff_code = None
         return super().get(request)
 
     @property
     def success_url(self):
-        return dashboard_url(self.chosen_service) if self.chosen_service else reverse('home')
+        target = dashboard_url(self.chosen_service) if self.chosen_service else reverse('home')
+        if getattr(self, 'is_desktop', False) and getattr(self, 'desktop_handoff_code', None):
+            return f"{reverse('desktop_handoff')}?code={self.desktop_handoff_code}"
+        return target
 
     def login_success(self):
         response = super().login_success()
@@ -98,6 +108,17 @@ class CallbackView(OIDCAuthenticationCallbackView):
 
         if self.chosen_service:
             record_choice(self.user, self.chosen_service.slug)
+
+        if getattr(self, 'is_desktop', False):
+            raw_code = secrets.token_urlsafe(32)
+            digest = hashlib.sha256(raw_code.encode('utf-8')).hexdigest()
+            next_url = dashboard_url(self.chosen_service) if self.chosen_service else reverse('home')
+            cache.set(
+                f'desktop_auth_handoff:{digest}',
+                {'user_id': self.user.pk, 'orgs': organizations, 'next_url': next_url},
+                timeout=60,
+            )
+            self.desktop_handoff_code = raw_code
         return response
 
 

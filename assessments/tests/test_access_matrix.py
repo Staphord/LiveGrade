@@ -175,6 +175,9 @@ ACCOUNT_ROUTES = {
     'oidc_authentication_callback': (GET, '/no-access/', '/no-access/', '/no-access/'),
     'oidc_authentication_init': (GET, 'idp', 'idp', 'idp'),
     'oidc_logout': (GET, 405, 405, 405),
+    'desktop_login': (GET, LOGIN, LOGIN, LOGIN),
+    'desktop_handoff': (GET, 200, 200, 200),
+    'desktop_exchange': (GET, '/', '/', '/'),
     # Choosing a service: a visitor is sent to sign in, somebody with no right to run
     # LiveGrade is refused, a lecturer goes on to the service's dashboard.
     'service_entry': (GET, LOGIN, 403, '/assessment/app/'),

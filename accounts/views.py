@@ -103,3 +103,53 @@ def csrf_failure(request, reason=''):
         else:
             reload_url = reverse('home')
     return render(request, 'errors/csrf.html', {'reload_url': reload_url}, status=403)
+
+
+def desktop_login(request):
+    """Start OIDC sign-in from the system browser and return via livegrade://auth."""
+    from urllib.parse import urlencode
+    from django.urls import reverse
+
+    params = {'desktop': '1'}
+    if request.GET.get('signup') == '1':
+        params['signup'] = '1'
+    return redirect(f"{reverse('oidc_authentication_init')}?{urlencode(params)}")
+
+
+def desktop_handoff(request):
+    """Browser handoff page that triggers livegrade://auth?code=..."""
+    code = (request.GET.get('code') or '').strip()
+    response = render(request, 'accounts/desktop_handoff.html', {'code': code})
+    response['Cache-Control'] = 'no-store'
+    return response
+
+
+def desktop_exchange(request):
+    """Exchange a single-use handoff code for an authenticated Electron session."""
+    import hashlib
+    from django.contrib import messages
+    from django.contrib.auth import login
+    from django.core.cache import cache
+    from .models import User
+
+    raw_code = (request.GET.get('code') or '').strip()
+    if not raw_code:
+        messages.error(request, 'Sign-in link expired or invalid. Please sign in again.')
+        return redirect('home')
+
+    digest = hashlib.sha256(raw_code.encode('utf-8')).hexdigest()
+    cache_key = f'desktop_auth_handoff:{digest}'
+    payload = cache.get(cache_key)
+    cache.delete(cache_key)
+    if not isinstance(payload, dict) or not payload.get('user_id'):
+        messages.error(request, 'Sign-in link expired or already used. Please sign in again.')
+        return redirect('home')
+
+    user = User.objects.filter(pk=payload['user_id'], is_active=True).first()
+    if user is None:
+        messages.error(request, 'Account not found. Please sign in again.')
+        return redirect('home')
+
+    login(request, user, backend='accounts.oidc.DevPerfBackend')
+    request.session[ORGS_KEY] = payload.get('orgs') or []
+    return redirect(payload.get('next_url') or 'home')

@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block title %}Opening LiveGrade Desktop{% endblock %}
+{% block page_title %}Sign-in complete{% endblock %}
+
+{% block content %}
+<div class="container py-5" style="max-width:520px">
+  <div class="card shadow-sm">
+    <div class="card-body p-4 text-center">
+      <div class="mb-3 text-primary" style="font-size:2.2rem"><i class="bi bi-check-circle-fill"></i></div>
+      <h1 class="h4 fw-bold mb-2">Sign-in complete</h1>
+      <p class="text-muted mb-4">Returning you to the LiveGrade Desktop app.</p>
+      {% if code %}
+      <a class="btn btn-primary fw-semibold w-100" id="open-desktop-btn" href="livegrade://auth?code={{ code|urlencode }}">
+        Open LiveGrade Desktop
+      </a>
+      {% else %}
+      <a class="btn btn-outline-secondary w-100" href="{% url 'home' %}">Return to LiveGrade</a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% if code %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  window.location.href = 'livegrade://auth?code={{ code|escapejs }}';
+})();
+</script>
+{% endif %}
+{% endblock %}
+
