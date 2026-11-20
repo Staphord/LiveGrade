@@ -100,15 +100,7 @@ class CallbackView(OIDCAuthenticationCallbackView):
         return target
 
     def login_success(self):
-        response = super().login_success()
         organizations = usable_orgs(self.user.devperf_claims.get('orgs'))
-        self.request.session[ORGS_KEY] = organizations
-        # So colleagues can hand this person a session (accounts.directory).
-        record_sign_in(self.user, organizations)
-
-        if self.chosen_service:
-            record_choice(self.user, self.chosen_service.slug)
-
         if getattr(self, 'is_desktop', False):
             raw_code = secrets.token_urlsafe(32)
             digest = hashlib.sha256(raw_code.encode('utf-8')).hexdigest()
@@ -119,6 +111,15 @@ class CallbackView(OIDCAuthenticationCallbackView):
                 timeout=60,
             )
             self.desktop_handoff_code = raw_code
+
+        response = super().login_success()
+        self.request.session[ORGS_KEY] = organizations
+        # So colleagues can hand this person a session (accounts.directory).
+        record_sign_in(self.user, organizations)
+
+        if self.chosen_service:
+            record_choice(self.user, self.chosen_service.slug)
+
         return response
 
 
