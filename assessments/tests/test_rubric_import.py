@@ -244,6 +244,48 @@ class RubricImportViewTests(LecturerTestCase):
         self.assertContains(page, self.url('assessment_rubric_import_sample'))
         self.assertContains(page, 'add up to exactly')
 
+    def test_ajax_preview_returns_modal_html_and_cancel_clears_session(self):
+        headers = {'HTTP_X_REQUESTED_WITH': 'XMLHttpRequest', 'HTTP_ACCEPT': 'application/json'}
+        response = self.client.post(
+            self.url('assessment_rubric_import'),
+            {'file': rubric_file(*GOOD), 'mode': 'replace'},
+            **headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Cache-Control'], 'private, no-store')
+        data = response.json()
+        self.assertTrue(data['ok'])
+        self.assertIn('rubric-import-modal', data['html'])
+        self.assertIn('Technical', data['html'])
+        self.assertFalse(RubricCategory.objects.filter(name='Technical').exists())
+
+        cancel = self.client.post(
+            self.url('assessment_rubric_import_preview'),
+            {'action': 'cancel'},
+            **headers,
+        )
+        self.assertEqual(cancel.status_code, 200)
+        self.assertTrue(cancel.json()['ok'])
+        self.assertNotIn('rubric_import', self.client.session)
+
+    def test_ajax_preview_rejects_invalid_upload_and_locked_session_with_json(self):
+        headers = {'HTTP_X_REQUESTED_WITH': 'XMLHttpRequest', 'HTTP_ACCEPT': 'application/json'}
+        bad = self.client.post(self.url('assessment_rubric_import'), {'mode': 'replace'}, **headers)
+        self.assertEqual(bad.status_code, 400)
+        self.assertEqual(bad['Cache-Control'], 'private, no-store')
+        self.assertFalse(bad.json()['ok'])
+
+        turn = PresentationTurn.objects.create(assessment_session=self.session, group=self.red, status='closed')
+        Evaluation.objects.create(presentation_turn=turn, evaluator=self.cat)
+        self.set_status('live')
+        locked = self.client.post(
+            self.url('assessment_rubric_import'),
+            {'file': rubric_file(*GOOD), 'mode': 'replace'},
+            **headers,
+        )
+        self.assertEqual(locked.status_code, 400)
+        self.assertFalse(locked.json()['ok'])
+
 
 class RubricTableTests(LecturerTestCase):
 

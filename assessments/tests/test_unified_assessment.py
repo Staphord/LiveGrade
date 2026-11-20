@@ -816,3 +816,29 @@ class UnifiedAssessmentEngineTests(TestCase):
         async_resp = self.client.get(reverse('assessment_setup', args=[async_s.pk]))
         self.assertContains(async_resp, 'Back to Submissions &amp; Allocation')
         self.assertContains(async_resp, reverse('assessment_async_console', args=[async_s.pk]))
+
+    def test_draft_edit_renders_all_step_forms_and_visible_download_sample(self):
+        draft_s = AssessmentSession.objects.create(
+            organization_id=self.org.pk,
+            created_by=self.user,
+            service='assessment',
+            name='Draft Edit Check',
+            status=AssessmentSession.Status.DRAFT,
+            enable_peer=True,
+            enable_panel=True,
+            peer_weight=Decimal('50.00'),
+            panel_weight=Decimal('50.00'),
+        )
+        edit_resp = self.client.get(reverse('assessment_session_edit', args=[draft_s.pk]))
+        self.assertEqual(edit_resp.status_code, 200)
+        # Step 2, 3, 4 form inputs and weight total are all present
+        self.assertContains(edit_resp, 'id="id_group_name"')
+        self.assertContains(edit_resp, 'id="id_rubric_name"')
+        self.assertContains(edit_resp, 'id="id_rubric_weight"')
+        self.assertContains(edit_resp, 'id="id_panel_display_name"')
+        self.assertContains(edit_resp, '0%')
+        self.assertContains(edit_resp, '100 to add')
+        # Download sample links are always visible outside collapsed <details>
+        self.assertContains(edit_resp, reverse('assessment_group_import_sample', args=[draft_s.pk]))
+        self.assertContains(edit_resp, reverse('assessment_rubric_import_sample', args=[draft_s.pk]))
+        self.assertNotContains(edit_resp, '<details class="import-format mt-2" open>')

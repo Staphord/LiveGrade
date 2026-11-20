@@ -2,7 +2,7 @@
 {% block title %}{% if session %}{{ session.name }} - Setup{% elif request.service == 'team' %}New Team demo setup{% else %}New assessment session{% endif %} - LiveGrade{% endblock %}
 {% block page_title %}{% if session %}{{ session.name }}{% elif request.service == 'team' %}New Team demo setup{% else %}New assessment session{% endif %}{% endblock %}
 {% block topbar_actions %}
-{% if session and session.service == 'assessment' %}<a href="{% url 'assessment_polls' session.pk %}" class="btn btn-outline-primary btn-sm">Session polls</a>{% endif %}
+{% if session and session.enable_peer %}<a href="{% url 'assessment_polls' session.pk %}" class="btn btn-outline-primary btn-sm">Session polls</a>{% endif %}
 {% if session and request.service == 'team' and session.training_series_link %}<a href="{% url 'training_session_competencies' session.pk %}" class="btn btn-outline-secondary btn-sm">Competency outcomes</a>{% endif %}
 {% if session %}<div class="dropdown">
   <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Session actions</button>
@@ -456,13 +456,17 @@
                     </div>
                   </div>
                 </div>
-                <form method="post" action="{% url 'assessment_group_import' session.pk %}" enctype="multipart/form-data" id="group-import-form">
+                <form method="post" action="{% url 'assessment_group_import' session.pk %}" enctype="multipart/form-data" id="group-import-form" data-async-import-form data-import-modal="group" novalidate>
                   {% csrf_token %}
                   {% include 'assessments/_partials/import_dropzone.html' with file_field=group_import_form.file dropzone_id='group-import-dropzone' filename_id='group-import-filename' %}
+                  <div class="alert alert-danger py-2 t-sm mt-2 mb-0 d-none" role="alert" data-import-error></div>
                   <button type="submit" class="btn btn-outline-primary btn-sm mt-2 w-100"><i class="bi bi-eye me-1"></i>Preview import</button>
                 </form>
-                <details class="import-format mt-3" {% if not groups %}open{% endif %}>
-                  <summary>What should the file look like?</summary>
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-2">
+                  <a href="{% url 'assessment_group_import_sample' session.pk %}" class="btn btn-sm btn-link p-0"><i class="bi bi-download me-1"></i>Download sample</a>
+                </div>
+                <details class="import-format mt-2">
+                  <summary>Excel format</summary>
                   <div class="table-responsive mt-2">
                     <table class="table table-sm import-format-table mb-2">
                       <thead><tr><th>Group Name</th><th>Name</th><th>Participant ID</th><th>Topic</th><th>Presentation Location</th></tr></thead>
@@ -473,13 +477,9 @@
                     </table>
                   </div>
                   <ul class="import-format-notes">
-                    <li>One row per group. Put every member in the <strong>Name</strong> column, separated by commas.</li>
-                    <li><strong>Participant ID</strong> is optional. If you use it, list the IDs in the same order as the names.</li>
-                    <li><strong>Topic</strong> and <strong>Presentation Location</strong> are optional.</li>
-                    <li>Students are created from this file, so there is no separate roster to import.</li>
-                    <li>You review everything before it is saved. A group with a problem is skipped whole.</li>
+                    <li>One row per entry. Separate multiple member names with commas.</li>
+                    <li>Participant ID, Topic, and Presentation Location are optional.</li>
                   </ul>
-                  <a href="{% url 'assessment_group_import_sample' session.pk %}" class="btn btn-sm btn-link p-0"><i class="bi bi-download me-1"></i>Download a sample file</a>
                 </details>
               </div>
             </div>
@@ -504,7 +504,7 @@
                   {% if group_form.non_field_errors %}<div class="alert alert-danger py-2 t-sm">{{ group_form.non_field_errors|join:", " }}</div>{% endif %}
                   <div class="row g-2">
                     <div class="col-7">
-                      <label class="form-label t-sm fw-600" for="{{ group_form.name.id_for_label }}">Group name <span class="text-danger">*</span></label>
+                      <label class="form-label t-sm fw-600" for="{{ group_form.name.id_for_label }}">{% if session.entity_mode == 'individual' %}Entry name{% else %}Group name{% endif %} <span class="text-danger">*</span></label>
                       {{ group_form.name }}
                       {% if group_form.name.errors %}<div class="field-error">{{ group_form.name.errors|join:", " }}</div>{% endif %}
                     </div>
@@ -513,9 +513,6 @@
                       {{ group_form.max_size }}
                       {% if group_form.max_size.errors %}<div class="field-error">{{ group_form.max_size.errors|join:", " }}</div>{% endif %}
                     </div>
-                  </div>
-                  <div class="text-muted t-micro mt-1">
-                    <i class="bi bi-info-circle me-1"></i>A fixed size lets every card show capacity progress at a glance.
                   </div>
                   <div class="row g-2 mt-1">
                     <div class="col-12">
@@ -532,7 +529,7 @@
                   <div class="form-check mt-3">
                     {{ group_form.is_practice }}
                     <label class="form-check-label" for="{{ group_form.is_practice.id_for_label }}">Practice presentation</label>
-                    <div class="form-text" id="{{ group_form.is_practice.auto_id }}_helptext">{{ group_form.is_practice.help_text }}</div>
+                    <div class="form-text" id="{{ group_form.is_practice.auto_id }}_helptext">Excluded from final scores and rankings.</div>
                     {% for error in group_form.is_practice.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}
                   </div>
                   {% if ungrouped_students %}
@@ -546,10 +543,6 @@
                       </label>
                     </div>
                     {% endfor %}
-                  </div>
-                  {% else %}
-                  <div class="text-muted t-micro mt-2" id="group-members-empty-note">
-                    All participants assigned.
                   </div>
                   {% endif %}
                   <button type="submit" class="btn btn-primary btn-sm w-100 mt-2" id="group-form-submit">
@@ -737,16 +730,6 @@
           <h3>Rubric</h3>
         </div>
 
-        {% if weight_total != 100 %}
-        <div class="rubric-status-banner assess-stagger">
-          <i class="bi bi-exclamation-triangle-fill icon"></i>
-          <div class="msg">
-            Weights are at {{ weight_total|floatformat:'-2' }}% - {% if weight_remaining > 0 %}add {{ weight_remaining|floatformat:'-2' }}% more{% else %}remove {{ weight_remaining|cut:"-"|floatformat:'-2' }}% of weight{% endif %}
-            so the rubric adds up to exactly 100% before it can go live.
-          </div>
-        </div>
-        {% endif %}
-
         <div class="weight-meter-row assess-stagger mb-0">
           <div class="weight-meter {% if weight_total == 100 %}is-ready{% else %}is-blocked{% endif %}">
             <span class="ring"><span class="ring-num">{{ weight_total|floatformat:"-2" }}%</span></span>
@@ -788,7 +771,7 @@
                   </div>
                 </div>
                 {# nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token (the csrf_token tag is the next line) #}
-                <form method="post" action="{% url 'assessment_rubric_import' session.pk %}" enctype="multipart/form-data" id="rubric-import-form">
+                <form method="post" action="{% url 'assessment_rubric_import' session.pk %}" enctype="multipart/form-data" id="rubric-import-form" data-async-import-form data-import-modal="rubric" novalidate>
                   {% csrf_token %}
                   {% include 'assessments/_partials/import_dropzone.html' with file_field=rubric_import_form.file dropzone_id='rubric-import-dropzone' filename_id='rubric-import-filename' %}
                   <div class="rubric-import-modes mt-2">
@@ -796,10 +779,14 @@
                     <label class="form-check t-sm">{{ radio.tag }} <span class="form-check-label">{{ radio.choice_label }}</span></label>
                     {% endfor %}
                   </div>
+                  <div class="alert alert-danger py-2 t-sm mt-2 mb-0 d-none" role="alert" data-import-error></div>
                   <button type="submit" class="btn btn-outline-primary btn-sm mt-2 w-100"><i class="bi bi-eye me-1"></i>Preview import</button>
                 </form>
-                <details class="import-format mt-3" {% if not group_categories and not individual_categories %}open{% endif %}>
-                  <summary>What should the file look like?</summary>
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-2">
+                  <a href="{% url 'assessment_rubric_import_sample' session.pk %}" class="btn btn-sm btn-link p-0"><i class="bi bi-download me-1"></i>Download sample</a>
+                </div>
+                <details class="import-format mt-2">
+                  <summary>Excel format</summary>
                   <div class="table-responsive mt-2">
                     <table class="table table-sm import-format-table mb-2">
                       <thead><tr><th>Category</th><th>Description</th><th>Scope</th><th>Weight %</th><th>Level descriptors</th></tr></thead>
@@ -810,13 +797,9 @@
                     </table>
                   </div>
                   <ul class="import-format-notes">
-                    <li><strong>Scope</strong> is Group or Individual.</li>
-                    <li>Weights add up to exactly <strong>100%</strong> across all categories. Split them between group and individual however you like (87 and 13, for example).</li>
-                    <li>A student scores each category from 0 up to its weight. Description is optional.</li>
-                    <li>Optional level descriptors use one line per anchor: <code>point value | guidance</code>. Point values must be unique and within that category’s score range.</li>
-                    <li>You review everything, and any weight problem, before it is saved.</li>
+                    <li><strong>Scope:</strong> Group or Individual. Weights must total <strong>100%</strong>.</li>
+                    <li><strong>Level descriptors</strong> (optional): one per line as <code>score | label</code>.</li>
                   </ul>
-                  <a href="{% url 'assessment_rubric_import_sample' session.pk %}" class="btn btn-sm btn-link p-0"><i class="bi bi-download me-1"></i>Download a sample file</a>
                 </details>
               </div>
             </div>
@@ -867,21 +850,17 @@
                   </div>
                   <div class="mb-2">
                     <label class="form-label t-sm fw-600" for="{{ rubric_form.scope.id_for_label }}">Scope</label>{{ rubric_form.scope }}
-                    <button type="button" class="scope-info-toggle" aria-expanded="false" aria-controls="rubric-scope-info" title="More information about rubric scope"><i class="bi bi-info-lg" aria-hidden="true"></i><span class="visually-hidden">More information about rubric scope</span></button>
-                    <div class="scope-hint scope-info-copy" id="rubric-scope-info" hidden>
-                      <i class="bi bi-info-circle-fill"></i><span>Group categories score the whole presenting group at once; Individual categories are scored per student. All weights, group and individual together, add up to 100%.</span>
-                    </div>
                     {% if rubric_form.scope.errors %}<div class="field-error">{{ rubric_form.scope.errors|join:", " }}</div>{% endif %}
                   </div>
                   <div class="mb-2">
                     <label class="form-label t-sm fw-600" for="{{ rubric_form.weight.id_for_label }}">Weight %</label>{{ rubric_form.weight }}
-                    <div class="text-muted t-micro mt-1">{{ weight_remaining|floatformat:"-2" }}% of the 100% is still free.</div>
+                    <div class="text-muted t-micro mt-1">{{ weight_remaining|floatformat:"-2" }}% remaining</div>
                     {% if rubric_form.weight.errors %}<div class="field-error">{{ rubric_form.weight.errors|join:", " }}</div>{% endif %}
                   </div>
                   <div class="mb-3">
                     <label class="form-label t-sm fw-600" for="id_rubric_level_descriptors">Score level guidance (optional)</label>
                     {{ rubric_form.level_descriptors }}
-                    <div class="text-muted t-micro mt-1">Up to 12 owner-defined point values, one per line, from 0 to this category’s weight. Example: 15 | Partly demonstrated</div>
+                    <div class="text-muted t-micro mt-1">Format: score | label (one per line, e.g. 15 | Partly demonstrated)</div>
                     {% if rubric_form.level_descriptors.errors %}<div class="field-error">{{ rubric_form.level_descriptors.errors|join:", " }}</div>{% endif %}
                   </div>
                   <button type="submit" class="btn btn-primary btn-sm w-100" id="rubric-form-submit">
@@ -1025,7 +1004,7 @@
               <div class="title">Panel examiners ({{ panel_examiners|length }})</div>
             </div>
           </div>
-          <a href="{% url 'assessment_panel_examiners' session.pk %}" class="btn btn-outline-primary btn-sm">Full panel view</a>
+          {% if live_mode %}<a href="{% url 'assessment_panel_examiners' session.pk %}" class="btn btn-outline-primary btn-sm">Full panel view</a>{% endif %}
         </div>
 
         <form method="post" action="{% url 'assessment_panel_examiners' session.pk %}" class="row g-2 align-items-end mb-3 pb-3 border-bottom">
@@ -1095,12 +1074,17 @@
     <div class="assess-hero assess-stagger setup-section" id="go-live-section" data-step="go-live">
       <div class="hero-icon"><i class="bi bi-rocket-takeoff"></i></div>
       <h2>Review &amp; launch</h2>
-      <div class="d-flex flex-wrap justify-content-center gap-2 mb-3">
+      <div class="d-flex flex-wrap justify-content-center gap-2 mb-2">
         <span class="badge text-bg-light border text-dark">{{ session.assessment_mode_label }}</span>
         <span class="badge text-bg-light border text-dark">{{ session.get_delivery_mode_display }}</span>
         {% if session.enable_peer and session.enable_panel %}
         <span class="badge text-bg-light border text-dark">{{ session.peer_weight }}% Peer / {{ session.panel_weight }}% Panel</span>
         {% endif %}
+      </div>
+      <div class="d-flex flex-wrap justify-content-center gap-3 small text-muted mb-3">
+        <span><strong>{{ groups|length }}</strong> entr{{ groups|length|pluralize:"y,ies" }}</span>
+        <span><strong>{{ weight_total|floatformat:"-2" }}%</strong> rubric</span>
+        {% if session.enable_panel %}<span><strong>{{ panel_examiners|length }}</strong> panelist{{ panel_examiners|length|pluralize }}</span>{% endif %}
       </div>
       {% if readiness.blockers %}
       <div class="alert alert-danger text-start mx-auto" style="max-width:520px" role="alert">
@@ -1140,9 +1124,120 @@
 // A file waiting for a decision opens its review window as soon as the page is ready.
 // The window can only be left with Cancel or Import, so a half-decided file is never left behind.
 (function () {
+  const MAX_BYTES = 5 * 1024 * 1024;
+  const JSON_HEADERS = { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' };
+
+  function bindModalCancel(modal) {
+    if (!modal || modal.dataset.cancelBound) return;
+    modal.dataset.cancelBound = 'true';
+    const modalForm = modal.querySelector('form');
+    const cancelBtn = modal.querySelector('button[name="action"][value="cancel"]');
+    if (!modalForm || !cancelBtn) return;
+    cancelBtn.addEventListener('click', function (e) {
+      e.preventDefault();
+      cancelBtn.disabled = true;
+      const body = new FormData(modalForm);
+      body.set('action', 'cancel');
+      const instance = window.bootstrap ? window.bootstrap.Modal.getInstance(modal) : null;
+      if (instance) instance.hide();
+      fetch(modalForm.getAttribute('action'), {
+        method: 'POST',
+        body: body,
+        headers: JSON_HEADERS,
+        credentials: 'same-origin',
+      }).catch(function () { /* Session cleanup will retry on next upload */ });
+      modal.addEventListener('hidden.bs.modal', function () { modal.remove(); }, { once: true });
+      if (!instance) modal.remove();
+    });
+  }
+
   ['group-import-modal', 'rubric-import-modal'].forEach(function (id) {
     const node = document.getElementById(id);
-    if (node && window.bootstrap) window.bootstrap.Modal.getOrCreateInstance(node).show();
+    if (node) {
+      bindModalCancel(node);
+      if (window.bootstrap) window.bootstrap.Modal.getOrCreateInstance(node).show();
+    }
+  });
+
+  document.querySelectorAll('form[data-async-import-form]').forEach(function (form) {
+    const input = form.querySelector('input[type="file"]');
+    const errorBox = form.querySelector('[data-import-error]');
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const dropzone = form.querySelector('[data-import-dropzone]');
+    const filename = form.querySelector('[data-import-filename]');
+    const modalId = form.dataset.importModal ? form.dataset.importModal + '-import-modal' : '';
+    if (!input || !submitBtn) return;
+
+    function showError(msg) {
+      if (!errorBox) return;
+      errorBox.textContent = msg;
+      errorBox.classList.remove('d-none');
+    }
+    function clearError() {
+      if (!errorBox) return;
+      errorBox.textContent = '';
+      errorBox.classList.add('d-none');
+    }
+
+    input.addEventListener('change', clearError);
+
+    form.addEventListener('submit', async function (event) {
+      event.preventDefault();
+      clearError();
+      const file = input.files && input.files[0];
+      if (!file) {
+        showError('Please choose an Excel (.xlsx) file first.');
+        (dropzone || input).focus();
+        return;
+      }
+      if (!file.name.toLowerCase().endsWith('.xlsx')) {
+        showError('Please choose an Excel (.xlsx) file.');
+        (dropzone || input).focus();
+        return;
+      }
+      if (file.size > MAX_BYTES) {
+        showError('That file is larger than 5 MB.');
+        (dropzone || input).focus();
+        return;
+      }
+
+      const originalHtml = submitBtn.innerHTML;
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>Checking file...';
+      try {
+        const res = await fetch(form.getAttribute('action'), {
+          method: 'POST',
+          body: new FormData(form),
+          headers: JSON_HEADERS,
+          credentials: 'same-origin',
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          showError(data.error || 'The file could not be previewed. Check it and try again.');
+          return;
+        }
+        const stale = modalId ? document.getElementById(modalId) : null;
+        if (stale) {
+          const staleInst = window.bootstrap ? window.bootstrap.Modal.getInstance(stale) : null;
+          if (staleInst) staleInst.dispose();
+          stale.remove();
+        }
+        document.body.insertAdjacentHTML('beforeend', data.html || '');
+        const modal = modalId ? document.getElementById(modalId) : null;
+        if (modal) {
+          bindModalCancel(modal);
+          if (window.bootstrap) window.bootstrap.Modal.getOrCreateInstance(modal).show();
+        }
+        input.value = '';
+        if (filename) filename.textContent = '';
+        if (dropzone) dropzone.classList.remove('has-file');
+      } catch (err) {
+        showError('Could not preview the file right now. Please try again.');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalHtml;
+      }
+    });
   });
 })();
 </script>

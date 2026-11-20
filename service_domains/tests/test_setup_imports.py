@@ -555,3 +555,29 @@ class ImportEdgeCaseTests(TestCase):
                              {'action': 'launch_rocket'}, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
         self.assertEqual(response.status_code, 400)
         self.assertIn('Unknown action', response.json()['error'])
+
+    def test_ajax_embedded_import_preview_and_cancel(self):
+        url = reverse('training_competency_import', args=(self.series.pk,))
+        headers = {'HTTP_X_REQUESTED_WITH': 'XMLHttpRequest', 'HTTP_ACCEPT': 'application/json'}
+        bad = self.call('post', url, {}, **headers)
+        self.assertEqual(bad.status_code, 400)
+        self.assertIn('no-store', bad['Cache-Control'])
+        self.assertFalse(bad.json()['ok'])
+
+        preview = self.call(
+            'post', url,
+            {'file': sheet(['Competency', 'Pass score'], [['Triage', 70]])},
+            **headers,
+        )
+        self.assertEqual(preview.status_code, 200)
+        self.assertIn('no-store', preview['Cache-Control'])
+        data = preview.json()
+        self.assertTrue(data['ok'])
+        self.assertIn('Triage', data['html'])
+        self.assertIn('Ready to import', data['html'])
+
+        cancel = self.call('post', url, {'action': 'cancel'}, **headers)
+        self.assertEqual(cancel.status_code, 200)
+        self.assertTrue(cancel.json()['ok'])
+        self.assertEqual(cancel.json()['html'], '')
+        self.assertNotIn(f'embedded_import_preview_training-competency_{self.series.pk}', self.client.session)

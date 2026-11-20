@@ -77,7 +77,10 @@ def check_import(raw_rows, session, mode):
         return {'rows': rows, 'errors': errors, 'totals': {}, 'total': None, 'ok': False}
     combined = list(rows)
     if mode == 'add':
-        combined = [_existing_row(c) for c in session.rubric_categories.all()] + rows
+        combined = [
+            _existing_row(c)
+            for c in session.rubric_categories.prefetch_related('level_descriptors')
+        ] + rows
     verdict = rules.check_rubric(combined, strict=True)
     return {'rows': rows, 'errors': verdict['errors'], 'totals': verdict['totals'],
             'total': verdict['total'], 'ok': not verdict['errors']}

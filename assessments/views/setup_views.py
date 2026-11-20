@@ -6,15 +6,16 @@ Imports are two steps - upload shows a preview, a second press applies it - so a
 file never changes a session without being looked at first.
 """
 from django.contrib import messages
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
+from django.template.loader import render_to_string
 from django.views.decorators.http import require_http_methods, require_POST, require_safe
 
 from accounts.access import lecturer_required
 
 from .. import group_import, rubric_import
 from ..level_descriptors import format_descriptors
-from ..pending_imports import GROUP_KEY, RUBRIC_KEY
+from ..pending_imports import GROUP_KEY, RUBRIC_KEY, pending_rubric_import
 from ..forms import GroupImportForm, RubricImportForm
 from ..models import EvaluationScore
 from ..setup_rules import is_live, live_rubric_lock, record_change, rubric_structure_lock
@@ -54,6 +55,34 @@ def _upload_errors(request, form):
             messages.error(request, error)
 
 
+def _wants_json(request):
+    return (
+        request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+        or 'application/json' in request.headers.get('Accept', '')
+    )
+
+
+def _first_form_error(form):
+    for errors in form.errors.values():
+        for error in errors:
+            return str(error)
+    return ''
+
+
+def _json_response(payload, status=200):
+    response = JsonResponse(payload, status=status)
+    response['Cache-Control'] = 'private, no-store'
+    return response
+
+
+def _json_error(message, status=400):
+    return _json_response({'ok': False, 'error': message}, status=status)
+
+
+def _json_ok(**payload):
+    return _json_response({'ok': True, **payload})
+
+
 # ----------------------------------------------------------------- setup ----
 
 @lecturer_required
@@ -76,16 +105,28 @@ def group_import_view(request, pk):
     session = _session(request, pk)
     blocked = _closed(request, session)
     if blocked:
-        return blocked
+        return _json_error('This session is closed.') if _wants_json(request) else blocked
     form = GroupImportForm(request.POST, request.FILES)
     if not form.is_valid():
+        if _wants_json(request):
+            return _json_error(_first_form_error(form) or 'Choose a valid Excel (.xlsx) file.')
         _upload_errors(request, form)
         return request_redirect(request, 'assessment_groups', pk=session.pk)
     parsed = group_import.parse_groups(form.cleaned_data['file'])
     if parsed['fatal']:
+        if _wants_json(request):
+            return _json_error(parsed['fatal'])
         messages.error(request, parsed['fatal'])
         return request_redirect(request, 'assessment_groups', pk=session.pk)
     request.session[GROUP_KEY] = {'session': session.pk, 'parsed': parsed}
+    if _wants_json(request):
+        plan = group_import.plan_import(session, parsed)
+        html = render_to_string(
+            'assessments/_partials/group_import_modal.html',
+            {'session': session, 'import_plan': plan},
+            request=request,
+        )
+        return _json_ok(html=html)
     return request_redirect(request, 'assessment_groups', pk=session.pk)
 
 
@@ -96,9 +137,11 @@ def group_import_preview(request, pk):
     session = _session(request, pk)
     blocked = _closed(request, session)
     if blocked:
-        return blocked
+        return _json_error('This session is closed.') if _wants_json(request) else blocked
     stash = request.session.get(GROUP_KEY)
     if not stash or stash['session'] != session.pk:
+        if request.method == 'POST' and request.POST.get('action') != 'apply' and _wants_json(request):
+            return _json_ok()
         messages.info(request, 'Choose a file to import first.')
         return request_redirect(request, 'assessment_groups', pk=session.pk)
     if request.method == 'GET':
@@ -106,6 +149,8 @@ def group_import_preview(request, pk):
 
     request.session.pop(GROUP_KEY, None)
     if request.POST.get('action') != 'apply':
+        if _wants_json(request):
+            return _json_ok()
         return request_redirect(request, 'assessment_groups', pk=session.pk)
     counts = group_import.apply_import(session, stash['parsed'])
     if counts['groups_created'] or counts['members_added'] or counts['groups_updated']:
@@ -192,17 +237,31 @@ def rubric_import_view(request, pk):
     session = _session(request, pk)
     blocked = _closed(request, session) or _rubric_structure_blocked(request, session)
     if blocked:
+        if _wants_json(request):
+            return _json_error(rubric_structure_lock(session) or 'This session is closed.')
         return blocked
     form = RubricImportForm(request.POST, request.FILES)
     if not form.is_valid():
+        if _wants_json(request):
+            return _json_error(_first_form_error(form) or 'Choose a valid Excel (.xlsx) file.')
         _upload_errors(request, form)
         return request_redirect(request, 'assessment_rubric', pk=session.pk)
     parsed = rubric_import.parse_rubric(form.cleaned_data['file'])
     if parsed['fatal']:
+        if _wants_json(request):
+            return _json_error(parsed['fatal'])
         messages.error(request, parsed['fatal'])
         return request_redirect(request, 'assessment_rubric', pk=session.pk)
     request.session[RUBRIC_KEY] = {
         'session': session.pk, 'rows': parsed['rows'], 'mode': form.cleaned_data['mode']}
+    if _wants_json(request):
+        review = pending_rubric_import(request, session)
+        html = render_to_string(
+            'assessments/_partials/rubric_import_modal.html',
+            {'session': session, 'rubric_review': review},
+            request=request,
+        )
+        return _json_ok(html=html)
     return request_redirect(request, 'assessment_rubric', pk=session.pk)
 
 
@@ -213,9 +272,13 @@ def rubric_import_preview(request, pk):
     session = _session(request, pk)
     blocked = _closed(request, session) or _rubric_structure_blocked(request, session)
     if blocked:
+        if _wants_json(request):
+            return _json_error(rubric_structure_lock(session) or 'This session is closed.')
         return blocked
     stash = request.session.get(RUBRIC_KEY)
     if not stash or stash['session'] != session.pk:
+        if request.method == 'POST' and request.POST.get('action') != 'apply' and _wants_json(request):
+            return _json_ok()
         messages.info(request, 'Choose a file to import first.')
         return request_redirect(request, 'assessment_rubric', pk=session.pk)
     if request.method == 'GET':
@@ -223,6 +286,8 @@ def rubric_import_preview(request, pk):
 
     request.session.pop(RUBRIC_KEY, None)
     if request.POST.get('action') != 'apply':
+        if _wants_json(request):
+            return _json_ok()
         return request_redirect(request, 'assessment_rubric', pk=session.pk)
     if not rubric_import.check_import(stash['rows'], session, stash['mode'])['ok']:
         messages.error(request, 'The rubric has problems, so nothing was imported.')
