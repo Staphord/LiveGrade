@@ -199,12 +199,15 @@ display:none!important;
   .page-body{padding:var(--sp-3);min-width:0;max-width:100%;overflow-x:hidden}
   .kanban-col{flex:0 0 82vw}
 }
+body.no-sidebar .sidebar,body.no-sidebar #mobile-sidebar-toggle,body.no-sidebar .sidebar-backdrop{display:none!important}
+body.no-sidebar .main-wrap{margin-left:0!important}
 </style>
 {% block extra_css %}{% endblock %}
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
 <a class="skip-link" href="#main-content">Skip to main content</a>
 
+{% block sidebar %}
 <div class="sidebar">
   <div class="sidebar-brand">
     <div class="brand-main">
@@ -313,6 +316,7 @@ display:none!important;
   </div>
   {% endif %}
 </div>
+{% endblock %}
 
 <div class="nav-progress" id="nav-progress"></div>
 <div class="flash-region" id="flash-region" aria-live="polite">

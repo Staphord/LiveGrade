@@ -198,9 +198,17 @@ body{background:var(--surface);color:var(--text);font-size:1rem;overflow-x:hidde
     </a>
     <div class="lp-nav-links d-flex align-items-center">
       <a href="#how" class="lp-link">How it works</a>
+      {% if not is_desktop_app %}<a href="{% url 'desktop_download' %}" class="lp-link">Desktop app</a>{% endif %}
       <div class="d-flex gap-2">
         <a href="{% if user.is_authenticated %}#services{% else %}{% url 'oidc_authentication_init' %}{% endif %}" class="btn btn-lp-ghost rounded-pill px-3">{% if user.is_authenticated %}Your services{% else %}Log in{% endif %}</a>
-        {% if not user.is_authenticated %}<a href="{% url 'oidc_authentication_init' %}?signup=1" class="btn btn-lp-solid rounded-pill px-3">Get Started</a>{% endif %}
+        {% if user.is_authenticated %}
+        <form method="post" action="{% url 'oidc_logout' %}" class="m-0">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-lp-solid rounded-pill px-3">Sign out</button>
+        </form>
+        {% else %}
+        <a href="{% url 'oidc_authentication_init' %}?signup=1" class="btn btn-lp-solid rounded-pill px-3">Get Started</a>
+        {% endif %}
       </div>
     </div>
   </div>
