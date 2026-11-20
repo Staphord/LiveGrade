@@ -11,10 +11,16 @@ import secrets
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from django.conf import settings
+from django.contrib.auth import logout
 from django.core.cache import cache
+from django.shortcuts import redirect
 from django.urls import reverse
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend
-from mozilla_django_oidc.views import OIDCAuthenticationCallbackView, OIDCAuthenticationRequestView
+from mozilla_django_oidc.views import (
+    OIDCAuthenticationCallbackView,
+    OIDCAuthenticationRequestView,
+    OIDCLogoutView,
+)
 
 from .access import ORGS_KEY, usable_orgs
 from .directory import record_sign_in
@@ -102,15 +108,10 @@ class CallbackView(OIDCAuthenticationCallbackView):
     def login_success(self):
         organizations = usable_orgs(self.user.devperf_claims.get('orgs'))
         if getattr(self, 'is_desktop', False):
-            raw_code = secrets.token_urlsafe(32)
-            digest = hashlib.sha256(raw_code.encode('utf-8')).hexdigest()
             next_url = dashboard_url(self.chosen_service) if self.chosen_service else reverse('home')
-            cache.set(
-                f'desktop_auth_handoff:{digest}',
-                {'user_id': self.user.pk, 'orgs': organizations, 'next_url': next_url},
-                timeout=60,
+            self.desktop_handoff_code = create_desktop_handoff_code(
+                self.user, organizations, next_url
             )
-            self.desktop_handoff_code = raw_code
 
         response = super().login_success()
         self.request.session[ORGS_KEY] = organizations
@@ -123,7 +124,36 @@ class CallbackView(OIDCAuthenticationCallbackView):
         return response
 
 
+DESKTOP_USER_AGENT_TOKEN = 'LiveGradeDesktop/'
 SWITCH_ACCOUNT_STATE = 'switch-account'
+DESKTOP_SWITCH_ACCOUNT_STATE = 'desktop-switch-account'
+
+
+def is_desktop_request(request):
+    """Return True when the request originates from the Electron desktop app."""
+    return DESKTOP_USER_AGENT_TOKEN in (request.META.get('HTTP_USER_AGENT') or '')
+
+
+def create_desktop_handoff_code(user, organizations, next_url):
+    """Store a 60-second single-use handoff token for Electron session exchange."""
+    raw_code = secrets.token_urlsafe(32)
+    digest = hashlib.sha256(raw_code.encode('utf-8')).hexdigest()
+    cache.set(
+        f'desktop_auth_handoff:{digest}',
+        {'user_id': user.pk, 'orgs': organizations, 'next_url': next_url},
+        timeout=60,
+    )
+    return raw_code
+
+
+class DesktopAwareLogoutView(OIDCLogoutView):
+    """Sign out locally inside Electron without opening the external browser."""
+
+    def post(self, request, *args, **kwargs):
+        if is_desktop_request(request):
+            logout(request)
+            return redirect('home')
+        return super().post(request, *args, **kwargs)
 
 
 def devperf_logout_url(request, state=None):

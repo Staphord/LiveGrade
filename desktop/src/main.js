@@ -63,7 +63,9 @@ function openSystemBrowserLogin(rawUrl) {
 function shouldInterceptToSystemBrowser(targetUrl) {
   try {
     const parsed = new URL(targetUrl);
-    if (parsed.origin === DEVPERF_ORIGIN) return true;
+    if (parsed.origin === DEVPERF_ORIGIN) {
+      return !parsed.pathname.startsWith('/o/logout');
+    }
     if (parsed.origin === BASE_ORIGIN) {
       if (parsed.pathname.startsWith('/oidc/authenticate')) return true;
       if (parsed.pathname.startsWith('/accounts/desktop/login')) return true;
@@ -345,6 +347,7 @@ if (!app.requestSingleInstanceLock()) {
   ipcMain.handle('desktop:get-version', () => app.getVersion());
 
   app.whenReady().then(() => {
+    app.userAgentFallback = `${app.userAgentFallback} LiveGradeDesktop/${app.getVersion()}`;
     const initialArg = process.argv.find((arg) => arg.startsWith('livegrade://'));
     if (initialArg) pendingDeepLink = initialArg;
     buildAppMenu();

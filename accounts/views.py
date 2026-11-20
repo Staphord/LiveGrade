@@ -1,10 +1,16 @@
 from django.contrib.auth import logout
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from .access import ACTIVE_KEY, ORGS_KEY, active_organization, lecturer_required
-from .oidc import SWITCH_ACCOUNT_STATE, devperf_logout_url
+from .oidc import (
+    DESKTOP_SWITCH_ACCOUNT_STATE,
+    SWITCH_ACCOUNT_STATE,
+    create_desktop_handoff_code,
+    devperf_logout_url,
+)
 from portal.models import services_for
 from portal.services import SERVICES, dashboard_url, get_service, is_released
 
@@ -12,8 +18,11 @@ from portal.services import SERVICES, dashboard_url, get_service, is_released
 def home(request):
     """Choose a service here; returning people also see their existing services."""
     if not request.user.is_authenticated:
-        if request.GET.get('state') == SWITCH_ACCOUNT_STATE:
+        state = request.GET.get('state')
+        if state == SWITCH_ACCOUNT_STATE:
             return redirect('oidc_authentication_init')
+        if state == DESKTOP_SWITCH_ACCOUNT_STATE:
+            return redirect(f"{reverse('oidc_authentication_init')}?desktop=1")
     elif active_organization(request) is None:
         return no_access(request)
     return render(request, 'landing.html', {
@@ -108,7 +117,35 @@ def csrf_failure(request, reason=''):
 def desktop_login(request):
     """Start OIDC sign-in from the system browser and return via livegrade://auth."""
     from urllib.parse import urlencode
-    from django.urls import reverse
+
+    if request.method == 'POST':
+        if not request.user.is_authenticated:
+            return redirect('desktop_login')
+        action = (request.POST.get('action') or '').strip()
+        if action == 'switch':
+            url = devperf_logout_url(request, state=DESKTOP_SWITCH_ACCOUNT_STATE)
+            logout(request)
+            return redirect(url)
+        raw_code = create_desktop_handoff_code(
+            request.user,
+            request.session.get(ORGS_KEY, []),
+            reverse('home'),
+        )
+        return redirect(f"{reverse('desktop_handoff')}?code={raw_code}")
+
+    if request.user.is_authenticated and request.GET.get('signup') != '1':
+        display_name = (
+            request.user.get_full_name()
+            or request.user.email
+            or request.user.username
+        )
+        response = render(request, 'accounts/desktop_account_confirm.html', {
+            'display_name': display_name,
+            'account_email': request.user.email,
+            'active_org': active_organization(request),
+        })
+        response['Cache-Control'] = 'no-store'
+        return response
 
     params = {'desktop': '1'}
     if request.GET.get('signup') == '1':
