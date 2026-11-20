@@ -1,0 +1,344 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Download LiveGrade Desktop - macOS, Windows &amp; Linux</title>
+<meta name="description" content="Download LiveGrade Desktop for macOS, Windows, and Linux.">
+{% include 'partials/_vendor_styles.html' %}
+{% include 'partials/_design_system.html' %}
+<style nonce="{{ csp_nonce }}">
+:root{
+--lp-night:#0f2a4d;
+--lp-deep:#123c6e;
+--lp-mint:#2fd4b0;
+--lp-sun:#ffd166;
+}
+html{scroll-behavior:smooth}
+body{background:var(--canvas, #f8fafc);color:var(--text);font-size:1rem;overflow-x:hidden}
+.dl-nav{position:absolute;inset:0 0 auto 0;z-index:20}
+.dl-nav .container{padding-top:1.1rem;padding-bottom:1.1rem}
+.lp-brand{display:flex;align-items:center;gap:.6rem;text-decoration:none;color:#fff}
+.lp-brand-mark{width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);display:flex;align-items:center;justify-content:center;font-size:1.15rem;backdrop-filter:blur(6px)}
+.lp-brand-name{font-weight:700;font-size:1.2rem;letter-spacing:-.01em}
+.lp-nav-links a.lp-link{color:rgba(255,255,255,.85);text-decoration:none;font-weight:600;font-size:.95rem;margin-right:1.25rem}
+.lp-nav-links a.lp-link:hover{color:#fff}
+.btn-lp-ghost{color:#fff;border:1px solid rgba(255,255,255,.45);font-weight:600;background:transparent}
+.btn-lp-ghost:hover,.btn-lp-ghost:focus{background:rgba(255,255,255,.14);color:#fff;border-color:#fff}
+.btn-lp-solid{background:#fff;color:var(--lp-deep);font-weight:700;border:1px solid #fff;box-shadow:0 8px 22px rgba(8,26,56,.28)}
+.btn-lp-solid:hover,.btn-lp-solid:focus{background:var(--lp-sun);border-color:var(--lp-sun);color:var(--lp-night);transform:translateY(-1px)}
+
+.dl-hero{
+  position:relative;color:#fff;overflow:hidden;
+  background:
+    radial-gradient(900px 460px at 85% 10%,rgba(124,92,255,.32),transparent 60%),
+    radial-gradient(640px 420px at 10% 90%,rgba(47,212,176,.20),transparent 60%),
+    linear-gradient(135deg,var(--lp-night) 0%,var(--lp-deep) 52%,#1f5fc4 100%);
+  padding:clamp(6rem,11vw,8rem) 0 clamp(3.5rem,7vw,5rem);
+}
+.dl-version-pill{
+  display:inline-flex;align-items:center;gap:.55rem;
+  padding:.38rem .95rem;border-radius:999px;
+  background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);
+  font-size:.85rem;font-weight:600;
+}
+.dl-version-dot{width:8px;height:8px;border-radius:50%;background:var(--lp-mint)}
+.dl-version-pill a{color:var(--lp-mint);text-decoration:none}
+.dl-version-pill a:hover{text-decoration:underline}
+.dl-title{font-size:clamp(2.2rem,5vw,3.4rem);font-weight:800;letter-spacing:-.03em;margin:1.1rem 0 .75rem}
+.dl-subtitle{max-width:36rem;margin:0 auto;color:rgba(255,255,255,.86);font-size:1.1rem;line-height:1.6}
+
+.dl-featured-card{
+  max-width:760px;margin:2.2rem auto 0;
+  background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.24);
+  border-radius:20px;padding:1.4rem 1.6rem;
+  backdrop-filter:blur(12px);
+  box-shadow:0 28px 60px rgba(5,20,45,.35);
+  text-align:left;
+}
+.dl-featured-badge{
+  display:inline-flex;align-items:center;gap:.45rem;
+  font-size:.78rem;font-weight:700;letter-spacing:.03em;
+  color:var(--lp-sun);margin-bottom:.85rem;
+}
+.dl-featured-body{display:flex;align-items:center;justify-content:space-between;gap:1.25rem;flex-wrap:wrap}
+.dl-featured-info{display:flex;align-items:center;gap:1rem}
+.dl-os-icon{
+  width:52px;height:52px;border-radius:14px;
+  background:rgba(255,255,255,.16);display:grid;place-items:center;
+  font-size:1.6rem;flex-shrink:0;
+}
+.dl-featured-actions{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap}
+
+.dl-platform-card{
+  height:100%;display:flex;flex-direction:column;
+  background:var(--surface, #fff);border:1px solid var(--border);
+  border-radius:16px;padding:1.4rem;
+  transition:border-color .15s ease,box-shadow .15s ease;
+}
+.dl-platform-card.is-detected{
+  border-color:var(--accent, #2563eb);
+  box-shadow:0 14px 32px rgba(31,95,196,.12);
+}
+.dl-platform-head{display:flex;align-items:center;gap:.85rem;margin-bottom:.85rem}
+.dl-platform-icon{
+  width:44px;height:44px;border-radius:12px;
+  background:var(--accent-soft, #eff6ff);color:var(--accent, #2563eb);
+  display:grid;place-items:center;font-size:1.35rem;flex-shrink:0;
+}
+.dl-detected-tag{
+  display:none;margin-left:auto;white-space:nowrap;flex-shrink:0;
+  font-size:.72rem;font-weight:700;padding:.22rem .6rem;border-radius:999px;
+  background:var(--accent-soft, #eff6ff);color:var(--accent, #2563eb);
+}
+.dl-platform-card.is-detected .dl-detected-tag{display:inline-block}
+.dl-notes{
+  background:var(--surface, #fff);border:1px solid var(--border);
+  border-radius:16px;padding:1.5rem 1.6rem;
+}
+.dl-notes-list{margin:.85rem 0 0;padding-left:1.2rem;color:var(--text-soft)}
+.dl-notes-list li+li{margin-top:.4rem}
+</style>
+</head>
+<body>
+
+<nav class="dl-nav">
+  <div class="container d-flex align-items-center justify-content-between">
+    <a class="lp-brand" href="{% url 'home' %}">
+      <span class="lp-brand-mark"><i class="bi bi-clipboard2-data"></i></span>
+      <span class="lp-brand-name">LiveGrade</span>
+    </a>
+    <div class="lp-nav-links d-flex align-items-center">
+      <a href="{% url 'home' %}" class="lp-link">Home</a>
+      <a href="{% url 'home' %}#services" class="lp-link">Services</a>
+      {% if user.is_authenticated %}
+      <a href="{% url 'home' %}#services" class="btn btn-lp-solid rounded-pill px-3">Your services</a>
+      {% else %}
+      <a href="{% url 'oidc_authentication_init' %}" class="btn btn-lp-ghost rounded-pill px-3">Log in</a>
+      {% endif %}
+    </div>
+  </div>
+</nav>
+
+<header class="dl-hero">
+  <div class="container text-center">
+    <span class="dl-version-pill">
+      <span class="dl-version-dot"></span>
+      Version {{ release.version }}
+      {% if release.published_date %}<span>({{ release.published_date }})</span>{% endif %}
+      <span>|</span>
+      <a href="#release-notes">Release notes</a>
+    </span>
+
+    <h1 class="dl-title">LiveGrade for Desktop</h1>
+    <p class="dl-subtitle">
+      Fast, focused, and ready for live sessions.
+    </p>
+
+    <div class="dl-featured-card" id="dl-featured-card" data-detected-os="{{ detected_os }}">
+      <div class="dl-featured-badge">
+        <i class="bi bi-stars" aria-hidden="true"></i>
+        Recommended for <span id="dl-os-label">{{ detected_label }}</span>
+      </div>
+      <div class="dl-featured-body">
+        <div class="dl-featured-info">
+          <div class="dl-os-icon" id="dl-featured-icon">
+            <i class="bi {{ detected_icon }}" aria-hidden="true"></i>
+          </div>
+          <div>
+            <h2 class="h4 fw-bold mb-1" id="dl-featured-heading">LiveGrade for {{ detected_label }}</h2>
+            <p class="mb-0 text-white-50 small" id="dl-featured-meta">
+              {{ featured_asset.subtitle }}{% if featured_asset.size %} - {{ featured_asset.size }}{% endif %}
+            </p>
+          </div>
+        </div>
+        <div class="dl-featured-actions" id="dl-featured-actions">
+          <!-- nosemgrep: generic.html-templates.security.var-in-href.var-in-href (Validated HTTPS-only URL in portal.releases) -->
+          <a href="{{ featured_asset.url }}" id="dl-primary-btn" class="btn btn-lp-solid btn-lg rounded-pill px-4" rel="noopener">
+            <i class="bi bi-download me-2" aria-hidden="true"></i>Download ({{ featured_asset.ext }})
+          </a>
+          <!-- nosemgrep: generic.html-templates.security.var-in-href.var-in-href (Validated HTTPS-only URL in portal.releases) -->
+          <a href="{{ featured_asset.secondary_url|default:'#' }}" id="dl-secondary-btn"
+             class="btn btn-lp-ghost btn-lg rounded-pill px-3{% if not featured_asset.secondary_url %} d-none{% endif %}" rel="noopener">
+            {{ featured_asset.secondary_label }}
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="py-5">
+  <div class="container">
+    <div class="text-center mb-4">
+      <h2 class="h4 fw-bold text-ink mb-1">All platforms</h2>
+      <p class="text-muted mb-0">Available for macOS, Windows, and Linux.</p>
+    </div>
+
+    <div class="row g-4">
+      <div class="col-md-4">
+        <div class="dl-platform-card {% if detected_os == 'mac' %}is-detected{% endif %}" data-platform="mac">
+          <div class="dl-platform-head">
+            <span class="dl-platform-icon"><i class="bi bi-apple" aria-hidden="true"></i></span>
+            <div>
+              <h3 class="h5 fw-bold mb-0">macOS</h3>
+              <span class="small text-muted">Apple Silicon and Intel</span>
+            </div>
+            <span class="dl-detected-tag">This device</span>
+          </div>
+          <p class="small text-muted mb-3">macOS 12 Monterey or later.</p>
+          <div class="d-grid gap-2 mt-auto">
+            <!-- nosemgrep: generic.html-templates.security.var-in-href.var-in-href (Validated HTTPS-only URL in portal.releases) -->
+            <a href="{{ assets.mac_dmg.url }}" class="btn btn-primary fw-semibold" rel="noopener">
+              <i class="bi bi-download me-2" aria-hidden="true"></i>Download (.dmg){% if assets.mac_dmg.size %} - {{ assets.mac_dmg.size }}{% endif %}
+            </a>
+            <!-- nosemgrep: generic.html-templates.security.var-in-href.var-in-href (Validated HTTPS-only URL in portal.releases) -->
+            <a href="{{ assets.mac_zip.url }}" class="btn btn-outline-secondary btn-sm" rel="noopener">
+              Zip archive (.zip){% if assets.mac_zip.size %} - {{ assets.mac_zip.size }}{% endif %}
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="dl-platform-card {% if detected_os == 'win' %}is-detected{% endif %}" data-platform="win">
+          <div class="dl-platform-head">
+            <span class="dl-platform-icon"><i class="bi bi-windows" aria-hidden="true"></i></span>
+            <div>
+              <h3 class="h5 fw-bold mb-0">Windows</h3>
+              <span class="small text-muted">Windows 10 and 11 (64-bit)</span>
+            </div>
+            <span class="dl-detected-tag">This device</span>
+          </div>
+          <p class="small text-muted mb-3">Standard 64-bit installer.</p>
+          <div class="d-grid gap-2 mt-auto">
+            <!-- nosemgrep: generic.html-templates.security.var-in-href.var-in-href (Validated HTTPS-only URL in portal.releases) -->
+            <a href="{{ assets.win_exe.url }}" class="btn btn-primary fw-semibold" rel="noopener">
+              <i class="bi bi-download me-2" aria-hidden="true"></i>Download (.exe){% if assets.win_exe.size %} - {{ assets.win_exe.size }}{% endif %}
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="dl-platform-card {% if detected_os == 'linux' %}is-detected{% endif %}" data-platform="linux">
+          <div class="dl-platform-head">
+            <span class="dl-platform-icon"><i class="bi bi-ubuntu" aria-hidden="true"></i></span>
+            <div>
+              <h3 class="h5 fw-bold mb-0">Linux</h3>
+              <span class="small text-muted">64-bit x64</span>
+            </div>
+            <span class="dl-detected-tag">This device</span>
+          </div>
+          <p class="small text-muted mb-3">AppImage or Debian package.</p>
+          <div class="d-grid gap-2 mt-auto">
+            <!-- nosemgrep: generic.html-templates.security.var-in-href.var-in-href (Validated HTTPS-only URL in portal.releases) -->
+            <a href="{{ assets.linux_appimage.url }}" class="btn btn-primary fw-semibold" rel="noopener">
+              <i class="bi bi-download me-2" aria-hidden="true"></i>Download (.AppImage){% if assets.linux_appimage.size %} - {{ assets.linux_appimage.size }}{% endif %}
+            </a>
+            <!-- nosemgrep: generic.html-templates.security.var-in-href.var-in-href (Validated HTTPS-only URL in portal.releases) -->
+            <a href="{{ assets.linux_deb.url }}" class="btn btn-outline-secondary btn-sm" rel="noopener">
+              Debian package (.deb){% if assets.linux_deb.size %} - {{ assets.linux_deb.size }}{% endif %}
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <section class="dl-notes mt-4" id="release-notes" aria-labelledby="release-notes-heading">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <h2 class="h5 fw-bold mb-0" id="release-notes-heading">Release notes</h2>
+        <span class="badge text-bg-light border">Version {{ release.version }}{% if release.published_date %} - {{ release.published_date }}{% endif %}</span>
+      </div>
+      <ul class="dl-notes-list">
+        {% for note in release.notes %}
+        <li>{{ note }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+  </div>
+</main>
+
+{{ assets|json_script:"dl-assets-data" }}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var assetsEl = document.getElementById('dl-assets-data');
+  if (!assetsEl) return;
+  var assets = JSON.parse(assetsEl.textContent);
+
+  function detectClientOs() {
+    var uaDataPlatform = (navigator.userAgentData && navigator.userAgentData.platform) || '';
+    var hint = (uaDataPlatform || navigator.platform || navigator.userAgent || '').toLowerCase();
+    if (hint.indexOf('win') !== -1) return 'win';
+    if (hint.indexOf('mac') !== -1) return 'mac';
+    if (hint.indexOf('linux') !== -1 && hint.indexOf('android') === -1) return 'linux';
+    return null;
+  }
+
+  var detected = detectClientOs();
+  if (!detected) return;
+
+  var configs = {
+    mac: {
+      label: 'macOS',
+      icon: 'bi-apple',
+      subtitle: 'Apple Silicon and Intel',
+      primary: assets.mac_dmg,
+      secondary: assets.mac_zip,
+      secondaryLabel: 'Zip archive'
+    },
+    win: {
+      label: 'Windows',
+      icon: 'bi-windows',
+      subtitle: 'Windows 10 and 11 (64-bit)',
+      primary: assets.win_exe,
+      secondary: null,
+      secondaryLabel: ''
+    },
+    linux: {
+      label: 'Linux',
+      icon: 'bi-ubuntu',
+      subtitle: '64-bit Linux',
+      primary: assets.linux_appimage,
+      secondary: assets.linux_deb,
+      secondaryLabel: 'Debian (.deb)'
+    }
+  };
+
+  var cfg = configs[detected];
+  if (!cfg || !cfg.primary) return;
+
+  var labelEl = document.getElementById('dl-os-label');
+  var headingEl = document.getElementById('dl-featured-heading');
+  var metaEl = document.getElementById('dl-featured-meta');
+  var iconEl = document.getElementById('dl-featured-icon');
+  var primaryBtn = document.getElementById('dl-primary-btn');
+  var secondaryBtn = document.getElementById('dl-secondary-btn');
+
+  if (labelEl) labelEl.textContent = cfg.label;
+  if (headingEl) headingEl.textContent = 'LiveGrade for ' + cfg.label;
+  if (metaEl) metaEl.textContent = cfg.subtitle + (cfg.primary.size ? ' - ' + cfg.primary.size : '');
+  if (iconEl) iconEl.innerHTML = '<i class="bi ' + cfg.icon + '" aria-hidden="true"></i>';
+  if (primaryBtn) {
+    primaryBtn.href = cfg.primary.url;
+    primaryBtn.innerHTML = '<i class="bi bi-download me-2" aria-hidden="true"></i>Download (' + cfg.primary.ext + ')';
+  }
+  if (secondaryBtn) {
+    if (cfg.secondary && cfg.secondary.url) {
+      secondaryBtn.href = cfg.secondary.url;
+      secondaryBtn.textContent = cfg.secondaryLabel;
+      secondaryBtn.classList.remove('d-none');
+    } else {
+      secondaryBtn.classList.add('d-none');
+    }
+  }
+
+  var cards = document.querySelectorAll('.dl-platform-card');
+  cards.forEach(function (card) {
+    card.classList.toggle('is-detected', card.getAttribute('data-platform') === detected);
+  });
+})();
+</script>
+</body>
+</html>

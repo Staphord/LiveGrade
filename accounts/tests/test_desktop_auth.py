@@ -33,6 +33,8 @@ class DesktopAuthHandoffTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp['Cache-Control'], 'no-store')
         self.assertContains(resp, 'livegrade://auth?code=test-abc')
+        self.assertContains(resp, 'no-sidebar')
+        self.assertNotContains(resp, '<div class="sidebar">')
 
     def test_desktop_exchange_consumes_single_use_code_and_logs_in(self):
         user = User.objects.create(sub='sub-123', username='devperf-sub-123', email='org@example.com')
@@ -101,6 +103,23 @@ class DesktopAuthHandoffTests(TestCase):
         self.assertEqual(resp['Cache-Control'], 'no-store')
         self.assertContains(resp, 'Continue as Ada Lovelace')
         self.assertContains(resp, 'Use a different account')
+        self.assertContains(resp, 'no-sidebar')
+        self.assertNotContains(resp, '<div class="sidebar">')
+
+    def test_landing_page_shows_sign_out_when_authenticated(self):
+        from accounts.testing import make_org, sign_in
+        user = User.objects.create(
+            sub='sub-landing-1',
+            username='devperf-sub-landing-1',
+            email='landing@example.com',
+        )
+        org = make_org('Landing Org')
+        sign_in(self.client, user, org)
+
+        resp = self.client.get(reverse('home'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, f'action="{reverse("oidc_logout")}"')
+        self.assertContains(resp, 'Sign out')
 
     def test_authenticated_desktop_login_continue_issues_handoff_code(self):
         user = User.objects.create(

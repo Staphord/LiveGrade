@@ -10,6 +10,7 @@ from .oidc import (
     SWITCH_ACCOUNT_STATE,
     create_desktop_handoff_code,
     devperf_logout_url,
+    is_desktop_request,
 )
 from portal.models import services_for
 from portal.services import SERVICES, dashboard_url, get_service, is_released
@@ -31,6 +32,7 @@ def home(request):
         'released_service_slugs': [service.slug for service in SERVICES
                                    if is_released(service.slug)],
         'used_services': services_for(request.user) if request.user.is_authenticated else [],
+        'is_desktop_app': is_desktop_request(request),
     })
 
 
@@ -190,3 +192,11 @@ def desktop_exchange(request):
     login(request, user, backend='accounts.oidc.DevPerfBackend')
     request.session[ORGS_KEY] = payload.get('orgs') or []
     return redirect(payload.get('next_url') or 'home')
+
+
+def desktop_download(request):
+    """Render the cross-platform desktop app download page."""
+    from portal.releases import build_download_context
+
+    context = build_download_context(request.META.get('HTTP_USER_AGENT', ''))
+    return render(request, 'desktop_download.html', context)
